@@ -47,6 +47,7 @@
   },
   "devDependencies": {
     "@aws-sdk/types": "^3.775.0",
+    "@iconify-json/logos": "^1.2.10",
     "@nuxt/types": "^2.18.1",
     "@nuxtjs/eslint-config-typescript": "^12.1.0",
     "@types/jest": "^29.5.14",
