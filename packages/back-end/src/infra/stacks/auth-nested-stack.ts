@@ -63,6 +63,11 @@ export class AuthNestedStack extends NestedStack {
       constructNamespace: this.props.constructNamespace,
       authLambdaFunctions: this.lambda.lambdaFunctions, // Pass Auth Lambda functions for registering with Cognito Event triggers
       customSenderKmsKey: this.props.cognitoIdpKmsKey,
+      googleClientId: this.props.googleClientId,
+      googleClientSecret: this.props.googleClientSecret,
+      callbackUrls: this.props.callbackUrls,
+      logoutUrls: this.props.logoutUrls,
+      cognitoDomainPrefix: this.props.cognitoDomainPrefix,
     });
   }
 

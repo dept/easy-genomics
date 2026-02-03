@@ -9,6 +9,11 @@ easy-genomics:
         ## The following Front-End Infrastructure settings will need to be pre-configured in AWS and defined when 'env-type' is 'pre-prod' or 'prod'.
         aws-hosted-zone-id: # Not required when env-type: 'dev', but must exist for the same app-domain-name if configured
         aws-certificate-arn: # Not required when env-type: 'dev', but must exist for the same app-domain-name if configured
+        google-client-id: # Google Cloud Client ID for Google Sign in integration, if left empty no Google SSO will be implemented
+        google-client-secret: # Google Cloud Client Secret for Google Sign in integration, if left empty no Google SSO will be implemented
+        cognito-domain-prefix: # Cognito User Pool domain prefix used for SSO. If left empty no SSO integration will me implemented
+        callback-urls: 'http://localhost:3000/auth/callback' # Callback URLs for SSO integration
+        logout-urls: 'http://localhost:3000/signin' # Logout URLs for SSO integration
 
         # Back-End specific settings
         back-end:

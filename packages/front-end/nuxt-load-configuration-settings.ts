@@ -1,6 +1,10 @@
 import { join } from 'path';
 import { getApiGatewayInfo } from '@easy-genomics/shared-lib/lib/app/utils/api-gateway-utils';
-import { getCognitoIdpInfo } from '@easy-genomics/shared-lib/lib/app/utils/cognito-idp-utils';
+import {
+  getCognitoClientUrls,
+  getCognitoDomainInfo,
+  getCognitoIdpInfo,
+} from '@easy-genomics/shared-lib/lib/app/utils/cognito-idp-utils';
 import { ApiGatewayInfo } from '@easy-genomics/shared-lib/src/app/types/api-gateway-info';
 import { CognitoIdpInfo } from '@easy-genomics/shared-lib/src/app/types/cognito-idp-info';
 import { ConfigurationSettings } from '@easy-genomics/shared-lib/src/app/types/configuration';
@@ -37,6 +41,9 @@ export async function exportNuxtConfigurationSettings(awsRegion: string, envName
   process.env.AWS_REGION = awsRegion;
   const apiGatewayInfo: ApiGatewayInfo = await getApiGatewayInfo(apiGatewayRestApiName, awsRegion);
   const cognitoIdpInfo: CognitoIdpInfo = await getCognitoIdpInfo(cognitoUserPoolName, cognitoUserPoolClientName);
+  const cognitoDomain = await getCognitoDomainInfo(cognitoIdpInfo.UserPoolId || '');
+  const clientUrls = await getCognitoClientUrls(cognitoIdpInfo.UserPoolId || '', cognitoIdpInfo.UserPoolClientId || '');
+  const { callbackUrls, logoutUrls } = clientUrls;
 
   console.log('Retrieve and export Nuxt Configuration Settings...');
   console.log(`  AWS_REGION=${awsRegion}`);
@@ -45,6 +52,7 @@ export async function exportNuxtConfigurationSettings(awsRegion: string, envName
   console.log(`  AWS_API_GATEWAY_URL=${apiGatewayInfo.RestApiUrl}`);
   console.log(`  AWS_COGNITO_USER_POOL_ID=${cognitoIdpInfo.UserPoolId}`);
   console.log(`  AWS_COGNITO_USER_POOL_CLIENT_ID=${cognitoIdpInfo.UserPoolClientId}`);
+  console.log(`  AWS_COGNITO_DOMAIN=${cognitoDomain}`);
 
   const nuxtConfigurationSettings: string =
     '###\n' +
@@ -55,9 +63,11 @@ export async function exportNuxtConfigurationSettings(awsRegion: string, envName
     `ENV_TYPE=${envType}\n` +
     `AWS_API_GATEWAY_URL=${apiGatewayInfo.RestApiUrl}\n` +
     `AWS_COGNITO_USER_POOL_ID=${cognitoIdpInfo.UserPoolId}\n` +
-    `AWS_COGNITO_USER_POOL_CLIENT_ID=${cognitoIdpInfo.UserPoolClientId}\n`;
+    `AWS_COGNITO_USER_POOL_CLIENT_ID=${cognitoIdpInfo.UserPoolClientId}\n` +
+    `AWS_COGNITO_DOMAIN=${cognitoDomain ?? ''}\n` +
+    `COGNITO_CALLBACK_URLS=${callbackUrls}\n` +
+    `COGNITO_LOGOUT_URLS=${logoutUrls}\n`;
 
-  // Write out Nuxt Configuration Settings to {easy-genomics root dir}/config/.env.nuxt
   fs.writeFileSync(join(__dirname, '../../config/.env.nuxt'), nuxtConfigurationSettings, {
     encoding: 'utf8',
     flush: true,

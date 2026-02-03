@@ -32,6 +32,11 @@ export interface BackEndStackProps extends BaseStackProps {
   testUsers?: TestUserDetails[];
   seqeraApiBaseUrl: string;
   vpcPeering?: VpcPeering;
+  googleClientId?: string;
+  googleClientSecret?: string;
+  cognitoDomainPrefix?: string;
+  callbackUrls?: string;
+  logoutUrls?: string;
 }
 
 // Defines Test User Accounts to provision for DevEnv deployments

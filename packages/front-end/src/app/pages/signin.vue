@@ -2,6 +2,7 @@
   import { z } from 'zod';
   import { resetStores, useUiStore } from '@FE/stores';
   import { VALIDATION_MESSAGES } from '@FE/constants/validation';
+  import { Auth } from 'aws-amplify';
 
   definePageMeta({ layout: 'signin' });
 
@@ -29,9 +30,9 @@
     isFormDisabled.value = !formSchema.safeParse(state.value).success;
   });
 
-  const signInWithGoogle = async () => {
-    // Placeholder handler for google SignIn
-  };
+  async function signInWithGoogle() {
+    await Auth.federatedSignIn({ provider: 'Google' });
+  }
 </script>
 
 <template>
@@ -42,13 +43,16 @@
       class="mb-8 gap-4"
       label="Sign in with Google"
       icon="logos:google-icon"
+      u-button-type="button"
       :iconRight="false"
+      :disabled="useUiStore().isRequestPending('signInWithGoogle')"
+      :loading="useUiStore().isRequestPending('signInWithGoogle')"
       :ui="{
         base: 'w-full justify-start',
         label: 'font-normal',
       }"
-      @click.prevent="signInWithGoogle"
-    ></EGButton>
+      @click="signInWithGoogle"
+    />
     <div class="my-6 flex items-center">
       <div class="flex-grow border-t border-gray-200" />
       <span class="mx-4 text-sm uppercase text-gray-400">OR</span>

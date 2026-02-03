@@ -16,7 +16,12 @@ export const ConfigurationSettingsSchema = z
     // The following Front-End Infrastructure settings will need to be pre-configured in AWS and defined when 'env-type' is 'pre-prod' or 'prod'.
     ['aws-hosted-zone-id']: z.string().nullable().optional(), // Not required when env-type: 'dev', but must exist for the same app-domain-name if configured
     ['aws-certificate-arn']: z.string().nullable().optional(), // Not required when env-type: 'dev', but must exist for the same app-domain-name if configured
-
+    // The following are for Google SSO sign in settings
+    ['google-client-id']: z.string().nullable().optional(),
+    ['google-client-secret']: z.string().nullable().optional(),
+    ['cognito-domain-prefix']: z.string().nullable().optional(),
+    ['callback-urls']: z.string().nullable().optional(),
+    ['logout-urls']: z.string().nullable().optional(),
     // Back-End specific settings
     ['back-end']: z.object({
       ['jwt-secret-key']: z.string().nullable().optional(), // Optional: If undefined, a random value will be generated on deployment for JWT Signature

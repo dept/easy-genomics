@@ -47,6 +47,9 @@ export default defineNuxtConfig({
       BASE_API_URL: process.env.AWS_API_GATEWAY_URL?.replace(/\/+$/, ''), // Remove trailing slashes
       ENV_TYPE: process.env.ENV_TYPE || 'dev',
       GITHUB_RUN_NUMBER: process.env.GITHUB_RUN_NUMBER || 'Unknown',
+      AWS_COGNITO_DOMAIN: process.env.AWS_COGNITO_DOMAIN,
+      COGNITO_CALLBACK_URLS: process.env.COGNITO_CALLBACK_URLS,
+      COGNITO_LOGOUT_URLS: process.env.COGNITO_LOGOUT_URLS,
     },
   },
 

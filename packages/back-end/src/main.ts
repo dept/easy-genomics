@@ -17,6 +17,11 @@ let envName: string | undefined;
 let envType: string | undefined;
 let appDomainName: string | undefined;
 let awsHostedZoneId: string | undefined;
+let googleClientId: string | undefined;
+let googleClientSecret: string | undefined;
+let cognitoDomainPrefix: string | undefined;
+let callbackUrls: string | undefined;
+let logoutUrls: string | undefined;
 
 let jwtSecretKey: string | undefined;
 let sysAdminEmail: string | undefined;
@@ -40,6 +45,11 @@ if (process.env.CI_CD === 'true') {
   envType = process.env.ENV_TYPE;
   appDomainName = process.env.APP_DOMAIN_NAME;
   awsHostedZoneId = process.env.AWS_HOSTED_ZONE_ID;
+  googleClientId = process.env.GOOGLE_CLIENT_ID;
+  googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  cognitoDomainPrefix = process.env.COGNITO_DOMAIN_PREFIX;
+  callbackUrls = process.env.CALLBACK_URLS;
+  logoutUrls = process.env.LOGOUT_URLS;
 
   jwtSecretKey = process.env.JWT_SECRET_KEY;
   // System Admin
@@ -148,6 +158,11 @@ if (process.env.CI_CD === 'true') {
   envType = configSettings['env-type']; // dev | pre-prod | prod
   appDomainName = configSettings['app-domain-name'];
   awsHostedZoneId = configSettings['aws-hosted-zone-id'];
+  googleClientId = configSettings['google-client-id'];
+  googleClientSecret = configSettings['google-client-secret'];
+  cognitoDomainPrefix = configSettings['cognito-domain-prefix'];
+  callbackUrls = configSettings['callback-urls'];
+  logoutUrls = configSettings['logout-urls'];
 
   // Back-End configuration settings
   jwtSecretKey = configSettings['back-end']['jwt-secret-key'];
@@ -287,6 +302,11 @@ new BackEndStack(app, `${namePrefix}-main-back-end-stack`, {
   testUsers: testUsers,
   seqeraApiBaseUrl: seqeraApiBaseUrl.replace(/\/+$/, ''), // Remove trailing slashes
   vpcPeering: vpcPeering,
+  googleClientId,
+  googleClientSecret,
+  cognitoDomainPrefix,
+  callbackUrls,
+  logoutUrls,
 });
 
 if (process.env.CDK_AUDIT === 'true') {
