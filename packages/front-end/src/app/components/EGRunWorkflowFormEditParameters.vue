@@ -57,6 +57,36 @@
       ...props.params,
     },
   });
+
+  // Auto-populate runname/run_name parameter with the run name from Run Details
+  function autoPopulateRunName() {
+    const runName = wipOmicsRun.value?.runName;
+    if (runName && localProps.params) {
+      // Check for both 'runname' and 'run_name' parameters
+      if ('runname' in localProps.params && !localProps.params['runname']) {
+        localProps.params['runname'] = runName;
+      }
+      if ('run_name' in localProps.params && !localProps.params['run_name']) {
+        localProps.params['run_name'] = runName;
+      }
+    }
+  }
+
+  // Auto-populate when component mounts
+  onMounted(() => {
+    autoPopulateRunName();
+  });
+
+  // Watch for changes in run name and auto-populate if needed
+  watch(
+    () => wipOmicsRun.value?.runName,
+    (newRunName) => {
+      if (newRunName) {
+        autoPopulateRunName();
+      }
+    },
+  );
+
   // save the updated parameters to the store too
   runStore.updateWipOmicsRunParams(props.omicsRunTempId, localProps.params);
 

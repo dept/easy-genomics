@@ -34,10 +34,27 @@
 
   const schemaDefinitions = computed(() => props.schema.$defs || props.schema.definitions);
 
+  // Auto-populate runname/run_name parameter with the run name from Run Details
+  function autoPopulateRunName() {
+    const runName = wipSeqeraRun.value?.runName;
+    if (runName && localProps.params) {
+      // Check for both 'runname' and 'run_name' parameters
+      if ('runname' in localProps.params && !localProps.params['runname']) {
+        localProps.params['runname'] = runName;
+      }
+      if ('run_name' in localProps.params && !localProps.params['run_name']) {
+        localProps.params['run_name'] = runName;
+      }
+    }
+  }
+
   onMounted(() => {
     // set first section in side panel of UI to active
     const firstKey = Object.keys(schemaDefinitions.value)[0];
     activeSection.value = schemaDefinitions.value[firstKey].title;
+
+    // Auto-populate run name parameters
+    autoPopulateRunName();
   });
 
   function nextSection() {
@@ -99,6 +116,16 @@
       if (val) runStore.updateWipSeqeraRunParams(props.seqeraRunTempId, val);
     },
     { deep: true },
+  );
+
+  // Watch for changes in run name and auto-populate if needed
+  watch(
+    () => wipSeqeraRun.value?.runName,
+    (newRunName) => {
+      if (newRunName) {
+        autoPopulateRunName();
+      }
+    },
   );
 
   function componentForType(propertyType: 'string' | 'integer' | 'number' | 'boolean') {
