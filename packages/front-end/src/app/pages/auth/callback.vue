@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { Auth } from 'aws-amplify';
+  import { decodeJwt } from '@FE/utils/jwt-utils';
 
   definePageMeta({
     layout: 'empty',
@@ -11,9 +12,21 @@
       const user = await Auth.currentAuthenticatedUser();
 
       if (user) {
-        await useUser().setCurrentUserDataFromToken();
-        await useOrgsStore().loadOrgs();
-        await navigateTo('/');
+        try {
+          await useUser().setCurrentUserDataFromToken();
+          await useOrgsStore().loadOrgs();
+        } catch (dataError) {
+          console.error('Error setting user data:', dataError);
+        }
+        // Get default lab from token and redirect accordingly
+        const token = await useAuth().getToken();
+        const decodedToken: any = decodeJwt(token);
+        const defaultLab = decodedToken.DefaultLaboratory;
+        if (defaultLab) {
+          await navigateTo(`/labs/${defaultLab}`);
+        } else {
+          await navigateTo('/labs');
+        }
       }
     } catch (error) {
       console.error('OAuth callback error:', error);
