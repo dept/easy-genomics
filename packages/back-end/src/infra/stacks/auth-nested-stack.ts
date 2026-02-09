@@ -121,6 +121,18 @@ export class AuthNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
     ]);
+
+    // /auth/process-pre-signup
+    this.iam.addPolicyStatements('/auth/process-pre-signup', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-user-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-user-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
   };
 
   // Auth specific DynamoDB tables
