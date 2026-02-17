@@ -43,12 +43,13 @@
   });
   const start = computed(() => (page.value - 1) * rowsPerPage.value);
   const totalRows = computed(() => props.tableData.length || 0);
+  const totalPages = computed(() => Math.ceil(totalRows.value / rowsPerPage.value));
 
   watch(
     page,
     (newPage) => {
       if (newPage < 1) page.value = 1;
-      else if (newPage > rowsPerPage.value) page.value = rowsPerPage.value;
+      else if (newPage > totalPages.value) page.value = totalPages.value;
     },
     { immediate: true, flush: 'sync' },
   );
