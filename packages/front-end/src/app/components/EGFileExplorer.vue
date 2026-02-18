@@ -171,17 +171,16 @@
   }
 
   function nestify(obj: MapType) {
-    return Object.keys(obj)
-      .map((key) => {
-        const item = obj[key];
-        if (Object.keys(item.children || {}).length > 0) {
-          item.children = nestify(item.children as MapType);
-        } else {
-          delete item.children;
-        }
-        return item;
-      })
-      .filter((item) => item.type === 'file' || (item.children && Object.keys(item.children).length > 0));
+    return Object.keys(obj).map((key) => {
+      const item = obj[key];
+      if (item.type === 'directory') {
+        const childrenArr = nestify(item.children as MapType);
+        item.children = childrenArr;
+      } else {
+        delete item.children;
+      }
+      return item;
+    });
   }
 
   function formatFileSize(value?: number): string {
@@ -193,6 +192,13 @@
       unitIndex++;
     }
     return `${value.toFixed(unitIndex === 0 ? 0 : 2)} ${units[unitIndex]}`;
+  }
+
+  // Helper to check if a value is a valid date string
+  function isValidDate(date: string | undefined): boolean {
+    if (!date) return false;
+    const d = new Date(date);
+    return !isNaN(d.getTime());
   }
 
   const onRowClicked = useDebounceFn((item: FileTreeNode) => {
@@ -344,7 +350,10 @@
         {{ useChangeCase(row.type === 'directory' ? 'Folder' : row.type, 'sentenceCase') }}
       </template>
       <template #lastModified-data="{ row }">
-        {{ format(row.lastModified, 'MM/dd/yyyy') }}
+        <span v-if="isValidDate(row.lastModified)">
+          {{ format(new Date(row.lastModified), 'MM/dd/yyyy') }}
+        </span>
+        <span v-else>—</span>
       </template>
       <template #size-data="{ row }">
         {{ formatFileSize(row.size) }}
