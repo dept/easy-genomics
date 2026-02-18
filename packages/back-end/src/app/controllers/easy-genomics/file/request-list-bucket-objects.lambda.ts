@@ -55,13 +55,29 @@ export const handler: Handler = async (
       ? request.S3Prefix
       : `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
 
-    const response: ListObjectsV2CommandOutput = await s3Service.listBucketObjectsV2({
-      Bucket: s3Bucket,
-      Prefix: s3Prefix,
-      MaxKeys: request.MaxKeys,
-    });
+    let isTruncated = true;
+    let continuationToken: string | undefined = undefined;
+    let allContents: any[] = [];
+    let firstResponse: ListObjectsV2CommandOutput | undefined = undefined;
 
-    return buildResponse(200, JSON.stringify(response), event);
+    while (isTruncated) {
+      const response: ListObjectsV2CommandOutput = await s3Service.listBucketObjectsV2({
+        Bucket: s3Bucket,
+        Prefix: s3Prefix,
+        MaxKeys: request.MaxKeys,
+        ContinuationToken: continuationToken,
+      });
+      if (!firstResponse) firstResponse = response;
+      if (response.Contents) allContents = allContents.concat(response.Contents);
+      isTruncated = !!response.IsTruncated;
+      continuationToken = response.NextContinuationToken;
+    }
+
+    const mergedResponse = {
+      ...(firstResponse || {}),
+      Contents: allContents,
+    };
+    return buildResponse(200, JSON.stringify(mergedResponse), event);
   } catch (err: any) {
     console.error(err);
     return buildErrorResponse(err, event);
