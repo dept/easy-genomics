@@ -206,41 +206,32 @@
     },
   );
 
-  // Handle startPath navigation after root is loaded
+  // Handle startPath navigation after root is loaded.
+  // Awaits each openDirectory call so that multi-level paths (e.g. ['results', 'runId'])
+  // navigate correctly: each level is fully fetched before descending into the next.
   watch(
     () => currentPath.value[0].children,
-    (rootDirChildren) => {
-      if (hasOpenedStartPath.value) return; // only do this once
-      if (!props.startPath) return;
-
-      // if not at root dir, don't touch it
+    async () => {
+      if (hasOpenedStartPath.value) return;
+      if (!props.startPath || props.startPath.length === 0) return;
       if (currentPath.value.length > 1) {
         hasOpenedStartPath.value = true;
         return;
       }
 
-      // Helper function to convert children to array if it's a MapType
-      function childrenToArray(children: FileTreeNode[] | MapType | undefined): FileTreeNode[] {
-        if (!children) return [];
-        if (Array.isArray(children)) return children;
-        // If it's a MapType object, convert to array
-        return Object.values(children);
-      }
-
-      // rootDirChildren can be a MapType or an array; normalize to array for navigation
-      let currentChildren: FileTreeNode[] | MapType | undefined = rootDirChildren;
-      for (const step of props.startPath) {
-        const childrenArray = childrenToArray(currentChildren);
-        const resultsChild = childrenArray.find(
-          (node: FileTreeNode) => node.type === 'directory' && node.name === step,
-        );
-        if (!resultsChild) break;
-
-        openDirectory(resultsChild);
-        currentChildren = resultsChild.children;
-      }
-
       hasOpenedStartPath.value = true;
+
+      for (const step of props.startPath) {
+        const currentDir = currentPath.value[currentPath.value.length - 1];
+        const children: FileTreeNode[] = Array.isArray(currentDir.children)
+          ? currentDir.children
+          : Object.values(currentDir.children || {});
+
+        const targetDir = children.find((node) => node.type === 'directory' && node.name === step);
+        if (!targetDir) break;
+
+        await openDirectory(targetDir);
+      }
     },
   );
 
