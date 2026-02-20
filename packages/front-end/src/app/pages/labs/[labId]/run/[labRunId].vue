@@ -231,7 +231,7 @@
 
       <!-- File Manager -->
       <div v-if="item.key === 'fileManager'" class="space-y-3">
-        <EGFileExplorer :lab-id="labId" :s3-bucket="s3Bucket" :s3-prefix="s3Prefix" />
+        <EGFileExplorer :lab-id="labId" :s3-bucket="s3Bucket" :s3-prefix="s3Prefix" :start-path="outputPath" />
       </div>
     </template>
   </UTabs>
