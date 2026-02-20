@@ -1,19 +1,18 @@
 <script setup lang="ts">
   import { getDate, getTime } from '@FE/utils/date-time';
-  import { S3Response } from '@/packages/shared-lib/src/app/types/easy-genomics/file/request-list-bucket-objects';
-  import { useRunStore } from '@FE/stores';
+  import { useLabsStore, useRunStore } from '@FE/stores';
   import { useDebounceFn } from '@vueuse/core';
 
   const { $api } = useNuxtApp();
   const $router = useRouter();
   const $route = useRoute();
   const runStore = useRunStore();
+  const labsStore = useLabsStore();
 
   const labId = $route.params.labId as string;
   const seqeraRunId = $route.params.seqeraRunId as string;
 
   const seqeraRunReports = ref([]);
-  const s3Contents = ref<S3Response | null>(null);
   const tabIndex = ref(0);
 
   // Permission Check
@@ -22,6 +21,8 @@
   }
 
   const labRunId = computed<string | null>(() => runStore.labRunByExternalId(seqeraRunId)?.RunId ?? null);
+  const s3Bucket = computed<string>(() => labsStore.labs[labId]?.S3Bucket ?? '');
+  const s3Prefix = computed<string>(() => `${useUserStore().currentOrgId}/${labId}/next-flow/${labRunId.value ?? ''}`);
   const tabItems = computed(() => [
     { key: 'runDetails', label: 'Run Details' },
     { key: 'fileManager', label: 'File Manager' },
@@ -54,7 +55,7 @@
   }, 300);
 
   onBeforeMount(() => {
-    Promise.all([fetchS3Content(), loadRunReports(), fetchLaboratoryRuns(), fetchSeqeraRun()]);
+    Promise.all([loadRunReports(), fetchLaboratoryRuns(), fetchSeqeraRun()]);
   });
 
   onMounted(() => {
@@ -102,21 +103,6 @@
     }
   }
 
-  async function fetchS3Content() {
-    useUiStore().setRequestPending('fetchS3Content');
-    try {
-      const res = await $api.file.requestListBucketObjects({
-        LaboratoryId: labId,
-        S3Prefix: `${useUserStore().currentOrgId}/${labId}/next-flow/${labRunId.value}`,
-      });
-      s3Contents.value = res || null;
-    } catch (error) {
-      console.error('Error fetching S3 content:', error);
-    } finally {
-      useUiStore().setRequestComplete('fetchS3Content');
-    }
-  }
-
   async function fetchLaboratoryRuns(): Promise<void> {
     await runStore.loadLabRunsForLab(labId);
   }
@@ -145,12 +131,7 @@
   <UTabs :ui="EGTabsStyles" v-model="tabIndex" :items="tabItems" @update:model-value="handleTabChange">
     <template #item="{ item }">
       <div v-show="item.key === 'fileManager'" class="space-y-3">
-        <EGFileExplorer
-          :s3-contents="s3Contents"
-          :lab-id="labId"
-          :seqera-run-id="seqeraRunId"
-          :is-loading="useUiStore().isRequestPending('fetchS3Content')"
-        />
+        <EGFileExplorer v-if="labRunId && s3Bucket" :lab-id="labId" :s3-bucket="s3Bucket" :s3-prefix="s3Prefix" />
       </div>
       <div v-if="item.key === 'runDetails'" class="space-y-3">
         <section
