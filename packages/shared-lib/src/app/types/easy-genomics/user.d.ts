@@ -35,6 +35,7 @@ export interface User extends BaseAttributes {
   DefaultOrganization?: string; // User last accessed Organization
   DefaultLaboratory?: string; // User last accessed Laboratory
   OrganizationAccess?: OrganizationAccess;
+  SampleIdSplitPattern?: string; // User preference for splitting sample IDs from filenames
 }
 
 export type OrganizationAccess = Record<string, OrganizationAccessDetails>;
