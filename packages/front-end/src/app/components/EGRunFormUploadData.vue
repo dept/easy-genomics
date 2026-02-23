@@ -366,6 +366,10 @@
   }
 
   function getSampleIdFromRFileName(fileName: string): string | null {
+    if (sampleIdSplitPattern.value) {
+      const idx = fileName.indexOf(sampleIdSplitPattern.value);
+      return idx !== -1 ? fileName.substring(0, idx) || null : null;
+    }
     return fileName.substring(0, fileName.lastIndexOf('_R')) || null;
   }
 
