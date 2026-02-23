@@ -65,6 +65,8 @@
 
   const chooseFilesButton = ref<HTMLButtonElement | null>(null);
   const isDropzoneActive = ref(false);
+  const showAdvancedOptions = ref(false);
+  const sampleIdSplitPattern = ref('');
 
   // Track ongoing upload requests
   const uploadControllers = ref<{ [key: string]: AbortController }>({});
@@ -750,24 +752,26 @@
   <EGCard>
     <EGText tag="small" class="mb-4">Step 02</EGText>
     <EGText tag="h4" class="mb-4">Upload Data</EGText>
-    <ul class="text-muted ml-6 mt-1 list-disc text-xs font-normal tracking-tight">
-      <li>
-        Files containing _R1_ or _R2_ with a matching prefix and suffix will be combined as paired-end data samples e.g,
-        <ul>
-          <li>
-            GOL2051A55857_S103_L002
-            <strong>_R1_</strong>
-            001.fastq.gz
-          </li>
-          <li>
-            GOL2051A55857_S103_L002
-            <strong>_R2_</strong>
-            001.fastq.gz
-          </li>
-        </ul>
-      </li>
-      <li>5GB max size per individual file</li>
-    </ul>
+    <p class="text-muted mt-1 text-xs font-normal tracking-tight">
+      Any similar files with the suffix _R1 or _R2 will be combined as paired-end data samples. Max file size is 5GB.
+      <button
+        type="button"
+        class="text-primary ml-1 underline hover:opacity-80"
+        @click="showAdvancedOptions = !showAdvancedOptions"
+      >
+        {{ showAdvancedOptions ? 'Collapse advanced options' : 'View advanced options' }}
+      </button>
+    </p>
+
+    <div v-if="showAdvancedOptions" class="mt-4">
+      <UDivider />
+      <label class="text-body mb-1 mt-4 block text-sm font-medium">Sample ID split pattern</label>
+      <UInput v-model="sampleIdSplitPattern" class="w-64" />
+      <p class="text-muted mb-4 mt-1 text-xs">
+        Enter the character or pattern that appears after the Sample ID in your file names (e.g. _S, _L001, etc.).
+      </p>
+    </div>
+
     <UDivider class="py-4" />
     <div
       class="py-4"
