@@ -149,6 +149,7 @@ export default function useUser() {
       userStore.currentUserDetails.firstName = decodedToken.FirstName;
       userStore.currentUserDetails.lastName = decodedToken.LastName;
       userStore.currentUserDetails.preferredName = decodedToken.PreferredName;
+      userStore.currentUserDetails.sampleIdSplitPattern = decodedToken.SampleIdSplitPattern || null;
     } catch (error) {
       console.error('Error occurred setting the current organization.', error);
       throw error;
