@@ -50,6 +50,7 @@
   const toastStore = useToastStore();
   const labsStore = useLabsStore();
   const uiStore = useUiStore();
+  const userStore = useUserStore();
 
   const emit = defineEmits(['next-step', 'previous-step', 'step-validated']);
   const props = defineProps<{
@@ -65,8 +66,8 @@
 
   const chooseFilesButton = ref<HTMLButtonElement | null>(null);
   const isDropzoneActive = ref(false);
-  const showAdvancedOptions = ref(false);
-  const sampleIdSplitPattern = ref('');
+  const sampleIdSplitPattern = ref(userStore.currentUserDetails.sampleIdSplitPattern ?? '');
+  const showAdvancedOptions = ref(!!sampleIdSplitPattern.value);
 
   // Track ongoing upload requests
   const uploadControllers = ref<{ [key: string]: AbortController }>({});
@@ -391,6 +392,15 @@
     clearErrorsFromFiles(filesNotUploaded.value);
     initializeProgressForFiles(filesNotUploaded.value);
     removeStoredSampleSheetInfo();
+
+    if (userStore.currentUserDetails.id) {
+      userStore.currentUserDetails.sampleIdSplitPattern = sampleIdSplitPattern.value || null;
+      $api.users
+        .updateUser(userStore.currentUserDetails.id, { SampleIdSplitPattern: sampleIdSplitPattern.value })
+        .catch((error) => {
+          console.error('Failed to save sample ID split pattern:', error);
+        });
+    }
 
     // pre-upload work - catch and handle errors in this step with applyErrorToFiles
     try {

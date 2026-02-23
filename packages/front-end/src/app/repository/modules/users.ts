@@ -130,6 +130,7 @@ class UsersModule extends HttpFactory {
       FirstName?: string;
       PreferredName?: string;
       LastName?: string;
+      SampleIdSplitPattern?: string;
     },
   ) {
     const parseResult = UpdateUserSchema.safeParse(data);
