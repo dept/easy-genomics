@@ -1,5 +1,4 @@
 <script setup lang="ts">
-  import { S3Response } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-list-bucket-objects';
   import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
   import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import { useLabsStore, useRunStore, useUiStore } from '@FE/stores';
@@ -27,7 +26,6 @@
   const s3Prefix = computed<string | null>(
     () => inputS3Url.value?.match(/(?<=^s3:\/\/[a-z0-9][a-z0-9-]{1,61}[a-z0-9]\/)(.*)/g)?.toString() ?? null,
   );
-  const s3Contents = ref<S3Response | null>(null);
 
   const outputPath = computed<string[] | null>(() => {
     const outputS3Url = labRun.value?.OutputS3Url ?? null;
@@ -56,10 +54,7 @@
   }
 
   onBeforeMount(async () => {
-    await Promise.all([
-      fetchLabRuns(), // this is in case the runs haven't been loaded by the lab page already
-      fetchS3Content(),
-    ]);
+    await fetchLabRuns();
   });
 
   async function fetchLabRuns() {
@@ -68,26 +63,6 @@
       await runStore.loadLabRunsForLab(labId);
     } finally {
       uiStore.setRequestComplete('loadLabRuns');
-    }
-  }
-
-  async function fetchS3Content() {
-    useUiStore().setRequestPending('fetchS3Content');
-    if (s3Bucket.value && s3Prefix.value) {
-      try {
-        const res = await $api.file.requestListBucketObjects({
-          LaboratoryId: labId,
-          S3Bucket: `${s3Bucket.value}`,
-          S3Prefix: `${s3Prefix.value}`,
-        });
-        s3Contents.value = res || null;
-      } catch (error) {
-        console.error('Error fetching S3 content:', error);
-      } finally {
-        useUiStore().setRequestComplete('fetchS3Content');
-      }
-    } else {
-      s3Contents.value = null;
     }
   }
 
@@ -256,14 +231,7 @@
 
       <!-- File Manager -->
       <div v-if="item.key === 'fileManager'" class="space-y-3">
-        <EGFileExplorer
-          :lab-id="labId"
-          :s3-bucket="s3Bucket"
-          :s3-prefix="s3Prefix"
-          :s3-contents="s3Contents"
-          :start-path="outputPath"
-          :is-loading="useUiStore().isRequestPending('fetchS3Content')"
-        />
+        <EGFileExplorer :lab-id="labId" :s3-bucket="s3Bucket" :s3-prefix="s3Prefix" :start-path="outputPath" />
       </div>
     </template>
   </UTabs>

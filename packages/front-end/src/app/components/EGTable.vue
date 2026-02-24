@@ -49,7 +49,7 @@
     page,
     (newPage) => {
       if (newPage < 1) page.value = 1;
-      else if (newPage > totalPages.value) page.value = totalPages.value;
+      else if (totalPages.value > 0 && newPage > totalPages.value) page.value = totalPages.value;
     },
     { immediate: true, flush: 'sync' },
   );

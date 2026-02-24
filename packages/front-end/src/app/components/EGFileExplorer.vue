@@ -6,6 +6,11 @@
     S3Object,
     S3Response,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-list-bucket-objects';
+  import {
+    S3TopLevelResponse,
+    S3Prefix,
+  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-top-level-bucket-objects';
+  import { RequestTopLevelBucketObjects } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-top-level-bucket-objects';
 
   interface FileTreeNode {
     type?: string;
@@ -15,6 +20,7 @@
     // children in the UI are arrays of FileTreeNode (nestify returns arrays).
     // Keep MapType only for the intermediate builder inside transformS3Data.
     children?: FileTreeNode[] | MapType;
+    isLoading?: boolean; // Track if children are being loaded
   }
 
   interface MapType {
@@ -26,7 +32,7 @@
       labId: string;
       s3Bucket: string;
       s3Prefix: string;
-      s3Contents: S3Response | null;
+      s3Contents?: S3Response | null;
       isLoading?: boolean;
       startPath?: string[];
     }>(),
@@ -45,60 +51,189 @@
 
   const hasOpenedStartPath = ref(false);
 
-  // open file browser to start path (if present)
+  const isRootLoading = ref(false);
+
+  // Cache for loaded directory contents to avoid re-fetching
+  const loadedDirectories = ref<Map<string, FileTreeNode[]>>(new Map());
+
+  /**
+   * Transform a raw S3 API response into FileTreeNode children.
+   * Kept separate so pre-fetch calls can use it without triggering further pre-fetches.
+   */
+  const transformS3Response = (response: S3TopLevelResponse): FileTreeNode[] => {
+    const children: FileTreeNode[] = [];
+
+    if (response.Contents) {
+      response.Contents.forEach((item: S3Object) => {
+        if (item.Key.endsWith('/')) return; // skip folder placeholder objects
+        children.push({
+          type: 'file',
+          name: item.Key.split('/').pop()!,
+          size: item.Size,
+          lastModified: item.LastModified,
+        });
+      });
+    }
+
+    if (response.CommonPrefixes) {
+      response.CommonPrefixes.forEach((prefix: S3Prefix) => {
+        const folderName = prefix.Prefix.replace(/\/$/, '').split('/').pop()!;
+        children.push({
+          type: 'directory',
+          name: folderName,
+          children: [],
+        });
+      });
+    }
+
+    return children;
+  };
+
+  /**
+   * Fire-and-forget pre-fetch for the next level of all subdirectories in `children`.
+   * Called every time a directory's contents become visible so navigation is always instant.
+   */
+  const prefetchNextLevel = (children: FileTreeNode[], prefixPath: string): void => {
+    children
+      .filter((child) => child.type === 'directory')
+      .forEach((child) => {
+        const childPrefix = `${prefixPath}${child.name}/`;
+        const childCacheKey = `${s3Bucket}::${childPrefix}`;
+        if (!loadedDirectories.value.has(childCacheKey)) {
+          $api.file
+            .requestTopLevelBucketObjects({
+              LaboratoryId: props.labId,
+              S3Bucket: s3Bucket,
+              S3Prefix: childPrefix,
+            } as RequestTopLevelBucketObjects)
+            .then((childResponse: S3TopLevelResponse) => {
+              loadedDirectories.value.set(childCacheKey, transformS3Response(childResponse));
+            })
+            .catch(() => {}); // silently ignore pre-fetch errors
+        }
+      });
+  };
+
+  /**
+   * Load children for a given prefix, with caching.
+   */
+  const loadDirectoryChildren = async (prefixPath: string): Promise<FileTreeNode[]> => {
+    const cacheKey = `${s3Bucket}::${prefixPath}`;
+    if (loadedDirectories.value.has(cacheKey)) {
+      return loadedDirectories.value.get(cacheKey)!;
+    }
+
+    try {
+      const response: S3TopLevelResponse = await $api.file.requestTopLevelBucketObjects({
+        LaboratoryId: props.labId,
+        S3Bucket: s3Bucket,
+        S3Prefix: prefixPath,
+      } as RequestTopLevelBucketObjects);
+
+      const children = transformS3Response(response);
+      loadedDirectories.value.set(cacheKey, children);
+      prefetchNextLevel(children, prefixPath);
+      return children;
+    } catch (error) {
+      console.error('Error loading directory children:', error);
+      useToastStore().error('Failed to load folder contents');
+      return [];
+    }
+  };
+
+  /**
+   * Initialize root directory on component mount
+   */
+  const initializeRoot = async () => {
+    isRootLoading.value = true;
+    try {
+      const rootPath = s3Prefix.endsWith('/') ? s3Prefix : `${s3Prefix}/`;
+      const children = await loadDirectoryChildren(rootPath);
+      currentPath.value[0].children = children;
+    } finally {
+      isRootLoading.value = false;
+    }
+  };
+
+  /**
+   * Handle opening a directory.
+   * If the pre-fetch has already landed in cache, navigation is instant.
+   * Only shows the loading indicator on a cache miss.
+   */
+  const openDirectory = async (dir: FileTreeNode) => {
+    // Prevent opening the same directory twice
+    const last = currentPath.value[currentPath.value.length - 1];
+    if (last === dir) return;
+
+    if (dir.type === 'directory' && (!dir.children || (Array.isArray(dir.children) && dir.children.length === 0))) {
+      const pathSegments = currentPath.value
+        .slice(1) // Skip "All Files"
+        .map((node) => node.name)
+        .concat([dir.name]);
+      const fullPrefix = `${s3Prefix.endsWith('/') ? s3Prefix : s3Prefix + '/'}${pathSegments.join('/')}/`;
+      const cacheKey = `${s3Bucket}::${fullPrefix}`;
+
+      if (loadedDirectories.value.has(cacheKey)) {
+        // Pre-fetch already completed — assign instantly, no spinner needed
+        const children = loadedDirectories.value.get(cacheKey)!;
+        dir.children = children;
+        // Ensure the level below this one is also pre-fetched
+        prefetchNextLevel(children, fullPrefix);
+      } else {
+        // Cache miss — show loading indicator and fetch (pre-fetch of next level
+        // is triggered inside loadDirectoryChildren)
+        dir.isLoading = true;
+        const children = await loadDirectoryChildren(fullPrefix);
+        dir.children = children;
+        dir.isLoading = false;
+      }
+    }
+
+    currentPath.value.push(dir);
+  };
+
+  // Initialize on mount and when props change
+  onMounted(() => {
+    initializeRoot();
+  });
+
+  watch(
+    () => props.s3Prefix,
+    async () => {
+      currentPath.value = [{ name: 'All Files', children: [] as FileTreeNode[] }];
+      loadedDirectories.value.clear();
+      await initializeRoot();
+    },
+  );
+
+  // Handle startPath navigation after root is loaded.
+  // Awaits each openDirectory call so that multi-level paths (e.g. ['results', 'runId'])
+  // navigate correctly: each level is fully fetched before descending into the next.
   watch(
     () => currentPath.value[0].children,
-    (rootDirChildren) => {
-      if (hasOpenedStartPath.value) return; // only do this once
-      if (!props.startPath) return;
-
-      // if not at root dir, don't touch it
+    async () => {
+      if (hasOpenedStartPath.value) return;
+      if (!props.startPath || props.startPath.length === 0) return;
       if (currentPath.value.length > 1) {
         hasOpenedStartPath.value = true;
         return;
       }
 
-      // Helper function to convert children to array if it's a MapType
-      function childrenToArray(children: FileTreeNode[] | MapType | undefined): FileTreeNode[] {
-        if (!children) return [];
-        if (Array.isArray(children)) return children;
-        // If it's a MapType object, convert to array
-        return Object.values(children);
-      }
-
-      // rootDirChildren can be a MapType or an array; normalize to array for navigation
-      let currentChildren: FileTreeNode[] | MapType | undefined = rootDirChildren;
-      for (const step of props.startPath) {
-        const childrenArray = childrenToArray(currentChildren);
-        const resultsChild = childrenArray.find(
-          (node: FileTreeNode) => node.type === 'directory' && node.name === step,
-        );
-        if (!resultsChild) break;
-
-        openDirectory(resultsChild);
-        currentChildren = resultsChild.children;
-      }
-
       hasOpenedStartPath.value = true;
+
+      for (const step of props.startPath) {
+        const currentDir = currentPath.value[currentPath.value.length - 1];
+        const children: FileTreeNode[] = Array.isArray(currentDir.children)
+          ? currentDir.children
+          : Object.values(currentDir.children || {});
+
+        const targetDir = children.find((node) => node.type === 'directory' && node.name === step);
+        if (!targetDir) break;
+
+        await openDirectory(targetDir);
+      }
     },
   );
-
-  const updatedS3Contents = computed(() => {
-    if (props.s3Contents) {
-      const transformedData = transformS3Data(props.s3Contents, s3Prefix);
-      const children = currentPath.value[0].children;
-      const hasNoChildren =
-        !children ||
-        (Array.isArray(children) && children.length === 0) ||
-        (!Array.isArray(children) && Object.keys(children).length === 0);
-
-      if (hasNoChildren) {
-        currentPath.value[0].children = transformedData;
-      }
-      return transformedData;
-    }
-    return [];
-  });
 
   const breadcrumbs = computed(() => {
     return currentPath.value.map((dir, index) => ({
@@ -148,42 +283,6 @@
   // value is the ref containing the progress of the download out of 100
   const downloads = ref<Record<string, Ref<number>>>({});
 
-  function transformS3Data(s3Contents: S3Response, s3Prefix: string) {
-    const map: MapType = {};
-    s3Contents?.Contents?.forEach((item: S3Object) => {
-      if (item.Key.startsWith(s3Prefix)) {
-        const parts = item.Key.slice(s3Prefix.length).split('/').filter(Boolean);
-        parts.reduce((acc: MapType, part: string, index: number) => {
-          if (!acc[part]) {
-            acc[part] = {
-              type: index === parts.length - 1 && item.Size > 0 ? 'file' : 'directory',
-              name: part,
-              size: item.Size,
-              lastModified: item.LastModified,
-              children: {} as MapType,
-            };
-          }
-          return acc[part].children as MapType;
-        }, map);
-      }
-    });
-    return nestify(map);
-  }
-
-  function nestify(obj: MapType) {
-    return Object.keys(obj)
-      .map((key) => {
-        const item = obj[key];
-        if (Object.keys(item.children || {}).length > 0) {
-          item.children = nestify(item.children as MapType);
-        } else {
-          delete item.children;
-        }
-        return item;
-      })
-      .filter((item) => item.type === 'file' || (item.children && Object.keys(item.children).length > 0));
-  }
-
   function formatFileSize(value?: number): string {
     if (!value) return '';
     const units = ['B', 'KB', 'MB', 'GB'];
@@ -195,21 +294,18 @@
     return `${value.toFixed(unitIndex === 0 ? 0 : 2)} ${units[unitIndex]}`;
   }
 
+  // Helper to check if a value is a valid date string
+  function isValidDate(date: string | undefined): boolean {
+    if (!date) return false;
+    const d = new Date(date);
+    return !isNaN(d.getTime());
+  }
+
   const onRowClicked = useDebounceFn((item: FileTreeNode) => {
-    // be defensive: children may be an array or an object during intermediate transforms
-    if (item.type === 'directory' && Array.isArray(item.children) && item.children.length) {
+    if (item.type === 'directory') {
       openDirectory(item);
     }
   }, 300);
-
-  const openDirectory = (dir: FileTreeNode) => {
-    // Only avoid pushing the exact same directory object as the current last element.
-    // Previously we blocked based on name anywhere in the breadcrumb which prevented
-    // navigating into directories that share the same name but live under different paths.
-    const last = currentPath.value[currentPath.value.length - 1];
-    if (last === dir) return;
-    currentPath.value.push(dir);
-  };
 
   const navigateTo = (index: number) => {
     if (index >= 0 && index < currentPath.value.length) {
@@ -227,7 +323,6 @@
   });
 
   function nodeUniqueString(node: FileTreeNode): string {
-    // this isn't an ideal unique string but it's pretty unlikely to match any other files so it's probably good enough
     const childrenLen = Array.isArray(node.children) ? node.children.length : 0;
     return `${node.type}${node.name}${node.size}${node.lastModified}${childrenLen}`;
   }
@@ -291,7 +386,6 @@
 
   // Watchers to ensure data reactivity
   watch(currentPath, () => {});
-  watch(updatedS3Contents, () => {});
 </script>
 
 <template>
@@ -301,28 +395,20 @@
       @input-event="(event: string) => (searchQuery = event)"
       placeholder="Search files/folders"
       class="mb-6 w-[408px]"
-      :disabled="isLoading"
     />
 
     <!-- Breadcrumbs -->
     <div class="mb-6 flex min-h-[24px] flex-wrap">
-      <template v-if="!isLoading">
-        <span
-          v-for="(crumb, index) in breadcrumbs"
-          :key="index"
-          @click="navigateTo(index)"
-          class="breadcrumb-item text-sm"
-          :class="{ 'text-black': index === breadcrumbs.length - 1, 'text-gray-500': index !== breadcrumbs.length - 1 }"
-        >
-          {{ crumb.name }}
-          <UIcon
-            v-if="index < breadcrumbs.length - 1"
-            size="large"
-            name="i-heroicons-chevron-right"
-            class="separator"
-          />
-        </span>
-      </template>
+      <span
+        v-for="(crumb, index) in breadcrumbs"
+        :key="index"
+        @click="navigateTo(index)"
+        class="breadcrumb-item text-sm"
+        :class="{ 'text-black': index === breadcrumbs.length - 1, 'text-gray-500': index !== breadcrumbs.length - 1 }"
+      >
+        {{ crumb.name }}
+        <i v-if="index < breadcrumbs.length - 1" class="separator">/</i>
+      </span>
     </div>
 
     <EGTable
@@ -330,21 +416,27 @@
       :table-data="filteredItems"
       :columns="tableColumns"
       no-results-msg="No files or folders found"
-      :is-loading="isLoading"
+      :is-loading="isRootLoading"
     >
       <template #name-data="{ row }">
-        <span v-if="row.type === 'directory'" class="underline hover:no-underline" @click="onRowClicked(row)">
-          {{ row.name }}/
-        </span>
-        <span v-else>
-          {{ row.name }}
-        </span>
+        <div class="flex items-center gap-2">
+          <span v-if="row.type === 'directory'" class="underline hover:no-underline" @click="onRowClicked(row)">
+            {{ row.name }}/
+          </span>
+          <span v-else>
+            {{ row.name }}
+          </span>
+          <span v-if="row.isLoading" class="text-xs text-gray-500">(loading...)</span>
+        </div>
       </template>
       <template #type-data="{ row }">
         {{ useChangeCase(row.type === 'directory' ? 'Folder' : row.type, 'sentenceCase') }}
       </template>
       <template #lastModified-data="{ row }">
-        {{ format(row.lastModified, 'MM/dd/yyyy') }}
+        <span v-if="isValidDate(row.lastModified)">
+          {{ format(new Date(row.lastModified), 'MM/dd/yyyy') }}
+        </span>
+        <span v-else>—</span>
       </template>
       <template #size-data="{ row }">
         {{ formatFileSize(row.size) }}

@@ -50,6 +50,7 @@ export default defineNuxtConfig({
       AWS_COGNITO_DOMAIN: process.env.AWS_COGNITO_DOMAIN,
       COGNITO_CALLBACK_URLS: process.env.COGNITO_CALLBACK_URLS,
       COGNITO_LOGOUT_URLS: process.env.COGNITO_LOGOUT_URLS,
+      GOOGLE_SIGNIN_ENABLED: process.env.GOOGLE_SIGNIN_ENABLED === 'true',
     },
   },
 
