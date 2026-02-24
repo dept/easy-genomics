@@ -19,17 +19,17 @@ const useToastStore = defineStore('toastStore', {
       this.toasts = this.toasts.filter((toast) => toast.id !== id);
     },
 
-    info(title: string) {
-      this.toasts.push({ id: `toast-${uuidv4()}`, title, variant: 'info' });
+    info(title: string, timeout?: number) {
+      this.toasts.push({ id: `toast-${uuidv4()}`, title, variant: 'info', timeout });
     },
-    success(title: string) {
-      this.toasts.push({ id: `toast-${uuidv4()}`, title, variant: 'success' });
+    success(title: string, timeout?: number) {
+      this.toasts.push({ id: `toast-${uuidv4()}`, title, variant: 'success', timeout });
     },
-    warning(title: string) {
-      this.toasts.push({ id: `toast-${uuidv4()}`, title, variant: 'warning' });
+    warning(title: string, timeout?: number) {
+      this.toasts.push({ id: `toast-${uuidv4()}`, title, variant: 'warning', timeout });
     },
-    error(title: string) {
-      this.toasts.push({ id: `toast-${uuidv4()}`, title, variant: 'error' });
+    error(title: string, timeout?: number) {
+      this.toasts.push({ id: `toast-${uuidv4()}`, title, variant: 'error', timeout });
     },
   },
 });
