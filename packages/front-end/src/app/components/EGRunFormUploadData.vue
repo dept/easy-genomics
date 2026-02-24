@@ -388,7 +388,26 @@
     isDropzoneActive.value = val;
   }
 
+  function validateSplitPatternAgainstFiles(): boolean {
+    if (!sampleIdSplitPattern.value || files.value.length === 0) {
+      return true;
+    }
+    const anyMatch = files.value.some((file) => file.name.includes(sampleIdSplitPattern.value));
+    if (!anyMatch) {
+      toastStore.error(
+        `The sample ID split pattern "${sampleIdSplitPattern.value}" does not match any of the uploaded files. Please update or clear the pattern before uploading.`,
+        8000,
+      );
+      return false;
+    }
+    return true;
+  }
+
   async function startUploadProcess() {
+    if (!validateSplitPatternAgainstFiles()) {
+      return;
+    }
+
     clearErrorsFromFiles(filesNotUploaded.value);
     initializeProgressForFiles(filesNotUploaded.value);
     removeStoredSampleSheetInfo();

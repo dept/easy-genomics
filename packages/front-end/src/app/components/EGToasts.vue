@@ -15,6 +15,7 @@
         :id="toast.id"
         :title="toast.title"
         :variant="toast.variant"
+        :timeout="toast.timeout"
         :callback="() => toastStore.remove(toast.id)"
       />
     </div>
