@@ -380,7 +380,9 @@
         progressRef, // progress value ref to be updated by the function
       );
     } else {
-      await downloadFolder();
+      // Build the full S3 URI for the folder: current path + folder name
+      const folderS3Uri = `${s3ObjectPath.value}/${node.name}`;
+      await downloadFolder(props.labId, folderS3Uri, node.name!, progressRef);
     }
   }
 
