@@ -389,17 +389,68 @@
   }
 
   function validateSplitPatternAgainstFiles(): boolean {
-    if (!sampleIdSplitPattern.value || files.value.length === 0) {
-      return true;
-    }
-    const anyMatch = files.value.some((file) => file.name.includes(sampleIdSplitPattern.value));
-    if (!anyMatch) {
+    const pattern = sampleIdSplitPattern.value;
+    if (!pattern || files.value.length === 0) return true;
+
+    // Block patterns containing _R1/_R2 — they would match only one read direction,
+    // leaving the other direction's files with no sample ID and breaking pairing.
+    if (/_R[12]/i.test(pattern)) {
       toastStore.error(
-        `The sample ID split pattern "${sampleIdSplitPattern.value}" does not match any of the uploaded files. Please update or clear the pattern before uploading.`,
+        `The split pattern "${pattern}" contains a read indicator (_R1 or _R2). Using this pattern would break R1/R2 file pairing. Please use a pattern that appears before the read indicator in the filename.`,
         8000,
       );
       return false;
     }
+
+    const fileNames = files.value.map((f) => f.name);
+    const nonMatchingFiles = fileNames.filter((name) => !name.includes(pattern));
+
+    // Pattern does not appear in any file
+    if (nonMatchingFiles.length === fileNames.length) {
+      toastStore.error(
+        `The split pattern "${pattern}" does not appear in any of the uploaded file names. Please update the pattern or remove it to continue.`,
+        8000,
+      );
+      return false;
+    }
+
+    // Pattern is inconsistent — matches some files but not others.
+    // Non-matching files would silently be treated as unpaired single-file samples.
+    if (nonMatchingFiles.length > 0) {
+      const preview = nonMatchingFiles.slice(0, 2).join(', ');
+      const andMore = nonMatchingFiles.length > 2 ? ` and ${nonMatchingFiles.length - 2} more` : '';
+      toastStore.error(
+        `The split pattern "${pattern}" only matches ${fileNames.length - nonMatchingFiles.length} of ${fileNames.length} files. It must match all files consistently. Unmatched: ${preview}${andMore}.`,
+        8000,
+      );
+      return false;
+    }
+
+    // Per-file checks for files where the pattern does match
+    for (const name of fileNames) {
+      const idx = name.indexOf(pattern);
+      const sampleIdPart = name.substring(0, idx);
+
+      // Pattern at the very start — would produce an empty sample ID
+      if (!sampleIdPart) {
+        toastStore.error(
+          `The split pattern "${pattern}" appears at the start of "${name}", which would result in an empty sample ID. Use a pattern that comes after the sample identifier.`,
+          8000,
+        );
+        return false;
+      }
+
+      // Pattern appears after the read indicator — the extracted sample ID would include
+      // _R1 or _R2, corrupting the sample ID and breaking pairing.
+      if (/_R[12]/i.test(sampleIdPart)) {
+        toastStore.error(
+          `In "${name}", the split pattern "${pattern}" appears after the read indicator (_R1/_R2). The pattern must come before the read indicator in order to correctly extract the sample ID.`,
+          8000,
+        );
+        return false;
+      }
+    }
+
     return true;
   }
 
