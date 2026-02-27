@@ -65,7 +65,10 @@
   const UPLOAD_TIMEOUT = 600000; // 10 mins
 
   const chooseFilesButton = ref<HTMLButtonElement | null>(null);
+  const sampleSheetFileInput = ref<HTMLInputElement | null>(null);
   const isDropzoneActive = ref(false);
+  const isUploadingSampleSheet = ref(false);
+  const sampleSheetValidationError = ref<string | null>(null);
   const sampleIdSplitPattern = ref(userStore.currentUserDetails.sampleIdSplitPattern ?? '');
   const showAdvancedOptions = ref(!!sampleIdSplitPattern.value);
 
@@ -793,6 +796,65 @@
     }
   };
 
+  async function validateCustomSampleSheet(file: File): Promise<boolean> {
+    sampleSheetValidationError.value = null;
+
+    // Basic presence & size check
+    if (!file) {
+      sampleSheetValidationError.value = 'No file selected. Choose a CSV sample sheet to upload.';
+      return false;
+    }
+
+    if (file.size === 0) {
+      sampleSheetValidationError.value =
+        'The sample sheet file is empty. Add a header row such as "sample,fastq_1[,fastq_2]" and upload it again.';
+      return false;
+    }
+
+    let contents: string;
+    try {
+      contents = await file.text();
+    } catch (e) {
+      sampleSheetValidationError.value =
+        'The sample sheet file could not be read. Please check that it is a valid CSV file and try again.';
+      return false;
+    }
+
+    if (!contents.trim()) {
+      sampleSheetValidationError.value =
+        'The sample sheet file has no content. Add a header row such as "sample,fastq_1[,fastq_2]" and upload it again.';
+      return false;
+    }
+
+    // Use the first non-empty line as the header row
+    const lines = contents.split(/\r?\n/).map((line) => line.trim());
+    const headerLine = lines.find((line) => line.length > 0);
+
+    if (!headerLine) {
+      sampleSheetValidationError.value =
+        'The sample sheet is missing a header row. Add a first line with column names, e.g. "sample,fastq_1[,fastq_2]".';
+      return false;
+    }
+
+    const normalizedHeaderLine = headerLine.replace(/^\uFEFF/, ''); // Remove potential BOM
+    const headerColumns = normalizedHeaderLine
+      .split(',')
+      .map((col) => col.trim())
+      .filter((col) => col.length > 0)
+      .map((col) => col.toLowerCase());
+
+    const requiredColumns = ['sample', 'fastq_1'];
+    const missingColumns = requiredColumns.filter((required) => !headerColumns.includes(required));
+
+    if (missingColumns.length > 0) {
+      const missingList = missingColumns.join(', ');
+      sampleSheetValidationError.value = `The sample sheet header is missing required column(s): ${missingList}. Update the first row of your CSV so it includes "sample" and "fastq_1" (and optionally "fastq_2"), then upload it again.`;
+      return false;
+    }
+
+    return true;
+  }
+
   const removeFile = (file: { sampleId: string; fileName: string }) => {
     // Find the file pair containing the file
     const filePair = filePairs.value.find((pair) => pair.sampleId === file.sampleId);
@@ -826,6 +888,71 @@
 
     return true;
   };
+
+  function handleSampleSheetFileChange(e: Event) {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    // Reset input so the same file can be re-selected if needed
+    (e.target as HTMLInputElement).value = '';
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      toastStore.error('Only CSV files are accepted as sample sheets.');
+      return;
+    }
+    uploadCustomSampleSheet(file);
+  }
+
+  async function uploadCustomSampleSheet(file: File) {
+    const isValid = await validateCustomSampleSheet(file);
+    if (!isValid) {
+      return;
+    }
+
+    if (!wipRun.value.transactionId) {
+      toastStore.error('Run is not initialised yet. Please try again.');
+      return;
+    }
+
+    isUploadingSampleSheet.value = true;
+    uiStore.setRequestPending('generateSampleSheet');
+
+    try {
+      const manifest = await $api.uploads.getFileUploadManifest({
+        LaboratoryId: props.labId,
+        TransactionId: wipRun.value.transactionId,
+        Platform: props.platform,
+        Files: [{ Name: file.name, Size: file.size }],
+      });
+
+      const fileInfo = manifest.Files[0];
+      if (!fileInfo?.S3Url) throw new Error('No upload URL returned from server.');
+
+      await axios.put(fileInfo.S3Url, file, {
+        headers: { 'Content-Type': 'text/csv' },
+        timeout: UPLOAD_TIMEOUT,
+      });
+
+      const s3Uri = `s3://${fileInfo.Bucket}/${fileInfo.Key}`;
+      const s3Path = fileInfo.Key.substring(0, fileInfo.Key.lastIndexOf('/'));
+
+      wipRunUpdateFunction.value(props.wipRunTempId, {
+        sampleSheetS3Url: s3Uri,
+        s3Bucket: fileInfo.Bucket,
+        s3Path,
+      });
+      wipRunUpdateParamsFunction.value(props.wipRunTempId, {
+        input: s3Uri,
+        outdir: `s3://${fileInfo.Bucket}/${s3Path}/results`,
+      });
+
+      toastStore.success(`Sample sheet "${file.name}" uploaded successfully.`);
+    } catch (error: any) {
+      console.error('Custom sample sheet upload failed:', error);
+      toastStore.error('Failed to upload the sample sheet. Please try again.');
+    } finally {
+      isUploadingSampleSheet.value = false;
+      uiStore.setRequestComplete('generateSampleSheet');
+    }
+  }
 
   watch(canProceedToNextStep, (val) => {
     emit('step-validated', val);
@@ -907,6 +1034,9 @@
         </div>
       </div>
     </div>
+
+    <!-- Hidden CSV file input for custom sample sheet -->
+    <input ref="sampleSheetFileInput" type="file" accept=".csv" hidden @change="handleSampleSheetFileChange" />
 
     <div class="files-list mb-6" v-if="filesForTable.length > 0">
       <div class="files-list-header text-body mb-4 border-b border-[#d9d9d9]">
@@ -1010,28 +1140,42 @@
       :display-label="true"
     />
 
-    <div class="flex justify-end gap-4 pt-4">
+    <div class="flex items-center justify-between pt-4">
       <EGButton
-        v-if="showGenerateSampleSheetButton"
-        @click="saveSampleSheetInfo"
-        :loading="uiStore.isRequestPending('generateSampleSheet')"
-        label="Generate Sample Sheet"
         variant="secondary"
+        label="Upload Sample Sheet"
+        icon="i-heroicons-arrow-up-tray"
+        :loading="isUploadingSampleSheet"
+        :disabled="isUploadingSampleSheet"
+        @click="sampleSheetFileInput?.click()"
       />
+      <p v-if="sampleSheetValidationError" class="text-alert-danger mt-2 max-w-xl text-sm">
+        {{ sampleSheetValidationError }}
+      </p>
 
-      <EGButton
-        @click="startUploadProcess"
-        :disabled="isUploadButtonDisabled"
-        :loading="uploadStatus === 'uploading'"
-        label="Upload Files"
-      />
+      <div class="flex gap-4">
+        <EGButton
+          v-if="showGenerateSampleSheetButton"
+          @click="saveSampleSheetInfo"
+          :loading="uiStore.isRequestPending('generateSampleSheet')"
+          label="Generate Sample Sheet"
+          variant="secondary"
+        />
+
+        <EGButton
+          @click="startUploadProcess"
+          :disabled="isUploadButtonDisabled"
+          :loading="uploadStatus === 'uploading'"
+          label="Upload Files"
+        />
+      </div>
     </div>
   </EGCard>
 
   <div class="mt-6 flex justify-between">
     <EGButton :size="ButtonSizeEnum.enum.sm" variant="secondary" label="Previous step" @click="emit('previous-step')" />
     <EGButton
-      v-if="filePairs.length"
+      v-if="filePairs.length || hasSampleSheetUrl"
       :size="ButtonSizeEnum.enum.sm"
       variant="primary"
       label="Next step"
