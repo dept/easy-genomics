@@ -12,6 +12,7 @@
     UploadedFileInfo,
     UploadedFilePairInfo,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/upload/s3-file-upload-sample-sheet';
+  import { validateSampleSheetFile } from '@FE/utils/sample-sheet-utils';
   import { useToastStore } from '@FE/stores';
   import { useNetwork } from '@vueuse/core';
   import { RunType } from '@easy-genomics/shared-lib/src/app/types/base-entity';
@@ -796,65 +797,6 @@
     }
   };
 
-  async function validateCustomSampleSheet(file: File): Promise<boolean> {
-    sampleSheetValidationError.value = null;
-
-    // Basic presence & size check
-    if (!file) {
-      sampleSheetValidationError.value = 'No file selected. Choose a CSV sample sheet to upload.';
-      return false;
-    }
-
-    if (file.size === 0) {
-      sampleSheetValidationError.value =
-        'The sample sheet file is empty. Add a header row such as "sample,fastq_1[,fastq_2]" and upload it again.';
-      return false;
-    }
-
-    let contents: string;
-    try {
-      contents = await file.text();
-    } catch (e) {
-      sampleSheetValidationError.value =
-        'The sample sheet file could not be read. Please check that it is a valid CSV file and try again.';
-      return false;
-    }
-
-    if (!contents.trim()) {
-      sampleSheetValidationError.value =
-        'The sample sheet file has no content. Add a header row such as "sample,fastq_1[,fastq_2]" and upload it again.';
-      return false;
-    }
-
-    // Use the first non-empty line as the header row
-    const lines = contents.split(/\r?\n/).map((line) => line.trim());
-    const headerLine = lines.find((line) => line.length > 0);
-
-    if (!headerLine) {
-      sampleSheetValidationError.value =
-        'The sample sheet is missing a header row. Add a first line with column names, e.g. "sample,fastq_1[,fastq_2]".';
-      return false;
-    }
-
-    const normalizedHeaderLine = headerLine.replace(/^\uFEFF/, ''); // Remove potential BOM
-    const headerColumns = normalizedHeaderLine
-      .split(',')
-      .map((col) => col.trim())
-      .filter((col) => col.length > 0)
-      .map((col) => col.toLowerCase());
-
-    const requiredColumns = ['sample', 'fastq_1'];
-    const missingColumns = requiredColumns.filter((required) => !headerColumns.includes(required));
-
-    if (missingColumns.length > 0) {
-      const missingList = missingColumns.join(', ');
-      sampleSheetValidationError.value = `The sample sheet header is missing required column(s): ${missingList}. Update the first row of your CSV so it includes "sample" and "fastq_1" (and optionally "fastq_2"), then upload it again.`;
-      return false;
-    }
-
-    return true;
-  }
-
   const removeFile = (file: { sampleId: string; fileName: string }) => {
     // Find the file pair containing the file
     const filePair = filePairs.value.find((pair) => pair.sampleId === file.sampleId);
@@ -902,10 +844,9 @@
   }
 
   async function uploadCustomSampleSheet(file: File) {
-    const isValid = await validateCustomSampleSheet(file);
-    if (!isValid) {
-      return;
-    }
+    const { valid, error } = await validateSampleSheetFile(file);
+    sampleSheetValidationError.value = error ?? null;
+    if (!valid) return;
 
     if (!wipRun.value.transactionId) {
       toastStore.error('Run is not initialised yet. Please try again.');
