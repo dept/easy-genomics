@@ -116,7 +116,7 @@
 
   // Lab Runs Tab
 
-  type LaboratoryRunTableItem = LaboratoryRun & { lastUpdated: string };
+  type LaboratoryRunTableItem = LaboratoryRun & { lastUpdated: string; searchIndex: string };
 
   const runsTableColumns = [
     { key: 'RunName', label: 'Run Name', sortable: true },
@@ -130,8 +130,61 @@
   const runsTableSort = ref<TableSort>({ column: 'CreatedAt', direction: 'desc' });
 
   const runsTableFilterMyRunsOnly = ref<boolean>(false);
+  const runsSearchQuery = ref<string>('');
 
   const runsTableItems = ref<LaboratoryRunTableItem[]>([]);
+
+  function matchesRunSearch(run: LaboratoryRunTableItem, rawQuery: string): boolean {
+    const query = rawQuery.trim().toLowerCase();
+
+    if (!query) {
+      return true;
+    }
+
+    const equalsIndex = query.indexOf('=');
+
+    if (equalsIndex > -1) {
+      const fieldRaw = query.slice(0, equalsIndex);
+      const valueRaw = query.slice(equalsIndex + 1);
+
+      const field = fieldRaw.replace(/^"+|"+$/g, '').trim();
+      const value = valueRaw.replace(/^"+|"+$/g, '').trim();
+
+      if (field && value) {
+        const fieldMap: Record<string, keyof LaboratoryRunTableItem> = {
+          status: 'Status',
+          runname: 'RunName',
+          name: 'RunName',
+          owner: 'Owner',
+          workflow: 'WorkflowName' as keyof LaboratoryRunTableItem,
+          workflowname: 'WorkflowName' as keyof LaboratoryRunTableItem,
+          id: 'RunId' as keyof LaboratoryRunTableItem,
+          runid: 'RunId' as keyof LaboratoryRunTableItem,
+          platform: 'Platform' as keyof LaboratoryRunTableItem,
+        };
+
+        const mappedKey = fieldMap[field] ?? (field as keyof LaboratoryRunTableItem);
+        const runValue = (run as any)[mappedKey];
+
+        if (runValue != null) {
+          return String(runValue).toLowerCase().includes(value);
+        }
+      }
+      // if parsing fails or field is unknown, fall back to full-text search below
+    }
+
+    const haystack = run.searchIndex;
+
+    return haystack.includes(query);
+  }
+
+  const filteredRunsTableItems = computed<LaboratoryRunTableItem[]>(() => {
+    if (!runsSearchQuery.value.trim()) {
+      return runsTableItems.value;
+    }
+
+    return runsTableItems.value.filter((run) => matchesRunSearch(run, runsSearchQuery.value));
+  });
 
   // fetch the runs with BE filtering any time any of the inputs change
   watchEffect(async () => {
@@ -148,10 +201,29 @@
 
     try {
       runsTableItems.value = (await $api.labs.listLabRuns(props.labId, filters))
-        .map((labRun) => ({
-          ...labRun,
-          lastUpdated: labRun.ModifiedAt ?? labRun.CreatedAt ?? '',
-        }))
+        .map((labRun) => {
+          const lastUpdated = labRun.ModifiedAt ?? labRun.CreatedAt ?? '';
+          const searchIndex = [
+            labRun.RunName,
+            (labRun as any).WorkflowName,
+            labRun.Status,
+            labRun.Owner,
+            (labRun as any).RunId,
+            (labRun as any).Platform,
+            labRun.CreatedAt,
+            labRun.ModifiedAt,
+            lastUpdated,
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+
+          return {
+            ...labRun,
+            lastUpdated,
+            searchIndex,
+          };
+        })
         .sort((a: any, b: any) =>
           stringSortCompare(
             a[runsTableSort.value.column],
@@ -449,6 +521,10 @@
     searchOutput.value = newVal;
   }
 
+  function updateRunsSearchQuery(newVal: string) {
+    runsSearchQuery.value = newVal;
+  }
+
   async function handleUserAddedToLab() {
     showAddUserModule.value = false;
     await getLabUsers();
@@ -601,13 +677,26 @@
     <template #item="{ item }">
       <!-- Runs tab -->
       <div v-if="item.key === 'runs'">
-        <div class="mb-6 flex flex-row items-center gap-4">
-          <UCheckbox label="My runs only" :ui="{ base: 'size-[24px]' }" v-model="runsTableFilterMyRunsOnly" />
+        <div class="mb-6">
+          <div class="flex flex-row items-center gap-4">
+            <EGSearchInput
+              @input-event="updateRunsSearchQuery"
+              placeholder="Search runs"
+              :disabled="useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
+              class="w-[408px]"
+            />
+            <UCheckbox label="My runs only" :ui="{ base: 'size-[24px]' }" v-model="runsTableFilterMyRunsOnly" />
+          </div>
+          <p class="text-muted mt-1 text-xs">
+            Search by all run fields or use queries like
+            <span class="font-mono">"status"=completed</span>
+            .
+          </p>
         </div>
 
         <EGTable
           :row-click-action="viewRunDetails"
-          :table-data="runsTableItems"
+          :table-data="filteredRunsTableItems"
           :columns="runsTableColumns"
           v-model:sort="runsTableSort"
           :is-loading="useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
