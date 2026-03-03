@@ -116,7 +116,7 @@
 
   // Lab Runs Tab
 
-  type LaboratoryRunTableItem = LaboratoryRun & { lastUpdated: string };
+  type LaboratoryRunTableItem = LaboratoryRun & { lastUpdated: string; searchIndex: string };
 
   const runsTableColumns = [
     { key: 'RunName', label: 'Run Name', sortable: true },
@@ -173,20 +173,7 @@
       // if parsing fails or field is unknown, fall back to full-text search below
     }
 
-    const haystack = [
-      run.RunName,
-      (run as any).WorkflowName,
-      run.Status,
-      run.Owner,
-      (run as any).RunId,
-      (run as any).Platform,
-      run.CreatedAt,
-      (run as any).ModifiedAt,
-      run.lastUpdated,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase();
+    const haystack = run.searchIndex;
 
     return haystack.includes(query);
   }
@@ -214,10 +201,29 @@
 
     try {
       runsTableItems.value = (await $api.labs.listLabRuns(props.labId, filters))
-        .map((labRun) => ({
-          ...labRun,
-          lastUpdated: labRun.ModifiedAt ?? labRun.CreatedAt ?? '',
-        }))
+        .map((labRun) => {
+          const lastUpdated = labRun.ModifiedAt ?? labRun.CreatedAt ?? '';
+          const searchIndex = [
+            labRun.RunName,
+            (labRun as any).WorkflowName,
+            labRun.Status,
+            labRun.Owner,
+            (labRun as any).RunId,
+            (labRun as any).Platform,
+            labRun.CreatedAt,
+            labRun.ModifiedAt,
+            lastUpdated,
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+
+          return {
+            ...labRun,
+            lastUpdated,
+            searchIndex,
+          };
+        })
         .sort((a: any, b: any) =>
           stringSortCompare(
             a[runsTableSort.value.column],
