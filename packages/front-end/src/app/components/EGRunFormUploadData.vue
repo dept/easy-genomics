@@ -12,6 +12,7 @@
     UploadedFileInfo,
     UploadedFilePairInfo,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/upload/s3-file-upload-sample-sheet';
+  import { validateSampleSheetFile } from '@FE/utils/sample-sheet-utils';
   import { useToastStore } from '@FE/stores';
   import { useNetwork } from '@vueuse/core';
   import { RunType } from '@easy-genomics/shared-lib/src/app/types/base-entity';
@@ -65,7 +66,10 @@
   const UPLOAD_TIMEOUT = 600000; // 10 mins
 
   const chooseFilesButton = ref<HTMLButtonElement | null>(null);
+  const sampleSheetFileInput = ref<HTMLInputElement | null>(null);
   const isDropzoneActive = ref(false);
+  const isUploadingSampleSheet = ref(false);
+  const sampleSheetValidationError = ref<string | null>(null);
   const sampleIdSplitPattern = ref(userStore.currentUserDetails.sampleIdSplitPattern ?? '');
   const showAdvancedOptions = ref(!!sampleIdSplitPattern.value);
 
@@ -827,6 +831,70 @@
     return true;
   };
 
+  function handleSampleSheetFileChange(e: Event) {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    // Reset input so the same file can be re-selected if needed
+    (e.target as HTMLInputElement).value = '';
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      toastStore.error('Only CSV files are accepted as sample sheets.');
+      return;
+    }
+    uploadCustomSampleSheet(file);
+  }
+
+  async function uploadCustomSampleSheet(file: File) {
+    const { valid, error } = await validateSampleSheetFile(file);
+    sampleSheetValidationError.value = error ?? null;
+    if (!valid) return;
+
+    if (!wipRun.value.transactionId) {
+      toastStore.error('Run is not initialised yet. Please try again.');
+      return;
+    }
+
+    isUploadingSampleSheet.value = true;
+    uiStore.setRequestPending('generateSampleSheet');
+
+    try {
+      const manifest = await $api.uploads.getFileUploadManifest({
+        LaboratoryId: props.labId,
+        TransactionId: wipRun.value.transactionId,
+        Platform: props.platform,
+        Files: [{ Name: file.name, Size: file.size }],
+      });
+
+      const fileInfo = manifest.Files[0];
+      if (!fileInfo?.S3Url) throw new Error('No upload URL returned from server.');
+
+      await axios.put(fileInfo.S3Url, file, {
+        headers: { 'Content-Type': 'text/csv' },
+        timeout: UPLOAD_TIMEOUT,
+      });
+
+      const s3Uri = `s3://${fileInfo.Bucket}/${fileInfo.Key}`;
+      const s3Path = fileInfo.Key.substring(0, fileInfo.Key.lastIndexOf('/'));
+
+      wipRunUpdateFunction.value(props.wipRunTempId, {
+        sampleSheetS3Url: s3Uri,
+        s3Bucket: fileInfo.Bucket,
+        s3Path,
+      });
+      wipRunUpdateParamsFunction.value(props.wipRunTempId, {
+        input: s3Uri,
+        outdir: `s3://${fileInfo.Bucket}/${s3Path}/results`,
+      });
+
+      toastStore.success(`Sample sheet "${file.name}" uploaded successfully.`);
+    } catch (error: any) {
+      console.error('Custom sample sheet upload failed:', error);
+      toastStore.error('Failed to upload the sample sheet. Please try again.');
+    } finally {
+      isUploadingSampleSheet.value = false;
+      uiStore.setRequestComplete('generateSampleSheet');
+    }
+  }
+
   watch(canProceedToNextStep, (val) => {
     emit('step-validated', val);
   });
@@ -907,6 +975,9 @@
         </div>
       </div>
     </div>
+
+    <!-- Hidden CSV file input for custom sample sheet -->
+    <input ref="sampleSheetFileInput" type="file" accept=".csv" hidden @change="handleSampleSheetFileChange" />
 
     <div class="files-list mb-6" v-if="filesForTable.length > 0">
       <div class="files-list-header text-body mb-4 border-b border-[#d9d9d9]">
@@ -1010,28 +1081,42 @@
       :display-label="true"
     />
 
-    <div class="flex justify-end gap-4 pt-4">
+    <div class="flex items-center justify-between pt-4">
       <EGButton
-        v-if="showGenerateSampleSheetButton"
-        @click="saveSampleSheetInfo"
-        :loading="uiStore.isRequestPending('generateSampleSheet')"
-        label="Generate Sample Sheet"
         variant="secondary"
+        label="Upload Sample Sheet"
+        icon="i-heroicons-arrow-up-tray"
+        :loading="isUploadingSampleSheet"
+        :disabled="isUploadingSampleSheet"
+        @click="sampleSheetFileInput?.click()"
       />
+      <p v-if="sampleSheetValidationError" class="text-alert-danger mt-2 max-w-xl text-sm">
+        {{ sampleSheetValidationError }}
+      </p>
 
-      <EGButton
-        @click="startUploadProcess"
-        :disabled="isUploadButtonDisabled"
-        :loading="uploadStatus === 'uploading'"
-        label="Upload Files"
-      />
+      <div class="flex gap-4">
+        <EGButton
+          v-if="showGenerateSampleSheetButton"
+          @click="saveSampleSheetInfo"
+          :loading="uiStore.isRequestPending('generateSampleSheet')"
+          label="Generate Sample Sheet"
+          variant="secondary"
+        />
+
+        <EGButton
+          @click="startUploadProcess"
+          :disabled="isUploadButtonDisabled"
+          :loading="uploadStatus === 'uploading'"
+          label="Upload Files"
+        />
+      </div>
     </div>
   </EGCard>
 
   <div class="mt-6 flex justify-between">
     <EGButton :size="ButtonSizeEnum.enum.sm" variant="secondary" label="Previous step" @click="emit('previous-step')" />
     <EGButton
-      v-if="filePairs.length"
+      v-if="filePairs.length || hasSampleSheetUrl"
       :size="ButtonSizeEnum.enum.sm"
       variant="primary"
       label="Next step"
