@@ -671,14 +671,21 @@
     <template #item="{ item }">
       <!-- Runs tab -->
       <div v-if="item.key === 'runs'">
-        <div class="mb-6 flex flex-row items-center gap-4">
-          <EGSearchInput
-            @input-event="updateRunsSearchQuery"
-            placeholder="Search runs"
-            :disabled="useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
-            class="w-[408px]"
-          />
-          <UCheckbox label="My runs only" :ui="{ base: 'size-[24px]' }" v-model="runsTableFilterMyRunsOnly" />
+        <div class="mb-6">
+          <div class="flex flex-row items-center gap-4">
+            <EGSearchInput
+              @input-event="updateRunsSearchQuery"
+              placeholder="Search runs"
+              :disabled="useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
+              class="w-[408px]"
+            />
+            <UCheckbox label="My runs only" :ui="{ base: 'size-[24px]' }" v-model="runsTableFilterMyRunsOnly" />
+          </div>
+          <p class="text-muted mt-1 text-xs">
+            Search by all run fields or use queries like
+            <span class="font-mono">"status"=completed</span>
+            .
+          </p>
         </div>
 
         <EGTable
