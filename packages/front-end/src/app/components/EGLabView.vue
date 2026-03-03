@@ -130,8 +130,74 @@
   const runsTableSort = ref<TableSort>({ column: 'CreatedAt', direction: 'desc' });
 
   const runsTableFilterMyRunsOnly = ref<boolean>(false);
+  const runsSearchQuery = ref<string>('');
 
   const runsTableItems = ref<LaboratoryRunTableItem[]>([]);
+
+  function matchesRunSearch(run: LaboratoryRunTableItem, rawQuery: string): boolean {
+    const query = rawQuery.trim().toLowerCase();
+
+    if (!query) {
+      return true;
+    }
+
+    const equalsIndex = query.indexOf('=');
+
+    if (equalsIndex > -1) {
+      const fieldRaw = query.slice(0, equalsIndex);
+      const valueRaw = query.slice(equalsIndex + 1);
+
+      const field = fieldRaw.replace(/^"+|"+$/g, '').trim();
+      const value = valueRaw.replace(/^"+|"+$/g, '').trim();
+
+      if (field && value) {
+        const fieldMap: Record<string, keyof LaboratoryRunTableItem> = {
+          status: 'Status',
+          runname: 'RunName',
+          name: 'RunName',
+          owner: 'Owner',
+          workflow: 'WorkflowName' as keyof LaboratoryRunTableItem,
+          workflowname: 'WorkflowName' as keyof LaboratoryRunTableItem,
+          id: 'RunId' as keyof LaboratoryRunTableItem,
+          runid: 'RunId' as keyof LaboratoryRunTableItem,
+          platform: 'Platform' as keyof LaboratoryRunTableItem,
+        };
+
+        const mappedKey = fieldMap[field] ?? (field as keyof LaboratoryRunTableItem);
+        const runValue = (run as any)[mappedKey];
+
+        if (runValue != null) {
+          return String(runValue).toLowerCase().includes(value);
+        }
+      }
+      // if parsing fails or field is unknown, fall back to full-text search below
+    }
+
+    const haystack = [
+      run.RunName,
+      (run as any).WorkflowName,
+      run.Status,
+      run.Owner,
+      (run as any).RunId,
+      (run as any).Platform,
+      run.CreatedAt,
+      (run as any).ModifiedAt,
+      run.lastUpdated,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    return haystack.includes(query);
+  }
+
+  const filteredRunsTableItems = computed<LaboratoryRunTableItem[]>(() => {
+    if (!runsSearchQuery.value.trim()) {
+      return runsTableItems.value;
+    }
+
+    return runsTableItems.value.filter((run) => matchesRunSearch(run, runsSearchQuery.value));
+  });
 
   // fetch the runs with BE filtering any time any of the inputs change
   watchEffect(async () => {
@@ -449,6 +515,10 @@
     searchOutput.value = newVal;
   }
 
+  function updateRunsSearchQuery(newVal: string) {
+    runsSearchQuery.value = newVal;
+  }
+
   async function handleUserAddedToLab() {
     showAddUserModule.value = false;
     await getLabUsers();
@@ -602,12 +672,18 @@
       <!-- Runs tab -->
       <div v-if="item.key === 'runs'">
         <div class="mb-6 flex flex-row items-center gap-4">
+          <EGSearchInput
+            @input-event="updateRunsSearchQuery"
+            placeholder="Search runs"
+            :disabled="useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
+            class="w-[408px]"
+          />
           <UCheckbox label="My runs only" :ui="{ base: 'size-[24px]' }" v-model="runsTableFilterMyRunsOnly" />
         </div>
 
         <EGTable
           :row-click-action="viewRunDetails"
-          :table-data="runsTableItems"
+          :table-data="filteredRunsTableItems"
           :columns="runsTableColumns"
           v-model:sort="runsTableSort"
           :is-loading="useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
