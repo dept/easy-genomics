@@ -1,8 +1,8 @@
 import { ListObjectsV2CommandOutput } from '@aws-sdk/client-s3';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
-import { RequestTopLevelBucketObjectsSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-top-level-bucket-objects';
-import { RequestTopLevelBucketObjects } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-top-level-bucket-objects';
+import { RequestSearchBucketObjectsSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-search-bucket-objects';
+import { RequestSearchBucketObjects } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-search-bucket-objects';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
@@ -15,6 +15,8 @@ import {
 
 const laboratoryService = new LaboratoryService();
 const s3Service = new S3Service();
+
+const DEFAULT_MAX_RESULTS = 200;
 
 const parseS3Uri = (value: string): { bucket: string; prefix: string } | null => {
   if (!value.startsWith('s3://')) return null;
@@ -30,38 +32,25 @@ const parseS3Uri = (value: string): { bucket: string; prefix: string } | null =>
 };
 
 /**
- * This API enables the Easy Genomics FE to request only the top-level (direct children)
- * objects and prefixes at a given S3 path for lazy-loading in the File Manager UI.
- *
- * Uses S3's Delimiter parameter to return only objects at the specified prefix level.
- * Automatically paginates through all items at that level to return the complete set,
- * even if there are >1000 items, while avoiding loading the entire bucket.
- *
- * Returns both:
- * - Contents: ALL files at this level (paginated internally)
- * - CommonPrefixes: ALL directories (folders) at this level
- *
- * @param event APIGatewayProxyWithCognitoAuthorizerEvent
- *   Body: { LaboratoryId, S3Bucket?, S3Prefix?, MaxKeys? }
+ * Search S3 objects under a prefix and return only matching file objects.
+ * Keeps FE lazy-loading for navigation while delegating global search to backend.
  */
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
 ): Promise<APIGatewayProxyResult> => {
   console.log('EVENT: \n' + JSON.stringify(event, null, 2));
   try {
-    // Post Request Body
-    const request: RequestTopLevelBucketObjects = event.isBase64Encoded
+    const request: RequestSearchBucketObjects = event.isBase64Encoded
       ? JSON.parse(atob(event.body!))
       : JSON.parse(event.body!);
-    // Data validation safety check
-    if (!RequestTopLevelBucketObjectsSchema.safeParse(request).success) {
+
+    if (!RequestSearchBucketObjectsSchema.safeParse(request).success) {
       throw new InvalidRequestError();
     }
 
     const laboratoryId: string = request.LaboratoryId;
     const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(laboratoryId);
 
-    // Only Organisation Admins and Laboratory Members are allowed to access file listings
     if (
       !(
         validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
@@ -91,33 +80,55 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
-    // Fetch ALL top-level objects at this prefix level using Delimiter for lazy-loading
-    // Pagination is needed if there are >1000 items at this level
-    let allContents: any[] = [];
-    let allCommonPrefixes: any[] = [];
+    const normalizedSearch = request.SearchQuery.trim().toLowerCase();
+    const maxResults = request.MaxResults || DEFAULT_MAX_RESULTS;
+
     let isTruncated = true;
     let continuationToken: string | undefined = undefined;
+    const matchedContents: any[] = [];
+    const matchedDirectoryPrefixes = new Set<string>();
 
-    while (isTruncated) {
+    while (isTruncated && matchedContents.length + matchedDirectoryPrefixes.size < maxResults) {
       const response: ListObjectsV2CommandOutput = await s3Service.listBucketObjectsV2({
         Bucket: s3Bucket,
         Prefix: normalizedPrefix,
-        Delimiter: '/', // S3 uses "/" as delimiter for "folders"
-        MaxKeys: request.MaxKeys || 1000,
+        MaxKeys: 1000,
         ContinuationToken: continuationToken,
       });
 
-      if (response.Contents) {
-        allContents = allContents.concat(response.Contents);
-      }
+      const filtered = (response.Contents || []).filter((item) => {
+        const key = item.Key || '';
+        const relativePath = key.startsWith(normalizedPrefix) ? key.slice(normalizedPrefix.length) : key;
+        if (!relativePath) return false;
 
-      if (response.CommonPrefixes) {
-        allCommonPrefixes = allCommonPrefixes.concat(response.CommonPrefixes);
+        const pathSegments = relativePath.split('/').filter(Boolean);
+        pathSegments.slice(0, -1).forEach((segment, index) => {
+          if (segment.toLowerCase().includes(normalizedSearch)) {
+            const directoryPrefix = `${normalizedPrefix}${pathSegments.slice(0, index + 1).join('/')}/`;
+            matchedDirectoryPrefixes.add(directoryPrefix);
+          }
+        });
+
+        if (key.endsWith('/')) {
+          return false;
+        }
+
+        return relativePath.toLowerCase().includes(normalizedSearch);
+      });
+
+      if (filtered.length > 0) {
+        matchedContents.push(...filtered);
       }
 
       isTruncated = !!response.IsTruncated;
       continuationToken = response.NextContinuationToken;
     }
+
+    const matchedPrefixes = Array.from(matchedDirectoryPrefixes).sort();
+    const limitedFiles = matchedContents.slice(0, maxResults);
+    const remainingForDirectories = Math.max(0, maxResults - limitedFiles.length);
+    const limitedPrefixes = matchedPrefixes.slice(0, remainingForDirectories);
+    const hasMoreMatches = matchedContents.length + matchedPrefixes.length > maxResults;
 
     return buildResponse(
       200,
@@ -129,9 +140,9 @@ export const handler: Handler = async (
           attempts: 1,
           totalRetryDelay: 0,
         },
-        Contents: allContents,
-        CommonPrefixes: allCommonPrefixes,
-        IsTruncated: false, // We've paginated through everything, so it's never truncated from FE perspective
+        Contents: limitedFiles,
+        CommonPrefixes: limitedPrefixes.map((prefix) => ({ Prefix: prefix })),
+        IsTruncated: isTruncated || hasMoreMatches,
       }),
     );
   } catch (error: any) {
