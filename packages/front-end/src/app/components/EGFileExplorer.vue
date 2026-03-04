@@ -327,7 +327,12 @@
   }
 
   const onRowClicked = useDebounceFn((item: FileTreeNode) => {
-    if (searchQuery.value.trim()) return;
+    if (searchQuery.value.trim()) {
+      if (item.type === 'directory' && item.isSearchResult) {
+        void navigateToSearchDirectory(item);
+      }
+      return;
+    }
     if (item.type === 'directory') {
       openDirectory(item);
     }
@@ -355,6 +360,34 @@
 
   function isHtmlFile(node: FileTreeNode): boolean {
     return node.type === 'file' && !!node.name?.toLowerCase().endsWith('.html');
+  }
+
+  async function navigateToSearchDirectory(node: FileTreeNode): Promise<void> {
+    if (!node.s3Key) return;
+
+    const relativePath = node.s3Key.startsWith(normalizedRootPrefix.value)
+      ? node.s3Key.slice(normalizedRootPrefix.value.length)
+      : node.s3Key;
+    const directorySegments = relativePath.replace(/\/$/, '').split('/').filter(Boolean);
+    if (directorySegments.length === 0) return;
+
+    searchQuery.value = '';
+    currentPath.value = [currentPath.value[0]];
+
+    for (const segment of directorySegments) {
+      const currentDir = currentPath.value[currentPath.value.length - 1];
+      const children: FileTreeNode[] = Array.isArray(currentDir.children)
+        ? currentDir.children
+        : Object.values(currentDir.children || {});
+
+      const targetDir = children.find((child) => child.type === 'directory' && child.name === segment);
+      if (!targetDir) {
+        useToastStore().error(`Could not open folder "${segment}"`);
+        return;
+      }
+
+      await openDirectory(targetDir);
+    }
   }
 
   function getNodeS3Uri(node: FileTreeNode): string {
@@ -545,7 +578,7 @@
       <template #name-data="{ row }">
         <div class="flex items-center gap-2">
           <span
-            v-if="row.type === 'directory' && !searchQuery.trim()"
+            v-if="row.type === 'directory' && (!searchQuery.trim() || row.isSearchResult)"
             class="underline hover:no-underline"
             @click="onRowClicked(row)"
           >
