@@ -101,14 +101,14 @@ describe('process-pre-token-generation Lambda', () => {
 
       const claims = result.response.claimsOverrideDetails?.claimsToAddOrOverride;
       expect(claims).toBeDefined();
-      expect(claims!['PreferredName']).toBe('Jo');
-      expect(claims!['FirstName']).toBe('John');
-      expect(claims!['LastName']).toBe('Doe');
-      expect(claims!['Status']).toBe('Active');
-      expect(claims!['DefaultOrganization']).toBe('org-123');
-      expect(claims!['DefaultLaboratory']).toBe('lab-456');
-      expect(claims!['OrganizationAccess']).toBe(JSON.stringify(user.OrganizationAccess));
-      expect(claims!['SampleIdSplitPattern']).toBe('_S');
+      expect(claims!.PreferredName).toBe('Jo');
+      expect(claims!.FirstName).toBe('John');
+      expect(claims!.LastName).toBe('Doe');
+      expect(claims!.Status).toBe('Active');
+      expect(claims!.DefaultOrganization).toBe('org-123');
+      expect(claims!.DefaultLaboratory).toBe('lab-456');
+      expect(claims!.OrganizationAccess).toBe(JSON.stringify(user.OrganizationAccess));
+      expect(claims!.SampleIdSplitPattern).toBe('_S');
     });
 
     it('should use empty strings for optional fields that are absent', async () => {
@@ -118,12 +118,12 @@ describe('process-pre-token-generation Lambda', () => {
       const result = await handler(event, {} as any, () => {});
 
       const claims = result.response.claimsOverrideDetails?.claimsToAddOrOverride;
-      expect(claims!['PreferredName']).toBe('');
-      expect(claims!['FirstName']).toBe('');
-      expect(claims!['LastName']).toBe('');
-      expect(claims!['DefaultOrganization']).toBe('');
-      expect(claims!['DefaultLaboratory']).toBe('');
-      expect(claims!['SampleIdSplitPattern']).toBe('');
+      expect(claims!.PreferredName).toBe('');
+      expect(claims!.FirstName).toBe('');
+      expect(claims!.LastName).toBe('');
+      expect(claims!.DefaultOrganization).toBe('');
+      expect(claims!.DefaultLaboratory).toBe('');
+      expect(claims!.SampleIdSplitPattern).toBe('');
     });
 
     it('should always set Status from the user record', async () => {
@@ -132,7 +132,7 @@ describe('process-pre-token-generation Lambda', () => {
 
       const result = await handler(createMockEvent(inactiveUser.Email), {} as any, () => {});
 
-      expect(result.response.claimsOverrideDetails?.claimsToAddOrOverride?.['Status']).toBe('Inactive');
+      expect(result.response.claimsOverrideDetails?.claimsToAddOrOverride?.Status).toBe('Inactive');
     });
   });
 
@@ -142,7 +142,7 @@ describe('process-pre-token-generation Lambda', () => {
 
       const result = await handler(createMockEvent(baseUser.Email), {} as any, () => {});
 
-      expect(result.response.claimsOverrideDetails?.claimsToAddOrOverride?.['SampleIdSplitPattern']).toBe('_L001');
+      expect(result.response.claimsOverrideDetails?.claimsToAddOrOverride?.SampleIdSplitPattern).toBe('_L001');
     });
 
     it('should emit an empty string when SampleIdSplitPattern is not set', async () => {
@@ -150,7 +150,7 @@ describe('process-pre-token-generation Lambda', () => {
 
       const result = await handler(createMockEvent(baseUser.Email), {} as any, () => {});
 
-      expect(result.response.claimsOverrideDetails?.claimsToAddOrOverride?.['SampleIdSplitPattern']).toBe('');
+      expect(result.response.claimsOverrideDetails?.claimsToAddOrOverride?.SampleIdSplitPattern).toBe('');
     });
   });
 
@@ -166,7 +166,7 @@ describe('process-pre-token-generation Lambda', () => {
 
       const result = await handler(createMockEvent(baseUser.Email), {} as any, () => {});
 
-      expect(result.response.claimsOverrideDetails?.claimsToAddOrOverride?.['OrganizationAccess']).toBe(
+      expect(result.response.claimsOverrideDetails?.claimsToAddOrOverride?.OrganizationAccess).toBe(
         JSON.stringify(orgAccess),
       );
     });
@@ -177,7 +177,7 @@ describe('process-pre-token-generation Lambda', () => {
       const result = await handler(createMockEvent(baseUser.Email), {} as any, () => {});
 
       // JSON.stringify(undefined) === undefined; the claim value is the string "undefined"
-      expect(result.response.claimsOverrideDetails?.claimsToAddOrOverride?.['OrganizationAccess']).toBe(
+      expect(result.response.claimsOverrideDetails?.claimsToAddOrOverride?.OrganizationAccess).toBe(
         JSON.stringify(undefined),
       );
     });

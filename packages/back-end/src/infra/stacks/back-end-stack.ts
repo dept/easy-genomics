@@ -111,6 +111,7 @@ export class BackEndStack extends Stack {
       [
         `/${this.props.namePrefix}-main-back-end-stack/${this.props.envName}-easy-genomics-nested-stack/${this.props.namePrefix}-easy-genomics/${this.props.namePrefix}-easy-genomics-request-file-download-url/ServiceRole/DefaultPolicy/Resource`,
         `/${this.props.namePrefix}-main-back-end-stack/${this.props.envName}-easy-genomics-nested-stack/${this.props.namePrefix}-easy-genomics/${this.props.namePrefix}-easy-genomics-request-list-bucket-objects/ServiceRole/DefaultPolicy/Resource`,
+        `/${this.props.namePrefix}-main-back-end-stack/${this.props.envName}-easy-genomics-nested-stack/${this.props.namePrefix}-easy-genomics/${this.props.namePrefix}-easy-genomics-request-search-bucket-objects/ServiceRole/DefaultPolicy/Resource`,
         `/${this.props.namePrefix}-main-back-end-stack/${this.props.envName}-easy-genomics-nested-stack/${this.props.namePrefix}-easy-genomics/${this.props.namePrefix}-easy-genomics-update-laboratory/ServiceRole/DefaultPolicy/Resource`,
         `/${this.props.namePrefix}-main-back-end-stack/${this.props.envName}-easy-genomics-nested-stack/${this.props.namePrefix}-easy-genomics/${this.props.namePrefix}-easy-genomics-list-buckets/ServiceRole/DefaultPolicy/Resource`,
         `/${this.props.namePrefix}-main-back-end-stack/${this.props.envName}-easy-genomics-nested-stack/${this.props.namePrefix}-easy-genomics/${this.props.namePrefix}-easy-genomics-create-file-upload-request/ServiceRole/DefaultPolicy/Resource`,

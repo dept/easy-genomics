@@ -11,10 +11,18 @@
     S3Prefix,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-top-level-bucket-objects';
   import { RequestTopLevelBucketObjects } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-top-level-bucket-objects';
+  import {
+    RequestSearchBucketObjects,
+    S3Prefix as S3SearchPrefix,
+    S3SearchResponse,
+  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-search-bucket-objects';
 
   interface FileTreeNode {
     type?: string;
     name?: string;
+    s3Key?: string;
+    directoryPath?: string;
+    isSearchResult?: boolean;
     size?: number;
     lastModified?: string;
     // children in the UI are arrays of FileTreeNode (nestify returns arrays).
@@ -46,8 +54,12 @@
 
   const currentPath = ref<FileTreeNode[]>([{ name: 'All Files', children: [] as FileTreeNode[] }]);
   const searchQuery = ref('');
+  const searchResults = ref<FileTreeNode[]>([]);
+  const isSearchLoading = ref(false);
+  const searchRequestSeq = ref(0);
   const s3Bucket = props.s3Bucket;
   const s3Prefix = props.s3Prefix;
+  const normalizedRootPrefix = computed(() => (s3Prefix.endsWith('/') ? s3Prefix : `${s3Prefix}/`));
 
   const hasOpenedStartPath = ref(false);
 
@@ -69,6 +81,7 @@
         children.push({
           type: 'file',
           name: item.Key.split('/').pop()!,
+          s3Key: item.Key,
           size: item.Size,
           lastModified: item.LastModified,
         });
@@ -200,8 +213,11 @@
   watch(
     () => props.s3Prefix,
     async () => {
+      hasOpenedStartPath.value = false;
       currentPath.value = [{ name: 'All Files', children: [] as FileTreeNode[] }];
       loadedDirectories.value.clear();
+      searchQuery.value = '';
+      searchResults.value = [];
       await initializeRoot();
     },
   );
@@ -262,8 +278,17 @@
   });
 
   const filteredItems = computed(() => {
-    const query = searchQuery.value.toLowerCase();
-    return currentItems.value.filter((item: FileTreeNode) => (item?.name || '').toLowerCase().includes(query));
+    if (!searchQuery.value.trim()) {
+      return currentItems.value;
+    }
+    return searchResults.value.map((node: FileTreeNode) => {
+      const uniqueString = nodeUniqueString(node);
+      const downloadProgress = downloads.value[uniqueString];
+      return {
+        ...node,
+        class: downloadProgress !== undefined ? `progress-bg-${downloadProgress}` : '',
+      };
+    });
   });
 
   const tableColumns = [
@@ -302,6 +327,7 @@
   }
 
   const onRowClicked = useDebounceFn((item: FileTreeNode) => {
+    if (searchQuery.value.trim()) return;
     if (item.type === 'directory') {
       openDirectory(item);
     }
@@ -324,19 +350,112 @@
 
   function nodeUniqueString(node: FileTreeNode): string {
     const childrenLen = Array.isArray(node.children) ? node.children.length : 0;
-    return `${node.type}${node.name}${node.size}${node.lastModified}${childrenLen}`;
+    return `${node.type}${node.s3Key || ''}${node.name}${node.size}${node.lastModified}${childrenLen}`;
   }
 
   function isHtmlFile(node: FileTreeNode): boolean {
     return node.type === 'file' && !!node.name?.toLowerCase().endsWith('.html');
   }
 
+  function getNodeS3Uri(node: FileTreeNode): string {
+    if (node.s3Key) {
+      return `s3://${s3Bucket}/${node.s3Key}`;
+    }
+
+    if (node.type === 'file') {
+      return `${s3ObjectPath.value}/${node.name}`;
+    }
+
+    return `${s3ObjectPath.value}/${node.name || ''}`;
+  }
+
+  function getNodeDirectoryPath(node: FileTreeNode): string {
+    if (!node.s3Key) return s3ObjectPath.value;
+    const keySegments = node.s3Key.split('/');
+    keySegments.pop();
+    return `s3://${s3Bucket}/${keySegments.join('/')}`;
+  }
+
+  const onSearchInput = useDebounceFn(async (query: string) => {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
+      searchRequestSeq.value += 1;
+      searchResults.value = [];
+      isSearchLoading.value = false;
+      return;
+    }
+
+    const requestId = ++searchRequestSeq.value;
+    isSearchLoading.value = true;
+
+    try {
+      const response: S3SearchResponse = await $api.file.requestSearchBucketObjects({
+        LaboratoryId: props.labId,
+        S3Bucket: s3Bucket,
+        S3Prefix: normalizedRootPrefix.value,
+        SearchQuery: trimmedQuery,
+        MaxResults: 200,
+      } as RequestSearchBucketObjects);
+
+      // Ignore stale responses from slower in-flight requests.
+      if (requestId !== searchRequestSeq.value) return;
+
+      const directoryResults: FileTreeNode[] = (response.CommonPrefixes || []).map((prefix: S3SearchPrefix) => {
+        const relativePath = prefix.Prefix.startsWith(normalizedRootPrefix.value)
+          ? prefix.Prefix.slice(normalizedRootPrefix.value.length)
+          : prefix.Prefix;
+        const trimmedRelativePath = relativePath.replace(/\/$/, '');
+        const pathSegments = trimmedRelativePath.split('/').filter(Boolean);
+        const folderName = pathSegments[pathSegments.length - 1] || trimmedRelativePath;
+        const parentPath = pathSegments.slice(0, -1).join('/');
+
+        return {
+          type: 'directory',
+          name: folderName,
+          s3Key: prefix.Prefix,
+          directoryPath: parentPath,
+          isSearchResult: true,
+          children: [],
+        } as FileTreeNode;
+      });
+
+      const fileResults: FileTreeNode[] = (response.Contents || []).map((item) => {
+        const relativePath = item.Key.startsWith(normalizedRootPrefix.value)
+          ? item.Key.slice(normalizedRootPrefix.value.length)
+          : item.Key;
+        const pathSegments = relativePath.split('/');
+        pathSegments.pop();
+
+        return {
+          type: 'file',
+          name: item.Key.split('/').pop()!,
+          s3Key: item.Key,
+          directoryPath: pathSegments.join('/'),
+          isSearchResult: true,
+          size: item.Size,
+          lastModified: item.LastModified,
+        } as FileTreeNode;
+      });
+
+      searchResults.value = [...directoryResults, ...fileResults];
+    } catch (error) {
+      if (requestId !== searchRequestSeq.value) return;
+      console.error('Error searching files in bucket:', error);
+      useToastStore().error('Failed to search files');
+      searchResults.value = [];
+    } finally {
+      if (requestId === searchRequestSeq.value) {
+        isSearchLoading.value = false;
+      }
+    }
+  }, 300);
+
   async function openHtmlInNewTab(node: FileTreeNode): Promise<void> {
     const nodeId = nodeUniqueString(node);
     uiStore.setRequestPending(`downloadHtmlFileButton-${nodeId}`);
 
     try {
-      const fileDownloadPath = `${s3ObjectPath.value}/${node.name}`;
+      const fileDownloadPath = getNodeS3Uri(node);
       const fileDownloadResponse = await $api.file.requestFileDownloadUrl({
         LaboratoryId: props.labId,
         S3Uri: fileDownloadPath,
@@ -373,10 +492,11 @@
     useToastStore().success('Your files have begun downloading');
 
     if (node.type === 'file') {
+      const fileName = node.s3Key?.split('/').pop() || node.name!;
       await handleS3Download(
         props.labId,
-        node.name!, // Filename
-        s3ObjectPath.value, // s3://{S3 Bucket}/{S3 Prefix} Path
+        fileName, // Filename
+        getNodeDirectoryPath(node), // s3://{S3 Bucket}/{S3 Prefix} Path
         progressRef, // progress value ref to be updated by the function
       );
     } else {
@@ -386,6 +506,10 @@
 
   // Watchers to ensure data reactivity
   watch(currentPath, () => {});
+
+  watch(searchQuery, (value: string) => {
+    onSearchInput(value);
+  });
 </script>
 
 <template>
@@ -393,7 +517,7 @@
     <!-- Search input -->
     <EGSearchInput
       @input-event="(event: string) => (searchQuery = event)"
-      placeholder="Search files/folders"
+      placeholder="Search all files in bucket"
       class="mb-6 w-[408px]"
     />
 
@@ -416,18 +540,23 @@
       :table-data="filteredItems"
       :columns="tableColumns"
       no-results-msg="No files or folders found"
-      :is-loading="isRootLoading"
+      :is-loading="isRootLoading || isSearchLoading"
     >
       <template #name-data="{ row }">
         <div class="flex items-center gap-2">
-          <span v-if="row.type === 'directory'" class="underline hover:no-underline" @click="onRowClicked(row)">
+          <span
+            v-if="row.type === 'directory' && !searchQuery.trim()"
+            class="underline hover:no-underline"
+            @click="onRowClicked(row)"
+          >
             {{ row.name }}/
           </span>
           <span v-else>
-            {{ row.name }}
+            {{ row.type === 'directory' ? `${row.name}/` : row.name }}
           </span>
           <span v-if="row.isLoading" class="text-xs text-gray-500">(loading...)</span>
         </div>
+        <div v-if="row.isSearchResult && row.directoryPath" class="text-xs text-gray-500">{{ row.directoryPath }}/</div>
       </template>
       <template #type-data="{ row }">
         {{ useChangeCase(row.type === 'directory' ? 'Folder' : row.type, 'sentenceCase') }}
@@ -443,22 +572,24 @@
       </template>
       <template #actions-data="{ row }">
         <div class="flex justify-end gap-4">
-          <!-- open in new tab -->
-          <EGButton
-            v-if="isHtmlFile(row)"
-            variant="secondary"
-            label="Open"
-            :loading="uiStore.isRequestPending(`downloadHtmlFileButton-${nodeUniqueString(row)}`)"
-            @click.stop="async () => await openHtmlInNewTab(row)"
-          />
+          <template v-if="!(row.isSearchResult && row.type === 'directory')">
+            <!-- open in new tab -->
+            <EGButton
+              v-if="isHtmlFile(row)"
+              variant="secondary"
+              label="Open"
+              :loading="uiStore.isRequestPending(`downloadHtmlFileButton-${nodeUniqueString(row)}`)"
+              @click.stop="async () => await openHtmlInNewTab(row)"
+            />
 
-          <!-- download -->
-          <EGButton
-            variant="secondary"
-            :label="row?.type === 'file' ? 'Download' : 'Download as zip'"
-            :loading="downloads[nodeUniqueString(row)] !== undefined && downloads[nodeUniqueString(row)] < 100"
-            @click.stop="async () => await downloadFileTreeNode(row)"
-          />
+            <!-- download -->
+            <EGButton
+              variant="secondary"
+              :label="row?.type === 'file' ? 'Download' : 'Download as zip'"
+              :loading="downloads[nodeUniqueString(row)] !== undefined && downloads[nodeUniqueString(row)] < 100"
+              @click.stop="async () => await downloadFileTreeNode(row)"
+            />
+          </template>
         </div>
       </template>
     </EGTable>

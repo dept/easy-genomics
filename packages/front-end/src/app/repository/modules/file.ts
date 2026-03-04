@@ -1,5 +1,6 @@
 import { FileDownloadUrlResponseSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-file-download-url';
 import { S3ResponseSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-list-bucket-objects';
+import { S3SearchResponseSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-search-bucket-objects';
 import { S3TopLevelResponseSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-top-level-bucket-objects';
 import {
   RequestFileDownloadUrl,
@@ -9,6 +10,10 @@ import {
   RequestListBucketObjects,
   S3Response,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-list-bucket-objects';
+import {
+  RequestSearchBucketObjects,
+  S3SearchResponse,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-search-bucket-objects';
 import {
   RequestTopLevelBucketObjects,
   S3TopLevelResponse,
@@ -62,6 +67,22 @@ class FileModule extends HttpFactory {
     }
 
     validateApiResponse(S3TopLevelResponseSchema, res);
+    return res;
+  }
+
+  /**
+   * Search objects in an S3 bucket prefix and return matching files
+   * @param req
+   */
+  async requestSearchBucketObjects(req: RequestSearchBucketObjects): Promise<S3SearchResponse> {
+    const res = await this.call<S3SearchResponse>('POST', '/file/request-search-bucket-objects', req);
+
+    if (!res) {
+      console.error('Error calling search bucket objects API');
+      throw new Error('Failed to search bucket objects');
+    }
+
+    validateApiResponse(S3SearchResponseSchema, res);
     return res;
   }
 
