@@ -53,6 +53,8 @@ export class AuthNestedStack extends NestedStack {
         ACCOUNT_ID: this.props.env.account!,
         REGION: this.props.env.region!,
         DOMAIN_NAME: this.props.appDomainName,
+        ENV_TYPE: this.props.envType,
+        ENV_NAME: this.props.envName,
         NAME_PREFIX: this.props.namePrefix,
       },
     });

@@ -242,6 +242,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
         REGION: this.props.env.region!,
         DOMAIN_NAME: this.props.appDomainName,
         ENV_TYPE: this.props.envType,
+        ENV_NAME: this.props.envName,
         NAME_PREFIX: this.props.namePrefix,
       },
     });
