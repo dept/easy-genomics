@@ -16,7 +16,8 @@ export class SesService {
   public constructor(props: SesServiceProps) {
     this.props = props;
     this.sesClient = new SESClient();
-    this.templateNamePrefix = props.envType !== 'prod' ? `${props.envName}-${props.envType}-` : '';
+    this.templateNamePrefix =
+      props.envType && props.envName && props.envType !== 'prod' ? `${props.envName}-${props.envType}-` : '';
   }
 
   public async sendNewUserInvitationEmail(
