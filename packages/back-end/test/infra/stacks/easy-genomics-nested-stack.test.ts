@@ -1,8 +1,8 @@
 import { App, Stack } from 'aws-cdk-lib';
-import { EasyGenomicsNestedStack } from '../../../src/infra/stacks/easy-genomics-nested-stack';
 import { IamConstruct } from '../../../src/infra/constructs/iam-construct';
 import { LambdaConstruct } from '../../../src/infra/constructs/lambda-construct';
 import { SesConstruct } from '../../../src/infra/constructs/ses-construct';
+import { EasyGenomicsNestedStack } from '../../../src/infra/stacks/easy-genomics-nested-stack';
 
 jest.mock('aws-cdk-lib/aws-lambda-event-sources', () => ({
   SqsEventSource: jest.fn().mockImplementation(() => ({})),
@@ -41,6 +41,7 @@ jest.mock('../../../src/infra/constructs/sns-construct', () => ({
       ['user-deletion-topic', { topicArn: 'arn:aws:sns:user', addToResourcePolicy: jest.fn() }],
       ['laboratory-run-update-topic', { topicArn: 'arn:aws:sns:run', addToResourcePolicy: jest.fn() }],
       ['user-invite-topic', { topicArn: 'arn:aws:sns:invite', addToResourcePolicy: jest.fn() }],
+      ['folder-download-topic', { topicArn: 'arn:aws:sns:folder-download', addToResourcePolicy: jest.fn() }],
     ]),
   })),
 }));
@@ -53,6 +54,7 @@ jest.mock('../../../src/infra/constructs/sqs-construct', () => ({
       ['user-management-queue', {}],
       ['laboratory-run-update-queue', {}],
       ['user-invite-queue', {}],
+      ['folder-download-queue', {}],
     ]),
   })),
 }));
