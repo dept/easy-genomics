@@ -317,10 +317,11 @@
 
   function addFileToFilePairs(fileDetails: FileDetails) {
     const sampleId = getSampleIdFromRFileName(fileDetails.name);
+    const readDirection = getReadDirection(fileDetails.name);
     const fileName = getFileNameWithoutExt(fileDetails.name);
 
     // handle files without R values
-    if (!sampleId) {
+    if (!sampleId || !readDirection) {
       // file does not have an R_ value, so it must be a single file, and cannot be paired
       // make a new pair with just this file as R1
       filePairs.value.push({
@@ -359,15 +360,37 @@
   }
 
   function addToFilePair(fileDetails: FileDetails, filePair: FilePair) {
-    if (fileDetails.name.includes('_R1_')) {
+    const readDirection = getReadDirection(fileDetails.name);
+    if (readDirection === 'R1') {
       filePair.r1File = fileDetails;
-    } else if (fileDetails.name.includes('_R2_')) {
+    } else if (readDirection === 'R2') {
       filePair.r2File = fileDetails;
     } else {
-      const message = `File ${fileDetails.name} does not contain _R1_ or _R2_`;
+      const message = `File ${fileDetails.name} does not contain a recognized read indicator`;
       useToastStore().error(message);
       throw new Error(message);
     }
+  }
+
+  function getReadDirection(fileName: string): 'R1' | 'R2' | null {
+    const nameWithoutExt = getFileNameWithoutExt(fileName);
+
+    // Backward-compatible read detection for existing R1/R2 naming conventions
+    if (/_R1(?:_|$)/i.test(nameWithoutExt)) return 'R1';
+    if (/_R2(?:_|$)/i.test(nameWithoutExt)) return 'R2';
+
+    // Custom split pattern mode (e.g. _S1_ / _S2_)
+    const pattern = sampleIdSplitPattern.value;
+    if (!pattern) return null;
+
+    const patternIndex = nameWithoutExt.indexOf(pattern);
+    if (patternIndex === -1) return null;
+
+    const suffixAfterPattern = nameWithoutExt.substring(patternIndex + pattern.length);
+    const readNumberMatch = suffixAfterPattern.match(/^([12])(?:_|$)/);
+    if (!readNumberMatch) return null;
+
+    return readNumberMatch[1] === '1' ? 'R1' : 'R2';
   }
 
   function getSampleIdFromRFileName(fileName: string): string | null {
@@ -537,10 +560,11 @@
       };
 
       const sampleId = getSampleIdFromRFileName(Name);
+      const readDirection = getReadDirection(Name);
       const fileName = getFileNameWithoutExt(Name);
 
       // handle files without R values
-      if (!sampleId) {
+      if (!sampleId || !readDirection) {
         // file does not have an R_ value, so it must be a single file, and cannot be paired
         // make a new pair with just this file as R1
         uploadedFilePairs.push({
@@ -556,9 +580,9 @@
           sampleId,
       );
       if (existingFilePair) {
-        if (Name.includes('_R1_')) {
+        if (readDirection === 'R1') {
           existingFilePair.R1 = uploadFileInfo;
-        } else if (Name.includes('_R2_')) {
+        } else if (readDirection === 'R2') {
           existingFilePair.R2 = uploadFileInfo;
         }
 
@@ -572,8 +596,8 @@
       } else {
         const newFilePair: UploadedFilePairInfo = {
           SampleId: fileName, // as above, individual files should use the fileName
-          R1: Name.includes('_R1_') ? uploadFileInfo : undefined,
-          R2: Name.includes('_R2_') ? uploadFileInfo : undefined,
+          R1: readDirection === 'R1' ? uploadFileInfo : undefined,
+          R2: readDirection === 'R2' ? uploadFileInfo : undefined,
         };
         uploadedFilePairs.push(newFilePair);
       }
