@@ -10,7 +10,6 @@ export interface SampleSheetValidationResult {
  * - File is present and non-empty
  * - File contents are readable
  * - A header row exists (first non-empty line)
- * - Required columns exist: "sample" and "fastq_1"
  */
 export async function validateSampleSheetFile(file: File | null | undefined): Promise<SampleSheetValidationResult> {
   // Basic presence & size check
@@ -24,7 +23,7 @@ export async function validateSampleSheetFile(file: File | null | undefined): Pr
   if (file.size === 0) {
     return {
       valid: false,
-      error: 'The sample sheet file is empty. Add a header row such as "sample,fastq_1[,fastq_2]" and upload it again.',
+      error: 'The sample sheet file is empty. Add a header row and upload it again.',
     };
   }
 
@@ -41,8 +40,7 @@ export async function validateSampleSheetFile(file: File | null | undefined): Pr
   if (!contents.trim()) {
     return {
       valid: false,
-      error:
-        'The sample sheet file has no content. Add a header row such as "sample,fastq_1[,fastq_2]" and upload it again.',
+      error: 'The sample sheet file has no content. Add a header row and upload it again.',
     };
   }
 
@@ -53,26 +51,7 @@ export async function validateSampleSheetFile(file: File | null | undefined): Pr
   if (!headerLine) {
     return {
       valid: false,
-      error:
-        'The sample sheet is missing a header row. Add a first line with column names, e.g. "sample,fastq_1[,fastq_2]".',
-    };
-  }
-
-  const normalizedHeaderLine = headerLine.replace(/^\uFEFF/, ''); // Remove potential BOM
-  const headerColumns = normalizedHeaderLine
-    .split(',')
-    .map((col) => col.trim())
-    .filter((col) => col.length > 0)
-    .map((col) => col.toLowerCase());
-
-  const requiredColumns = ['sample', 'fastq_1'];
-  const missingColumns = requiredColumns.filter((required) => !headerColumns.includes(required));
-
-  if (missingColumns.length > 0) {
-    const missingList = missingColumns.join(', ');
-    return {
-      valid: false,
-      error: `The sample sheet header is missing required column(s): ${missingList}. Update the first row of your CSV so it includes "sample" and "fastq_1" (and optionally "fastq_2"), then upload it again.`,
+      error: 'The sample sheet is missing a header row. Add a first line with column names.',
     };
   }
 
