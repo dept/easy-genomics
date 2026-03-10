@@ -66,6 +66,7 @@
     "@aws-sdk/client-ssm": "^3.782.0",
     "@aws-sdk/client-sso-oidc": "^3.782.0",
     "@aws-sdk/client-sts": "^3.782.0",
+    "@aws-sdk/lib-storage": "^3.786.0",
     "@aws-sdk/lib-dynamodb": "^3.786.0",
     "@aws-sdk/s3-request-presigner": "^3.782.0",
     "@aws-sdk/types": "^3.775.0",

@@ -1,5 +1,6 @@
 import { PassThrough } from 'stream';
-import { CompletedPart } from '@aws-sdk/client-s3';
+import type { S3Client } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
 import archiver from 'archiver';
 import { APIGatewayProxyResult, Handler } from 'aws-lambda';
@@ -59,94 +60,21 @@ const parseSnsWrappedMessage = (body: string): FolderDownloadJobMessage => {
 };
 
 const uploadZipMultipart = async (job: FolderDownloadJobMessage, zipStream: PassThrough): Promise<void> => {
-  let uploadId: string | undefined;
-  const completedParts: CompletedPart[] = [];
-  let partNumber = 1;
-  let pendingBuffer = Buffer.alloc(0);
+  const s3Client: S3Client = s3Service.getClient();
 
-  try {
-    const createUploadResponse = await s3Service.createMultipartUpload({
+  const uploader = new Upload({
+    client: s3Client,
+    params: {
       Bucket: job.S3Bucket,
       Key: job.ArchiveKey,
+      Body: zipStream,
       ContentType: 'application/zip',
-    });
+    },
+    partSize: MULTIPART_PART_SIZE_BYTES,
+    leavePartsOnError: false,
+  });
 
-    uploadId = createUploadResponse.UploadId;
-    if (!uploadId) {
-      throw new Error('Failed to initialize multipart upload');
-    }
-
-    for await (const chunk of zipStream) {
-      const bufferChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      pendingBuffer = Buffer.concat([pendingBuffer, bufferChunk]);
-
-      while (pendingBuffer.length >= MULTIPART_PART_SIZE_BYTES) {
-        const partBody = pendingBuffer.subarray(0, MULTIPART_PART_SIZE_BYTES);
-        pendingBuffer = pendingBuffer.subarray(MULTIPART_PART_SIZE_BYTES);
-
-        const uploadPartResponse = await s3Service.uploadPart({
-          Bucket: job.S3Bucket,
-          Key: job.ArchiveKey,
-          UploadId: uploadId,
-          PartNumber: partNumber,
-          Body: partBody,
-          ContentLength: partBody.length,
-        });
-
-        if (!uploadPartResponse.ETag) {
-          throw new Error(`Multipart upload failed for part ${partNumber}`);
-        }
-
-        completedParts.push({
-          PartNumber: partNumber,
-          ETag: uploadPartResponse.ETag,
-        });
-        partNumber += 1;
-      }
-    }
-
-    if (pendingBuffer.length > 0) {
-      const uploadPartResponse = await s3Service.uploadPart({
-        Bucket: job.S3Bucket,
-        Key: job.ArchiveKey,
-        UploadId: uploadId,
-        PartNumber: partNumber,
-        Body: pendingBuffer,
-        ContentLength: pendingBuffer.length,
-      });
-
-      if (!uploadPartResponse.ETag) {
-        throw new Error(`Multipart upload failed for part ${partNumber}`);
-      }
-
-      completedParts.push({
-        PartNumber: partNumber,
-        ETag: uploadPartResponse.ETag,
-      });
-    }
-
-    await s3Service.completeMultipartUpload({
-      Bucket: job.S3Bucket,
-      Key: job.ArchiveKey,
-      UploadId: uploadId,
-      MultipartUpload: {
-        Parts: completedParts,
-      },
-    });
-  } catch (error) {
-    if (uploadId) {
-      try {
-        await s3Service.abortMultipartUpload({
-          Bucket: job.S3Bucket,
-          Key: job.ArchiveKey,
-          UploadId: uploadId,
-        });
-      } catch (abortError) {
-        console.warn('Failed to abort multipart upload:', abortError);
-      }
-    }
-    throw error;
-  }
+  await uploader.done();
 };
 
 const zipS3Prefix = async (job: FolderDownloadJobMessage): Promise<void> => {

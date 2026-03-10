@@ -93,6 +93,10 @@ export class S3Service {
     this.s3Client = new S3Client();
   }
 
+  public getClient = (): S3Client => {
+    return this.s3Client;
+  };
+
   public createBucket = async (createBucketInput: CreateBucketCommandInput): Promise<CreateBucketCommandOutput> => {
     // Create S3 Bucket
     const createBucketCommandOutput: CreateBucketCommandOutput = await this.s3Request<

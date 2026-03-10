@@ -7,9 +7,18 @@ const mockArchive = {
   finalize: jest.fn(),
 };
 
+const mockUploadDone = jest.fn();
+
 jest.mock('archiver', () => ({
   __esModule: true,
   default: jest.fn(() => mockArchive),
+}));
+
+jest.mock('@aws-sdk/lib-storage', () => ({
+  __esModule: true,
+  Upload: jest.fn().mockImplementation(() => ({
+    done: mockUploadDone,
+  })),
 }));
 
 jest.mock('../../../../../src/app/services/s3-service');
@@ -21,10 +30,6 @@ describe('process-folder-download-job Lambda', () => {
   let mockListBucketObjectsV2: jest.Mock;
   let mockGetObject: jest.Mock;
   let mockPutObject: jest.Mock;
-  let mockCreateMultipartUpload: jest.Mock;
-  let mockUploadPart: jest.Mock;
-  let mockCompleteMultipartUpload: jest.Mock;
-  let mockAbortMultipartUpload: jest.Mock;
   let pipedZipStream: NodeJS.WritableStream | undefined;
 
   const createSnsWrappedSqsEvent = (message: Record<string, unknown>): SQSEvent =>
@@ -50,6 +55,7 @@ describe('process-folder-download-job Lambda', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUploadDone.mockResolvedValue(undefined);
 
     pipedZipStream = undefined;
     mockArchive.pipe.mockImplementation((stream: NodeJS.WritableStream) => {
@@ -74,18 +80,10 @@ describe('process-folder-download-job Lambda', () => {
     mockListBucketObjectsV2 = jest.fn();
     mockGetObject = jest.fn();
     mockPutObject = jest.fn();
-    mockCreateMultipartUpload = jest.fn();
-    mockUploadPart = jest.fn();
-    mockCompleteMultipartUpload = jest.fn();
-    mockAbortMultipartUpload = jest.fn();
 
     mockS3ServiceInstance.prototype.listBucketObjectsV2 = mockListBucketObjectsV2;
     mockS3ServiceInstance.prototype.getObject = mockGetObject;
     mockS3ServiceInstance.prototype.putObject = mockPutObject;
-    mockS3ServiceInstance.prototype.createMultipartUpload = mockCreateMultipartUpload;
-    mockS3ServiceInstance.prototype.uploadPart = mockUploadPart;
-    mockS3ServiceInstance.prototype.completeMultipartUpload = mockCompleteMultipartUpload;
-    mockS3ServiceInstance.prototype.abortMultipartUpload = mockAbortMultipartUpload;
   });
 
   it('processes paginated folders (>1000 objects) and completes', async () => {
@@ -94,9 +92,6 @@ describe('process-folder-download-job Lambda', () => {
       .mockResolvedValueOnce({})
       // write COMPLETED status
       .mockResolvedValueOnce({});
-    mockCreateMultipartUpload.mockResolvedValue({ UploadId: 'upload-id' });
-    mockUploadPart.mockResolvedValue({ ETag: 'etag-part-1' });
-    mockCompleteMultipartUpload.mockResolvedValue({});
 
     mockListBucketObjectsV2
       .mockResolvedValueOnce({
@@ -126,9 +121,6 @@ describe('process-folder-download-job Lambda', () => {
     expect(mockArchive.append).toHaveBeenCalledTimes(2);
     expect(mockArchive.append).toHaveBeenCalledWith(expect.anything(), { name: 'results/a.txt' });
     expect(mockArchive.append).toHaveBeenCalledWith(expect.anything(), { name: 'results/b.txt' });
-    expect(mockCreateMultipartUpload).toHaveBeenCalled();
-    expect(mockUploadPart).toHaveBeenCalled();
-    expect(mockCompleteMultipartUpload).toHaveBeenCalled();
 
     const statusWrites = mockPutObject.mock.calls
       .map((call) => call[0])
@@ -144,8 +136,6 @@ describe('process-folder-download-job Lambda', () => {
       .mockResolvedValueOnce({})
       // write FAILED status
       .mockResolvedValueOnce({});
-    mockCreateMultipartUpload.mockResolvedValue({ UploadId: 'upload-id' });
-    mockAbortMultipartUpload.mockResolvedValue({});
 
     mockListBucketObjectsV2.mockResolvedValue({
       Contents: [{ Key: 'test-org-id/test-lab-id/results/a.txt' }],
@@ -170,8 +160,6 @@ describe('process-folder-download-job Lambda', () => {
       .mockResolvedValueOnce({})
       // write FAILED status
       .mockResolvedValueOnce({});
-    mockCreateMultipartUpload.mockResolvedValue({ UploadId: 'upload-id' });
-    mockAbortMultipartUpload.mockResolvedValue({});
 
     mockListBucketObjectsV2.mockResolvedValue({
       Contents: [{ Key: 'test-org-id/test-lab-id/results/' }],
