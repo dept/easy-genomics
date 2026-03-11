@@ -9,11 +9,11 @@ jest.mock('../../../../../src/app/services/ssm-service');
 jest.mock('../../../../../src/app/services/sns-service');
 jest.mock('../../../../../src/app/utils/auth-utils');
 
+import { LaboratoryRunService } from '../../../../../src/app/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
 import { LaboratoryUserService } from '../../../../../src/app/services/easy-genomics/laboratory-user-service';
-import { LaboratoryRunService } from '../../../../../src/app/services/easy-genomics/laboratory-run-service';
-import { SsmService } from '../../../../../src/app/services/ssm-service';
 import { SnsService } from '../../../../../src/app/services/sns-service';
+import { SsmService } from '../../../../../src/app/services/ssm-service';
 import { validateOrganizationAdminAccess } from '../../../../../src/app/utils/auth-utils';
 
 describe('delete-laboratory.lambda', () => {
@@ -76,6 +76,13 @@ describe('delete-laboratory.lambda', () => {
 
     mockValidateOrgAdmin.mockReturnValue(true);
     process.env.SNS_LABORATORY_DELETION_TOPIC = 'arn:aws:sns:region:acct:lab-deletion';
+
+    mockLabService.prototype.queryByLaboratoryId = jest.fn();
+    mockLabService.prototype.delete = jest.fn();
+    mockLabUserService.prototype.queryByLaboratoryId = jest.fn();
+    mockLabRunService.prototype.queryByLaboratoryId = jest.fn();
+    mockSnsService.prototype.publish = jest.fn();
+    mockSsmService.prototype.deleteParameter = jest.fn();
   });
 
   it('returns 400 when id path parameter is missing', async () => {

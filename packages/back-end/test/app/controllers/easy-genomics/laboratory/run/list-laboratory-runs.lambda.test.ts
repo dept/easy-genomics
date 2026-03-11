@@ -16,11 +16,16 @@ import {
 import { getFilterResults, getFilters } from '../../../../../../src/app/utils/rest-api-utils';
 
 describe('list-laboratory-runs.lambda', () => {
+  const LAB_ID = '00000000-0000-0000-0000-000000000002';
+
   let mockRunService: jest.MockedClass<typeof LaboratoryRunService>;
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
   let mockValidateOrgAdmin: jest.MockedFunction<typeof validateOrganizationAdminAccess>;
   let mockValidateLabManager: jest.MockedFunction<typeof validateLaboratoryManagerAccess>;
   let mockValidateLabTechnician: jest.MockedFunction<typeof validateLaboratoryTechnicianAccess>;
+
+  let mockQueryByLaboratoryIdForLab: jest.Mock;
+  let mockQueryByLaboratoryIdForRuns: jest.Mock;
 
   const createEvent = (
     query: Record<string, string | undefined>,
@@ -74,9 +79,18 @@ describe('list-laboratory-runs.lambda', () => {
     mockValidateLabManager = validateLaboratoryManagerAccess as any;
     mockValidateLabTechnician = validateLaboratoryTechnicianAccess as any;
 
+    mockQueryByLaboratoryIdForLab = jest.fn();
+    mockQueryByLaboratoryIdForRuns = jest.fn();
+    mockLabService.prototype.queryByLaboratoryId = mockQueryByLaboratoryIdForLab;
+    mockRunService.prototype.queryByLaboratoryId = mockQueryByLaboratoryIdForRuns;
+
     mockValidateOrgAdmin.mockReturnValue(true);
     mockValidateLabManager.mockReturnValue(false);
     mockValidateLabTechnician.mockReturnValue(false);
+
+    // Default filter behaviour: no-op and return original runs
+    (getFilters as jest.Mock).mockReturnValue([]);
+    (getFilterResults as jest.Mock).mockImplementation((runs: any[]) => runs);
   });
 
   it('returns 400 when LaboratoryId query parameter is missing', async () => {
@@ -86,59 +100,66 @@ describe('list-laboratory-runs.lambda', () => {
   });
 
   it('returns 404 when laboratory is not found', async () => {
-    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue(undefined);
+    mockQueryByLaboratoryIdForLab.mockResolvedValue(undefined);
 
-    const result = await handler(createEvent({ LaboratoryId: 'lab-1' }), createContext(), () => {});
+    const result = await handler(createEvent({ LaboratoryId: LAB_ID }), createContext(), () => {});
 
     expect(result.statusCode).toBe(404);
   });
 
   it('denies access when caller is not org admin or lab manager/technician', async () => {
-    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+    mockQueryByLaboratoryIdForLab.mockResolvedValue({
       OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      LaboratoryId: LAB_ID,
     });
     mockValidateOrgAdmin.mockReturnValue(false);
     mockValidateLabManager.mockReturnValue(false);
     mockValidateLabTechnician.mockReturnValue(false);
 
-    const result = await handler(createEvent({ LaboratoryId: 'lab-1' }), createContext(), () => {});
+    const result = await handler(createEvent({ LaboratoryId: LAB_ID }), createContext(), () => {});
 
     expect(result.statusCode).toBe(403);
   });
 
   it('lists runs for owned laboratory without filters', async () => {
-    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+    mockQueryByLaboratoryIdForLab.mockResolvedValue({
       OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      LaboratoryId: LAB_ID,
     });
-    (mockRunService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue([
-      { RunId: 'run-1', LaboratoryId: 'lab-1', OrganizationId: 'org-1', Settings: '{}' },
+    mockQueryByLaboratoryIdForRuns.mockResolvedValue([
+      { RunId: 'run-1', LaboratoryId: LAB_ID, OrganizationId: 'org-1', Settings: '{}' },
     ]);
 
-    const result = await handler(createEvent({ LaboratoryId: 'lab-1' }), createContext(), () => {});
+    const result = await handler(createEvent({ LaboratoryId: LAB_ID }), createContext(), () => {});
 
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
+    expect(Array.isArray(body)).toBe(true);
     expect(body).toHaveLength(1);
     expect(body[0].RunId).toBe('run-1');
     expect(body[0].Settings).toEqual({});
   });
 
   it('applies filters from query parameters safely', async () => {
-    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+    mockQueryByLaboratoryIdForLab.mockResolvedValue({
       OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      LaboratoryId: LAB_ID,
     });
     const runs = [
-      { RunId: 'run-1', LaboratoryId: 'lab-1', OrganizationId: 'org-1', Status: 'RUNNING', Settings: '{}' },
-      { RunId: 'run-2', LaboratoryId: 'lab-1', OrganizationId: 'org-1', Status: 'FAILED', Settings: '{}' },
+      { RunId: 'run-1', LaboratoryId: LAB_ID, OrganizationId: 'org-1', Status: 'RUNNING', Settings: '{}' },
+      { RunId: 'run-2', LaboratoryId: LAB_ID, OrganizationId: 'org-1', Status: 'FAILED', Settings: '{}' },
     ];
-    (mockRunService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue(runs);
+    mockQueryByLaboratoryIdForRuns.mockResolvedValue(runs);
+
+    // For this test, ensure filters are applied and results are returned without error
+    (getFilters as jest.Mock).mockReturnValue([['Status', 'FAILED']]);
+    (getFilterResults as jest.Mock).mockImplementation((allRuns: any[], filters: [string, string][]) =>
+      allRuns.filter((r) => filters.some(([field, value]) => r[field] === value)),
+    );
 
     const result = await handler(
       createEvent({
-        LaboratoryId: 'lab-1',
+        LaboratoryId: LAB_ID,
         Status: 'FAILED',
         UnknownParam: 'ignored',
       }),
@@ -149,7 +170,8 @@ describe('list-laboratory-runs.lambda', () => {
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
     expect(Array.isArray(body)).toBe(true);
-    expect(body.length).toBeLessThanOrEqual(2);
+    expect(body.length).toBe(1);
+    expect(body[0].Status).toBe('FAILED');
     expect(getFilters).toHaveBeenCalled();
     expect(getFilterResults).toHaveBeenCalled();
   });

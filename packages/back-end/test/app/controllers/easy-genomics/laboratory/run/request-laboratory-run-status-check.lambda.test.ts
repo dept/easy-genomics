@@ -81,6 +81,10 @@ describe('request-laboratory-run-status-check.lambda', () => {
     mockValidateLabManager.mockReturnValue(false);
     mockValidateLabTechnician.mockReturnValue(false);
 
+    mockLabService.prototype.queryByLaboratoryId = jest.fn();
+    mockRunService.prototype.queryByRunId = jest.fn();
+    mockSnsService.prototype.publish = jest.fn();
+
     process.env.SNS_LABORATORY_RUN_UPDATE_TOPIC = 'arn:aws:sns:region:acct:lab-run-update';
   });
 
