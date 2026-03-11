@@ -55,7 +55,7 @@ export const handler: Handler = async (
   }
 };
 
-const listLaboratoryUsers = (
+export const listLaboratoryUsers = (
   organizationId?: string,
   laboratoryId?: string,
   userId?: string,
