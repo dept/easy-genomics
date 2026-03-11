@@ -16,6 +16,8 @@ import {
 } from '../../../../../../src/app/utils/auth-utils';
 
 describe('create-laboratory-run.lambda', () => {
+  const LAB_ID = '00000000-0000-0000-0000-000000000002';
+  const RUN_ID = '00000000-0000-0000-0000-000000000004';
   let mockRunService: jest.MockedClass<typeof LaboratoryRunService>;
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
   let mockSnsService: jest.MockedClass<typeof SnsService>;
@@ -33,7 +35,7 @@ describe('create-laboratory-run.lambda', () => {
       requestContext: {
         authorizer: {
           claims: {
-            email: 'user@example.com',
+            'email': 'user@example.com',
             'cognito:username': 'user-1',
           },
         },
@@ -66,8 +68,8 @@ describe('create-laboratory-run.lambda', () => {
     }) as any;
 
   const baseRequest = {
-    LaboratoryId: 'lab-1',
-    RunId: 'run-1',
+    LaboratoryId: LAB_ID,
+    RunId: RUN_ID,
     RunName: 'Test Run',
     Platform: 'Seqera Cloud',
     PlatformApiBaseUrl: 'https://tower.example.com',
@@ -93,18 +95,23 @@ describe('create-laboratory-run.lambda', () => {
     mockValidateLabManager.mockReturnValue(false);
     mockValidateLabTechnician.mockReturnValue(false);
 
+    // wire instance methods as jest mocks
+    mockLabService.prototype.queryByLaboratoryId = jest.fn();
+    mockRunService.prototype.add = jest.fn();
+    mockSnsService.prototype.publish = jest.fn();
+
     process.env.SNS_LABORATORY_RUN_UPDATE_TOPIC = 'arn:aws:sns:region:acct:lab-run-update';
   });
 
   it('creates a laboratory run for an existing lab and queues status check when ExternalRunId is present', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: '00000000-0000-0000-0000-000000000001',
+      LaboratoryId: LAB_ID,
     });
 
     (mockRunService.prototype.add as jest.Mock).mockResolvedValue({
       ...baseRequest,
-      OrganizationId: 'org-1',
+      OrganizationId: '00000000-0000-0000-0000-000000000001',
       Owner: 'user@example.com',
       Settings: JSON.stringify({ param: 'value' }),
     });
@@ -113,9 +120,9 @@ describe('create-laboratory-run.lambda', () => {
 
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
-    expect(body.LaboratoryId).toBe('lab-1');
-    expect(body.RunId).toBe('run-1');
-    expect(mockLabService.prototype.queryByLaboratoryId).toHaveBeenCalledWith('lab-1');
+    expect(body.LaboratoryId).toBe(LAB_ID);
+    expect(body.RunId).toBe(RUN_ID);
+    expect(mockLabService.prototype.queryByLaboratoryId).toHaveBeenCalledWith(LAB_ID);
     expect(mockRunService.prototype.add).toHaveBeenCalled();
     expect(mockSnsService.prototype.publish).toHaveBeenCalled();
   });
