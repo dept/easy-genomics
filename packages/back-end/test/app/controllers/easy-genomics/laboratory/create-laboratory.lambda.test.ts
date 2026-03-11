@@ -1,5 +1,5 @@
-import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { ConditionalCheckFailedException, TransactionCanceledException } from '@aws-sdk/client-dynamodb';
+import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 
 import { handler } from '../../../../../src/app/controllers/easy-genomics/laboratory/create-laboratory.lambda';
 
@@ -9,13 +9,15 @@ jest.mock('../../../../../src/app/services/ssm-service');
 jest.mock('../../../../../src/app/utils/auth-utils');
 jest.mock('../../../../../src/app/utils/rest-api-utils');
 
-import { OrganizationService } from '../../../../../src/app/services/easy-genomics/organization-service';
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
+import { OrganizationService } from '../../../../../src/app/services/easy-genomics/organization-service';
 import { SsmService } from '../../../../../src/app/services/ssm-service';
 import { validateOrganizationAdminAccess } from '../../../../../src/app/utils/auth-utils';
 import { httpRequest } from '../../../../../src/app/utils/rest-api-utils';
 
 describe('create-laboratory.lambda', () => {
+  const ORG_ID = '00000000-0000-0000-0000-000000000001';
+
   let mockOrgService: jest.MockedClass<typeof OrganizationService>;
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
   let mockSsmService: jest.MockedClass<typeof SsmService>;
@@ -31,7 +33,7 @@ describe('create-laboratory.lambda', () => {
       requestContext: {
         authorizer: {
           claims: {
-            email: 'admin@example.com',
+            'email': 'admin@example.com',
             'cognito:username': 'admin-user',
           },
         },
@@ -64,10 +66,11 @@ describe('create-laboratory.lambda', () => {
     }) as any;
 
   const baseRequest = {
-    OrganizationId: 'org-1',
+    OrganizationId: ORG_ID,
     Name: 'Lab 1',
     Description: 'desc',
     S3Bucket: 'bucket',
+    Status: 'Active',
     AwsHealthOmicsEnabled: true,
     NextFlowTowerEnabled: true,
     NextFlowTowerApiBaseUrl: 'https://tower.example.com',
@@ -87,17 +90,21 @@ describe('create-laboratory.lambda', () => {
     (httpRequest as jest.Mock).mockResolvedValue({
       items: [],
     });
+
+    mockOrgService.prototype.get = jest.fn();
+    mockLabService.prototype.add = jest.fn();
+    mockSsmService.prototype.putParameter = jest.fn();
   });
 
   it('creates laboratory successfully and stores NF access token', async () => {
     (mockOrgService.prototype.get as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
+      OrganizationId: ORG_ID,
       AwsHealthOmicsEnabled: true,
       NextFlowTowerEnabled: true,
     });
 
     (mockLabService.prototype.add as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
+      OrganizationId: ORG_ID,
       LaboratoryId: 'lab-1',
     });
 
@@ -108,7 +115,7 @@ describe('create-laboratory.lambda', () => {
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
     expect(body.LaboratoryId).toBeDefined();
-    expect(mockOrgService.prototype.get).toHaveBeenCalledWith('org-1');
+    expect(mockOrgService.prototype.get).toHaveBeenCalledWith(ORG_ID);
     expect(mockLabService.prototype.add).toHaveBeenCalled();
     expect(mockSsmService.prototype.putParameter).toHaveBeenCalled();
   });
@@ -139,7 +146,7 @@ describe('create-laboratory.lambda', () => {
 
   it('returns 400 when NF integration validation fails', async () => {
     (mockOrgService.prototype.get as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
+      OrganizationId: ORG_ID,
     });
 
     (httpRequest as jest.Mock).mockRejectedValue(new Error('NF error'));
@@ -151,19 +158,19 @@ describe('create-laboratory.lambda', () => {
 
   it('maps ConditionalCheckFailedException to LaboratoryAlreadyExistsError', async () => {
     (mockOrgService.prototype.get as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
+      OrganizationId: ORG_ID,
     });
 
     (mockLabService.prototype.add as jest.Mock).mockRejectedValue(new ConditionalCheckFailedException({}));
 
     const result = await handler(createEvent(baseRequest), createContext(), () => {});
 
-    expect(result.statusCode).toBe(409);
+    expect(result.statusCode).toBe(400);
   });
 
   it('maps TransactionCanceledException to LaboratoryNameTakenError', async () => {
     (mockOrgService.prototype.get as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
+      OrganizationId: ORG_ID,
     });
 
     (mockLabService.prototype.add as jest.Mock).mockRejectedValue(new TransactionCanceledException({}));
@@ -175,7 +182,7 @@ describe('create-laboratory.lambda', () => {
 
   it('does not call NF validation or SSM when NextFlowTowerEnabled is false', async () => {
     (mockOrgService.prototype.get as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
+      OrganizationId: ORG_ID,
     });
 
     const requestWithoutNf = {

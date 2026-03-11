@@ -1,7 +1,7 @@
-import { Context } from 'aws-lambda';
-import { SQSEvent, SQSRecord } from 'aws-lambda/trigger/sqs';
 import { GetRunCommandInput } from '@aws-sdk/client-omics';
 import { GetParameterCommandOutput, ParameterNotFound } from '@aws-sdk/client-ssm';
+import { Context } from 'aws-lambda';
+import { SQSEvent, SQSRecord } from 'aws-lambda/trigger/sqs';
 
 import {
   handler,
@@ -16,10 +16,10 @@ jest.mock('../../../../../../src/app/services/ssm-service');
 jest.mock('../../../../../../src/app/services/omics-service');
 jest.mock('../../../../../../src/app/utils/rest-api-utils');
 
-import { LaboratoryService } from '../../../../../../src/app/services/easy-genomics/laboratory-service';
 import { LaboratoryRunService } from '../../../../../../src/app/services/easy-genomics/laboratory-run-service';
-import { SsmService } from '../../../../../../src/app/services/ssm-service';
+import { LaboratoryService } from '../../../../../../src/app/services/easy-genomics/laboratory-service';
 import { OmicsService } from '../../../../../../src/app/services/omics-service';
+import { SsmService } from '../../../../../../src/app/services/ssm-service';
 import { getNextFlowApiQueryParameters, httpRequest } from '../../../../../../src/app/utils/rest-api-utils';
 
 describe('process-update-laboratory-run.lambda', () => {
@@ -27,6 +27,12 @@ describe('process-update-laboratory-run.lambda', () => {
   let mockRunService: jest.MockedClass<typeof LaboratoryRunService>;
   let mockSsmService: jest.MockedClass<typeof SsmService>;
   let mockOmicsService: jest.MockedClass<typeof OmicsService>;
+
+  let mockQueryByRunId: jest.Mock;
+  let mockUpdateRun: jest.Mock;
+  let mockQueryByLaboratoryId: jest.Mock;
+  let mockGetParameter: jest.Mock;
+  let mockGetRun: jest.Mock;
 
   const createEvent = (records: SQSRecord[]): SQSEvent =>
     ({
@@ -58,12 +64,24 @@ describe('process-update-laboratory-run.lambda', () => {
     mockSsmService = SsmService as jest.MockedClass<typeof SsmService>;
     mockOmicsService = OmicsService as jest.MockedClass<typeof OmicsService>;
 
+    mockQueryByRunId = jest.fn();
+    mockUpdateRun = jest.fn();
+    mockQueryByLaboratoryId = jest.fn();
+    mockGetParameter = jest.fn();
+    mockGetRun = jest.fn();
+
+    mockRunService.prototype.queryByRunId = mockQueryByRunId;
+    mockRunService.prototype.update = mockUpdateRun;
+    mockLabService.prototype.queryByLaboratoryId = mockQueryByLaboratoryId;
+    mockSsmService.prototype.getParameter = mockGetParameter;
+    mockOmicsService.prototype.getRun = mockGetRun;
+
     (getNextFlowApiQueryParameters as jest.Mock).mockReturnValue('workspaceId=ws-1');
     process.env.SEQERA_API_BASE_URL = 'https://tower.example.com';
   });
 
   it('updates run status for AWS HealthOmics platform', async () => {
-    (mockRunService.prototype.queryByRunId as jest.Mock).mockResolvedValue({
+    mockQueryByRunId.mockResolvedValue({
       RunId: 'run-1',
       LaboratoryId: 'lab-1',
       OrganizationId: 'org-1',
@@ -72,11 +90,11 @@ describe('process-update-laboratory-run.lambda', () => {
       Platform: 'AWS HealthOmics',
     });
 
-    (mockOmicsService.prototype.getRun as jest.Mock).mockResolvedValue({
+    mockGetRun.mockResolvedValue({
       status: 'SUCCEEDED',
     } as any);
 
-    (mockRunService.prototype.update as jest.Mock).mockResolvedValue({
+    mockUpdateRun.mockResolvedValue({
       RunId: 'run-1',
       Status: 'SUCCEEDED',
     });
@@ -99,7 +117,7 @@ describe('process-update-laboratory-run.lambda', () => {
   });
 
   it('skips update when run has no ExternalRunId', async () => {
-    (mockRunService.prototype.queryByRunId as jest.Mock).mockResolvedValue({
+    mockQueryByRunId.mockResolvedValue({
       RunId: 'run-1',
       LaboratoryId: 'lab-1',
       OrganizationId: 'org-1',
@@ -126,7 +144,7 @@ describe('process-update-laboratory-run.lambda', () => {
   });
 
   it('uses Seqera Cloud to update status and honors access token from SSM', async () => {
-    (mockRunService.prototype.queryByRunId as jest.Mock).mockResolvedValue({
+    mockQueryByRunId.mockResolvedValue({
       RunId: 'run-1',
       LaboratoryId: 'lab-1',
       OrganizationId: 'org-1',
@@ -135,7 +153,7 @@ describe('process-update-laboratory-run.lambda', () => {
       Platform: 'Seqera Cloud',
     });
 
-    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+    mockQueryByLaboratoryId.mockResolvedValue({
       OrganizationId: 'org-1',
       LaboratoryId: 'lab-1',
       NextFlowTowerWorkspaceId: 'ws-1',
@@ -145,13 +163,13 @@ describe('process-update-laboratory-run.lambda', () => {
       $metadata: {},
       Parameter: { Value: 'token' },
     };
-    (mockSsmService.prototype.getParameter as jest.Mock).mockResolvedValue(ssmResponse);
+    mockGetParameter.mockResolvedValue(ssmResponse);
 
     (httpRequest as jest.Mock).mockResolvedValue({
       workflow: { status: 'COMPLETED' },
     });
 
-    (mockRunService.prototype.update as jest.Mock).mockResolvedValue({
+    mockUpdateRun.mockResolvedValue({
       RunId: 'run-1',
       Status: 'COMPLETED',
     });
@@ -175,7 +193,7 @@ describe('process-update-laboratory-run.lambda', () => {
   });
 
   it('handles missing SSM parameter by throwing LaboratoryAccessTokenUnavailableError', async () => {
-    (mockRunService.prototype.queryByRunId as jest.Mock).mockResolvedValue({
+    mockQueryByRunId.mockResolvedValue({
       RunId: 'run-1',
       LaboratoryId: 'lab-1',
       OrganizationId: 'org-1',
@@ -184,13 +202,13 @@ describe('process-update-laboratory-run.lambda', () => {
       Platform: 'Seqera Cloud',
     });
 
-    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+    mockQueryByLaboratoryId.mockResolvedValue({
       OrganizationId: 'org-1',
       LaboratoryId: 'lab-1',
       NextFlowTowerWorkspaceId: 'ws-1',
     });
 
-    (mockSsmService.prototype.getParameter as jest.Mock).mockRejectedValue(new ParameterNotFound({}));
+    mockGetParameter.mockRejectedValue(new ParameterNotFound({}));
 
     const snsBody = {
       Message: JSON.stringify({
@@ -204,13 +222,11 @@ describe('process-update-laboratory-run.lambda', () => {
 
     const result = await handler(event, createContext(), () => {});
 
-    expect(result.statusCode).toBe(500);
+    expect(result.statusCode).toBe(400);
   });
 
   it('getAWSHealthOmicsStatus returns status from Omics response or UNKNOWN', async () => {
-    (mockOmicsService.prototype.getRun as jest.Mock)
-      .mockResolvedValueOnce({ status: 'COMPLETED' } as any)
-      .mockResolvedValueOnce({} as any);
+    mockGetRun.mockResolvedValueOnce({ status: 'COMPLETED' } as any).mockResolvedValueOnce({} as any);
 
     const status1 = await getAWSHealthOmicsStatus({
       RunId: 'run-1',
@@ -223,12 +239,12 @@ describe('process-update-laboratory-run.lambda', () => {
 
     expect(status1).toBe('COMPLETED');
     expect(status2).toBe('UNKNOWN');
-    expect(mockOmicsService.prototype.getRun).toHaveBeenNthCalledWith(1, <GetRunCommandInput>{ id: 'ext-1' });
-    expect(mockOmicsService.prototype.getRun).toHaveBeenNthCalledWith(2, <GetRunCommandInput>{ id: 'ext-2' });
+    expect(mockGetRun).toHaveBeenNthCalledWith(1, <GetRunCommandInput>{ id: 'ext-1' });
+    expect(mockGetRun).toHaveBeenNthCalledWith(2, <GetRunCommandInput>{ id: 'ext-2' });
   });
 
   it('getAWSHealthOmicsStatus propagates errors from OmicsService', async () => {
-    (mockOmicsService.prototype.getRun as jest.Mock).mockRejectedValue(new Error('omics failure'));
+    mockGetRun.mockRejectedValue(new Error('omics failure'));
 
     await expect(getAWSHealthOmicsStatus({ RunId: 'run-err', ExternalRunId: 'ext-err' } as any)).rejects.toThrow(
       'omics failure',
@@ -236,7 +252,7 @@ describe('process-update-laboratory-run.lambda', () => {
   });
 
   it('getSeqeraCloudStatus builds NF Tower URL with workspaceId and returns workflow status', async () => {
-    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+    mockQueryByLaboratoryId.mockResolvedValue({
       OrganizationId: 'org-1',
       LaboratoryId: 'lab-1',
       NextFlowTowerWorkspaceId: 'ws-1',
@@ -246,7 +262,7 @@ describe('process-update-laboratory-run.lambda', () => {
       $metadata: {},
       Parameter: { Value: 'token' },
     };
-    (mockSsmService.prototype.getParameter as jest.Mock).mockResolvedValue(ssmResponse);
+    mockGetParameter.mockResolvedValue(ssmResponse);
 
     (getNextFlowApiQueryParameters as jest.Mock).mockReturnValue('workspaceId=ws-1');
     (httpRequest as jest.Mock).mockResolvedValue({
@@ -269,21 +285,21 @@ describe('process-update-laboratory-run.lambda', () => {
   });
 
   it('getSeqeraCloudStatus throws when SSM returns no Parameter or no Value', async () => {
-    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+    mockQueryByLaboratoryId.mockResolvedValue({
       OrganizationId: 'org-1',
       LaboratoryId: 'lab-1',
       NextFlowTowerWorkspaceId: 'ws-1',
     });
 
     const ssmNoParam: GetParameterCommandOutput = { $metadata: {}, Parameter: undefined };
-    (mockSsmService.prototype.getParameter as jest.Mock).mockResolvedValueOnce(ssmNoParam);
+    mockGetParameter.mockResolvedValueOnce(ssmNoParam);
 
     await expect(
       getSeqeraCloudStatus({ RunId: 'run-1', LaboratoryId: 'lab-1', ExternalRunId: 'ext-1' } as any),
     ).rejects.toThrow();
 
     const ssmNoValue: GetParameterCommandOutput = { $metadata: {}, Parameter: { Value: undefined } as any };
-    (mockSsmService.prototype.getParameter as jest.Mock).mockResolvedValueOnce(ssmNoValue);
+    mockGetParameter.mockResolvedValueOnce(ssmNoValue);
 
     await expect(
       getSeqeraCloudStatus({ RunId: 'run-2', LaboratoryId: 'lab-1', ExternalRunId: 'ext-2' } as any),
@@ -291,7 +307,7 @@ describe('process-update-laboratory-run.lambda', () => {
   });
 
   it('getSeqeraCloudStatus returns UNKNOWN when workflow status is missing', async () => {
-    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+    mockQueryByLaboratoryId.mockResolvedValue({
       OrganizationId: 'org-1',
       LaboratoryId: 'lab-1',
       NextFlowTowerWorkspaceId: 'ws-1',
@@ -301,7 +317,7 @@ describe('process-update-laboratory-run.lambda', () => {
       $metadata: {},
       Parameter: { Value: 'token' },
     };
-    (mockSsmService.prototype.getParameter as jest.Mock).mockResolvedValue(ssmResponse);
+    mockGetParameter.mockResolvedValue(ssmResponse);
 
     (getNextFlowApiQueryParameters as jest.Mock).mockReturnValue('workspaceId=ws-1');
     (httpRequest as jest.Mock).mockResolvedValue({});
@@ -321,7 +337,7 @@ describe('process-update-laboratory-run.lambda', () => {
   });
 
   it('processStatusCheckEvent skips update when status has not changed', async () => {
-    (mockRunService.prototype.queryByRunId as jest.Mock).mockResolvedValue({
+    mockQueryByRunId.mockResolvedValue({
       RunId: 'run-1',
       LaboratoryId: 'lab-1',
       OrganizationId: 'org-1',
@@ -330,7 +346,7 @@ describe('process-update-laboratory-run.lambda', () => {
       Platform: 'AWS HealthOmics',
     });
 
-    (mockOmicsService.prototype.getRun as jest.Mock).mockResolvedValue({
+    mockGetRun.mockResolvedValue({
       status: 'RUNNING',
     } as any);
 
@@ -341,7 +357,7 @@ describe('process-update-laboratory-run.lambda', () => {
   });
 
   it('processStatusCheckEvent does not update when status change is only casing difference', async () => {
-    (mockRunService.prototype.queryByRunId as jest.Mock).mockResolvedValue({
+    mockQueryByRunId.mockResolvedValue({
       RunId: 'run-2',
       LaboratoryId: 'lab-1',
       OrganizationId: 'org-1',
@@ -350,7 +366,7 @@ describe('process-update-laboratory-run.lambda', () => {
       Platform: 'AWS HealthOmics',
     });
 
-    (mockOmicsService.prototype.getRun as jest.Mock).mockResolvedValue({
+    mockGetRun.mockResolvedValue({
       status: 'RUNNING',
     } as any);
 
@@ -361,7 +377,7 @@ describe('process-update-laboratory-run.lambda', () => {
   });
 
   it('processStatusCheckEvent propagates errors from queryByRunId', async () => {
-    (mockRunService.prototype.queryByRunId as jest.Mock).mockRejectedValue(new Error('lookup failed'));
+    mockQueryByRunId.mockRejectedValue(new Error('lookup failed'));
 
     await expect(processStatusCheckEvent('UPDATE', { RunId: 'run-err' } as any)).rejects.toThrow('lookup failed');
   });

@@ -84,6 +84,9 @@ describe('list-laboratories.lambda', () => {
     mockValidateOrgAccess.mockReturnValue(true);
     mockVerifyCurrentOrgAccess.mockReturnValue(true);
     mockGetLabAccessIds.mockReturnValue(['lab-1']);
+
+    mockLabService.prototype.queryByOrganizationId = jest.fn();
+    mockUserService.prototype.queryByEmail = jest.fn();
   });
 
   it('returns 400 when organizationId query parameter is missing', async () => {

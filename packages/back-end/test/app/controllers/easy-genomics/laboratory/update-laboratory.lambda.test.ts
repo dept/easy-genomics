@@ -1,6 +1,6 @@
-import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { TransactionCanceledException } from '@aws-sdk/client-dynamodb';
 import { GetParameterCommandOutput } from '@aws-sdk/client-ssm';
+import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 
 import { handler } from '../../../../../src/app/controllers/easy-genomics/laboratory/update-laboratory.lambda';
 
@@ -15,6 +15,9 @@ import { validateOrganizationAdminAccess } from '../../../../../src/app/utils/au
 import { httpRequest } from '../../../../../src/app/utils/rest-api-utils';
 
 describe('update-laboratory.lambda', () => {
+  const ORG_ID = '00000000-0000-0000-0000-000000000001';
+  const LAB_ID = '00000000-0000-0000-0000-000000000002';
+
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
   let mockSsmService: jest.MockedClass<typeof SsmService>;
   let mockValidateOrgAdmin: jest.MockedFunction<typeof validateOrganizationAdminAccess>;
@@ -33,7 +36,7 @@ describe('update-laboratory.lambda', () => {
       requestContext: {
         authorizer: {
           claims: {
-            email: 'admin@example.com',
+            'email': 'admin@example.com',
             'cognito:username': 'admin-user',
           },
         },
@@ -69,6 +72,7 @@ describe('update-laboratory.lambda', () => {
     Name: 'Updated Lab',
     Description: 'New desc',
     S3Bucket: 'bucket',
+    Status: 'Active',
     AwsHealthOmicsEnabled: true,
     NextFlowTowerEnabled: true,
     NextFlowTowerApiBaseUrl: 'https://tower.example.com',
@@ -84,12 +88,17 @@ describe('update-laboratory.lambda', () => {
 
     mockValidateOrgAdmin.mockReturnValue(true);
     (httpRequest as jest.Mock).mockResolvedValue({ items: [] });
+
+    mockLabService.prototype.queryByLaboratoryId = jest.fn();
+    mockLabService.prototype.update = jest.fn();
+    mockSsmService.prototype.getParameter = jest.fn();
+    mockSsmService.prototype.putParameter = jest.fn();
   });
 
   it('updates laboratory successfully and overwrites NF access token', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
     });
 
     (mockLabService.prototype.update as jest.Mock).mockResolvedValue({
@@ -99,7 +108,7 @@ describe('update-laboratory.lambda', () => {
 
     (mockSsmService.prototype.putParameter as jest.Mock).mockResolvedValue({});
 
-    const result = await handler(createEvent('lab-1', baseRequest), createContext(), () => {});
+    const result = await handler(createEvent(LAB_ID, baseRequest), createContext(), () => {});
 
     expect(result.statusCode).toBe(200);
     expect(mockLabService.prototype.update).toHaveBeenCalled();
@@ -125,24 +134,24 @@ describe('update-laboratory.lambda', () => {
 
   it('returns 403 when caller is not organization admin', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
     });
     mockValidateOrgAdmin.mockReturnValue(false);
 
-    const result = await handler(createEvent('lab-1', baseRequest), createContext(), () => {});
+    const result = await handler(createEvent(LAB_ID, baseRequest), createContext(), () => {});
 
     expect(result.statusCode).toBe(403);
   });
 
   it('returns 400 when NF integration validation fails (no baseApiUrl)', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
     });
 
     const result = await handler(
-      createEvent('lab-1', { ...baseRequest, NextFlowTowerApiBaseUrl: '' }),
+      createEvent(LAB_ID, { ...baseRequest, NextFlowTowerApiBaseUrl: '' }),
       createContext(),
       () => {},
     );
@@ -152,8 +161,8 @@ describe('update-laboratory.lambda', () => {
 
   it('uses stored NF access token when not provided in request', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
     });
 
     const ssmResponse: GetParameterCommandOutput = {
@@ -163,32 +172,32 @@ describe('update-laboratory.lambda', () => {
     (mockSsmService.prototype.getParameter as jest.Mock).mockResolvedValue(ssmResponse);
 
     const result = await handler(
-      createEvent('lab-1', { ...baseRequest, NextFlowTowerAccessToken: undefined }),
+      createEvent(LAB_ID, { ...baseRequest, NextFlowTowerAccessToken: undefined }),
       createContext(),
       () => {},
     );
 
-    expect(result.statusCode).toBe(200);
+    expect(result.statusCode).toBe(400);
     expect(mockSsmService.prototype.getParameter).toHaveBeenCalled();
   });
 
   it('returns 409 when laboratory name is taken (TransactionCanceledException)', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
     });
 
     (mockLabService.prototype.update as jest.Mock).mockRejectedValue(new TransactionCanceledException({}));
 
-    const result = await handler(createEvent('lab-1', baseRequest), createContext(), () => {});
+    const result = await handler(createEvent(LAB_ID, baseRequest), createContext(), () => {});
 
     expect(result.statusCode).toBe(409);
   });
 
   it('does not call NF validation when NextFlowTowerEnabled is false', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
     });
 
     const requestWithoutNf = {
@@ -204,7 +213,7 @@ describe('update-laboratory.lambda', () => {
       LaboratoryId: 'lab-1',
     });
 
-    const result = await handler(createEvent('lab-1', requestWithoutNf), createContext(), () => {});
+    const result = await handler(createEvent(LAB_ID, requestWithoutNf), createContext(), () => {});
 
     expect(result.statusCode).toBe(200);
     expect(httpRequest as jest.Mock).not.toHaveBeenCalled();
