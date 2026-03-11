@@ -39,7 +39,8 @@
     "test-e2e:lab-technician:headed": "USER_TYPE=lab-technician npx playwright test --project=lab-technician --ui",
     "nuxt-reset": "nuxt cleanup",
     "nftower-spec-to-zod": "pnpm typed-openapi ../shared-lib/src/app/types/nf-tower/seqera-api-latest.yml -r 'zod'",
-    "lint": "eslint 'src/**/*.{js,ts}' --fix"
+    "lint": "eslint 'src/**/*.{js,ts}' --fix",
+    "local-server": "USE_LOCAL_BACKEND=1 pnpm run nuxt-dev"
   },
   "author": {
     "name": "DEPT Agency",
@@ -47,7 +48,6 @@
   },
   "devDependencies": {
     "@aws-sdk/types": "^3.775.0",
-    "@iconify-json/logos": "^1.2.10",
     "@nuxt/types": "^2.18.1",
     "@nuxtjs/eslint-config-typescript": "^12.1.0",
     "@types/jest": "^29.5.14",
