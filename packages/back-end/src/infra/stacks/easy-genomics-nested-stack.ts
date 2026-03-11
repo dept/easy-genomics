@@ -38,6 +38,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
         ['user-deletion-topic']: <TopicDetails>{ fifo: true, enforceSSL: true },
         ['laboratory-run-update-topic']: <TopicDetails>{ fifo: true, enforceSSL: true },
         ['user-invite-topic']: <TopicDetails>{ fifo: true, enforceSSL: true },
+        ['folder-download-topic']: <TopicDetails>{ fifo: true, enforceSSL: true },
       },
     });
 
@@ -78,6 +79,13 @@ export class EasyGenomicsNestedStack extends NestedStack {
           retentionPeriod: Duration.days(1),
           visibilityTimeout: Duration.minutes(15),
           snsTopics: [this.sns.snsTopics.get('user-invite-topic')],
+          enforceSSL: true,
+        },
+        ['folder-download-queue']: <QueueDetails>{
+          fifo: true,
+          retentionPeriod: Duration.days(1),
+          visibilityTimeout: Duration.minutes(15),
+          snsTopics: [this.sns.snsTopics.get('folder-download-topic')],
           enforceSSL: true,
         },
       },
@@ -234,6 +242,16 @@ export class EasyGenomicsNestedStack extends NestedStack {
           environment: {
             SNS_LABORATORY_RUN_UPDATE_TOPIC: this.sns.snsTopics.get('laboratory-run-update-topic')?.topicArn || '',
           },
+        },
+        '/easy-genomics/file/request-folder-download-job': {
+          environment: {
+            SNS_FOLDER_DOWNLOAD_TOPIC: this.sns.snsTopics.get('folder-download-topic')?.topicArn || '',
+          },
+        },
+        '/easy-genomics/file/process-folder-download-job': {
+          events: [new SqsEventSource(this.sqs.sqsQueues.get('folder-download-queue')!, { batchSize: 1 })],
+          timeoutSeconds: 900,
+          memorySizeMb: 3008,
         },
       },
       environment: {
@@ -1308,6 +1326,67 @@ export class EasyGenomicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: ['arn:aws:s3:::*'],
         actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/file/request-folder-download-job
+    this.iam.addPolicyStatements('/easy-genomics/file/request-folder-download-job', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*/*'],
+        actions: ['s3:PutObject'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [`${this.sns.snsTopics.get('folder-download-topic')?.topicArn || ''}`],
+        actions: ['sns:Publish'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/file/request-folder-download-job-status
+    this.iam.addPolicyStatements('/easy-genomics/file/request-folder-download-job-status', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*/*'],
+        actions: ['s3:GetObject'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/file/process-folder-download-job
+    this.iam.addPolicyStatements('/easy-genomics/file/process-folder-download-job', [
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*/*'],
+        actions: ['s3:GetObject', 's3:PutObject'],
         effect: Effect.ALLOW,
       }),
     ]);

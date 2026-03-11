@@ -34,6 +34,9 @@ import {
   ListBucketsCommandOutput,
   ListMultipartUploadsCommand,
   ListMultipartUploadsCommandInput,
+  UploadPartCommand,
+  UploadPartCommandInput,
+  UploadPartCommandOutput,
   ListObjectsV2Command,
   ListObjectsV2CommandInput,
   ListObjectsV2CommandOutput,
@@ -77,6 +80,7 @@ export enum S3Command {
   // Multi-Part S3 Uploads
   CREATE_MULTI_PART_UPLOAD = 'create-multi-part-upload',
   ABORT_MULTI_PART_UPLOAD = 'abort-multi-part-upload',
+  UPLOAD_PART = 'upload-part',
   LIST_MULTI_PART_UPLOAD_PARTS = 'list-multi-part-upload-parts',
   LIST_MULTI_PART_UPLOAD_REQUESTS = 'list-multi-part-upload-requests',
   COMPLETE_MULTI_PART_UPLOAD = 'complete-multi-part-upload',
@@ -88,6 +92,10 @@ export class S3Service {
   public constructor() {
     this.s3Client = new S3Client();
   }
+
+  public getClient = (): S3Client => {
+    return this.s3Client;
+  };
 
   public createBucket = async (createBucketInput: CreateBucketCommandInput): Promise<CreateBucketCommandOutput> => {
     // Create S3 Bucket
@@ -205,6 +213,39 @@ export class S3Service {
     return this.s3Request<PutObjectCommandInput, PutObjectCommandOutput>(S3Command.PUT_OBJECT, putObjectInput);
   };
 
+  public deleteObject = async (deleteObjectInput: DeleteObjectCommandInput): Promise<any> => {
+    return this.s3Request<DeleteObjectCommandInput, any>(S3Command.DELETE_BUCKET_OBJECT, deleteObjectInput);
+  };
+
+  public createMultipartUpload = async (
+    createMultipartUploadInput: CreateMultipartUploadCommandInput,
+  ): Promise<any> => {
+    return this.s3Request<CreateMultipartUploadCommandInput, any>(
+      S3Command.CREATE_MULTI_PART_UPLOAD,
+      createMultipartUploadInput,
+    );
+  };
+
+  public uploadPart = async (uploadPartInput: UploadPartCommandInput): Promise<UploadPartCommandOutput> => {
+    return this.s3Request<UploadPartCommandInput, UploadPartCommandOutput>(S3Command.UPLOAD_PART, uploadPartInput);
+  };
+
+  public completeMultipartUpload = async (
+    completeMultipartUploadInput: CompleteMultipartUploadCommandInput,
+  ): Promise<any> => {
+    return this.s3Request<CompleteMultipartUploadCommandInput, any>(
+      S3Command.COMPLETE_MULTI_PART_UPLOAD,
+      completeMultipartUploadInput,
+    );
+  };
+
+  public abortMultipartUpload = async (abortMultipartUploadInput: AbortMultipartUploadCommandInput): Promise<any> => {
+    return this.s3Request<AbortMultipartUploadCommandInput, any>(
+      S3Command.ABORT_MULTI_PART_UPLOAD,
+      abortMultipartUploadInput,
+    );
+  };
+
   private s3Request = async <RequestType, ResponseType>(
     command: S3Command,
     data?: RequestType,
@@ -279,6 +320,8 @@ export class S3Service {
         return new CreateMultipartUploadCommand(data as CreateMultipartUploadCommandInput);
       case S3Command.ABORT_MULTI_PART_UPLOAD:
         return new AbortMultipartUploadCommand(data as AbortMultipartUploadCommandInput);
+      case S3Command.UPLOAD_PART:
+        return new UploadPartCommand(data as UploadPartCommandInput);
       case S3Command.LIST_MULTI_PART_UPLOAD_PARTS:
         return new ListPartsCommand(data as ListPartsCommandInput);
       case S3Command.LIST_MULTI_PART_UPLOAD_REQUESTS:
