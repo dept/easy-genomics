@@ -48,7 +48,7 @@ export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxy
   }
 };
 
-async function processStatusCheckEvent(operation: SnsProcessingOperation, laboratoryRun: LaboratoryRun) {
+export async function processStatusCheckEvent(operation: SnsProcessingOperation, laboratoryRun: LaboratoryRun) {
   if (operation === 'UPDATE') {
     console.log('Processing LaboratoryRun Status Update: ', laboratoryRun);
     const existingRun: LaboratoryRun = await laboratoryRunService.queryByRunId(laboratoryRun.RunId);
@@ -83,7 +83,7 @@ async function processStatusCheckEvent(operation: SnsProcessingOperation, labora
   return true;
 }
 
-async function getAWSHealthOmicsStatus(laboratoryRun: LaboratoryRun): Promise<string> {
+export async function getAWSHealthOmicsStatus(laboratoryRun: LaboratoryRun): Promise<string> {
   console.log('Fetching AWS Health Omics status for run: ', laboratoryRun.RunId);
 
   const response = await omicsService.getRun(<GetRunCommandInput>{
@@ -93,7 +93,7 @@ async function getAWSHealthOmicsStatus(laboratoryRun: LaboratoryRun): Promise<st
   return response.status || 'UNKNOWN';
 }
 
-async function getSeqeraCloudStatus(laboratoryRun: LaboratoryRun): Promise<string> {
+export async function getSeqeraCloudStatus(laboratoryRun: LaboratoryRun): Promise<string> {
   console.log('Fetching NF Tower status for run: ', laboratoryRun.RunId);
   const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(laboratoryRun.LaboratoryId);
 
