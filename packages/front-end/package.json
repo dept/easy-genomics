@@ -39,7 +39,8 @@
     "test-e2e:lab-technician:headed": "USER_TYPE=lab-technician npx playwright test --project=lab-technician --ui",
     "nuxt-reset": "nuxt cleanup",
     "nftower-spec-to-zod": "pnpm typed-openapi ../shared-lib/src/app/types/nf-tower/seqera-api-latest.yml -r 'zod'",
-    "lint": "eslint 'src/**/*.{js,ts}' --fix"
+    "lint": "eslint 'src/**/*.{js,ts}' --fix",
+    "local-server": "USE_LOCAL_BACKEND=1 pnpm run nuxt-dev"
   },
   "author": {
     "name": "DEPT Agency",
