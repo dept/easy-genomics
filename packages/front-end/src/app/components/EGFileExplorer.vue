@@ -533,7 +533,7 @@
         progressRef, // progress value ref to be updated by the function
       );
     } else {
-      await downloadFolder();
+      await downloadFolder(props.labId, getNodeS3Uri(node), progressRef);
     }
   }
 
