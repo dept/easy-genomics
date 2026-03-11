@@ -1,8 +1,8 @@
 import { App, Stack } from 'aws-cdk-lib';
-import { AuthNestedStack } from '../../../src/infra/stacks/auth-nested-stack';
 import { CognitoIdpConstruct } from '../../../src/infra/constructs/cognito-idp-construct';
 import { IamConstruct } from '../../../src/infra/constructs/iam-construct';
 import { LambdaConstruct } from '../../../src/infra/constructs/lambda-construct';
+import { AuthNestedStack } from '../../../src/infra/stacks/auth-nested-stack';
 
 jest.mock('../../../src/infra/constructs/iam-construct', () => ({
   IamConstruct: jest.fn().mockImplementation(() => ({
