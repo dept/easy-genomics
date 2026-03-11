@@ -26,7 +26,7 @@ const DOWNLOAD_JOBS_PREFIX = '.downloads/jobs';
 const DOWNLOAD_ARCHIVES_PREFIX = '.downloads/archives';
 const MAX_DOWNLOAD_SIZE_BYTES = 3 * 1024 * 1024 * 1024; // 3GB
 const FOLDER_SIZE_EXCEEDED_MESSAGE =
-  'This folder exceeds the 3GB download limit. Please contact support to get this folder content downloaded.';
+  'This folder is too large to download as a single ZIP file. You can download files individually, or contact support for assistance retrieving the full dataset.';
 const DOWNLOAD_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
 const parseS3Uri = (value: string): { bucket: string; prefix: string } | null => {
