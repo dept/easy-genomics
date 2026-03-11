@@ -30,6 +30,7 @@ describe('process-folder-download-job Lambda', () => {
   let mockListBucketObjectsV2: jest.Mock;
   let mockGetObject: jest.Mock;
   let mockPutObject: jest.Mock;
+  let mockGetClient: jest.Mock;
   let pipedZipStream: NodeJS.WritableStream | undefined;
 
   const createSnsWrappedSqsEvent = (message: Record<string, unknown>): SQSEvent =>
@@ -80,10 +81,12 @@ describe('process-folder-download-job Lambda', () => {
     mockListBucketObjectsV2 = jest.fn();
     mockGetObject = jest.fn();
     mockPutObject = jest.fn();
+    mockGetClient = jest.fn().mockReturnValue({} as any);
 
     mockS3ServiceInstance.prototype.listBucketObjectsV2 = mockListBucketObjectsV2;
     mockS3ServiceInstance.prototype.getObject = mockGetObject;
     mockS3ServiceInstance.prototype.putObject = mockPutObject;
+    mockS3ServiceInstance.prototype.getClient = mockGetClient;
   });
 
   it('processes paginated folders (>1000 objects) and completes', async () => {

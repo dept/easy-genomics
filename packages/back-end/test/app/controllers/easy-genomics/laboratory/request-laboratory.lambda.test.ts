@@ -9,6 +9,9 @@ import { LaboratoryService } from '../../../../../src/app/services/easy-genomics
 import { validateOrganizationAccess } from '../../../../../src/app/utils/auth-utils';
 
 describe('request-laboratory.lambda', () => {
+  const ORG_ID = '00000000-0000-0000-0000-000000000001';
+  const LAB_ID = '00000000-0000-0000-0000-000000000002';
+
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
   let mockValidateOrgAccess: jest.MockedFunction<typeof validateOrganizationAccess>;
 
@@ -58,27 +61,29 @@ describe('request-laboratory.lambda', () => {
     mockLabService = LaboratoryService as jest.MockedClass<typeof LaboratoryService>;
     mockValidateOrgAccess = validateOrganizationAccess as any;
     mockValidateOrgAccess.mockReturnValue(true);
+
+    mockLabService.prototype.get = jest.fn();
   });
 
   it('returns laboratory when request is valid and user has access', async () => {
     (mockLabService.prototype.get as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
       Name: 'Lab 1',
     });
 
     const event = createEvent({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
     });
 
     const result = await handler(event, createContext(), () => {});
 
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
-    expect(body.OrganizationId).toBe('org-1');
-    expect(body.LaboratoryId).toBe('lab-1');
-    expect(mockValidateOrgAccess).toHaveBeenCalledWith(expect.anything(), 'org-1', 'lab-1');
+    expect(body.OrganizationId).toBe(ORG_ID);
+    expect(body.LaboratoryId).toBe(LAB_ID);
+    expect(mockValidateOrgAccess).toHaveBeenCalledWith(expect.anything(), ORG_ID, LAB_ID);
   });
 
   it('returns 400 for invalid request body', async () => {
@@ -93,8 +98,8 @@ describe('request-laboratory.lambda', () => {
 
     const result = await handler(
       createEvent({
-        OrganizationId: 'org-1',
-        LaboratoryId: 'lab-1',
+        OrganizationId: ORG_ID,
+        LaboratoryId: LAB_ID,
       }),
       createContext(),
       () => {},

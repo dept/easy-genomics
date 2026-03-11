@@ -13,6 +13,7 @@ import {
 
 describe('read-laboratory-run.lambda', () => {
   let mockRunService: jest.MockedClass<typeof LaboratoryRunService>;
+  let mockQueryByRunId: jest.Mock;
   let mockValidateOrgAdmin: jest.MockedFunction<typeof validateOrganizationAdminAccess>;
   let mockValidateLabManager: jest.MockedFunction<typeof validateLaboratoryManagerAccess>;
   let mockValidateLabTechnician: jest.MockedFunction<typeof validateLaboratoryTechnicianAccess>;
@@ -65,6 +66,9 @@ describe('read-laboratory-run.lambda', () => {
     mockValidateLabManager = validateLaboratoryManagerAccess as any;
     mockValidateLabTechnician = validateLaboratoryTechnicianAccess as any;
 
+    mockQueryByRunId = jest.fn();
+    mockRunService.prototype.queryByRunId = mockQueryByRunId;
+
     mockValidateOrgAdmin.mockReturnValue(true);
     mockValidateLabManager.mockReturnValue(false);
     mockValidateLabTechnician.mockReturnValue(false);
@@ -77,7 +81,7 @@ describe('read-laboratory-run.lambda', () => {
   });
 
   it('returns 404 when run is not found', async () => {
-    (mockRunService.prototype.queryByRunId as jest.Mock).mockResolvedValue(undefined);
+    mockQueryByRunId.mockResolvedValue(undefined);
 
     const result = await handler(createEvent('run-1'), createContext(), () => {});
 
@@ -85,7 +89,7 @@ describe('read-laboratory-run.lambda', () => {
   });
 
   it('denies access when caller is not org admin or lab manager/technician', async () => {
-    (mockRunService.prototype.queryByRunId as jest.Mock).mockResolvedValue({
+    mockQueryByRunId.mockResolvedValue({
       RunId: 'run-1',
       LaboratoryId: 'lab-1',
       OrganizationId: 'org-1',
@@ -101,7 +105,7 @@ describe('read-laboratory-run.lambda', () => {
   });
 
   it('returns laboratory run with parsed Settings when user has access', async () => {
-    (mockRunService.prototype.queryByRunId as jest.Mock).mockResolvedValue({
+    mockQueryByRunId.mockResolvedValue({
       RunId: 'run-1',
       LaboratoryId: 'lab-1',
       OrganizationId: 'org-1',

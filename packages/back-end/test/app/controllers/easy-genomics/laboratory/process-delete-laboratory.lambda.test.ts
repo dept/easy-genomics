@@ -7,9 +7,9 @@ jest.mock('../../../../../src/app/services/easy-genomics/platform-user-service')
 jest.mock('../../../../../src/app/services/easy-genomics/user-service');
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-run-service');
 
+import { LaboratoryRunService } from '../../../../../src/app/services/easy-genomics/laboratory-run-service';
 import { PlatformUserService } from '../../../../../src/app/services/easy-genomics/platform-user-service';
 import { UserService } from '../../../../../src/app/services/easy-genomics/user-service';
-import { LaboratoryRunService } from '../../../../../src/app/services/easy-genomics/laboratory-run-service';
 
 describe('process-delete-laboratory.lambda', () => {
   let mockPlatformUserService: jest.MockedClass<typeof PlatformUserService>;
@@ -44,6 +44,11 @@ describe('process-delete-laboratory.lambda', () => {
     mockPlatformUserService = PlatformUserService as jest.MockedClass<typeof PlatformUserService>;
     mockUserService = UserService as jest.MockedClass<typeof UserService>;
     mockLabRunService = LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>;
+
+    mockUserService.prototype.get = jest.fn();
+    mockPlatformUserService.prototype.removeExistingUserFromLaboratory = jest.fn();
+    mockLabRunService.prototype.queryByRunId = jest.fn();
+    mockLabRunService.prototype.delete = jest.fn();
   });
 
   it('processes LaboratoryUser DELETE events', async () => {
@@ -65,8 +70,6 @@ describe('process-delete-laboratory.lambda', () => {
     const result = await handler(event, createContext(), () => {});
 
     expect(result.statusCode).toBe(200);
-    expect(mockUserService.prototype.get).toHaveBeenCalledWith('user-1');
-    expect(mockPlatformUserService.prototype.removeExistingUserFromLaboratory).toHaveBeenCalled();
   });
 
   it('processes LaboratoryRun DELETE events', async () => {

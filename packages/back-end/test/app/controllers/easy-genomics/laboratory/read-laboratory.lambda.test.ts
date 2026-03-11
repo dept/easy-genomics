@@ -1,5 +1,5 @@
-import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { GetParameterCommandOutput } from '@aws-sdk/client-ssm';
+import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 
 import { handler } from '../../../../../src/app/controllers/easy-genomics/laboratory/read-laboratory.lambda';
 
@@ -16,6 +16,9 @@ import {
 } from '../../../../../src/app/utils/auth-utils';
 
 describe('read-laboratory.lambda', () => {
+  const ORG_ID = '00000000-0000-0000-0000-000000000001';
+  const LAB_ID = '00000000-0000-0000-0000-000000000002';
+  const OTHER_LAB_ID = '00000000-0000-0000-0000-000000000003';
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
   let mockSsmService: jest.MockedClass<typeof SsmService>;
   let mockValidateOrgAccess: jest.MockedFunction<typeof validateOrganizationAccess>;
@@ -74,12 +77,15 @@ describe('read-laboratory.lambda', () => {
     mockValidateOrgAccess.mockReturnValue(true);
     mockValidateOrgAdmin.mockReturnValue(false);
     mockValidateSystemAdmin.mockReturnValue(false);
+
+    mockLabService.prototype.queryByLaboratoryId = jest.fn();
+    mockSsmService.prototype.getParameter = jest.fn();
   });
 
   it('returns laboratory details for an owned lab with HasNextFlowTowerAccessToken when token exists', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
       Name: 'Lab 1',
     });
 
@@ -89,32 +95,38 @@ describe('read-laboratory.lambda', () => {
     };
     (mockSsmService.prototype.getParameter as jest.Mock).mockResolvedValue(ssmResponse);
 
-    const event = createEvent('lab-1');
+    const event = createEvent(LAB_ID);
     const result = await handler(event, createContext(), () => {});
 
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
-    expect(body.OrganizationId).toBe('org-1');
+    expect(body.OrganizationId).toBe(ORG_ID);
     expect(body.HasNextFlowTowerAccessToken).toBe(true);
-    expect(mockValidateOrgAccess).toHaveBeenCalledWith(expect.anything(), 'org-1', 'lab-1');
+    expect(mockValidateOrgAccess).toHaveBeenCalledWith(expect.anything(), ORG_ID, LAB_ID);
   });
 
   it('allows a system admin to read any laboratory regardless of ownership', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'other-org',
-      LaboratoryId: 'other-lab',
+      OrganizationId: ORG_ID,
+      LaboratoryId: OTHER_LAB_ID,
       Name: 'Other Lab',
     });
+
+    const ssmResponse: GetParameterCommandOutput = {
+      $metadata: {},
+      Parameter: { Value: 'token' },
+    };
+    (mockSsmService.prototype.getParameter as jest.Mock).mockResolvedValue(ssmResponse);
 
     mockValidateSystemAdmin.mockReturnValue(true);
     mockValidateOrgAdmin.mockReturnValue(false);
     mockValidateOrgAccess.mockReturnValue(false);
 
-    const result = await handler(createEvent('other-lab'), createContext(), () => {});
+    const result = await handler(createEvent(OTHER_LAB_ID), createContext(), () => {});
 
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
-    expect(body.LaboratoryId).toBe('other-lab');
+    expect(body.LaboratoryId).toBe(OTHER_LAB_ID);
   });
 
   it('returns 400 when id path parameter is missing', async () => {

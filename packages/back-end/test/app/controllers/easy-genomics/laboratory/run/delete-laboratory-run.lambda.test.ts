@@ -17,6 +17,9 @@ describe('delete-laboratory-run.lambda', () => {
   let mockValidateLabManager: jest.MockedFunction<typeof validateLaboratoryManagerAccess>;
   let mockValidateLabTechnician: jest.MockedFunction<typeof validateLaboratoryTechnicianAccess>;
 
+  let mockQueryByRunId: jest.Mock;
+  let mockDeleteRun: jest.Mock;
+
   const createEvent = (id: string | undefined, overrides: Partial<APIGatewayProxyWithCognitoAuthorizerEvent> = {}) =>
     ({
       body: null,
@@ -65,6 +68,11 @@ describe('delete-laboratory-run.lambda', () => {
     mockValidateLabManager = validateLaboratoryManagerAccess as any;
     mockValidateLabTechnician = validateLaboratoryTechnicianAccess as any;
 
+    mockQueryByRunId = jest.fn();
+    mockDeleteRun = jest.fn();
+    mockRunService.prototype.queryByRunId = mockQueryByRunId;
+    mockRunService.prototype.delete = mockDeleteRun;
+
     mockValidateOrgAdmin.mockReturnValue(true);
     mockValidateLabManager.mockReturnValue(false);
     mockValidateLabTechnician.mockReturnValue(false);
@@ -77,7 +85,7 @@ describe('delete-laboratory-run.lambda', () => {
   });
 
   it('returns 404 when run is not found', async () => {
-    (mockRunService.prototype.queryByRunId as jest.Mock).mockResolvedValue(undefined);
+    mockQueryByRunId.mockResolvedValue(undefined);
 
     const result = await handler(createEvent('run-1'), createContext(), () => {});
 
@@ -85,7 +93,7 @@ describe('delete-laboratory-run.lambda', () => {
   });
 
   it('denies access when user does not have org or lab role', async () => {
-    (mockRunService.prototype.queryByRunId as jest.Mock).mockResolvedValue({
+    mockQueryByRunId.mockResolvedValue({
       OrganizationId: 'org-1',
       LaboratoryId: 'lab-1',
       RunId: 'run-1',
@@ -100,28 +108,28 @@ describe('delete-laboratory-run.lambda', () => {
   });
 
   it('deletes run successfully when user is authorized', async () => {
-    (mockRunService.prototype.queryByRunId as jest.Mock).mockResolvedValue({
+    mockQueryByRunId.mockResolvedValue({
       OrganizationId: 'org-1',
       LaboratoryId: 'lab-1',
       RunId: 'run-1',
     });
-    (mockRunService.prototype.delete as jest.Mock).mockResolvedValue(true);
+    mockDeleteRun.mockResolvedValue(true);
 
     const result = await handler(createEvent('run-1'), createContext(), () => {});
 
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
     expect(body.Status).toBe('Success');
-    expect(mockRunService.prototype.delete).toHaveBeenCalled();
+    expect(mockDeleteRun).toHaveBeenCalled();
   });
 
   it('returns 500-style error when delete fails (LaboratoryRunDeleteFailedError)', async () => {
-    (mockRunService.prototype.queryByRunId as jest.Mock).mockResolvedValue({
+    mockQueryByRunId.mockResolvedValue({
       OrganizationId: 'org-1',
       LaboratoryId: 'lab-1',
       RunId: 'run-1',
     });
-    (mockRunService.prototype.delete as jest.Mock).mockResolvedValue(false);
+    mockDeleteRun.mockResolvedValue(false);
 
     const result = await handler(createEvent('run-1'), createContext(), () => {});
 
