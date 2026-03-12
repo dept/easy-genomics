@@ -296,7 +296,7 @@ describe('request-folder-download-job Lambda', () => {
 
     expect(result.statusCode).toBe(400);
     const body = JSON.parse(result.body);
-    expect(body.Error).toContain('exceeds the 3GB download limit');
+    expect(body.Error).toContain('folder is too large to download');
     expect(mockPutObject).not.toHaveBeenCalled();
     expect(mockPublish).not.toHaveBeenCalled();
   });
