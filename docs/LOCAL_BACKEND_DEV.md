@@ -24,21 +24,21 @@ cp packages/back-end/.env.local.example packages/back-end/.env.local
 
 Fill in the values. Use this reference:
 
-| Variable                      | How to obtain                                                                                      |
-| ----------------------------- | -------------------------------------------------------------------------------------------------- |
-| `NAME_PREFIX`                 | `{env-type}-{env-name}` from easy-genomics.yaml (e.g. `dev-demo`)                                  |
-| `ACCOUNT_ID`                  | AWS account ID (12 digits)                                                                         |
-| `REGION`                      | From easy-genomics.yaml `aws-region`                                                               |
-| `DOMAIN_NAME`                 | From easy-genomics.yaml `app-domain-name`                                                          |
-| `ENV_TYPE`                    | From easy-genomics.yaml `env-type`                                                                 |
-| `ENV_NAME`                    | Config key from easy-genomics.yaml (e.g. `demo`)                                                   |
-| `COGNITO_USER_POOL_ID`        | AWS Console → Cognito → User Pools → _{name-prefix}-easy-genomics-auth-user-pool_ → User pool ID   |
-| `COGNITO_USER_POOL_CLIENT_ID` | Same pool → App integration → App client ID                                                        |
-| `JWT_SECRET_KEY`              | From easy-genomics.yaml `back-end.jwt-secret-key` (must match deployed value)                      |
-| `SNS_*_TOPIC`                 | AWS Console → SNS → Topics. Look for `{name-prefix}-easy-genomics-auth-*-topic`                    |
-| `COGNITO_KMS_KEY_ID`          | AWS Console → KMS → Customer managed keys → `{name-prefix}-easy-genomics-auth-cognito-idp-kms-key` |
-| `COGNITO_KMS_KEY_ARN`         | Same key → ARN                                                                                     |
-| `SEQERA_API_BASE_URL`         | Optional. Default: `https://api.cloud.seqera.io`                                                   |
+| Variable                      | How to obtain                                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| `NAME_PREFIX`                 | `{env-type}-{env-name}` from easy-genomics.yaml (e.g. `dev-demo`)                                |
+| `ACCOUNT_ID`                  | AWS account ID (12 digits)                                                                       |
+| `REGION`                      | From easy-genomics.yaml `aws-region`                                                             |
+| `DOMAIN_NAME`                 | From easy-genomics.yaml `app-domain-name`                                                        |
+| `ENV_TYPE`                    | From easy-genomics.yaml `env-type`                                                               |
+| `ENV_NAME`                    | Config key from easy-genomics.yaml (e.g. `demo`)                                                 |
+| `COGNITO_USER_POOL_ID`        | AWS Console → Cognito → User Pools → _{name-prefix}-easy-genomics-auth-user-pool_ → User pool ID |
+| `COGNITO_USER_POOL_CLIENT_ID` | Same pool → App integration → App client ID                                                      |
+| `JWT_SECRET_KEY`              | From easy-genomics.yaml `back-end.jwt-secret-key` (must match deployed value)                    |
+| `SNS_*_TOPIC`                 | AWS Console → SNS → Topics. Look for `{name-prefix}-*-topic`                                     |
+| `COGNITO_KMS_KEY_ID`          | AWS Console → KMS → Customer managed keys → `{name-prefix}-easy-genomics-cognito-idp-kms-key`    |
+| `COGNITO_KMS_KEY_ARN`         | Same key → ARN                                                                                   |
+| `SEQERA_API_BASE_URL`         | Optional. Default: `https://api.cloud.seqera.io`                                                 |
 
 **SNS topic names:**
 
@@ -209,6 +209,3 @@ workflows). To test one locally, you can invoke its handler manually with a scri
 approach.
 
 ---
-
-**Task list:** [Phase 2 task list (LOCAL_BACKEND_DEV_PHASE2_TASKS.md)](./LOCAL_BACKEND_DEV_PHASE2_TASKS.md) — full
-checklist and reference.
