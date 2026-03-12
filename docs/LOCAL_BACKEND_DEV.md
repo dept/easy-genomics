@@ -204,8 +204,6 @@ The following Lambdas are **not** exposed as HTTP routes; they run in AWS when S
   `process-pre-token-generation`
 
 When using the local server, these still run in the deployed stack (e.g. user invite emails, org/lab/user deletion
-workflows). To test one locally, you can invoke its handler manually with a script; see
-[Phase 2 task list (2.9)](./LOCAL_BACKEND_DEV_PHASE2_TASKS.md#task-29--optional-process-async-lambdas) for an optional
-approach.
+workflows). To test one locally, you can invoke its handler manually with a script.
 
 ---
