@@ -112,7 +112,7 @@ export default function useFileDownload() {
       progressVar && (progressVar.value = 100);
       console.error('Error during folder download:', error);
       const errorMessage = error?.message || '';
-      if (errorMessage.includes('exceeds the 3GB download limit')) {
+      if (errorMessage.includes('folder is too large to download')) {
         toast.error(folderTooLargeMessage);
       } else {
         toast.error(errorMessage || 'Unable to prepare folder download');
