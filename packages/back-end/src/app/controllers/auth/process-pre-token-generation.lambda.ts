@@ -33,6 +33,7 @@ export const handler: Handler = async (
           ['DefaultOrganization']: user.DefaultOrganization || '', // User last accessed Organization
           ['DefaultLaboratory']: user.DefaultLaboratory || '', // User last accessed Laboratory
           ['OrganizationAccess']: JSON.stringify(user.OrganizationAccess),
+          ['SampleIdSplitPattern']: user.SampleIdSplitPattern || '',
         },
       },
     };

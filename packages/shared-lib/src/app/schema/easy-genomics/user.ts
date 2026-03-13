@@ -27,6 +27,7 @@ export const UserSchema = z
     DefaultOrganization: z.string().optional(),
     DefaultLaboratory: z.string().optional(),
     OrganizationAccess: OrganizationAccessSchema.optional(),
+    SampleIdSplitPattern: z.string().optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
@@ -50,6 +51,7 @@ export const UpdateUserSchema = z
     PreferredName: z.string().optional(),
     FirstName: z.string().optional(),
     LastName: z.string().optional(),
+    SampleIdSplitPattern: z.string().optional(),
   })
   .strict();
 export type UpdateUser = z.infer<typeof UpdateUserSchema>;

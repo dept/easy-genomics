@@ -16,6 +16,19 @@ import {
 const laboratoryService = new LaboratoryService();
 const s3Service = new S3Service();
 
+const parseS3Uri = (value: string): { bucket: string; prefix: string } | null => {
+  if (!value.startsWith('s3://')) return null;
+  try {
+    const s3Url = new URL(value);
+    return {
+      bucket: s3Url.hostname,
+      prefix: s3Url.pathname.replace(/^\/*/, ''),
+    };
+  } catch {
+    throw new InvalidRequestError('Invalid S3 URI');
+  }
+};
+
 /**
  * This API enables the Easy Genomics FE to request only the top-level (direct children)
  * objects and prefixes at a given S3 path for lazy-loading in the File Manager UI.
@@ -59,10 +72,24 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
-    const s3Bucket: string = request.S3Bucket ? request.S3Bucket : laboratory.S3Bucket || '';
-    const s3Prefix: string = request.S3Prefix
-      ? request.S3Prefix
-      : `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
+    const prefixFromUri = request.S3Prefix ? parseS3Uri(request.S3Prefix) : null;
+    const providedPrefix = prefixFromUri?.prefix || request.S3Prefix;
+    const s3Bucket: string = request.S3Bucket || prefixFromUri?.bucket || laboratory.S3Bucket || '';
+    const s3Prefix: string = providedPrefix || `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
+
+    if (request.S3Bucket && prefixFromUri?.bucket && request.S3Bucket !== prefixFromUri.bucket) {
+      throw new InvalidRequestError('S3 bucket mismatch between S3Bucket and S3Prefix URI');
+    }
+
+    if (laboratory.S3Bucket && s3Bucket !== laboratory.S3Bucket) {
+      throw new UnauthorizedAccessError();
+    }
+
+    const normalizedPrefix = s3Prefix.endsWith('/') ? s3Prefix : `${s3Prefix}/`;
+    const laboratoryOwnedPrefix = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
+    if (!normalizedPrefix.startsWith(laboratoryOwnedPrefix)) {
+      throw new UnauthorizedAccessError();
+    }
 
     // Fetch ALL top-level objects at this prefix level using Delimiter for lazy-loading
     // Pagination is needed if there are >1000 items at this level
@@ -74,7 +101,7 @@ export const handler: Handler = async (
     while (isTruncated) {
       const response: ListObjectsV2CommandOutput = await s3Service.listBucketObjectsV2({
         Bucket: s3Bucket,
-        Prefix: s3Prefix,
+        Prefix: normalizedPrefix,
         Delimiter: '/', // S3 uses "/" as delimiter for "folders"
         MaxKeys: request.MaxKeys || 1000,
         ContinuationToken: continuationToken,

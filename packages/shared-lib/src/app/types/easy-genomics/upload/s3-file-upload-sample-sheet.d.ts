@@ -6,7 +6,7 @@ export type SampleSheetRequest = {
   SampleSheetName: string;
   LaboratoryId: string;
   TransactionId: string;
-  Platform: RunType,
+  Platform: RunType;
   UploadedFilePairs: UploadedFilePairInfo[];
 };
 
