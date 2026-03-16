@@ -96,6 +96,11 @@
   "license": "Apache-2.0",
   "version": "0.0.0",
   "jest": {
+    "moduleNameMapper": {
+      "^@BE/(.*)$": "<rootDir>/src/app/$1",
+      "^@FE/(.*)$": "<rootDir>/../front-end/src/app/$1",
+      "^@SharedLib/(.*)$": "<rootDir>/../shared-lib/src/app/$1"
+    },
     "coverageProvider": "v8",
     "testMatch": [
       "<rootDir>/@(src|test)/**/*(*.)@(spec|test).ts?(x)",

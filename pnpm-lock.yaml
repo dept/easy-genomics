@@ -167,6 +167,9 @@ importers:
       aws-cdk-lib:
         specifier: ^2.176.0
         version: 2.189.0(constructs@10.4.2)
+      aws-jwt-verify:
+        specifier: ^4.0.1
+        version: 4.0.1
       aws-lambda:
         specifier: ^1.0.7
         version: 1.0.7
@@ -182,6 +185,9 @@ importers:
       dotenv:
         specifier: ^16.4.7
         version: 16.4.7
+      express:
+        specifier: ^4.21.0
+        version: 4.22.1
       jsonwebtoken:
         specifier: ^9.0.2
         version: 9.0.2
@@ -219,9 +225,6 @@ importers:
       aws-cdk:
         specifier: ^2.176.0
         version: 2.1007.0
-      aws-jwt-verify:
-        specifier: ^4.0.1
-        version: 4.0.1
       aws-sdk-client-mock:
         specifier: ^3.1.0
         version: 3.1.0
@@ -240,9 +243,6 @@ importers:
       eslint-plugin-prettier:
         specifier: ^5.2.6
         version: 5.2.6(eslint-config-prettier@9.1.0(eslint@8.57.1))(eslint@8.57.1)(prettier@3.5.3)
-      express:
-        specifier: ^4.21.0
-        version: 4.22.1
       jest:
         specifier: ^29.7.0
         version: 29.7.0(@types/node@20.17.30)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3))
