@@ -276,6 +276,9 @@ importers:
       '@iconify-json/heroicons':
         specifier: ^1.2.2
         version: 1.2.2
+      '@iconify-json/logos':
+        specifier: 1.2.10
+        version: 1.2.10
       '@nuxt/ui':
         specifier: 2.18.4
         version: 2.18.4(axios@1.8.4)(change-case@4.1.2)(jwt-decode@4.0.0)(magicast@0.3.5)(qrcode@1.5.0)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3))(vite@6.2.5(@types/node@20.17.30)(jiti@2.4.2)(sass@1.86.3)(terser@5.39.0)(yaml@2.7.1))(vue@3.5.13(typescript@5.8.3))
@@ -382,9 +385,6 @@ importers:
       '@aws-sdk/types':
         specifier: ^3.775.0
         version: 3.775.0
-      '@iconify-json/logos':
-        specifier: ^1.2.10
-        version: 1.2.10
       '@nuxt/types':
         specifier: ^2.18.1
         version: 2.18.1

@@ -52,9 +52,9 @@ export const handler: Handler = async (
     const laboratoryRuns: LaboratoryRun[] = await laboratoryRunService.queryByLaboratoryId(laboratoryId);
 
     // Get optional query parameter(s)
-    const queryParameters: [string, string][] = <[string, string][]>(
-      // Exclude the mandatory 'LaboratoryId' query parameter
-      Object.entries(event.queryStringParameters).filter((_: [string, string]) => _[0] !== 'LaboratoryId')
+    const params = event.queryStringParameters ?? {};
+    const queryParameters: [string, string][] = Object.entries(params).filter(
+      (entry): entry is [string, string] => entry[0] !== 'LaboratoryId' && entry[1] !== undefined,
     );
     // Sanitize query parameters to the LaboratoryRun object's properties
     const filters: [string, string][] = getFilters(Object.keys(LaboratoryRunSchema.shape), queryParameters);

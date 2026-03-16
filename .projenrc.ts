@@ -151,7 +151,8 @@ const root = new typescript.TypeScriptProject({
   packageManager: javascript.NodePackageManager.PNPM,
   prettier: true,
   prettierOptions,
-  projenCommand: 'pnpm dlx projen',
+  // Use the pinned workspace projen version (avoid `pnpm dlx` drift).
+  projenCommand: 'pnpm exec projen',
   projenrcTs: true,
   sampleCode: false,
   tsconfig: tsConfigOptions,
@@ -221,7 +222,7 @@ root.addScripts({
     'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --verbose=true && ' +
     'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --verbose=true',
   ['prepare']: 'husky || true', // Enable Husky each time projen is synthesized
-  ['projen']: 'nx reset; pnpm dlx projen', // Clear NX cache each time projen is synthesized to avoid cache disk-space overconsumption
+  ['projen']: 'nx reset; pnpm exec projen', // Clear NX cache each time projen is synthesized to avoid cache disk-space overconsumption
   ['pre-commit']: 'lint-staged',
 });
 
@@ -293,6 +294,17 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
   defaultReleaseBranch: defaultReleaseBranch,
   docgen: false,
   eslint: true,
+  jest: true,
+  jestOptions: {
+    jestConfig: {
+      // Ensure Jest can resolve tsconfig path aliases used by lambda handlers/tests.
+      moduleNameMapper: {
+        '^@BE/(.*)$': '<rootDir>/src/app/$1',
+        '^@SharedLib/(.*)$': '<rootDir>/../shared-lib/src/app/$1',
+        '^@FE/(.*)$': '<rootDir>/../front-end/src/app/$1',
+      },
+    },
+  },
   lambdaAutoDiscover: false,
   requireApproval: awscdk.ApprovalLevel.NEVER,
   sampleCode: false,
@@ -328,10 +340,12 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@aws-sdk/client-sts',
     '@aws-sdk/client-s3',
     '@aws-sdk/lib-dynamodb',
+    '@aws-sdk/lib-storage',
     '@aws-sdk/s3-request-presigner',
     '@aws-sdk/types',
     '@aws-sdk/util-dynamodb',
     '@easy-genomics/shared-lib@workspace:*',
+    'archiver',
     'aws-cdk-lib',
     'aws-lambda',
     'base64-js',
@@ -345,6 +359,7 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@types/aws-lambda',
     '@types/jsonwebtoken',
     '@types/node',
+    '@types/archiver',
     '@types/uuid',
     'aws-sdk-client-mock',
     'prettier',
@@ -411,6 +426,7 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@aws-sdk/util-format-url',
     '@easy-genomics/shared-lib@workspace:*',
     '@iconify-json/heroicons',
+    '@iconify-json/logos@1.2.10',
     '@nuxt/ui@2.18.4', // Lock to version 2.18.4 due to input text bug
     '@pinia/nuxt',
     '@playwright/test',

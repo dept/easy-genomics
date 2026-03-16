@@ -1,4 +1,4 @@
-import { PassThrough } from 'stream';
+import { PassThrough, type Readable } from 'stream';
 import type { S3Client } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
@@ -121,7 +121,7 @@ const zipS3Prefix = async (job: FolderDownloadJobMessage): Promise<void> => {
       });
 
       if (!object.Body) continue;
-      archive.append(object.Body as NodeJS.ReadableStream, { name: `${zipRootFolder}/${relativeName}` });
+      archive.append(object.Body as unknown as Readable, { name: `${zipRootFolder}/${relativeName}` });
       filesAdded += 1;
     }
 

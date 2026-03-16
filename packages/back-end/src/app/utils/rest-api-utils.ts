@@ -145,13 +145,15 @@ export function getFilterResults<T>(results: T[], filters: [string, string][]): 
     return results;
   }
 
-  const [filterKey, filterVal] = filters.shift();
+  const next = filters.shift();
+  if (next === undefined) return results;
+  const [filterKey, filterVal] = next;
   const filterResults = results.filter((r: T) => {
     // https://stackoverflow.com/a/3561711 - this escape function is the same as this answer EXCEPT the * is removed
-    const regexEscapedInput = filterVal.replaceAll(/[/\-\\^$+?.()|[\]{}]/g, '\\$&');
-    const regex = new RegExp('^' + regexEscapedInput.replaceAll('*', '.*') + '$');
-
-    return regex.test(r[filterKey]);
+    const regexEscapedInput = filterVal.replace(/[/\-\\^$+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp('^' + regexEscapedInput.replace(/\*/g, '.*') + '$');
+    const value = (r as Record<string, unknown>)[filterKey];
+    return regex.test(String(value ?? ''));
   });
 
   // Recursion
