@@ -125,13 +125,17 @@ obtain the Easy Genomics project source code and install the project dependencie
    [easy-genomics]$ pnpm install
    ```
 
-4. Run `pnpm projen` to synthesize/update the project files managed by `projen`:
+4. (Development only) Run `pnpm projen` to synthesize/update the project files managed by `projen`. This step is
+   typically only needed when you are changing project configuration in `.projenrc.ts`, not as part of a normal
+   production deployment:
 
    ```
    [easy-genomics]$ pnpm projen
    ```
 
-5. Run `pnpm projen install` to install all the defined `.projenrc.ts` dependencies for compilation:
+5. (Development only) Run `pnpm projen install` to install all the defined `.projenrc.ts` dependencies for compilation.
+   This is intended for local development/bootstrapping; it is **not required** and generally **should not be run
+   immediately before a production `build-and-deploy`**, because it can regenerate configs and dependencies:
 
    ```
    [easy-genomics]$ pnpm projen install
