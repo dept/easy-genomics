@@ -31,8 +31,8 @@ export const handler: Handler = async (
     const organizationId: string | undefined = event.queryStringParameters?.organizationId;
     if (!organizationId) throw new RequiredIdNotFoundError();
 
-    const isSystemAdmin: boolean = validateSystemAdminAccess(event);
-    const isOrgAdmin: boolean = validateOrganizationAdminAccess(event, organizationId);
+    const isSystemAdmin: boolean = !!validateSystemAdminAccess(event);
+    const isOrgAdmin: boolean = !!validateOrganizationAdminAccess(event, organizationId);
     const isAdmin: boolean = isSystemAdmin || isOrgAdmin;
 
     if (!isSystemAdmin) {

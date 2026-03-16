@@ -22,7 +22,10 @@
     "projen": "pnpm exec projen",
     "cdk-audit": "export CDK_AUDIT=true && pnpm dlx projen build",
     "build-and-deploy": "pnpm -w run build-back-end && pnpm run deploy --require-approval any-change",
-    "lint": "eslint 'src/**/*.{js,ts}' --fix"
+    "lint": "eslint 'src/**/*.{js,ts}' --fix",
+    "local-server": "tsx src/local-server/index.ts",
+    "local-server:watch": "tsx watch src/local-server/index.ts",
+    "invoke-process-handler": "tsx src/local-server/invoke-process-handler.ts"
   },
   "author": {
     "name": "DEPT Agency",
@@ -32,10 +35,12 @@
     "@aws-sdk/types": "^3.731.0",
     "@types/archiver": "^7.0.0",
     "@types/aws-lambda": "^8.10.149",
+    "@types/express": "^4.17.21",
     "@types/jest": "^29.5.14",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^20.17.30",
     "@types/uuid": "^9.0.8",
+    "express": "^4.21.0",
     "@typescript-eslint/eslint-plugin": "^7",
     "@typescript-eslint/parser": "^7",
     "aws-cdk": "^2.176.0",
@@ -50,6 +55,7 @@
     "prettier": "^3.5.3",
     "ts-jest": "^29.3.1",
     "ts-node": "^10.9.2",
+    "tsx": "^4.19.0",
     "typescript": "^5.8.3"
   },
   "dependencies": {
@@ -66,6 +72,7 @@
     "@aws-sdk/client-ssm": "^3.782.0",
     "@aws-sdk/client-sso-oidc": "^3.782.0",
     "@aws-sdk/client-sts": "^3.782.0",
+    "@aws-sdk/lib-storage": "^3.786.0",
     "@aws-sdk/lib-dynamodb": "^3.786.0",
     "@aws-sdk/lib-storage": "^3.786.0",
     "@aws-sdk/s3-request-presigner": "^3.782.0",
@@ -74,11 +81,13 @@
     "@easy-genomics/shared-lib": "workspace:*",
     "archiver": "^7.0.1",
     "aws-cdk-lib": "^2.176.0",
+    "aws-jwt-verify": "^4.0.1",
     "aws-lambda": "^1.0.7",
     "base64-js": "^1.5.1",
     "cdk-nag": "^2.35.67",
     "constructs": "^10.0.5",
     "dotenv": "^16.4.7",
+    "express": "^4.21.0",
     "jsonwebtoken": "^9.0.2",
     "uuid": "^8.3.2"
   },
@@ -88,6 +97,11 @@
   "license": "Apache-2.0",
   "version": "0.0.0",
   "jest": {
+    "moduleNameMapper": {
+      "^@BE/(.*)$": "<rootDir>/src/app/$1",
+      "^@FE/(.*)$": "<rootDir>/../front-end/src/app/$1",
+      "^@SharedLib/(.*)$": "<rootDir>/../shared-lib/src/app/$1"
+    },
     "coverageProvider": "v8",
     "moduleNameMapper": {
       "^@BE/(.*)$": "<rootDir>/src/app/$1",

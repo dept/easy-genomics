@@ -357,13 +357,17 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
   devDeps: [
     '@aws-sdk/types',
     '@types/aws-lambda',
+    '@types/express',
     '@types/jsonwebtoken',
     '@types/node',
     '@types/archiver',
     '@types/uuid',
+    'aws-jwt-verify',
     'aws-sdk-client-mock',
-    'prettier',
     'eslint-plugin-prettier',
+    'express',
+    'prettier',
+    'tsx',
   ],
 });
 backEndApp.addScripts({
@@ -372,6 +376,9 @@ backEndApp.addScripts({
   ['deploy']: 'pnpm cdk bootstrap && pnpm dlx projen deploy',
   ['build-and-deploy']: 'pnpm -w run build-back-end && pnpm run deploy --require-approval any-change', // Run root build-back-end script to inc shared-lib
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
+  ['local-server']: 'tsx src/local-server/index.ts',
+  ['local-server:watch']: 'tsx watch src/local-server/index.ts',
+  ['invoke-process-handler']: 'tsx src/local-server/invoke-process-handler.ts',
 });
 
 if (backEndApp.eslint) {
@@ -563,6 +570,8 @@ root.gitignore.addPatterns(
   'packages/front-end/tests/e2e/.auth/*.json',
   'packages/front-end/playwright-report',
 );
+// Exception: Include .env example files (used for local dev setup documentation)
+root.gitignore.addPatterns('!packages/back-end/.env.local.example', '!config/.env.nuxt.local.example');
 
 // Synthesize the project
 root.synth();

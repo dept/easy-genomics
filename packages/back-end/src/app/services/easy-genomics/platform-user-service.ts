@@ -206,7 +206,7 @@ export class PlatformUserService extends DynamoDBService {
     // Replace User's existing DefaultOrganization if it is the same Organization access being removed
     const defaultOrganization: string | undefined =
       existingUser.DefaultOrganization === organizationUser.OrganizationId
-        ? Object.keys(organizationAccess)
+        ? Object.keys(organizationAccess ?? {})
             .filter((organizationId) => organizationId !== organizationUser.OrganizationId)
             .shift()
         : existingUser.DefaultOrganization;
@@ -623,15 +623,20 @@ export class PlatformUserService extends DynamoDBService {
     const organizationAccess: OrganizationAccess | undefined = existingUser.OrganizationAccess;
 
     // Find the Laboratory's parent Organization's OrganizationAccessDetails for use in the update
-    const found: [string, OrganizationAccessDetails] | undefined = Object.entries(organizationAccess)
+    const found: [string, OrganizationAccessDetails] | undefined = Object.entries(organizationAccess ?? {})
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      .filter(([orgId, orgAccessDetails]: [string, OrganizationAccessDetails]) => {
+      .filter(([_orgId, orgAccessDetails]: [string, OrganizationAccessDetails]) => {
         return orgAccessDetails.LaboratoryAccess
           ? Object.keys(orgAccessDetails.LaboratoryAccess).includes(laboratoryUser.LaboratoryId)
           : false;
       })
       .shift();
-    const [organizationId, organizationAccessDetails]: [string, OrganizationAccessDetails] = found ? found : undefined;
+    if (!found) {
+      throw new Error(
+        `${logRequestMessage} unsuccessful: Laboratory's parent Organization not found in user OrganizationAccess`,
+      );
+    }
+    const [organizationId, organizationAccessDetails] = found;
 
     // Retrieve the current Organization's LaboratoryAccess details for use in the update
     const laboratoryAccess: LaboratoryAccess | undefined = organizationAccessDetails

@@ -208,7 +208,7 @@ describe('process-update-laboratory-run.lambda', () => {
       NextFlowTowerWorkspaceId: 'ws-1',
     });
 
-    mockGetParameter.mockRejectedValue(new ParameterNotFound({}));
+    mockGetParameter.mockRejectedValue(new ParameterNotFound({ $metadata: {}, message: 'Parameter not found' }));
 
     const snsBody = {
       Message: JSON.stringify({

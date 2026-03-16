@@ -26,7 +26,7 @@ export class SnsService {
     data?: RequestType,
   ): Promise<ResponseType> => {
     try {
-      return await this.snsClient.send(this.getSnsCommand(command, data));
+      return (await this.snsClient.send(this.getSnsCommand(command, data))) as ResponseType;
     } catch (error: any) {
       console.error(`[sns-service : snsRequest] command: ${command} exception encountered:`, error);
       throw this.handleError(error);
@@ -37,10 +37,10 @@ export class SnsService {
     return error as SNSServiceException; // Base Exception
   };
 
-  private getSnsCommand = <SnsCommandInput>(command: SnsCommand, data: SnsCommandInput): any => {
+  private getSnsCommand = (command: SnsCommand, data: unknown): any => {
     switch (command) {
       case SnsCommand.PUBLISH:
-        return new PublishCommand(data);
+        return new PublishCommand(data as PublishCommandInput);
       default:
         throw new Error(`Unsupported SNS Management Command '${command}'`);
     }

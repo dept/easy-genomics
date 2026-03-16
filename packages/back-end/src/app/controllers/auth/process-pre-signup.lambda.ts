@@ -16,8 +16,6 @@ const userService = new UserService();
  * @param event
  */
 export const handler: Handler = async (event: PreSignUpTriggerEvent): Promise<PreSignUpTriggerEvent> => {
-  console.log('PRE_SIGNUP EVENT: \n' + JSON.stringify(event, null, 2));
-
   // Only enforce registration check for external providers (Google, etc.)
   if (event.triggerSource === 'PreSignUp_ExternalProvider') {
     const email = event.request.userAttributes.email;
