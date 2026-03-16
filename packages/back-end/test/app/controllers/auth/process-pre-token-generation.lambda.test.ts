@@ -29,11 +29,7 @@ const createMockEvent = (email: string): PreTokenGenerationTriggerEvent => ({
       preferredRole: '',
     },
   },
-  response: {
-    claimsOverrideDetails: {
-      claimsToAddOrOverride: {},
-    },
-  },
+  response: {},
 });
 
 const baseUser: User = {
@@ -80,11 +76,7 @@ describe('process-pre-token-generation Lambda', () => {
 
       const result = await handler(event, {} as any, () => {});
 
-      expect(result.response).toEqual({
-        claimsOverrideDetails: {
-          claimsToAddOrOverride: {},
-        },
-      });
+      expect(result.response).toEqual({});
     });
   });
 

@@ -12,7 +12,7 @@ import { OrganizationUserNotFoundError } from '@easy-genomics/shared-lib/src/app
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
 
-export class OrganizationUserService extends DynamoDBService implements Service<OrganizationUser> {
+export class OrganizationUserService extends DynamoDBService implements Service {
   readonly ORGANIZATION_USER_TABLE_NAME: string = `${process.env.NAME_PREFIX}-organization-user-table`;
 
   public constructor() {

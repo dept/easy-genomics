@@ -75,8 +75,8 @@ export const handler: Handler = async (
     const locationConstraint: BucketLocationConstraint | undefined = s3BucketLocation.LocationConstraint;
 
     if (
-      (process.env.REGION === 'us-east-1' && locationConstraint && String(locationConstraint) !== 'us-east-1') ||
-      (process.env.REGION !== 'us-east-1' && locationConstraint && String(locationConstraint) !== process.env.REGION)
+      (process.env.REGION === 'us-east-1' && locationConstraint && locationConstraint !== 'us-east-1') ||
+      (process.env.REGION !== 'us-east-1' && locationConstraint && locationConstraint !== process.env.REGION)
     ) {
       console.error(
         `Requested S3 Bucket '${s3Bucket}' file download belongs in a different AWS Region from ${process.env.REGION}`,

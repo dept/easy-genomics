@@ -74,64 +74,45 @@ export async function exportNuxtConfigurationSettings(awsRegion: string, envName
   });
 }
 
-function isCredentialsError(error: unknown): boolean {
-  const name = error && typeof error === 'object' && 'name' in error ? (error as { name?: string }).name : '';
-  const code = error && typeof error === 'object' && 'code' in error ? (error as { code?: string }).code : '';
-  return name === 'CredentialsProviderError' || code === 'CredentialsProviderError';
-}
-
 // eslint-disable-next-line no-void
 void (async () => {
-  try {
-    if (process.env.CI_CD === 'true') {
-      const awsRegion: string = process.env.AWS_REGION;
-      const envName: string = process.env.ENV_NAME;
-      const envType: string = process.env.ENV_TYPE;
+  if (process.env.CI_CD === 'true') {
+    const awsRegion: string = process.env.AWS_REGION;
+    const envName: string = process.env.ENV_NAME;
+    const envType: string = process.env.ENV_TYPE;
 
-      await exportNuxtConfigurationSettings(awsRegion, envName, envType);
+    await exportNuxtConfigurationSettings(awsRegion, envName, envType).catch((error) => {
+      throw error;
+    });
+  } else {
+    // @ts-ignore
+    const configurations: { [p: string]: ConfigurationSettings }[] = loadConfigurations(
+      join(__dirname, '../../config/easy-genomics.yaml'),
+    );
+    if (configurations.length === 0) {
+      throw new Error('Easy Genomics Configuration missing / invalid, please update: easy-genomics.yaml');
+    } else if (configurations.length > 1) {
+      throw new Error('Too many Easy Genomics Configurations found, please update: easy-genomics.yaml');
     } else {
-      // @ts-ignore
-      const configurations: { [p: string]: ConfigurationSettings }[] = loadConfigurations(
-        join(__dirname, '../../config/easy-genomics.yaml'),
-      );
-      if (configurations.length === 0) {
-        throw new Error('Easy Genomics Configuration missing / invalid, please update: easy-genomics.yaml');
-      } else if (configurations.length > 1) {
-        throw new Error('Too many Easy Genomics Configurations found, please update: easy-genomics.yaml');
-      } else {
-        const configuration: { [p: string]: ConfigurationSettings } | undefined = configurations.shift();
+      const configuration: { [p: string]: ConfigurationSettings } | undefined = configurations.shift();
 
-        if (configuration) {
-          const envName: string | undefined = Object.keys(configuration).shift();
-          const configSettings: ConfigurationSettings | undefined = Object.values(configuration).shift();
+      if (configuration) {
+        const envName: string | undefined = Object.keys(configuration).shift();
+        const configSettings: ConfigurationSettings | undefined = Object.values(configuration).shift();
 
-          if (!envName || !configSettings) {
-            throw new Error(
-              'Easy Genomics Configuration missing / invalid, please check the easy-genomics.yaml configuration',
-            );
-          }
-
-          const envType: string = configSettings['env-type']; // dev | pre-prod | prod
-          const awsRegion: string = configSettings['aws-region'];
-
-          await exportNuxtConfigurationSettings(awsRegion, envName, envType);
+        if (!envName || !configSettings) {
+          throw new Error(
+            'Easy Genomics Configuration missing / invalid, please check the easy-genomics.yaml configuration',
+          );
         }
+
+        const envType: string = configSettings['env-type']; // dev | pre-prod | prod
+        const awsRegion: string = configSettings['aws-region'];
+
+        await exportNuxtConfigurationSettings(awsRegion, envName, envType).catch((error) => {
+          throw error;
+        });
       }
     }
-  } catch (error) {
-    if (isCredentialsError(error)) {
-      console.error(
-        '\nAWS credentials could not be loaded. This script needs credentials to call API Gateway and Cognito.',
-      );
-      console.error('Configure credentials using one of these methods:\n');
-      console.error('  1. Run:  aws configure');
-      console.error('     Then set AWS Access Key ID, Secret Access Key, and Default region (e.g. us-west-2).\n');
-      console.error('  2. If using AWS SSO, run:  aws sso login');
-      console.error('     Then ensure AWS_PROFILE is set or use:  aws sso login --profile YOUR_PROFILE\n');
-      console.error('  3. Set environment variables: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION');
-      console.error('     (and AWS_SESSION_TOKEN if using temporary credentials).\n');
-      process.exit(1);
-    }
-    throw error;
   }
 })();

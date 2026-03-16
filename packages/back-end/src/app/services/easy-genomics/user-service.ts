@@ -12,7 +12,7 @@ import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
 
-export class UserService extends DynamoDBService implements Service<User> {
+export class UserService extends DynamoDBService implements Service {
   readonly USER_TABLE_NAME: string = `${process.env.NAME_PREFIX}-user-table`;
   readonly UNIQUE_REFERENCE_TABLE_NAME: string = `${process.env.NAME_PREFIX}-unique-reference-table`;
 

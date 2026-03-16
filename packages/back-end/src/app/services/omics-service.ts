@@ -90,7 +90,7 @@ export class OmicsService {
     data?: RequestType,
   ): Promise<ResponseType> => {
     try {
-      return (await this.omicsClient.send(this.getOmicsCommand(command, data))) as ResponseType;
+      return await this.omicsClient.send(this.getOmicsCommand(command, data));
     } catch (error: any) {
       console.error(`[omics-service : omicsRequest] command: ${command} exception encountered:`, error);
       throw this.handleError(error);
@@ -101,22 +101,22 @@ export class OmicsService {
     return error as OmicsServiceException; // Base Exception
   };
 
-  private getOmicsCommand = (command: OmicsCommand, data: unknown): any => {
+  private getOmicsCommand = <OmicsCommandInput>(command: OmicsCommand, data: OmicsCommandInput): any => {
     switch (command) {
       case OmicsCommand.CANCEL_RUN:
-        return new CancelRunCommand(data as CancelRunCommandInput);
+        return new CancelRunCommand(data);
       case OmicsCommand.GET_RUN:
-        return new GetRunCommand(data as GetRunCommandInput);
+        return new GetRunCommand(data);
       case OmicsCommand.GET_WORKFLOW:
-        return new GetWorkflowCommand(data as GetWorkflowCommandInput);
+        return new GetWorkflowCommand(data);
       case OmicsCommand.LIST_RUNS:
-        return new ListRunsCommand(data as ListRunsCommandInput);
+        return new ListRunsCommand(data);
       case OmicsCommand.LIST_WORKFLOWS:
-        return new ListWorkflowsCommand(data as ListWorkflowsCommandInput);
+        return new ListWorkflowsCommand(data);
       case OmicsCommand.LIST_SHARED_WORKFLOWS:
-        return new ListSharesCommand(data as ListSharesCommandInput);
+        return new ListSharesCommand(data);
       case OmicsCommand.START_RUN:
-        return new StartRunCommand(data as StartRunCommandInput);
+        return new StartRunCommand(data);
       default:
         throw new Error(`Unsupported Omics Management Command '${command}'`);
     }

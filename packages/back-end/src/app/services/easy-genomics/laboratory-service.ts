@@ -11,7 +11,7 @@ import { LaboratoryNotFoundError } from '@easy-genomics/shared-lib/src/app/utils
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
 
-export class LaboratoryService extends DynamoDBService implements Service<Laboratory> {
+export class LaboratoryService extends DynamoDBService implements Service {
   readonly LABORATORY_TABLE_NAME: string = `${process.env.NAME_PREFIX}-laboratory-table`;
   readonly UNIQUE_REFERENCE_TABLE_NAME: string = `${process.env.NAME_PREFIX}-unique-reference-table`;
 

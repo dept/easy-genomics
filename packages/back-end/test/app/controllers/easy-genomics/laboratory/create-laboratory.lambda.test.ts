@@ -161,9 +161,7 @@ describe('create-laboratory.lambda', () => {
       OrganizationId: ORG_ID,
     });
 
-    (mockLabService.prototype.add as jest.Mock).mockRejectedValue(
-      new ConditionalCheckFailedException({ message: 'Conditional check failed', $metadata: {} } as any),
-    );
+    (mockLabService.prototype.add as jest.Mock).mockRejectedValue(new ConditionalCheckFailedException({}));
 
     const result = await handler(createEvent(baseRequest), createContext(), () => {});
 
@@ -175,9 +173,7 @@ describe('create-laboratory.lambda', () => {
       OrganizationId: ORG_ID,
     });
 
-    (mockLabService.prototype.add as jest.Mock).mockRejectedValue(
-      new TransactionCanceledException({ message: 'Transaction canceled', $metadata: {} } as any),
-    );
+    (mockLabService.prototype.add as jest.Mock).mockRejectedValue(new TransactionCanceledException({}));
 
     const result = await handler(createEvent(baseRequest), createContext(), () => {});
 

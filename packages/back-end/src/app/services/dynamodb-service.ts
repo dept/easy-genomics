@@ -138,24 +138,24 @@ export class DynamoDBService {
    * @param command
    * @param data
    */
-  private getDynamoDBCommand = (command: DynamoDBCommand, data: unknown): any => {
+  private getDynamoDBCommand = <DynamoDBCommandInput>(command: DynamoDBCommand, data: DynamoDBCommandInput): any => {
     switch (command) {
       case DynamoDBCommand.PUT_ITEM:
-        return new PutItemCommand(data as PutItemCommandInput);
+        return new PutItemCommand(data);
       case DynamoDBCommand.TRANSACT_WRITE:
-        return new TransactWriteItemsCommand(data as TransactWriteItemsCommandInput);
+        return new TransactWriteItemsCommand(data);
       case DynamoDBCommand.SCAN_ITEMS:
-        return new ScanCommand(data as ScanCommandInput);
+        return new ScanCommand(data);
       case DynamoDBCommand.BATCH_GET_ITEM:
-        return new BatchGetItemCommand(data as BatchGetItemCommandInput);
+        return new BatchGetItemCommand(data);
       case DynamoDBCommand.GET_ITEM:
-        return new GetItemCommand(data as GetItemCommandInput);
+        return new GetItemCommand(data);
       case DynamoDBCommand.QUERY_ITEMS:
-        return new QueryCommand(data as QueryCommandInput);
+        return new QueryCommand(data);
       case DynamoDBCommand.UPDATE_ITEM:
-        return new UpdateItemCommand(data as UpdateItemCommandInput);
+        return new UpdateItemCommand(data);
       case DynamoDBCommand.DELETE_ITEM:
-        return new DeleteItemCommand(data as DeleteItemCommandInput);
+        return new DeleteItemCommand(data);
       default:
         throw new Error(`Unsupported DynamoDB Command '${command}'`);
     }
@@ -166,10 +166,7 @@ export class DynamoDBService {
    * ExpressionAttributeNames from an object's property names.
    * @param object
    */
-  public getExpressionAttributeNamesDefinition = <T extends object>(
-    object: T,
-    exclusions?: string[],
-  ): { [p: string]: string } => {
+  public getExpressionAttributeNamesDefinition = <T>(object: T, exclusions?: string[]): { [p: string]: string } => {
     const objectExpressionAttributeNames: { [p: string]: string }[] = Object.keys(object)
       .filter((key: string) => !exclusions?.includes(key))
       .map((key: string) => {
@@ -191,16 +188,12 @@ export class DynamoDBService {
    *
    * @param object
    */
-  public getExpressionAttributeValuesDefinition = <T extends object>(
-    object: T,
-    exclusions?: string[],
-  ): { [p: string]: any } => {
-    const obj = object as Record<string, unknown>;
+  public getExpressionAttributeValuesDefinition = <T>(object: T, exclusions?: string[]): { [p: string]: any } => {
     const objectExpressionAttributeValues: { [p: string]: any }[] = Object.keys(object)
       .filter((key: string) => !exclusions?.includes(key))
       .map((key: string) => {
         const attributeId = `${key.charAt(0).toLowerCase() + key.slice(1)}`; // Camel Case
-        const attributeValue = obj[key];
+        const attributeValue = object[key];
         const attributeType = typeof attributeValue;
 
         if (attributeType === 'boolean') {
@@ -216,12 +209,12 @@ export class DynamoDBService {
             [`:${attributeId}`]: { S: attributeValue }, // String
           };
         } else if (attributeType === 'object') {
-          if (Array.isArray(obj[key])) {
-            if (obj[key].every((_: unknown) => typeof _ === 'number')) {
+          if (Array.isArray(object[key])) {
+            if (object[key].every((_) => typeof _ === 'number')) {
               return {
                 [`:${attributeId}`]: { NS: attributeValue }, // Number Set
               };
-            } else if (obj[key].every((_: unknown) => typeof _ === 'string')) {
+            } else if (object[key].every((_) => typeof _ === 'string')) {
               return {
                 [`:${attributeId}`]: { SS: attributeValue }, // String Set
               };
@@ -251,7 +244,7 @@ export class DynamoDBService {
    * @param attributeNames
    * @param attributeValues
    */
-  public getUpdateExpression = <T extends object>(attributeNames: T, attributeValues: T): string => {
+  public getUpdateExpression = <T>(attributeNames: T, attributeValues: T): string => {
     const attributeNameKeys = Object.keys(attributeNames);
     const attributeValueKeys = Object.keys(attributeValues);
 

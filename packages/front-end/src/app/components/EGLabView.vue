@@ -51,12 +51,10 @@
   const userToRemove = ref();
   const missingPAT = ref<boolean>(false);
   const tabIndex = ref(0);
-  /** Prevents infinite loop: only refresh lab once when HasNextFlowTowerAccessToken is null */
-  const hasRefreshedLabForNullToken = ref(false);
   let intervalId: number | undefined;
 
+  const orgId = computed<string | null>(() => labStore.labs[props.labId].OrganizationId ?? null);
   const lab = computed<Laboratory | null>(() => labStore.labs[props.labId] ?? null);
-  const orgId = computed<string | null>(() => lab.value?.OrganizationId ?? null);
   const labName = computed<string>(() => lab.value?.Name || '');
 
   /**
@@ -568,28 +566,10 @@
     setTimeout(setTabIndex, 100); // there's a slight delay to get around a race condition
   }
 
-  /** Tracks which lab we've already run secondary fetches for; avoids re-running when watch re-fires for same reference */
-  const lastProcessedLabRef = ref<Laboratory | null>(null);
-
-  // Reset guards when navigating to a different lab
-  watch(
-    () => props.labId,
-    () => {
-      hasRefreshedLabForNullToken.value = false;
-      lastProcessedLabRef.value = null;
-    },
-  );
-
-  watch(lab, async (newLab) => {
-    if (newLab === null) {
+  watch(lab, async (lab) => {
+    if (lab === null) {
       return;
     }
-
-    // Avoid running secondary fetches multiple times for the same lab object (e.g. re-entrant or duplicate watch runs)
-    if (lastProcessedLabRef.value === newLab) {
-      return;
-    }
-    lastProcessedLabRef.value = newLab;
 
     const promises = [getLabUsers()];
 
@@ -599,17 +579,15 @@
       return;
     }
 
-    if (newLab.NextFlowTowerEnabled) {
-      if (newLab.HasNextFlowTowerAccessToken == null) {
-        // Current lab doesn't have the correct details — refresh at most once to avoid infinite loop
+    if (lab.NextFlowTowerEnabled) {
+      if (lab.HasNextFlowTowerAccessToken == null) {
+        // Current lab doesn't have the correct details
         if (uiStore.isRequestPending('loadLabData')) {
           // In the process of loading the lab, which will trigger this code again when it completes
-        } else if (!hasRefreshedLabForNullToken.value) {
-          hasRefreshedLabForNullToken.value = true;
-          await loadLabData();
-          // loadLabData() assigns a new lab in the store; watch will run again with that new reference and then run the fetches below (lastProcessedLabRef will differ)
+        } else {
+          loadLabData(); // Refresh the lab
         }
-      } else if (!newLab.HasNextFlowTowerAccessToken) {
+      } else if (!lab.HasNextFlowTowerAccessToken) {
         // Seqera enabled but creds not present, show the modal
         missingPAT.value = true;
         showRedirectModal();
@@ -621,7 +599,7 @@
       }
     }
 
-    if (newLab.AwsHealthOmicsEnabled) {
+    if (lab.AwsHealthOmicsEnabled) {
       // fetch the Omics stuff
       promises.push(getOmicsWorkflows());
       promises.push(getOmicsRuns());

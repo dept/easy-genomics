@@ -47,11 +47,11 @@ export class SesService {
     });
 
     try {
-      const response = await this.sesClient.send(sendTemplatedEmailCommand);
+      const response = await this.sesClient.send<SendTemplatedEmailCommand>(sendTemplatedEmailCommand);
       console.info(`Send New Existing User Invitation Email to ${toAddress} response: `, response);
       return response;
     } catch (error: unknown) {
-      throw new Error(`${logRequestMessage} unsuccessful: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`${logRequestMessage} unsuccessful: ${error.message}`);
     }
   }
 
@@ -80,11 +80,11 @@ export class SesService {
     });
 
     try {
-      const response = await this.sesClient.send(sendTemplatedEmailCommand);
+      const response = await this.sesClient.send<SendTemplatedEmailCommand>(sendTemplatedEmailCommand);
       console.info(`Send Existing User Courtesy Email to ${toAddress} response: `, response);
       return response;
     } catch (error: unknown) {
-      throw new Error(`${logRequestMessage} unsuccessful: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`${logRequestMessage} unsuccessful: ${error.message}`);
     }
   }
 
@@ -114,11 +114,11 @@ export class SesService {
     });
 
     try {
-      const response = await this.sesClient.send(sendTemplatedEmailCommand);
+      const response = await this.sesClient.send<SendTemplatedEmailCommand>(sendTemplatedEmailCommand);
       console.info(`Send User Forgot Password Email to ${toAddress} response: `, response);
       return response;
     } catch (error: unknown) {
-      throw new Error(`${logRequestMessage} unsuccessful: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`${logRequestMessage} unsuccessful: ${error.message}`);
     }
   }
 }

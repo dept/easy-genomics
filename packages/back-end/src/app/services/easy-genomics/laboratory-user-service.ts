@@ -12,7 +12,7 @@ import { LaboratoryUserNotFoundError } from '@easy-genomics/shared-lib/src/app/u
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
 
-export class LaboratoryUserService extends DynamoDBService implements Service<LaboratoryUser> {
+export class LaboratoryUserService extends DynamoDBService implements Service {
   readonly LABORATORY_USER_TABLE_NAME: string = `${process.env.NAME_PREFIX}-laboratory-user-table`;
 
   public constructor() {

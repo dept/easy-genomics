@@ -125,13 +125,9 @@ export default function useUser() {
       }
 
       // retrieve and set current org id and org access
-      let parsedOrgAccess: OrganizationAccess = {};
-      try {
-        parsedOrgAccess = JSON.parse(decodedToken.OrganizationAccess) as OrganizationAccess;
-      } catch (parseError) {
-        console.warn('Failed to parse OrganizationAccess, using empty object:', parseError);
-      }
-      userStore.currentUserPermissions.orgPermissions = parsedOrgAccess;
+      const parsedOrgAccess = JSON.parse(decodedToken.OrganizationAccess);
+
+      userStore.currentUserPermissions.orgPermissions = parsedOrgAccess as OrganizationAccess;
 
       // set default org, or if no value use first org
       userStore.currentOrg.OrganizationId = decodedToken.DefaultOrganization

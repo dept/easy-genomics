@@ -8,7 +8,6 @@ import {
   UserPoolIdentityProviderGoogle,
   OAuthScope,
   UserPoolClientIdentityProvider,
-  ProviderAttribute,
 } from 'aws-cdk-lib/aws-cognito';
 import { Key } from 'aws-cdk-lib/aws-kms';
 import { IFunction } from 'aws-cdk-lib/aws-lambda';
@@ -76,9 +75,6 @@ export class CognitoIdpConstruct extends Construct {
         clientId: props.googleClientId,
         clientSecret: props.googleClientSecret,
         scopes: ['email', 'profile', 'openid'],
-        attributeMapping: {
-          email: ProviderAttribute.GOOGLE_EMAIL,
-        },
       });
     }
 

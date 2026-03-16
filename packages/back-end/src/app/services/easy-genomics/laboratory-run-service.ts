@@ -12,7 +12,7 @@ import { LaboratoryRunNotFoundError } from '@easy-genomics/shared-lib/src/app/ut
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
 
-export class LaboratoryRunService extends DynamoDBService implements Service<LaboratoryRun> {
+export class LaboratoryRunService extends DynamoDBService implements Service {
   readonly LABORATORY_RUN_TABLE_NAME: string = `${process.env.NAME_PREFIX}-laboratory-run-table`;
 
   public constructor() {
