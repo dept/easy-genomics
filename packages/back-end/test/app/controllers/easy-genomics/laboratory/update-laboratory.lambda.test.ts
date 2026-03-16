@@ -187,7 +187,9 @@ describe('update-laboratory.lambda', () => {
       LaboratoryId: LAB_ID,
     });
 
-    (mockLabService.prototype.update as jest.Mock).mockRejectedValue(new TransactionCanceledException({}));
+    (mockLabService.prototype.update as jest.Mock).mockRejectedValue(
+      new TransactionCanceledException({ message: 'Transaction canceled', $metadata: {} } as any),
+    );
 
     const result = await handler(createEvent(LAB_ID, baseRequest), createContext(), () => {});
 

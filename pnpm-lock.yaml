@@ -167,6 +167,9 @@ importers:
       aws-cdk-lib:
         specifier: ^2.176.0
         version: 2.189.0(constructs@10.4.2)
+      aws-jwt-verify:
+        specifier: ^4.0.1
+        version: 4.0.1
       aws-lambda:
         specifier: ^1.0.7
         version: 1.0.7
@@ -182,6 +185,9 @@ importers:
       dotenv:
         specifier: ^16.4.7
         version: 16.4.7
+      express:
+        specifier: ^4.21.0
+        version: 4.22.1
       jsonwebtoken:
         specifier: ^9.0.2
         version: 9.0.2

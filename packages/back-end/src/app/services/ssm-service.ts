@@ -57,7 +57,7 @@ export class SsmService {
     data?: RequestType,
   ): Promise<ResponseType> => {
     try {
-      return await this.ssmClient.send(this.getSsmCommand(command, data));
+      return (await this.ssmClient.send(this.getSsmCommand(command, data))) as ResponseType;
     } catch (error: any) {
       console.error(`[ssm-service : ssmRequest] command: ${command} exception encountered:`, error);
       throw this.handleError(error);
@@ -68,14 +68,14 @@ export class SsmService {
     return error as SSMServiceException; // Base Exception
   };
 
-  private getSsmCommand = <SsmCommandInput>(command: SsmCommand, data: SsmCommandInput): any => {
+  private getSsmCommand = (command: SsmCommand, data: unknown): any => {
     switch (command) {
       case SsmCommand.DELETE_PARAMETER:
-        return new DeleteParameterCommand(data);
+        return new DeleteParameterCommand(data as DeleteParameterCommandInput);
       case SsmCommand.GET_PARAMETER:
-        return new GetParameterCommand(data);
+        return new GetParameterCommand(data as GetParameterCommandInput);
       case SsmCommand.PUT_PARAMETER:
-        return new PutParameterCommand(data);
+        return new PutParameterCommand(data as PutParameterCommandInput);
       default:
         throw new Error(`Unsupported SSM Management Command '${command}'`);
     }
