@@ -1,6 +1,7 @@
 // request-top-level-bucket-objects API type definition
 export type RequestTopLevelBucketObjects = {
   LaboratoryId: string;
+  RunId?: string;
   S3Bucket?: string;
   S3Prefix?: string;
   MaxKeys?: number;

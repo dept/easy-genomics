@@ -4,6 +4,7 @@ import { z } from 'zod';
 export const RequestTopLevelBucketObjectsSchema = z
   .object({
     LaboratoryId: z.string(),
+    RunId: z.string().optional(),
     S3Bucket: z.string().optional(),
     S3Prefix: z.string().optional(),
     MaxKeys: z.number().optional(),
