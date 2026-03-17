@@ -2,3 +2,5 @@
 # pre-commit hook file
 pnpm exec validate-branch-name -r '^(main|release){1}$|^(feat|fix|hotfix|infra|release|refactor|chore|docs)/.+$'
 pnpm pre-commit
+pnpm exec projen
+pnpm --filter @easy-genomics/back-end test -- --silent

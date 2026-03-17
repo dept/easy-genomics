@@ -31,6 +31,8 @@ export class Husky extends Component {
         "pnpm exec validate-branch-name -r '^(main|release){1}$|^(feat|fix|hotfix|infra|release|refactor|chore|docs)/.+$'",
       );
       preCommit.addLine('pnpm pre-commit');
+      preCommit.addLine('pnpm exec projen');
+      preCommit.addLine('pnpm --filter @easy-genomics/back-end test -- --silent');
       preCommit.addLine('');
     }
   }
