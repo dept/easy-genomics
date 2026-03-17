@@ -383,6 +383,18 @@ backEndApp.addScripts({
 
 if (backEndApp.eslint) {
   backEndApp.eslint.addRules({ ...eslintGlobalRules });
+  // `src/local-server/**` is a dev-only entrypoint, so it may import devDependencies.
+  // Keep the default rule behavior everywhere else.
+  backEndApp.eslint.addRules({
+    'import/no-extraneous-dependencies': [
+      'error',
+      {
+        devDependencies: ['**/test/**', '**/build-tools/**', '**/src/local-server/**'],
+        optionalDependencies: false,
+        peerDependencies: true,
+      },
+    ],
+  });
   backEndApp.eslint.addPlugins('prettier');
 }
 // Defines the Easy Genomics 'front-end' subproject
@@ -507,6 +519,7 @@ frontEndApp.addScripts({
   ['nuxt-reset']: 'nuxt cleanup',
   ['nftower-spec-to-zod']: "pnpm typed-openapi ../shared-lib/src/app/types/nf-tower/seqera-api-latest.yml -r 'zod'",
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
+  ['local-server']: 'USE_LOCAL_BACKEND=1 pnpm run nuxt-dev',
 });
 
 // Setup Frontend App ESLint configuration
