@@ -11,7 +11,7 @@ import { CreateRunRequest } from '@easy-genomics/shared-lib/src/app/types/aws-he
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { OmicsService } from '@BE/services/omics-service';
+import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
@@ -19,7 +19,6 @@ import {
 } from '@BE/utils/auth-utils';
 
 const laboratoryService = new LaboratoryService();
-const omicsService = new OmicsService();
 
 /**
  * This POST /aws-healthomics/run/create-run-execution?laboratoryId={LaboratoryId}
@@ -70,7 +69,17 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
-    const parameters = JSON.parse(request.parameters.toString());
+    const userId: string | undefined = event.requestContext.authorizer?.claims?.sub;
+    const userEmail: string | undefined = event.requestContext.authorizer?.claims?.email;
+    if (!userId) {
+      throw new UnauthorizedAccessError('User ID is required');
+    }
+    if (!userEmail) {
+      throw new UnauthorizedAccessError('User email is required');
+    }
+    const omicsService = await createOmicsServiceForLab(laboratory.LaboratoryId, laboratory.OrganizationId, userId);
+
+    const parameters = JSON.parse(request.parameters!.toString());
     const response = await omicsService.startRun(<StartRunCommandInput>{
       ...request,
       parameters: {
@@ -80,6 +89,16 @@ export const handler: Handler = async (
       outputUri: parameters.outdir, // AWS HealthOmics requires setting outputUri for copying 'outdir' output to the final destination
       workflowType: 'PRIVATE',
       roleArn: `arn:aws:iam::${process.env.ACCOUNT_ID}:role/${process.env.NAME_PREFIX}-easy-genomics-healthomics-workflow-run-role`,
+      tags: {
+        LaboratoryId: laboratory.LaboratoryId,
+        OrganizationId: laboratory.OrganizationId,
+        WorkflowId: request.workflowId,
+        RunName: request.name,
+        ...(userId && { UserId: userId }),
+        ...(userEmail && { UserEmail: userEmail }),
+        Application: 'easy-genomics',
+        Platform: 'AWS HealthOmics',
+      },
     });
     return buildResponse(200, JSON.stringify(response), event);
   } catch (err: any) {
