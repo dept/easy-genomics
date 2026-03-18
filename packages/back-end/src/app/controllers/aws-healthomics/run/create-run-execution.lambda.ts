@@ -70,7 +70,10 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
-    const parameters = JSON.parse(request.parameters.toString());
+    const userId: string | undefined = event.requestContext.authorizer?.claims?.sub;
+    const userEmail: string | undefined = event.requestContext.authorizer?.claims?.email;
+
+    const parameters = JSON.parse(request.parameters!.toString());
     const response = await omicsService.startRun(<StartRunCommandInput>{
       ...request,
       parameters: {
@@ -80,6 +83,16 @@ export const handler: Handler = async (
       outputUri: parameters.outdir, // AWS HealthOmics requires setting outputUri for copying 'outdir' output to the final destination
       workflowType: 'PRIVATE',
       roleArn: `arn:aws:iam::${process.env.ACCOUNT_ID}:role/${process.env.NAME_PREFIX}-easy-genomics-healthomics-workflow-run-role`,
+      tags: {
+        LaboratoryId: laboratory.LaboratoryId,
+        OrganizationId: laboratory.OrganizationId,
+        WorkflowId: request.workflowId,
+        RunName: request.name,
+        ...(userId && { UserId: userId }),
+        ...(userEmail && { UserEmail: userEmail }),
+        Application: 'easy-genomics',
+        Platform: 'AWS HealthOmics',
+      },
     });
     return buildResponse(200, JSON.stringify(response), event);
   } catch (err: any) {
