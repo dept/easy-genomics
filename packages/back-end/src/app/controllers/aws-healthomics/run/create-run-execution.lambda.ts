@@ -69,15 +69,19 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
-    const userId: string | undefined = event.requestContext.authorizer?.claims?.sub;
+    // User metadata is optional: IAM access control is enforced via LaboratoryId/OrganizationId tagging.
+    // We still accept missing `sub/email` so run creation doesn't fail for users depending on claim mapping.
+    const userId: string | undefined =
+      event.requestContext.authorizer?.claims?.sub ?? event.requestContext.authorizer?.claims?.['cognito:username'];
     const userEmail: string | undefined = event.requestContext.authorizer?.claims?.email;
-    if (!userId) {
-      throw new UnauthorizedAccessError('User ID is required');
-    }
-    if (!userEmail) {
-      throw new UnauthorizedAccessError('User email is required');
-    }
-    const omicsService = await createOmicsServiceForLab(laboratory.LaboratoryId, laboratory.OrganizationId, userId);
+
+    // STS session naming and optional UserId session tag.
+    const omicsUserId = userId ?? 'unknown-user';
+    const omicsService = await createOmicsServiceForLab(
+      laboratory.LaboratoryId,
+      laboratory.OrganizationId,
+      omicsUserId,
+    );
 
     const parameters = JSON.parse(request.parameters!.toString());
     const response = await omicsService.startRun(<StartRunCommandInput>{

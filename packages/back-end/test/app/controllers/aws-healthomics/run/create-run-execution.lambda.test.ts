@@ -3,6 +3,9 @@ import { handler } from '../../../../../src/app/controllers/aws-healthomics/run/
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../src/app/services/omics-service');
+jest.mock('../../../../../src/app/services/omics-lab-factory', () => ({
+  createOmicsServiceForLab: jest.fn(),
+}));
 jest.mock('../../../../../src/app/utils/auth-utils');
 jest.mock('@easy-genomics/shared-lib/lib/app/schema/aws-healthomics/aws-healthomics-api', () => ({
   CreateRunRequestSchema: {
@@ -11,6 +14,7 @@ jest.mock('@easy-genomics/shared-lib/lib/app/schema/aws-healthomics/aws-healthom
 }));
 
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
+import { createOmicsServiceForLab } from '../../../../../src/app/services/omics-lab-factory';
 import { OmicsService } from '../../../../../src/app/services/omics-service';
 import {
   validateOrganizationAdminAccess,
@@ -97,6 +101,9 @@ describe('create-run-execution.lambda', () => {
 
     mockLabService.prototype.queryByLaboratoryId = jest.fn();
     mockOmicsService.prototype.startRun = jest.fn();
+    (createOmicsServiceForLab as jest.Mock).mockResolvedValue({
+      startRun: mockOmicsService.prototype.startRun,
+    });
 
     mockValidateOrgAdmin.mockReturnValue(true);
     mockValidateLabManager.mockReturnValue(false);
