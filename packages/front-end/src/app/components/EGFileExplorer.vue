@@ -47,7 +47,7 @@
     { isLoading: true },
   );
 
-  const { handleS3Download, downloadFolder } = useFileDownload();
+  const { handleS3Download, downloadFolder, isFolderZipInProgress } = useFileDownload();
   const { $api } = useNuxtApp();
 
   const uiStore = useUiStore();
@@ -620,6 +620,11 @@
               variant="secondary"
               :label="row?.type === 'file' ? 'Download' : 'Download as zip'"
               :loading="downloads[nodeUniqueString(row)] !== undefined && downloads[nodeUniqueString(row)] < 100"
+              :disabled="
+                row?.type === 'directory' &&
+                isFolderZipInProgress &&
+                !(downloads[nodeUniqueString(row)] !== undefined && downloads[nodeUniqueString(row)] < 100)
+              "
               @click.stop="async () => await downloadFileTreeNode(row)"
             />
           </template>
