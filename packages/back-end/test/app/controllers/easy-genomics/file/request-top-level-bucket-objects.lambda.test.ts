@@ -213,6 +213,40 @@ describe('request-top-level-bucket-objects Lambda', () => {
     expect(mockListBucketObjectsV2).not.toHaveBeenCalled();
   });
 
+  it('allows listing when RunId is provided and run OutputS3Url bucket differs from lab S3Bucket', async () => {
+    mockValidateOrgAdmin.mockReturnValue(true);
+    mockQueryByLaboratoryId.mockResolvedValue(mockLaboratory);
+    mockGetLaboratoryRun.mockResolvedValue({
+      ...mockRun,
+      OutputS3Url: 's3://another-bucket/custom/output/results/',
+    });
+    mockListBucketObjectsV2.mockResolvedValue({
+      Contents: [],
+      CommonPrefixes: [{ Prefix: 'custom/output/results/sub/' }],
+      IsTruncated: false,
+    });
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'test-lab-id',
+        RunId: 'run-123',
+        S3Bucket: 'another-bucket',
+        S3Prefix: 'custom/output/results/',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockListBucketObjectsV2).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Bucket: 'another-bucket',
+        Prefix: 'custom/output/results/',
+        Delimiter: '/',
+      }),
+    );
+  });
+
   it('defaults to the run OutputS3Url prefix when RunId is provided and S3Prefix is omitted', async () => {
     mockValidateOrgAdmin.mockReturnValue(true);
     mockQueryByLaboratoryId.mockResolvedValue(mockLaboratory);

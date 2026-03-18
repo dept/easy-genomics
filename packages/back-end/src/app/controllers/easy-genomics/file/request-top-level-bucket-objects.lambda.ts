@@ -107,10 +107,7 @@ export const handler: Handler = async (
         throw new InvalidRequestError('Invalid OutputS3Url for run');
       }
 
-      // Bucket must match the run output bucket (and, if configured, the laboratory bucket)
-      if (laboratory.S3Bucket && outputBucket !== laboratory.S3Bucket) {
-        throw new UnauthorizedAccessError();
-      }
+      // Bucket must match the run output bucket
       if (s3Bucket && outputBucket && s3Bucket !== outputBucket) {
         throw new UnauthorizedAccessError();
       }
