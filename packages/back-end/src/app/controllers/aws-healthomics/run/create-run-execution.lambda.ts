@@ -11,7 +11,7 @@ import { CreateRunRequest } from '@easy-genomics/shared-lib/src/app/types/aws-he
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { OmicsService } from '@BE/services/omics-service';
+import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
@@ -19,7 +19,6 @@ import {
 } from '@BE/utils/auth-utils';
 
 const laboratoryService = new LaboratoryService();
-const omicsService = new OmicsService();
 
 /**
  * This POST /aws-healthomics/run/create-run-execution?laboratoryId={LaboratoryId}
@@ -72,9 +71,17 @@ export const handler: Handler = async (
 
     const userId: string | undefined = event.requestContext.authorizer?.claims?.sub;
     const userEmail: string | undefined = event.requestContext.authorizer?.claims?.email;
+    const { workflowVersionName, ...startRunRequestWithoutVersion } = request;
+
+    if (!userId) {
+      throw new UnauthorizedAccessError('User ID is required');
+    }
+    if (!userEmail) {
+      throw new UnauthorizedAccessError('User email is required');
+    }
+    const omicsService = await createOmicsServiceForLab(laboratory.LaboratoryId, laboratory.OrganizationId, userId);
 
     const parameters = JSON.parse(request.parameters!.toString());
-    const { workflowVersionName, ...startRunRequestWithoutVersion } = request;
     const response = await omicsService.startRun(<StartRunCommandInput>{
       ...startRunRequestWithoutVersion,
       ...(workflowVersionName ? { workflowVersionName } : {}),
