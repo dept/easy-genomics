@@ -7,6 +7,7 @@ import { Ref } from '.nuxt/imports';
 export default function useFileDownload() {
   const { $api } = useNuxtApp();
   const toast = useToastStore();
+  const isFolderZipInProgress = ref(false);
 
   const sleep = (milliseconds: number): Promise<void> =>
     new Promise((resolve) => {
@@ -75,6 +76,11 @@ export default function useFileDownload() {
     const pollIntervalMs = 5000;
 
     try {
+      if (isFolderZipInProgress.value) {
+        toast.error('A folder ZIP download is already in progress. Please wait for it to finish.');
+        return;
+      }
+      isFolderZipInProgress.value = true;
       progressVar && (progressVar.value = 10);
 
       const createJobResponse = await $api.file.requestFolderDownloadJob({
@@ -117,6 +123,8 @@ export default function useFileDownload() {
       } else {
         toast.error(errorMessage || 'Unable to prepare folder download');
       }
+    } finally {
+      isFolderZipInProgress.value = false;
     }
   }
 
@@ -137,5 +145,6 @@ export default function useFileDownload() {
     handleS3Download,
     downloadFolder,
     isSupportedFileType,
+    isFolderZipInProgress,
   };
 }
