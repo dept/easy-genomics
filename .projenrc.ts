@@ -381,6 +381,8 @@ backEndApp.addScripts({
   ['local-server']: 'tsx src/local-server/index.ts',
   ['local-server:watch']: 'tsx watch src/local-server/index.ts',
   ['invoke-process-handler']: 'tsx src/local-server/invoke-process-handler.ts',
+  ['backfill-omics-run-tags']: 'tsx scripts/backfill-omics-run-tags.ts',
+  ['backfill-omics-run-tags:dry-run']: 'tsx scripts/backfill-omics-run-tags.ts --dry-run',
 });
 
 if (backEndApp.eslint) {
