@@ -619,17 +619,32 @@
             />
 
             <!-- download -->
-            <EGButton
-              variant="secondary"
-              :label="row?.type === 'file' ? 'Download' : 'Download as zip'"
-              :loading="downloads[nodeUniqueString(row)] !== undefined && downloads[nodeUniqueString(row)] < 100"
-              :disabled="
-                row?.type === 'directory' &&
-                isFolderZipInProgress &&
-                !(downloads[nodeUniqueString(row)] !== undefined && downloads[nodeUniqueString(row)] < 100)
-              "
-              @click.stop="async () => await downloadFileTreeNode(row)"
-            />
+            <UTooltip
+              :delay-duration="0"
+              :prevent="!isFolderZipInProgress"
+              :ui="{
+                base: 'h-full w-auto text-center',
+              }"
+            >
+              <template #text>
+                <span class="block text-balance">
+                  Another download is currently in progress. Please wait for it to finish before starting a new one.
+                </span>
+              </template>
+              <span class="inline-flex">
+                <EGButton
+                  variant="secondary"
+                  :label="row?.type === 'file' ? 'Download' : 'Download as zip'"
+                  :loading="downloads[nodeUniqueString(row)] !== undefined && downloads[nodeUniqueString(row)] < 100"
+                  :disabled="
+                    row?.type === 'directory' &&
+                    isFolderZipInProgress &&
+                    !(downloads[nodeUniqueString(row)] !== undefined && downloads[nodeUniqueString(row)] < 100)
+                  "
+                  @click.stop="async () => await downloadFileTreeNode(row)"
+                />
+              </span>
+            </UTooltip>
           </template>
         </div>
       </template>
