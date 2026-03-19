@@ -65,8 +65,14 @@ export default function useFileDownload() {
 
       // Use FileSaver to save the blob to a file
       saveAs(blob, fileName);
+
+      // Ensure the UI reaches 100% at completion (axios sometimes ends at <100).
+      if (progressVar !== undefined) progressVar.value = 100;
     } catch (error) {
       console.error('Error during file download:', error);
+
+      // Still set completion so the UI can clean up the progress overlay.
+      if (progressVar !== undefined) progressVar.value = 100;
     }
   }
 
