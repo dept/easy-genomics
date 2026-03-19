@@ -5,6 +5,7 @@ import { RequestTopLevelBucketObjectsSchema } from '@easy-genomics/shared-lib/sr
 import { RequestTopLevelBucketObjects } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-top-level-bucket-objects';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { S3Service } from '@BE/services/s3-service';
 import {
@@ -14,6 +15,7 @@ import {
 } from '@BE/utils/auth-utils';
 
 const laboratoryService = new LaboratoryService();
+const laboratoryRunService = new LaboratoryRunService();
 const s3Service = new S3Service();
 
 const parseS3Uri = (value: string): { bucket: string; prefix: string } | null => {
@@ -29,6 +31,15 @@ const parseS3Uri = (value: string): { bucket: string; prefix: string } | null =>
   }
 };
 
+const getParentPrefix = (prefix: string): string | null => {
+  const normalized = prefix.endsWith('/') ? prefix : `${prefix}/`;
+  const trimmed = normalized.replace(/\/+$/, '');
+  const lastSlashIdx = trimmed.lastIndexOf('/');
+  if (lastSlashIdx < 0) return null;
+  const parent = trimmed.slice(0, lastSlashIdx);
+  return parent ? `${parent}/` : null;
+};
+
 /**
  * This API enables the Easy Genomics FE to request only the top-level (direct children)
  * objects and prefixes at a given S3 path for lazy-loading in the File Manager UI.
@@ -42,7 +53,7 @@ const parseS3Uri = (value: string): { bucket: string; prefix: string } | null =>
  * - CommonPrefixes: ALL directories (folders) at this level
  *
  * @param event APIGatewayProxyWithCognitoAuthorizerEvent
- *   Body: { LaboratoryId, S3Bucket?, S3Prefix?, MaxKeys? }
+ *   Body: { LaboratoryId, RunId?, S3Bucket?, S3Prefix?, MaxKeys? }
  */
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -74,21 +85,58 @@ export const handler: Handler = async (
 
     const prefixFromUri = request.S3Prefix ? parseS3Uri(request.S3Prefix) : null;
     const providedPrefix = prefixFromUri?.prefix || request.S3Prefix;
-    const s3Bucket: string = request.S3Bucket || prefixFromUri?.bucket || laboratory.S3Bucket || '';
-    const s3Prefix: string = providedPrefix || `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
+    const requestBucket: string = request.S3Bucket || prefixFromUri?.bucket || laboratory.S3Bucket || '';
+    let s3Bucket: string = requestBucket;
+    let s3Prefix: string = providedPrefix || `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
 
     if (request.S3Bucket && prefixFromUri?.bucket && request.S3Bucket !== prefixFromUri.bucket) {
       throw new InvalidRequestError('S3 bucket mismatch between S3Bucket and S3Prefix URI');
     }
 
-    if (laboratory.S3Bucket && s3Bucket !== laboratory.S3Bucket) {
-      throw new UnauthorizedAccessError();
-    }
+    // If a RunId is provided, authorize the requested S3 prefix against the run OutputS3Url (supports custom output dirs).
+    // Otherwise, fall back to the original lab-owned prefix constraint.
+    let normalizedPrefix = s3Prefix.endsWith('/') ? s3Prefix : `${s3Prefix}/`;
+    if (request.RunId) {
+      const run = await laboratoryRunService.get(laboratoryId, request.RunId);
+      const outputFromUri = run.OutputS3Url ? parseS3Uri(run.OutputS3Url) : null;
+      const outputBucket = outputFromUri?.bucket || laboratory.S3Bucket || requestBucket;
+      const outputPrefix = outputFromUri?.prefix || run.OutputS3Url || '';
+      const normalizedOutputPrefix = outputPrefix.endsWith('/') ? outputPrefix : `${outputPrefix}/`;
 
-    const normalizedPrefix = s3Prefix.endsWith('/') ? s3Prefix : `${s3Prefix}/`;
-    const laboratoryOwnedPrefix = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
-    if (!normalizedPrefix.startsWith(laboratoryOwnedPrefix)) {
-      throw new UnauthorizedAccessError();
+      if (!normalizedOutputPrefix || normalizedOutputPrefix === '/') {
+        throw new InvalidRequestError('Invalid OutputS3Url for run');
+      }
+
+      // Bucket must match the run output bucket
+      if (s3Bucket && outputBucket && s3Bucket !== outputBucket) {
+        throw new UnauthorizedAccessError();
+      }
+      s3Bucket = outputBucket;
+
+      // If client didn't pass S3Prefix, list from the run output root.
+      if (!providedPrefix) {
+        s3Prefix = normalizedOutputPrefix;
+        normalizedPrefix = normalizedOutputPrefix;
+      }
+
+      // Allow listing:
+      // - within the run OutputS3Url prefix (the most restricted case), OR
+      // - exactly at its immediate parent (so UI can show the run root when OutputS3Url points to e.g. ".../results/").
+      const outputParentPrefix = getParentPrefix(normalizedOutputPrefix);
+      const isWithinOutput = normalizedPrefix.startsWith(normalizedOutputPrefix);
+      const isImmediateParent = outputParentPrefix ? normalizedPrefix === outputParentPrefix : false;
+      if (!isWithinOutput && !isImmediateParent) {
+        throw new UnauthorizedAccessError();
+      }
+    } else {
+      if (laboratory.S3Bucket && s3Bucket !== laboratory.S3Bucket) {
+        throw new UnauthorizedAccessError();
+      }
+
+      const laboratoryOwnedPrefix = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
+      if (!normalizedPrefix.startsWith(laboratoryOwnedPrefix)) {
+        throw new UnauthorizedAccessError();
+      }
     }
 
     // Fetch ALL top-level objects at this prefix level using Delimiter for lazy-loading

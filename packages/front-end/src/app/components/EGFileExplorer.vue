@@ -38,6 +38,7 @@
   const props = withDefaults(
     defineProps<{
       labId: string;
+      runId?: string;
       s3Bucket: string;
       s3Prefix: string;
       s3Contents?: S3Response | null;
@@ -116,6 +117,7 @@
           $api.file
             .requestTopLevelBucketObjects({
               LaboratoryId: props.labId,
+              RunId: props.runId,
               S3Bucket: s3Bucket,
               S3Prefix: childPrefix,
             } as RequestTopLevelBucketObjects)
@@ -139,6 +141,7 @@
     try {
       const response: S3TopLevelResponse = await $api.file.requestTopLevelBucketObjects({
         LaboratoryId: props.labId,
+        RunId: props.runId,
         S3Bucket: s3Bucket,
         S3Prefix: prefixPath,
       } as RequestTopLevelBucketObjects);
