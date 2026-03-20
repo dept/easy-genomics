@@ -1,28 +1,24 @@
 import { ResourceNotFoundException } from '@aws-sdk/client-omics';
 import { GetWorkflowCommandInput } from '@aws-sdk/client-omics/dist-types/commands/GetWorkflowCommand';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
+import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
 import {
   LaboratoryNotFoundError,
   MissingAWSHealthOmicsAccessError,
   OmicsWorkflowNotFoundError,
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
-} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
-import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
-import { OmicsService } from '@BE/services/omics-service';
+import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
-import { assertLaboratoryHasWorkflowAccess } from '@BE/utils/laboratory-workflow-access-utils';
 
 const laboratoryService = new LaboratoryService();
-const omicsService = new OmicsService();
-const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
 
 /**
  * This GET /aws-healthomics/workflow/read-private-workflow/{:id}?laboratoryId={laboratoryId}
@@ -70,8 +66,8 @@ export const handler: Handler = async (
       throw new MissingAWSHealthOmicsAccessError();
     }
 
-    await assertLaboratoryHasWorkflowAccess(laboratory, 'HEALTH_OMICS', id, laboratoryWorkflowAccessService);
-
+    const userId = event.requestContext.authorizer.claims['cognito:username'] as string;
+    const omicsService = await createOmicsServiceForLab(laboratory.LaboratoryId, laboratory.OrganizationId, userId);
     const response = await omicsService
       .getWorkflow(<GetWorkflowCommandInput>{
         type: 'PRIVATE',
