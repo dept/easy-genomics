@@ -9,7 +9,7 @@ import {
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { OmicsService } from '@BE/services/omics-service';
+import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
@@ -18,7 +18,6 @@ import {
 import { AwsHealthOmicsQueryParameters, getAwsHealthOmicsApiQueryParameters } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
-const omicsService = new OmicsService();
 
 /**
  * This GET /aws-healthomics/workflow/list-shared-workflows?laboratoryId={LaboratoryId}
@@ -64,6 +63,8 @@ export const handler: Handler = async (
       throw new MissingAWSHealthOmicsAccessError();
     }
 
+    const userId = event.requestContext.authorizer.claims['cognito:username'] as string;
+    const omicsService = await createOmicsServiceForLab(laboratory.LaboratoryId, laboratory.OrganizationId, userId);
     const queryParameters: AwsHealthOmicsQueryParameters = getAwsHealthOmicsApiQueryParameters(event);
     const response = await omicsService.listSharedWorkflows(<ListSharesCommandInput>{
       resourceOwner: 'OTHER',
