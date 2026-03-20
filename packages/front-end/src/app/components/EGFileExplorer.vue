@@ -310,6 +310,39 @@
   // key is the uniqueString of a file tree node
   // value is the ref containing the progress of the download out of 100
   const downloads = ref<Record<string, Ref<number>>>({});
+  // Tracks whether a given node is actively downloading (used for button loading state).
+  // We keep this separate from `downloads[...]` so we can fade the green overlay without
+  // showing the spinner forever.
+  const downloadActive = ref<Record<string, boolean>>({});
+
+  const fadeIntervals = new Map<string, ReturnType<typeof setInterval>>();
+
+  function startFadeOutAndCleanup(uniqueString: string, progressRef: Ref<number>) {
+    if (fadeIntervals.has(uniqueString)) return;
+
+    // Keep it short: we only want to visually fade the green overlay.
+    const fadeDurationMs = 700;
+    const intervalMs = 50;
+    const totalSteps = Math.ceil(fadeDurationMs / intervalMs);
+    let step = 0;
+
+    const timer = setInterval(() => {
+      step += 1;
+      const remainingSteps = Math.max(0, totalSteps - step);
+      progressRef.value = Math.round((remainingSteps / totalSteps) * 100);
+
+      if (step >= totalSteps) {
+        const handle = fadeIntervals.get(uniqueString);
+        if (handle) clearInterval(handle);
+        fadeIntervals.delete(uniqueString);
+
+        delete downloads.value[uniqueString];
+        delete downloadActive.value[uniqueString];
+      }
+    }, intervalMs);
+
+    fadeIntervals.set(uniqueString, timer);
+  }
 
   function formatFileSize(value?: number): string {
     if (!value) return '';
@@ -522,21 +555,40 @@
 
   async function downloadFileTreeNode(node: FileTreeNode): Promise<void> {
     const uniqueString = nodeUniqueString(node);
+    // If a fade-out is currently running for this node, stop it so the new download
+    // starts from a clean slate.
+    if (fadeIntervals.has(uniqueString)) {
+      const handle = fadeIntervals.get(uniqueString);
+      if (handle) clearInterval(handle);
+      fadeIntervals.delete(uniqueString);
+    }
+
+    delete downloads.value[uniqueString];
+    delete downloadActive.value[uniqueString];
+
     const progressRef: Ref<number> = ref(0);
     downloads.value[uniqueString] = progressRef;
+    downloadActive.value[uniqueString] = true;
 
     useToastStore().success('Your files have begun downloading');
 
-    if (node.type === 'file') {
-      const fileName = node.s3Key?.split('/').pop() || node.name!;
-      await handleS3Download(
-        props.labId,
-        fileName, // Filename
-        getNodeDirectoryPath(node), // s3://{S3 Bucket}/{S3 Prefix} Path
-        progressRef, // progress value ref to be updated by the function
-      );
-    } else {
-      await downloadFolder(props.labId, getNodeS3Uri(node), progressRef);
+    try {
+      if (node.type === 'file') {
+        const fileName = node.s3Key?.split('/').pop() || node.name!;
+        await handleS3Download(
+          props.labId,
+          fileName, // Filename
+          getNodeDirectoryPath(node), // s3://{S3 Bucket}/{S3 Prefix} Path
+          progressRef, // progress value ref to be updated by the function
+        );
+      } else {
+        await downloadFolder(props.labId, getNodeS3Uri(node), progressRef);
+      }
+    } finally {
+      // Ensure we briefly show "complete" and then fade the overlay out.
+      progressRef.value = 100;
+      downloadActive.value[uniqueString] = false;
+      startFadeOutAndCleanup(uniqueString, progressRef);
     }
   }
 
@@ -545,6 +597,11 @@
 
   watch(searchQuery, (value: string) => {
     onSearchInput(value);
+  });
+
+  onBeforeUnmount(() => {
+    fadeIntervals.forEach((handle) => clearInterval(handle));
+    fadeIntervals.clear();
   });
 </script>
 
@@ -635,7 +692,7 @@
                 <EGButton
                   variant="secondary"
                   :label="row?.type === 'file' ? 'Download' : 'Download as zip'"
-                  :loading="downloads[nodeUniqueString(row)] !== undefined && downloads[nodeUniqueString(row)] < 100"
+                  :loading="downloadActive[nodeUniqueString(row)] === true"
                   :disabled="
                     row?.type === 'directory' &&
                     isFolderZipInProgress &&
