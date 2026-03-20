@@ -11,7 +11,7 @@ import {
 } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
+import { OmicsService } from '@BE/services/omics-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
@@ -19,6 +19,7 @@ import {
 } from '@BE/utils/auth-utils';
 
 const laboratoryService = new LaboratoryService();
+const omicsService = new OmicsService();
 
 /**
  * This GET /aws-healthomics/workflow/read-private-workflow/{:id}?laboratoryId={laboratoryId}
@@ -66,8 +67,6 @@ export const handler: Handler = async (
       throw new MissingAWSHealthOmicsAccessError();
     }
 
-    const userId = event.requestContext.authorizer.claims['cognito:username'] as string;
-    const omicsService = await createOmicsServiceForLab(laboratory.LaboratoryId, laboratory.OrganizationId, userId);
     const response = await omicsService
       .getWorkflow(<GetWorkflowCommandInput>{
         type: 'PRIVATE',
