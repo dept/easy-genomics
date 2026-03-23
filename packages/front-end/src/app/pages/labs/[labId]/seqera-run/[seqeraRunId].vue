@@ -131,7 +131,13 @@
   <UTabs :ui="EGTabsStyles" v-model="tabIndex" :items="tabItems" @update:model-value="handleTabChange">
     <template #item="{ item }">
       <div v-show="item.key === 'fileManager'" class="space-y-3">
-        <EGFileExplorer v-if="labRunId && s3Bucket" :lab-id="labId" :s3-bucket="s3Bucket" :s3-prefix="s3Prefix" />
+        <EGFileExplorer
+          v-if="labRunId && s3Bucket"
+          :lab-id="labId"
+          :run-id="labRunId"
+          :s3-bucket="s3Bucket"
+          :s3-prefix="s3Prefix"
+        />
       </div>
       <div v-if="item.key === 'runDetails'" class="space-y-3">
         <section
