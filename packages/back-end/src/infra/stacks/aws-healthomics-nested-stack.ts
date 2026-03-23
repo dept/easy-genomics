@@ -168,7 +168,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
           },
         },
       }),
-      // Allow GetRun, ListRuns, and CancelRun only for Runs tagged with the same LaboratoryId as the principal
+      // Allow GetRun, ListRuns, and CancelRun only for Runs tagged with the same LaboratoryId and OrganizationId as the principal
       new PolicyStatement({
         resources: ['*'],
         actions: ['omics:GetRun', 'omics:ListRuns', 'omics:CancelRun'],
@@ -176,6 +176,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         conditions: {
           StringEquals: {
             'aws:ResourceTag/LaboratoryId': '${aws:PrincipalTag/LaboratoryId}',
+            'aws:ResourceTag/OrganizationId': '${aws:PrincipalTag/OrganizationId}',
           },
         },
       }),
