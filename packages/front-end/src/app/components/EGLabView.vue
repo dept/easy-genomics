@@ -15,6 +15,8 @@
   import { Pipeline as SeqeraPipeline } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
   import { WorkflowListItem as OmicsWorkflow } from '@aws-sdk/client-omics';
   import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
+  import { ListLaboratoryRunsPaginatedResponse } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run';
+  import { useDebounceFn } from '@vueuse/core';
   import { TableSort } from './EGTable.vue';
 
   const props = defineProps<{
@@ -118,125 +120,131 @@
 
   // Lab Runs Tab
 
-  type LaboratoryRunTableItem = LaboratoryRun & { lastUpdated: string; searchIndex: string };
+  type LaboratoryRunTableItem = LaboratoryRun & { lastUpdated: string };
 
   const runsTableColumns = [
-    { key: 'RunName', label: 'Run Name', sortable: true },
+    { key: 'RunName', label: 'Run Name' },
     { key: 'CreatedAt', label: 'Created At', sortable: true },
     { key: 'lastUpdated', label: 'Last Updated', sortable: true },
-    { key: 'Status', label: 'Status', sortable: true },
-    { key: 'Owner', label: 'Owner', sortable: true },
+    { key: 'Status', label: 'Status' },
+    { key: 'Owner', label: 'Owner' },
     { key: 'actions', label: 'Actions' },
   ];
 
   const runsTableSort = ref<TableSort>({ column: 'CreatedAt', direction: 'desc' });
+  const runsServerModeLimit = 10;
+  const runsPageTokenStack = ref<(string | undefined)[]>([undefined]);
+  const runsServerHasMore = ref<boolean>(false);
+  const runsServerNextToken = ref<string | undefined>(undefined);
 
   const runsTableFilterMyRunsOnly = ref<boolean>(false);
-  const runsSearchQuery = ref<string>('');
+  const runsStructuredSearch = ref<string>('');
 
   const runsTableItems = ref<LaboratoryRunTableItem[]>([]);
-
-  function matchesRunSearch(run: LaboratoryRunTableItem, rawQuery: string): boolean {
-    const query = rawQuery.trim().toLowerCase();
-
-    if (!query) {
-      return true;
+  const runsCurrentPage = computed<number>(() => runsPageTokenStack.value.length);
+  const runsServerPageLabel = computed<string>(() => {
+    if (!runsTableItems.value.length) {
+      return '';
     }
-
-    const equalsIndex = query.indexOf('=');
-
-    if (equalsIndex > -1) {
-      const fieldRaw = query.slice(0, equalsIndex);
-      const valueRaw = query.slice(equalsIndex + 1);
-
-      const field = fieldRaw.replace(/^"+|"+$/g, '').trim();
-      const value = valueRaw.replace(/^"+|"+$/g, '').trim();
-
-      if (field && value) {
-        const fieldMap: Record<string, keyof LaboratoryRunTableItem> = {
-          status: 'Status',
-          runname: 'RunName',
-          name: 'RunName',
-          owner: 'Owner',
-          workflow: 'WorkflowName' as keyof LaboratoryRunTableItem,
-          workflowname: 'WorkflowName' as keyof LaboratoryRunTableItem,
-          id: 'RunId' as keyof LaboratoryRunTableItem,
-          runid: 'RunId' as keyof LaboratoryRunTableItem,
-          platform: 'Platform' as keyof LaboratoryRunTableItem,
-        };
-
-        const mappedKey = fieldMap[field] ?? (field as keyof LaboratoryRunTableItem);
-        const runValue = (run as any)[mappedKey];
-
-        if (runValue != null) {
-          return String(runValue).toLowerCase().includes(value);
-        }
-      }
-      // if parsing fails or field is unknown, fall back to full-text search below
-    }
-
-    const haystack = run.searchIndex;
-
-    return haystack.includes(query);
-  }
-
-  const filteredRunsTableItems = computed<LaboratoryRunTableItem[]>(() => {
-    if (!runsSearchQuery.value.trim()) {
-      return runsTableItems.value;
-    }
-
-    return runsTableItems.value.filter((run) => matchesRunSearch(run, runsSearchQuery.value));
+    return `Page ${runsCurrentPage.value}`;
   });
 
-  // fetch the runs with BE filtering any time any of the inputs change
-  watchEffect(async () => {
+  function parseServerSearch(input: string): string {
+    const trimmed = input.trim();
+    if (!trimmed) {
+      return '';
+    }
+
+    const equalsIndex = trimmed.indexOf('=');
+    if (equalsIndex <= 0) {
+      return '';
+    }
+
+    const fieldRaw = trimmed
+      .slice(0, equalsIndex)
+      .replace(/^"+|"+$/g, '')
+      .trim()
+      .toLowerCase();
+    const valueRaw = trimmed
+      .slice(equalsIndex + 1)
+      .replace(/^"+|"+$/g, '')
+      .trim();
+
+    if (fieldRaw !== 'status' || !valueRaw) {
+      return '';
+    }
+
+    return `"status"=${valueRaw}`;
+  }
+
+  const applyRunsSearchDebounced = useDebounceFn((newVal: string) => {
+    runsStructuredSearch.value = parseServerSearch(newVal);
+  }, 350);
+
+  function resetRunsPagination() {
+    runsPageTokenStack.value = [undefined];
+    runsServerNextToken.value = undefined;
+    runsServerHasMore.value = false;
+  }
+
+  async function loadRunsPage() {
     uiStore.setRequestPending('loadLabRuns');
-
-    // without this following line, watchEffect doesn't pick up runsTableSort as a reactive dependency...
-    runsTableSort.value;
-
-    // laboratory run polling refresh key
-    runsTableRefreshKey.value;
-
-    const filters: any = {};
-    if (runsTableFilterMyRunsOnly.value) filters.UserId = userStore.currentUserDetails.id!;
-
     try {
-      runsTableItems.value = (await $api.labs.listLabRuns(props.labId, filters))
-        .map((labRun) => {
-          const lastUpdated = labRun.ModifiedAt ?? labRun.CreatedAt ?? '';
-          const searchIndex = [
-            labRun.RunName,
-            (labRun as any).WorkflowName,
-            labRun.Status,
-            labRun.Owner,
-            (labRun as any).RunId,
-            (labRun as any).Platform,
-            labRun.CreatedAt,
-            labRun.ModifiedAt,
-            lastUpdated,
-          ]
-            .filter(Boolean)
-            .join(' ')
-            .toLowerCase();
+      const filters: { UserId?: string; search?: string } = {};
+      if (runsTableFilterMyRunsOnly.value) filters.UserId = userStore.currentUserDetails.id!;
+      if (runsStructuredSearch.value) filters.search = runsStructuredSearch.value;
 
-          return {
-            ...labRun,
-            lastUpdated,
-            searchIndex,
-          };
-        })
-        .sort((a: any, b: any) =>
-          stringSortCompare(
-            a[runsTableSort.value.column],
-            b[runsTableSort.value.column],
-            runsTableSort.value.direction,
-          ),
-        );
+      const response: ListLaboratoryRunsPaginatedResponse = await $api.labs.listLabRunsPaginated(props.labId, {
+        limit: runsServerModeLimit,
+        nextToken: runsPageTokenStack.value[runsPageTokenStack.value.length - 1],
+        sortBy: runsTableSort.value.column,
+        sortDirection: runsTableSort.value.direction,
+        filters,
+      });
+
+      runsTableItems.value = response.items.map((labRun) => ({
+        ...labRun,
+        lastUpdated: labRun.ModifiedAt ?? labRun.CreatedAt ?? '',
+      }));
+      runsServerHasMore.value = response.hasMore;
+      runsServerNextToken.value = response.nextToken;
     } finally {
       uiStore.setRequestComplete('loadLabRuns');
     }
-  });
+  }
+
+  watch(
+    [runsTableSort, runsTableFilterMyRunsOnly, runsStructuredSearch],
+    async () => {
+      resetRunsPagination();
+      await loadRunsPage();
+    },
+    { immediate: true },
+  );
+
+  watch(
+    runsTableRefreshKey,
+    async () => {
+      await loadRunsPage();
+    },
+    { immediate: false },
+  );
+
+  async function onRunsNextPage() {
+    if (!runsServerHasMore.value || !runsServerNextToken.value) {
+      return;
+    }
+    runsPageTokenStack.value.push(runsServerNextToken.value);
+    await loadRunsPage();
+  }
+
+  async function onRunsPrevPage() {
+    if (runsPageTokenStack.value.length <= 1) {
+      return;
+    }
+    runsPageTokenStack.value.pop();
+    await loadRunsPage();
+  }
 
   function runsActionItems(run: LaboratoryRun): object[] {
     const buttons: object[][] = [
@@ -524,7 +532,7 @@
   }
 
   function updateRunsSearchQuery(newVal: string) {
-    runsSearchQuery.value = newVal;
+    applyRunsSearchDebounced(newVal);
   }
 
   async function handleUserAddedToLab() {
@@ -710,19 +718,27 @@
             <UCheckbox label="My runs only" :ui="{ base: 'size-[24px]' }" v-model="runsTableFilterMyRunsOnly" />
           </div>
           <p class="text-muted mt-1 text-xs">
-            Search by all run fields or use queries like
+            Search currently supports only the
+            <span class="font-mono">status</span>
+            column in server-side mode (for example,
             <span class="font-mono">"status"=completed</span>
-            .
+            ). Other columns are not supported.
           </p>
         </div>
 
         <EGTable
           :row-click-action="viewRunDetails"
-          :table-data="filteredRunsTableItems"
+          :table-data="runsTableItems"
           :columns="runsTableColumns"
           v-model:sort="runsTableSort"
           :is-loading="useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
           :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
+          pagination-mode="server"
+          :server-has-next="runsServerHasMore"
+          :server-can-go-back="runsCurrentPage > 1"
+          :server-page-label="runsServerPageLabel"
+          @next-page="onRunsNextPage"
+          @prev-page="onRunsPrevPage"
         >
           <template #RunName-data="{ row: run }">
             <div v-if="run.RunName" class="text-body text-sm font-medium">{{ run.RunName }}</div>

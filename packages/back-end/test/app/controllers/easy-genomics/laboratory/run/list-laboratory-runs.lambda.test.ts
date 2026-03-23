@@ -26,6 +26,7 @@ describe('list-laboratory-runs.lambda', () => {
 
   let mockQueryByLaboratoryIdForLab: jest.Mock;
   let mockQueryByLaboratoryIdForRuns: jest.Mock;
+  let mockQueryByLaboratoryIdPaginatedForRuns: jest.Mock;
 
   const createEvent = (
     query: Record<string, string | undefined>,
@@ -81,8 +82,10 @@ describe('list-laboratory-runs.lambda', () => {
 
     mockQueryByLaboratoryIdForLab = jest.fn();
     mockQueryByLaboratoryIdForRuns = jest.fn();
+    mockQueryByLaboratoryIdPaginatedForRuns = jest.fn();
     mockLabService.prototype.queryByLaboratoryId = mockQueryByLaboratoryIdForLab;
     mockRunService.prototype.queryByLaboratoryId = mockQueryByLaboratoryIdForRuns;
+    mockRunService.prototype.queryByLaboratoryIdPaginated = mockQueryByLaboratoryIdPaginatedForRuns;
 
     mockValidateOrgAdmin.mockReturnValue(true);
     mockValidateLabManager.mockReturnValue(false);
@@ -91,6 +94,11 @@ describe('list-laboratory-runs.lambda', () => {
     // Default filter behaviour: no-op and return original runs
     (getFilters as jest.Mock).mockReturnValue([]);
     (getFilterResults as jest.Mock).mockImplementation((runs: any[]) => runs);
+  });
+
+  afterEach(() => {
+    delete process.env.ENV_TYPE;
+    delete process.env.NODE_ENV;
   });
 
   it('returns 400 when LaboratoryId query parameter is missing', async () => {
@@ -174,5 +182,123 @@ describe('list-laboratory-runs.lambda', () => {
     expect(body[0].Status).toBe('FAILED');
     expect(getFilters).toHaveBeenCalled();
     expect(getFilterResults).toHaveBeenCalled();
+  });
+
+  it('returns paginated payload in server mode for non-dev environments', async () => {
+    process.env.ENV_TYPE = 'prod';
+    mockQueryByLaboratoryIdForLab.mockResolvedValue({
+      OrganizationId: 'org-1',
+      LaboratoryId: LAB_ID,
+    });
+    mockQueryByLaboratoryIdPaginatedForRuns.mockResolvedValue({
+      items: [{ RunId: 'run-1', LaboratoryId: LAB_ID, OrganizationId: 'org-1', Settings: '{}' }],
+      lastEvaluatedKey: { LaboratoryId: { S: LAB_ID }, RunId: { S: 'run-2' } },
+    });
+
+    const result = await handler(
+      createEvent({
+        LaboratoryId: LAB_ID,
+        serverMode: 'true',
+        limit: '10',
+        sortBy: 'CreatedAt',
+        sortDirection: 'desc',
+      }),
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    const body = JSON.parse(result.body);
+    expect(Array.isArray(body.items)).toBe(true);
+    expect(body.items).toHaveLength(1);
+    expect(body.hasMore).toBe(true);
+    expect(typeof body.nextToken).toBe('string');
+    expect(mockQueryByLaboratoryIdPaginatedForRuns).toHaveBeenCalled();
+  });
+
+  it('returns 400 for unsupported server mode sortBy value', async () => {
+    process.env.ENV_TYPE = 'prod';
+    mockQueryByLaboratoryIdForLab.mockResolvedValue({
+      OrganizationId: 'org-1',
+      LaboratoryId: LAB_ID,
+    });
+
+    const result = await handler(
+      createEvent({
+        LaboratoryId: LAB_ID,
+        serverMode: 'true',
+        sortBy: 'Owner',
+      }),
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(400);
+    expect(mockQueryByLaboratoryIdPaginatedForRuns).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for invalid server mode search field', async () => {
+    process.env.ENV_TYPE = 'prod';
+    mockQueryByLaboratoryIdForLab.mockResolvedValue({
+      OrganizationId: 'org-1',
+      LaboratoryId: LAB_ID,
+    });
+
+    const result = await handler(
+      createEvent({
+        LaboratoryId: LAB_ID,
+        serverMode: 'true',
+        search: '"owner"=user@example.com',
+      }),
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(400);
+    expect(mockQueryByLaboratoryIdPaginatedForRuns).not.toHaveBeenCalled();
+  });
+
+  it('uses local/dev mock mode and paginates synthetic data', async () => {
+    process.env.ENV_TYPE = 'dev';
+    mockQueryByLaboratoryIdForLab.mockResolvedValue({
+      OrganizationId: 'org-1',
+      LaboratoryId: LAB_ID,
+    });
+    mockQueryByLaboratoryIdForRuns.mockResolvedValue([]);
+
+    const firstPageResult = await handler(
+      createEvent({
+        LaboratoryId: LAB_ID,
+        serverMode: 'true',
+        limit: '10',
+        sortBy: 'CreatedAt',
+      }),
+      createContext(),
+      () => {},
+    );
+
+    expect(firstPageResult.statusCode).toBe(200);
+    const firstPageBody = JSON.parse(firstPageResult.body);
+    expect(firstPageBody.items).toHaveLength(10);
+    expect(firstPageBody.hasMore).toBe(true);
+    expect(typeof firstPageBody.nextToken).toBe('string');
+    expect(mockQueryByLaboratoryIdPaginatedForRuns).not.toHaveBeenCalled();
+
+    const secondPageResult = await handler(
+      createEvent({
+        LaboratoryId: LAB_ID,
+        serverMode: 'true',
+        limit: '10',
+        sortBy: 'CreatedAt',
+        nextToken: firstPageBody.nextToken,
+      }),
+      createContext(),
+      () => {},
+    );
+
+    expect(secondPageResult.statusCode).toBe(200);
+    const secondPageBody = JSON.parse(secondPageResult.body);
+    expect(secondPageBody.items).toHaveLength(10);
+    expect(secondPageBody.items[0].RunId).not.toBe(firstPageBody.items[0].RunId);
   });
 });
