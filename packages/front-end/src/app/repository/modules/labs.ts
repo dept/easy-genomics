@@ -1,5 +1,9 @@
 import { CreateLaboratory, UpdateLaboratory } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
-import { LaboratoryRunSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run';
+import {
+  LaboratoryRunSchema,
+  ListLaboratoryRunsPaginatedResponse,
+  ListLaboratoryRunsPaginatedResponseSchema,
+} from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run';
 import { RemoveLaboratoryUserSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-user';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
@@ -211,6 +215,56 @@ class LabsModule extends HttpFactory {
 
     const LaboratoryRunArraySchema = z.array(LaboratoryRunSchema); // Define an array schema
     validateApiResponse(LaboratoryRunArraySchema, res);
+    return res;
+  }
+
+  async listLabRunsPaginated(
+    labId: string,
+    options: {
+      limit?: number;
+      nextToken?: string;
+      sortBy?: string;
+      sortDirection?: 'asc' | 'desc';
+      filters?: {
+        UserId?: string;
+        search?: string;
+      };
+    } = {},
+  ): Promise<ListLaboratoryRunsPaginatedResponse> {
+    const queryParameters = new URLSearchParams({
+      LaboratoryId: labId,
+      serverMode: 'true',
+    });
+
+    if (options.limit) {
+      queryParameters.set('limit', String(options.limit));
+    }
+    if (options.nextToken) {
+      queryParameters.set('nextToken', options.nextToken);
+    }
+    if (options.sortBy) {
+      queryParameters.set('sortBy', options.sortBy);
+    }
+    if (options.sortDirection) {
+      queryParameters.set('sortDirection', options.sortDirection);
+    }
+    if (options.filters?.UserId) {
+      queryParameters.set('UserId', options.filters.UserId);
+    }
+    if (options.filters?.search) {
+      queryParameters.set('search', options.filters.search);
+    }
+
+    const res = await this.call<ListLaboratoryRunsPaginatedResponse>(
+      'GET',
+      `/laboratory/run/list-laboratory-runs?${queryParameters.toString()}`,
+    );
+
+    if (!res) {
+      throw new Error('Failed to retrieve paginated Laboratory runs');
+    }
+
+    validateApiResponse(ListLaboratoryRunsPaginatedResponseSchema, res);
     return res;
   }
 

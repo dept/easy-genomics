@@ -17,12 +17,25 @@
       noResultsMsg?: string;
       canSelect?: boolean;
       rowClasses?: (row: any) => string;
+      paginationMode?: 'client' | 'server';
+      serverHasNext?: boolean;
+      serverCanGoBack?: boolean;
+      serverPageLabel?: string;
     }>(),
     {
       showPagination: true,
       noResultsMsg: 'No results found',
+      paginationMode: 'client',
+      serverHasNext: false,
+      serverCanGoBack: false,
+      serverPageLabel: '',
     },
   );
+
+  const emit = defineEmits<{
+    (e: 'next-page'): void;
+    (e: 'prev-page'): void;
+  }>();
 
   const sort = defineModel<TableSort>('sort');
 
@@ -30,10 +43,16 @@
   const rowsPerPage = ref(10);
   const selected = props.canSelect ? ref([]) : ref(null);
 
+  const isClientMode = computed(() => props.paginationMode === 'client');
   const end = computed(() => Math.min(start.value + rowsPerPage.value, totalRows.value));
   const rows = computed(() => {
-    if (totalRows.value > 0) return props.tableData.slice(start.value, end.value);
-    return [];
+    if (!totalRows.value) {
+      return [];
+    }
+    if (isClientMode.value) {
+      return props.tableData.slice(start.value, end.value);
+    }
+    return props.tableData;
   });
   const showingResultsMsg = computed(() => {
     if (totalRows.value > 0) {
@@ -48,6 +67,9 @@
   watch(
     page,
     (newPage) => {
+      if (!isClientMode.value) {
+        return;
+      }
       if (newPage < 1) page.value = 1;
       else if (totalPages.value > 0 && newPage > totalPages.value) page.value = totalPages.value;
     },
@@ -57,8 +79,10 @@
   watch(
     () => props.tableData,
     (_newTableData: any) => {
-      // when table data changes, reset to page 1
-      page.value = 1;
+      // when table data changes, reset to page 1 for client pagination only
+      if (isClientMode.value) {
+        page.value = 1;
+      }
     },
     { immediate: true },
   );
@@ -107,13 +131,15 @@
     </UTable>
   </UCard>
 
-  <div
-    class="text-muted flex h-16 flex-wrap items-center justify-between"
-    v-if="showPagination && rowsPerPage > 1 && !isLoading"
-  >
-    <div class="text-xs leading-5">{{ showingResultsMsg }}</div>
-    <div class="flex justify-end px-3" v-if="totalRows > rowsPerPage">
+  <div class="text-muted flex h-16 flex-wrap items-center justify-between" v-if="showPagination && !isLoading">
+    <div class="text-xs leading-5" v-if="isClientMode">{{ showingResultsMsg }}</div>
+    <div class="text-xs leading-5" v-else>{{ serverPageLabel }}</div>
+    <div class="flex justify-end px-3" v-if="isClientMode && totalRows > rowsPerPage">
       <UPagination v-model="page" :page-count="rowsPerPage" :total="totalRows" />
+    </div>
+    <div class="flex justify-end gap-2 px-3" v-else-if="!isClientMode">
+      <EGButton label="Previous" :disabled="!serverCanGoBack" @click="emit('prev-page')" />
+      <EGButton label="Next" :disabled="!serverHasNext" @click="emit('next-page')" />
     </div>
   </div>
 </template>
