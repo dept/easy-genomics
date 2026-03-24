@@ -9,7 +9,7 @@ import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomic
 import { MissingAWSHealthOmicsAccessError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { OmicsService } from '@BE/services/omics-service';
+import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
@@ -17,7 +17,6 @@ import {
 } from '@BE/utils/auth-utils';
 
 const laboratoryService = new LaboratoryService();
-const omicsService = new OmicsService();
 
 /**
  * This GET /aws-healthomics/run/read-run/:{RunId}?laboratoryId={LaboratoryId}
@@ -65,6 +64,8 @@ export const handler: Handler = async (
       throw new MissingAWSHealthOmicsAccessError();
     }
 
+    const userId = event.requestContext.authorizer.claims['cognito:username'] as string;
+    const omicsService = await createOmicsServiceForLab(laboratory.LaboratoryId, laboratory.OrganizationId, userId);
     const response = await omicsService.getRun(<GetRunCommandInput>{
       id: id,
     });

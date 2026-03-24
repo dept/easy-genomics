@@ -5,6 +5,7 @@ import {
   PutItemCommandOutput,
   QueryCommandInput,
   QueryCommandOutput,
+  ScanCommandOutput,
   UpdateItemCommandOutput,
 } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
@@ -95,6 +96,28 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
     }
   };
 
+<<<<<<< feat/egv-25-tag-based-access-controls
+  /**
+   * Scans the entire laboratory-run table and returns all runs.
+   * Used for one-off operations (e.g. backfilling Omics run tags).
+   */
+  public listAllLaboratoryRuns = async (): Promise<LaboratoryRun[]> => {
+    const results: LaboratoryRun[] = [];
+    let lastKey: Record<string, any> | undefined;
+    do {
+      const response: ScanCommandOutput = await this.findAll({
+        TableName: this.LABORATORY_RUN_TABLE_NAME,
+        ...(lastKey ? { ExclusiveStartKey: lastKey } : {}),
+      });
+      if (response.Items) {
+        for (const item of response.Items) {
+          results.push(unmarshall(item) as LaboratoryRun);
+        }
+      }
+      lastKey = response.LastEvaluatedKey as Record<string, any> | undefined;
+    } while (lastKey);
+    return results;
+=======
   public queryByLaboratoryIdPaginated = async ({
     laboratoryId,
     limit,
@@ -170,6 +193,7 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
       items,
       lastEvaluatedKey: queryResponse.LastEvaluatedKey,
     };
+>>>>>>> development
   };
 
   public queryByRunId = async (runId: string): Promise<LaboratoryRun> => {
