@@ -23,7 +23,7 @@ const defaultReleaseBranch = 'main';
 const cdkVersion = '2.176.0';
 const nodeVersion = '20.15.0';
 const pnpmVersion = '9.15.0';
-const awsSdkClientOmicsVersion = '^3.1019.0';
+const awsSdkClientOmicsVersion = '^3.1014.0';
 const authorName = 'DEPT Agency';
 const copyrightOwner = authorName;
 const copyrightPeriod = `${new Date().getFullYear()}`;
@@ -269,9 +269,6 @@ const sharedLib = new typescript.TypeScriptProject({
     ...tsConfigOptions,
     compilerOptions: {
       ...tsConfigOptions.compilerOptions,
-      // Emit lib/app/... (not lib/src/app/...) so deep imports like
-      // @easy-genomics/shared-lib/lib/app/utils/common resolve after compile.
-      rootDir: 'src',
       baseUrl: '.',
       paths: {
         '@BE/*': ['../packages/back-end/src/app/*'],
@@ -308,7 +305,6 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
         '^@SharedLib/(.*)$': '<rootDir>/../shared-lib/src/app/$1',
         '^@FE/(.*)$': '<rootDir>/../front-end/src/app/$1',
       },
-      collectCoverageFrom: ['<rootDir>/src/app/**/*.ts', '!<rootDir>/src/app/**/*.d.ts'],
     },
   },
   lambdaAutoDiscover: false,
@@ -341,7 +337,6 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@aws-sdk/client-ses',
     '@aws-sdk/client-sns',
     '@aws-sdk/client-sqs',
-    '@aws-sdk/client-secrets-manager',
     '@aws-sdk/client-ssm',
     '@aws-sdk/client-sso-oidc',
     '@aws-sdk/client-sts',
@@ -388,8 +383,6 @@ backEndApp.addScripts({
   ['invoke-process-handler']: 'tsx src/local-server/invoke-process-handler.ts',
   ['backfill-omics-run-tags']: 'tsx scripts/backfill-omics-run-tags.ts',
   ['backfill-omics-run-tags:dry-run']: 'tsx scripts/backfill-omics-run-tags.ts --dry-run',
-  ['recompute-laboratory-run-retention']:
-    'tsx scripts/recompute-laboratory-run-retention.ts --laboratoryId $LAB_ID --retentionMonths $RETENTION_MONTHS',
 });
 
 if (backEndApp.eslint) {
@@ -593,7 +586,6 @@ root.gitignore.addPatterns(
   'packages/front-end/test-results',
   'packages/front-end/tests/e2e/.auth/*.json',
   'packages/front-end/playwright-report',
-  '.pnpm-store',
 );
 // Exception: Include .env example files (used for local dev setup documentation)
 root.gitignore.addPatterns('!packages/back-end/.env.local.example', '!config/.env.nuxt.local.example');
