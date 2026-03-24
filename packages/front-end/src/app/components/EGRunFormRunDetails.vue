@@ -6,11 +6,15 @@
   import { RunType } from '@easy-genomics/shared-lib/src/app/types/base-entity';
 
   const emit = defineEmits(['next-step', 'step-validated']);
+  const OMICS_VERSION_DEFAULT = '__omics_default_version__';
+
   const props = defineProps<{
     platform: RunType;
     wipRunTempId: string;
     pipelineOrWorkflowName: string;
     pipelineOrWorkflowDescription: string;
+    /** When set, shows a workflow version selector (AWS HealthOmics only) */
+    workflowVersionOptions?: { value: string; label: string }[];
   }>();
 
   const { platformToPipelineOrWorkflow, platformToWipRunUpdateFunction, getWipRunForPlatform } = useMultiplatform();
@@ -47,6 +51,20 @@
     runName: '',
   });
 
+  const selectedWorkflowVersion = ref<string>(OMICS_VERSION_DEFAULT);
+  const isWorkflowVersionDisabled = computed<boolean>(
+    () =>
+      props.platform === 'AWS HealthOmics' &&
+      (!props.workflowVersionOptions || props.workflowVersionOptions.length === 0),
+  );
+  const effectiveWorkflowVersionOptions = computed<{ value: string; label: string }[]>(() => {
+    if (props.workflowVersionOptions?.length) {
+      return props.workflowVersionOptions;
+    }
+
+    return [{ value: OMICS_VERSION_DEFAULT, label: 'Default version' }];
+  });
+
   const canProceed = ref(false);
 
   const runNameCharCount = computed(() => formState.runName.length);
@@ -57,12 +75,50 @@
 
   const wipRun = computed<WipRun>(() => getWipRunForPlatform(props.platform, props.wipRunTempId));
 
+  function workflowVersionToSelectValue(versionName: string | undefined): string {
+    if (!versionName) {
+      return OMICS_VERSION_DEFAULT;
+    }
+    return versionName;
+  }
+
+  function selectValueToWorkflowVersion(selectValue: string): string | undefined {
+    if (selectValue === OMICS_VERSION_DEFAULT) {
+      return undefined;
+    }
+    return selectValue;
+  }
+
   // when the wipRun is loaded and has a runName value, fill it into the box
   watch(
     wipRun,
     (val) => {
       if (val.runName) formState.runName = val.runName;
+      selectedWorkflowVersion.value = workflowVersionToSelectValue(val.workflowVersionName);
       validate(formState);
+    },
+    { immediate: true },
+  );
+
+  watch(selectedWorkflowVersion, (v) => {
+    if (props.platform !== 'AWS HealthOmics') {
+      return;
+    }
+    wipRunUpdateFunction.value(props.wipRunTempId, {
+      workflowVersionName: selectValueToWorkflowVersion(v),
+    });
+  });
+
+  watch(
+    () => props.workflowVersionOptions,
+    (opts) => {
+      if (props.platform !== 'AWS HealthOmics') {
+        return;
+      }
+      const allowed = new Set((opts?.length ? opts : effectiveWorkflowVersionOptions.value).map((o) => o.value));
+      if (!allowed.has(selectedWorkflowVersion.value)) {
+        selectedWorkflowVersion.value = (opts?.length ? opts[0] : effectiveWorkflowVersionOptions.value[0])!.value;
+      }
     },
     { immediate: true },
   );
@@ -121,6 +177,31 @@
       <UDivider class="py-4" />
       <EGFormGroup :label="pipelineOrWorkflow" name="pipelineName">
         <EGInput :model-value="props.pipelineOrWorkflowName" :disabled="true" />
+      </EGFormGroup>
+
+      <EGFormGroup
+        v-if="platform === 'AWS HealthOmics'"
+        label="Workflow version"
+        name="workflowVersion"
+        :hint="
+          isWorkflowVersionDisabled
+            ? 'No additional workflow versions are available; this run will use the default version.'
+            : `Uses the account default version when 'Default version' is selected.`
+        "
+      >
+        <USelectMenu
+          v-model="selectedWorkflowVersion"
+          :options="effectiveWorkflowVersionOptions"
+          value-attribute="value"
+          option-attribute="label"
+          :disabled="isWorkflowVersionDisabled"
+          :ui="{
+            base: ' !shadow-none border-background-stroke-dark text-body bg-white disabled:text-muted disabled:bg-background-light-grey disabled:opacity-100',
+            padding: { sm: 'p-4' },
+          }"
+          placeholder="Select workflow version"
+          class="w-full"
+        />
       </EGFormGroup>
 
       <EGFormGroup

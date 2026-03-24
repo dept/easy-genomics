@@ -122,7 +122,7 @@
       },
       "steps": [
         {
-          "exec": "pnpm dlx npm-check-updates@16 --upgrade --target=minor --peer --dep=dev,peer,prod,optional --filter=@types/aws-lambda,@types/jest,@types/js-yaml,@types/uuid,aws-cdk-lib,eslint-import-resolver-typescript,eslint-plugin-import,jest,openapi-typescript,ts-jest,typescript,@aws-sdk/client-api-gateway,@aws-sdk/client-cognito-identity-provider,@aws-sdk/client-omics,@aws-sdk/client-s3,@nestjs/config,aws-cdk,aws-lambda,js-yaml,uuid,zod"
+          "exec": "pnpm dlx npm-check-updates@16 --upgrade --target=minor --peer --dep=dev,peer,prod,optional --filter=@types/aws-lambda,@types/jest,@types/js-yaml,@types/uuid,aws-cdk-lib,eslint-import-resolver-typescript,eslint-plugin-import,jest,openapi-typescript,ts-jest,typescript,@aws-sdk/client-api-gateway,@aws-sdk/client-cognito-identity-provider,@aws-sdk/client-s3,@nestjs/config,aws-cdk,aws-lambda,js-yaml,uuid,zod"
         },
         {
           "exec": "pnpm i --no-frozen-lockfile"

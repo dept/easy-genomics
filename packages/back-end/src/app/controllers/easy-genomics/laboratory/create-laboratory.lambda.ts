@@ -1,12 +1,7 @@
 import crypto from 'crypto';
 import { ConditionalCheckFailedException, TransactionCanceledException } from '@aws-sdk/client-dynamodb';
 import { ListComputeEnvsResponse } from '@easy-genomics/shared-lib/lib/app/types/nf-tower/nextflow-tower-api';
-import {
-  CreateLaboratory,
-  CreateLaboratorySchema,
-} from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
-import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   InvalidRequestError,
   LaboratoryAlreadyExistsError,
@@ -14,7 +9,12 @@ import {
   LaboratorySeqeraCredentialsIncorrectError,
   OrganizationNotFoundError,
   UnauthorizedAccessError,
-} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import {
+  CreateLaboratory,
+  CreateLaboratorySchema,
+} from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
+import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { OrganizationService } from '@BE/services/easy-genomics/organization-service';

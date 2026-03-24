@@ -23,6 +23,7 @@ const defaultReleaseBranch = 'main';
 const cdkVersion = '2.176.0';
 const nodeVersion = '20.15.0';
 const pnpmVersion = '9.15.0';
+const awsSdkClientOmicsVersion = '^3.1014.0';
 const authorName = 'DEPT Agency';
 const copyrightOwner = authorName;
 const copyrightPeriod = `${new Date().getFullYear()}`;
@@ -253,7 +254,7 @@ const sharedLib = new typescript.TypeScriptProject({
   deps: [
     '@aws-sdk/client-api-gateway',
     '@aws-sdk/client-cognito-identity-provider',
-    '@aws-sdk/client-omics',
+    `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-s3',
     '@nestjs/config',
     'aws-cdk',
@@ -267,6 +268,7 @@ const sharedLib = new typescript.TypeScriptProject({
   tsconfig: {
     ...tsConfigOptions,
     compilerOptions: {
+      ...tsConfigOptions.compilerOptions,
       baseUrl: '.',
       paths: {
         '@BE/*': ['../packages/back-end/src/app/*'],
@@ -331,7 +333,7 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@aws-crypto/encrypt-node',
     '@aws-sdk/client-cognito-identity-provider',
     '@aws-sdk/client-dynamodb',
-    '@aws-sdk/client-omics',
+    `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-ses',
     '@aws-sdk/client-sns',
     '@aws-sdk/client-sqs',
@@ -371,9 +373,9 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
   ],
 });
 backEndApp.addScripts({
-  ['cdk-audit']: 'export CDK_AUDIT=true && pnpm dlx projen build',
-  ['build']: 'pnpm dlx projen compile && pnpm dlx projen test && pnpm dlx projen build',
-  ['deploy']: 'pnpm cdk bootstrap && pnpm dlx projen deploy',
+  ['cdk-audit']: 'export CDK_AUDIT=true && pnpm exec projen build',
+  ['build']: 'pnpm exec projen compile && pnpm exec projen test && pnpm exec projen build',
+  ['deploy']: 'pnpm cdk bootstrap && pnpm exec projen deploy',
   ['build-and-deploy']: 'pnpm -w run build-back-end && pnpm run deploy --require-approval any-change', // Run root build-back-end script to inc shared-lib
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
   ['local-server']: 'tsx src/local-server/index.ts',
@@ -439,7 +441,7 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
   },
   deps: [
     '@aws-amplify/ui-vue@3.1.30',
-    '@aws-sdk/client-omics',
+    `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-s3',
     '@aws-sdk/s3-request-presigner',
     '@aws-sdk/util-format-url',
@@ -494,12 +496,12 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
   ],
 });
 frontEndApp.addScripts({
-  ['cdk-audit']: 'export CDK_AUDIT=true && pnpm dlx projen build',
+  ['cdk-audit']: 'export CDK_AUDIT=true && pnpm exec projen build',
   ['build']:
-    'pnpm run nuxt-reset && pnpm run nuxt-prepare && pnpm dlx projen test && pnpm dlx projen build && pnpm run nuxt-load-settings && pnpm run nuxt-generate',
-  ['deploy']: 'pnpm cdk bootstrap && pnpm dlx projen deploy',
+    'pnpm run nuxt-reset && pnpm run nuxt-prepare && pnpm exec projen test && pnpm exec projen build && pnpm run nuxt-load-settings && pnpm run nuxt-generate',
+  ['deploy']: 'pnpm cdk bootstrap && pnpm exec projen deploy',
   ['build-and-deploy']:
-    'pnpm -w run build-front-end && pnpm cdk bootstrap && pnpm dlx projen deploy --require-approval any-change', // Run root build-front-end script to inc shared-lib
+    'pnpm -w run build-front-end && pnpm cdk bootstrap && pnpm exec projen deploy --require-approval any-change', // Run root build-front-end script to inc shared-lib
   ['nuxt-dev']: 'pnpm -w run build-front-end && pnpm kill-port 3000 && nuxt dev',
   ['nuxt-load-settings']: 'npx esrun nuxt-load-configuration-settings.ts',
   ['nuxt-generate']: 'nuxt generate',

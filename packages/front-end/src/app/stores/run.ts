@@ -14,6 +14,8 @@ allows multiple runs to be configured simultaneously without overwriting each ot
 export interface WipRun {
   transactionId?: string;
   runName?: string;
+  /** AWS HealthOmics: selected workflow version name; omit or empty uses account default */
+  workflowVersionName?: string;
   params?: object;
   sampleSheetS3Url?: string;
   s3Bucket?: string;
