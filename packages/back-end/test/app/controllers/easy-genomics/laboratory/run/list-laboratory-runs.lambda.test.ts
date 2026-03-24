@@ -284,6 +284,14 @@ describe('list-laboratory-runs.lambda', () => {
     expect(typeof firstPageBody.nextToken).toBe('string');
     expect(mockQueryByLaboratoryIdPaginatedForRuns).not.toHaveBeenCalled();
 
+    const omicsMock = firstPageBody.items.find((r: { Platform?: string }) => r.Platform === 'AWS HealthOmics');
+    expect(omicsMock).toBeDefined();
+    expect(omicsMock.WorkflowVersionName).toMatch(/^mock-omics-v\d+$/);
+
+    const seqeraMock = firstPageBody.items.find((r: { Platform?: string }) => r.Platform === 'Seqera Cloud');
+    expect(seqeraMock).toBeDefined();
+    expect(seqeraMock.WorkflowVersionName).toBeUndefined();
+
     const secondPageResult = await handler(
       createEvent({
         LaboratoryId: LAB_ID,
