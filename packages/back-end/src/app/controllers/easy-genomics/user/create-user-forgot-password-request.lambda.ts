@@ -1,13 +1,13 @@
 import { AdminGetUserCommandOutput } from '@aws-sdk/client-cognito-identity-provider';
-import { CreateUserForgotPasswordRequestSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user-password';
-import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
-import { CreateUserForgotPasswordRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-password';
-import { buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
+import { buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   InvalidRequestError,
   UnauthorizedAccessError,
   UserNotFoundError,
-} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { CreateUserForgotPasswordRequestSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user-password';
+import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
+import { CreateUserForgotPasswordRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-password';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Handler } from 'aws-lambda';
 import { CognitoIdpService } from '@BE/services/cognito-idp-service';
 import { UserService } from '@BE/services/easy-genomics/user-service';
