@@ -1,7 +1,9 @@
 import {
+  AttributeValue,
   DeleteItemCommandOutput,
   GetItemCommandOutput,
   PutItemCommandOutput,
+  QueryCommandInput,
   QueryCommandOutput,
   ScanCommandOutput,
   UpdateItemCommandOutput,
@@ -94,6 +96,7 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
     }
   };
 
+<<<<<<< feat/egv-25-tag-based-access-controls
   /**
    * Scans the entire laboratory-run table and returns all runs.
    * Used for one-off operations (e.g. backfilling Omics run tags).
@@ -114,6 +117,83 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
       lastKey = response.LastEvaluatedKey as Record<string, any> | undefined;
     } while (lastKey);
     return results;
+=======
+  public queryByLaboratoryIdPaginated = async ({
+    laboratoryId,
+    limit,
+    sortBy,
+    sortDirection,
+    filters,
+    exclusiveStartKey,
+  }: {
+    laboratoryId: string;
+    limit: number;
+    sortBy: 'CreatedAt' | 'ModifiedAt';
+    sortDirection: 'asc' | 'desc';
+    filters: { UserId?: string; Status?: string };
+    exclusiveStartKey?: Record<string, AttributeValue>;
+  }): Promise<{
+    items: LaboratoryRun[];
+    lastEvaluatedKey?: Record<string, AttributeValue>;
+  }> => {
+    const logRequestMessage = `Query LaboratoryRuns paginated by LaboratoryId=${laboratoryId} request`;
+    console.info(logRequestMessage);
+
+    const expressionAttributeNames: Record<string, string> = {
+      '#LaboratoryId': 'LaboratoryId',
+    };
+    const expressionAttributeValues: Record<string, AttributeValue> = {
+      ':laboratoryId': { S: laboratoryId },
+    };
+    const filterExpressionParts: string[] = [];
+
+    if (filters.UserId) {
+      expressionAttributeNames['#UserId'] = 'UserId';
+      expressionAttributeValues[':userId'] = { S: filters.UserId };
+      filterExpressionParts.push('#UserId = :userId');
+    }
+
+    if (filters.Status) {
+      expressionAttributeNames['#Status'] = 'Status';
+      expressionAttributeValues[':status'] = { S: filters.Status };
+      filterExpressionParts.push('#Status = :status');
+    }
+
+    const queryInput: QueryCommandInput = {
+      TableName: this.LABORATORY_RUN_TABLE_NAME,
+      KeyConditionExpression: '#LaboratoryId = :laboratoryId',
+      ExpressionAttributeNames: expressionAttributeNames,
+      ExpressionAttributeValues: expressionAttributeValues,
+      ScanIndexForward: sortDirection === 'asc',
+      IndexName: `${sortBy}_Index`,
+      Limit: limit,
+      ExclusiveStartKey: exclusiveStartKey,
+      ...(filterExpressionParts.length > 0 ? { FilterExpression: filterExpressionParts.join(' AND ') } : {}),
+    };
+
+    const items: LaboratoryRun[] = [];
+    let queryResponse: QueryCommandOutput = await this.queryItems(queryInput);
+
+    if (queryResponse.Items) {
+      items.push(...queryResponse.Items.map((item) => <LaboratoryRun>unmarshall(item)));
+    }
+
+    // FilterExpression is applied after reads. Continue querying until page is filled or no more results.
+    while (items.length < limit && queryResponse.LastEvaluatedKey) {
+      const remaining = limit - items.length;
+      queryInput.Limit = remaining;
+      queryInput.ExclusiveStartKey = queryResponse.LastEvaluatedKey;
+      queryResponse = await this.queryItems(queryInput);
+      if (queryResponse.Items) {
+        items.push(...queryResponse.Items.map((item) => <LaboratoryRun>unmarshall(item)));
+      }
+    }
+
+    return {
+      items,
+      lastEvaluatedKey: queryResponse.LastEvaluatedKey,
+    };
+>>>>>>> development
   };
 
   public queryByRunId = async (runId: string): Promise<LaboratoryRun> => {
