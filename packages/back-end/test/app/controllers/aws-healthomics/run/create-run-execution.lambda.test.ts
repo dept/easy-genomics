@@ -137,6 +137,26 @@ describe('create-run-execution.lambda', () => {
       Application: 'easy-genomics',
       Platform: 'AWS HealthOmics',
     });
+    expect(startRunInput.workflowVersionName).toBeUndefined();
+  });
+
+  it('forwards workflowVersionName to StartRun when provided', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+    });
+
+    (mockOmicsService.prototype.startRun as jest.Mock).mockResolvedValue({
+      id: 'run-123',
+    });
+
+    const body = { ...baseRequest, workflowVersionName: 'my-version-1' };
+    const result = await handler(createEvent(body), createContext(), () => {});
+
+    expect(result.statusCode).toBe(200);
+    const startRunInput = (mockOmicsService.prototype.startRun as jest.Mock).mock.calls[0][0];
+    expect(startRunInput.workflowVersionName).toBe('my-version-1');
   });
 
   it('omits user tags when claims are missing', async () => {
