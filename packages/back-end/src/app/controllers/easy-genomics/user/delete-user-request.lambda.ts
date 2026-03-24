@@ -1,14 +1,14 @@
-import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
-import { OrganizationUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization-user';
-import { SnsProcessingEvent } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
-import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
   UserDeleteFailedError,
   UserNotFoundError,
-} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
+import { OrganizationUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization-user';
+import { SnsProcessingEvent } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
+import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { APIGatewayProxyWithCognitoAuthorizerEvent, APIGatewayProxyResult, Handler } from 'aws-lambda';
 import { v4 as uuidv4 } from 'uuid';
 import { CognitoIdpService } from '@BE/services/cognito-idp-service';

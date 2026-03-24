@@ -122,6 +122,10 @@
               <dd class="text-muted text-left"><EGStatusChip :status="omicsRun.status" /></dd>
             </div>
             <div class="flex border-b p-4 text-sm">
+              <dt class="w-[200px] font-medium text-black">Workflow version</dt>
+              <dd class="text-muted text-left">{{ omicsRun?.workflowVersionName || '—' }}</dd>
+            </div>
+            <div class="flex border-b p-4 text-sm">
               <dt class="w-[200px] font-medium text-black">Creation Time</dt>
               <dd class="text-muted text-left">{{ createdDateTime }}</dd>
             </div>

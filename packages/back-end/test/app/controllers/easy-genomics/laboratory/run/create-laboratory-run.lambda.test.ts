@@ -127,6 +127,37 @@ describe('create-laboratory-run.lambda', () => {
     expect(mockSnsService.prototype.publish).toHaveBeenCalled();
   });
 
+  it('passes WorkflowVersionName through to laboratory run add when provided', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: '00000000-0000-0000-0000-000000000001',
+      LaboratoryId: LAB_ID,
+    });
+
+    (mockRunService.prototype.add as jest.Mock).mockResolvedValue({
+      ...baseRequest,
+      Platform: 'AWS HealthOmics',
+      WorkflowVersionName: 'my-omics-version',
+      OrganizationId: '00000000-0000-0000-0000-000000000001',
+      Owner: 'user@example.com',
+      Settings: JSON.stringify({ param: 'value' }),
+    });
+
+    const body = {
+      ...baseRequest,
+      Platform: 'AWS HealthOmics' as const,
+      WorkflowVersionName: 'my-omics-version',
+    };
+
+    const result = await handler(createEvent(body), createContext(), () => {});
+
+    expect(result.statusCode).toBe(200);
+    expect(mockRunService.prototype.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        WorkflowVersionName: 'my-omics-version',
+      }),
+    );
+  });
+
   it('does not queue status check when ExternalRunId is missing', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
       OrganizationId: 'org-1',

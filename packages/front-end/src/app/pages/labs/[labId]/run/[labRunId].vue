@@ -173,6 +173,11 @@
               <dd :class="rowContentStyle">{{ labRun.WorkflowName }}</dd>
             </div>
 
+            <div v-if="labRun.Platform === 'AWS HealthOmics'" :class="rowStyle">
+              <dt :class="rowLabelStyle">Workflow version</dt>
+              <dd :class="rowContentStyle">{{ labRun.WorkflowVersionName || '—' }}</dd>
+            </div>
+
             <div :class="rowStyle">
               <dt :class="rowLabelStyle">{{ pipelineOrWorkflow }} Run Status</dt>
               <dd :class="rowContentStyle">
