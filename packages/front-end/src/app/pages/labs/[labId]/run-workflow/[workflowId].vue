@@ -129,13 +129,25 @@
       })
       .filter((_) => _ != undefined);
 
+    // fetch user defaults for this workflow (if any)
+    const userId = userStore.currentUserDetails.id;
+    let workflowDefaultParams: Record<string, any> = {};
+    if (userId) {
+      const user = await $api.users.getUser();
+      const rawDefaults = user.OmicsWorkflowDefaultParams?.[workflowId] || {};
+      workflowDefaultParams = Object.fromEntries(
+        Object.entries(rawDefaults).filter(([paramName]) =>
+          Object.prototype.hasOwnProperty.call(omicsWorkflow.parameterTemplate, paramName),
+        ),
+      );
+    }
+
     // initialize wip run in store
     runStore.updateWipOmicsRun(omicsRunTempId.value, {
       transactionId: omicsRunTempId.value,
       paramsRequired: paramsRequired,
     });
-    // unlike seqera runs, omics runs don't have default values for parameters
-    runStore.updateWipOmicsRunParams(omicsRunTempId.value, {});
+    runStore.updateWipOmicsRunParams(omicsRunTempId.value, workflowDefaultParams);
 
     uiStore.setRequestComplete('loadOmicsWorkflow');
   }
