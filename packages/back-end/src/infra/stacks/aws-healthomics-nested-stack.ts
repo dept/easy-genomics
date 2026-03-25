@@ -416,7 +416,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
           `arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:run/*`,
           `arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`,
         ],
-        actions: ['omics:StartRun'],
+        actions: ['omics:StartRun', 'omics:TagResource'],
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
