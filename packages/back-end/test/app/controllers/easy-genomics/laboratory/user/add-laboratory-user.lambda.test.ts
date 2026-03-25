@@ -1,5 +1,6 @@
-import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
+import { LaboratoryUserNotFoundError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 
 import { handler } from '../../../../../../src/app/controllers/easy-genomics/laboratory/user/add-laboratory-user.lambda';
 
@@ -20,6 +21,10 @@ import {
   validateOrganizationAdminAccess,
 } from '../../../../../../src/app/utils/auth-utils';
 
+const ORG_ID = '00000000-0000-0000-0000-000000000001';
+const LAB_ID = '00000000-0000-0000-0000-000000000002';
+const USER_ID = '00000000-0000-0000-0000-000000000003';
+
 describe('add-laboratory-user.lambda', () => {
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
   let mockLabUserService: jest.MockedClass<typeof LaboratoryUserService>;
@@ -39,7 +44,7 @@ describe('add-laboratory-user.lambda', () => {
       requestContext: {
         authorizer: {
           claims: {
-            email: 'admin@example.com',
+            'email': 'admin@example.com',
             'cognito:username': 'admin-user',
           },
         },
@@ -72,9 +77,9 @@ describe('add-laboratory-user.lambda', () => {
     }) as any;
 
   const baseRequest = {
-    OrganizationId: 'org-1',
-    LaboratoryId: 'lab-1',
-    UserId: 'user-1',
+    LaboratoryId: LAB_ID,
+    UserId: USER_ID,
+    Status: 'Active',
     LabManager: true,
     LabTechnician: false,
   } as any;
@@ -89,25 +94,28 @@ describe('add-laboratory-user.lambda', () => {
     mockValidateOrgAdmin = validateOrganizationAdminAccess as any;
     mockValidateLabManager = validateLaboratoryManagerAccess as any;
 
+    mockLabService.prototype.queryByLaboratoryId = jest.fn();
+    mockLabUserService.prototype.get = jest.fn();
+    mockOrgUserService.prototype.get = jest.fn();
+
     mockValidateOrgAdmin.mockReturnValue(true);
     mockValidateLabManager.mockReturnValue(false);
   });
 
   it('adds existing user to laboratory when caller is org admin and mapping does not exist', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
     });
     (mockUserService.prototype.get as jest.Mock).mockResolvedValue({
-      UserId: 'user-1',
+      UserId: USER_ID,
     });
     (mockOrgUserService.prototype.get as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      UserId: 'user-1',
+      OrganizationId: ORG_ID,
+      UserId: USER_ID,
     });
     (mockLabUserService.prototype.get as jest.Mock).mockRejectedValueOnce(
-      // simulate LaboratoryUserNotFoundError, which should be swallowed
-      new (class extends Error {})(),
+      new LaboratoryUserNotFoundError(LAB_ID, USER_ID),
     );
     (mockPlatformUserService.prototype.addExistingUserToLaboratory as jest.Mock).mockResolvedValue(true);
 
@@ -131,11 +139,11 @@ describe('add-laboratory-user.lambda', () => {
     mockValidateLabManager.mockReturnValue(false);
 
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
     });
     (mockUserService.prototype.get as jest.Mock).mockResolvedValue({
-      UserId: 'user-1',
+      UserId: USER_ID,
     });
 
     const result = await handler(createEvent(baseRequest), createContext(), () => {});
@@ -145,45 +153,51 @@ describe('add-laboratory-user.lambda', () => {
 
   it('returns error when user already has laboratory access mapping', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
     });
     (mockUserService.prototype.get as jest.Mock).mockResolvedValue({
-      UserId: 'user-1',
+      UserId: USER_ID,
     });
     (mockOrgUserService.prototype.get as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      UserId: 'user-1',
+      OrganizationId: ORG_ID,
+      UserId: USER_ID,
     });
     (mockLabUserService.prototype.get as jest.Mock).mockResolvedValue({
-      LaboratoryId: 'lab-1',
-      UserId: 'user-1',
+      LaboratoryId: LAB_ID,
+      UserId: USER_ID,
     });
 
     const result = await handler(createEvent(baseRequest), createContext(), () => {});
 
-    expect(result.statusCode).toBe(409);
+    expect(result.statusCode).toBe(400);
+    const body = JSON.parse(result.body);
+    expect(body.ErrorCode).toBe('EG-311');
   });
 
   it('maps ConditionalCheckFailedException from platformUserService to LaboratoryUserAlreadyExistsError', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
     });
     (mockUserService.prototype.get as jest.Mock).mockResolvedValue({
-      UserId: 'user-1',
+      UserId: USER_ID,
     });
     (mockOrgUserService.prototype.get as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      UserId: 'user-1',
+      OrganizationId: ORG_ID,
+      UserId: USER_ID,
     });
-    (mockLabUserService.prototype.get as jest.Mock).mockRejectedValueOnce(new (class extends Error {})());
+    (mockLabUserService.prototype.get as jest.Mock).mockRejectedValueOnce(
+      new LaboratoryUserNotFoundError(LAB_ID, USER_ID),
+    );
     (mockPlatformUserService.prototype.addExistingUserToLaboratory as jest.Mock).mockRejectedValue(
-      new ConditionalCheckFailedException({}),
+      new ConditionalCheckFailedException({ $metadata: {}, message: 'Conditional check failed' }),
     );
 
     const result = await handler(createEvent(baseRequest), createContext(), () => {});
 
-    expect(result.statusCode).toBe(409);
+    expect(result.statusCode).toBe(400);
+    const body = JSON.parse(result.body);
+    expect(body.ErrorCode).toBe('EG-311');
   });
 });

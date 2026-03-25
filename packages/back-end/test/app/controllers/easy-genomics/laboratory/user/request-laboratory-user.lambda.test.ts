@@ -1,11 +1,15 @@
-import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { LaboratoryUserNotFoundError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 
 import { handler } from '../../../../../../src/app/controllers/easy-genomics/laboratory/user/request-laboratory-user.lambda';
 
 jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-user-service');
 
 import { LaboratoryUserService } from '../../../../../../src/app/services/easy-genomics/laboratory-user-service';
+
+const LAB_ID = '00000000-0000-0000-0000-000000000001';
+const USER_ID = '00000000-0000-0000-0000-000000000002';
+const MISSING_USER_ID = '00000000-0000-0000-0000-000000000099';
 
 describe('request-laboratory-user.lambda', () => {
   let mockLabUserService: jest.MockedClass<typeof LaboratoryUserService>;
@@ -54,20 +58,21 @@ describe('request-laboratory-user.lambda', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockLabUserService = LaboratoryUserService as jest.MockedClass<typeof LaboratoryUserService>;
+    mockLabUserService.prototype.get = jest.fn();
   });
 
   it('returns laboratory user when request is valid', async () => {
     (mockLabUserService.prototype.get as jest.Mock).mockResolvedValue({
       OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
-      UserId: 'user-1',
+      LaboratoryId: LAB_ID,
+      UserId: USER_ID,
     });
 
-    const result = await handler(createEvent({ LaboratoryId: 'lab-1', UserId: 'user-1' }), createContext(), () => {});
+    const result = await handler(createEvent({ LaboratoryId: LAB_ID, UserId: USER_ID }), createContext(), () => {});
 
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
-    expect(body.UserId).toBe('user-1');
+    expect(body.UserId).toBe(USER_ID);
   });
 
   it('rejects invalid request body', async () => {
@@ -79,11 +84,11 @@ describe('request-laboratory-user.lambda', () => {
 
   it('returns 404 when laboratory user is not found', async () => {
     (mockLabUserService.prototype.get as jest.Mock).mockRejectedValue(
-      new LaboratoryUserNotFoundError('User not found'),
+      new LaboratoryUserNotFoundError(LAB_ID, MISSING_USER_ID),
     );
 
     const result = await handler(
-      createEvent({ LaboratoryId: 'lab-1', UserId: 'missing-user' }),
+      createEvent({ LaboratoryId: LAB_ID, UserId: MISSING_USER_ID }),
       createContext(),
       () => {},
     );
@@ -100,11 +105,11 @@ describe('request-laboratory-user.lambda', () => {
     expect(result.statusCode).not.toBe(200);
   });
 
-  it('returns 500 when an unexpected error occurs in service', async () => {
+  it('returns 400 when an unexpected error occurs in service', async () => {
     (mockLabUserService.prototype.get as jest.Mock).mockRejectedValue(new Error('unexpected failure'));
 
-    const result = await handler(createEvent({ LaboratoryId: 'lab-1', UserId: 'user-1' }), createContext(), () => {});
+    const result = await handler(createEvent({ LaboratoryId: LAB_ID, UserId: USER_ID }), createContext(), () => {});
 
-    expect(result.statusCode).toBe(500);
+    expect(result.statusCode).toBe(400);
   });
 });

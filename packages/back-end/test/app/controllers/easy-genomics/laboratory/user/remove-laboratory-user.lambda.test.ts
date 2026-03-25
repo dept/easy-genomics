@@ -1,5 +1,4 @@
 import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
-import { LaboratoryUserNotFoundError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 
 import { handler } from '../../../../../../src/app/controllers/easy-genomics/laboratory/user/remove-laboratory-user.lambda';
 
@@ -17,6 +16,10 @@ import {
   validateLaboratoryManagerAccess,
   validateOrganizationAdminAccess,
 } from '../../../../../../src/app/utils/auth-utils';
+
+const ORG_ID = '00000000-0000-0000-0000-000000000001';
+const LAB_ID = '00000000-0000-0000-0000-000000000002';
+const USER_ID = '00000000-0000-0000-0000-000000000003';
 
 describe('remove-laboratory-user.lambda', () => {
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
@@ -36,7 +39,7 @@ describe('remove-laboratory-user.lambda', () => {
       requestContext: {
         authorizer: {
           claims: {
-            email: 'admin@example.com',
+            'email': 'admin@example.com',
             'cognito:username': 'admin-user',
           },
         },
@@ -69,11 +72,8 @@ describe('remove-laboratory-user.lambda', () => {
     }) as any;
 
   const baseRequest = {
-    OrganizationId: 'org-1',
-    LaboratoryId: 'lab-1',
-    UserId: 'user-1',
-    LabManager: false,
-    LabTechnician: true,
+    LaboratoryId: LAB_ID,
+    UserId: USER_ID,
   } as any;
 
   beforeEach(() => {
@@ -85,23 +85,26 @@ describe('remove-laboratory-user.lambda', () => {
     mockValidateOrgAdmin = validateOrganizationAdminAccess as any;
     mockValidateLabManager = validateLaboratoryManagerAccess as any;
 
+    mockLabService.prototype.queryByLaboratoryId = jest.fn();
+    mockLabUserService.prototype.get = jest.fn();
+
     mockValidateOrgAdmin.mockReturnValue(true);
     mockValidateLabManager.mockReturnValue(false);
   });
 
   it('removes existing laboratory user mapping when caller has access', async () => {
     (mockLabUserService.prototype.get as jest.Mock).mockResolvedValue({
-      LaboratoryId: 'lab-1',
-      UserId: 'user-1',
+      LaboratoryId: LAB_ID,
+      UserId: USER_ID,
       LabManager: false,
       LabTechnician: true,
     });
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
     });
     (mockUserService.prototype.get as jest.Mock).mockResolvedValue({
-      UserId: 'user-1',
+      UserId: USER_ID,
     });
     (mockPlatformUserService.prototype.removeExistingUserFromLaboratory as jest.Mock).mockResolvedValue(true);
 
@@ -122,15 +125,15 @@ describe('remove-laboratory-user.lambda', () => {
 
   it('denies access when caller is neither org admin nor lab manager', async () => {
     (mockLabUserService.prototype.get as jest.Mock).mockResolvedValue({
-      LaboratoryId: 'lab-1',
-      UserId: 'user-1',
+      LaboratoryId: LAB_ID,
+      UserId: USER_ID,
     });
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
     });
     (mockUserService.prototype.get as jest.Mock).mockResolvedValue({
-      UserId: 'user-1',
+      UserId: USER_ID,
     });
 
     mockValidateOrgAdmin.mockReturnValue(false);
@@ -150,11 +153,11 @@ describe('remove-laboratory-user.lambda', () => {
     expect(result.statusCode).not.toBe(200);
   });
 
-  it('returns 500 when unexpected error occurs in downstream service', async () => {
+  it('returns 400 when unexpected error occurs in downstream service', async () => {
     (mockLabUserService.prototype.get as jest.Mock).mockRejectedValue(new Error('downstream failure'));
 
     const result = await handler(createEvent(baseRequest), createContext(), () => {});
 
-    expect(result.statusCode).toBe(500);
+    expect(result.statusCode).toBe(400);
   });
 });

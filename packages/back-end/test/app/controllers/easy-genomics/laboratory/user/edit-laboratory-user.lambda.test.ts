@@ -17,6 +17,10 @@ import {
   validateOrganizationAdminAccess,
 } from '../../../../../../src/app/utils/auth-utils';
 
+const ORG_ID = '00000000-0000-0000-0000-000000000001';
+const LAB_ID = '00000000-0000-0000-0000-000000000002';
+const USER_ID = '00000000-0000-0000-0000-000000000003';
+
 describe('edit-laboratory-user.lambda', () => {
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
   let mockLabUserService: jest.MockedClass<typeof LaboratoryUserService>;
@@ -35,7 +39,7 @@ describe('edit-laboratory-user.lambda', () => {
       requestContext: {
         authorizer: {
           claims: {
-            email: 'admin@example.com',
+            'email': 'admin@example.com',
             'cognito:username': 'admin-user',
           },
         },
@@ -68,9 +72,9 @@ describe('edit-laboratory-user.lambda', () => {
     }) as any;
 
   const baseRequest = {
-    OrganizationId: 'org-1',
-    LaboratoryId: 'lab-1',
-    UserId: 'user-1',
+    LaboratoryId: LAB_ID,
+    UserId: USER_ID,
+    Status: 'Active',
     LabManager: false,
     LabTechnician: true,
   } as any;
@@ -84,23 +88,26 @@ describe('edit-laboratory-user.lambda', () => {
     mockValidateOrgAdmin = validateOrganizationAdminAccess as any;
     mockValidateLabManager = validateLaboratoryManagerAccess as any;
 
+    mockLabService.prototype.queryByLaboratoryId = jest.fn();
+    mockLabUserService.prototype.get = jest.fn();
+
     mockValidateOrgAdmin.mockReturnValue(true);
     mockValidateLabManager.mockReturnValue(false);
   });
 
   it('edits existing laboratory user mapping when caller has access', async () => {
     (mockLabUserService.prototype.get as jest.Mock).mockResolvedValue({
-      LaboratoryId: 'lab-1',
-      UserId: 'user-1',
+      LaboratoryId: LAB_ID,
+      UserId: USER_ID,
       LabManager: true,
       LabTechnician: false,
     });
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
     });
     (mockUserService.prototype.get as jest.Mock).mockResolvedValue({
-      UserId: 'user-1',
+      UserId: USER_ID,
     });
     (mockPlatformUserService.prototype.editExistingUserAccessToLaboratory as jest.Mock).mockResolvedValue(true);
 
@@ -121,15 +128,15 @@ describe('edit-laboratory-user.lambda', () => {
 
   it('denies access when caller is neither org admin nor lab manager', async () => {
     (mockLabUserService.prototype.get as jest.Mock).mockResolvedValue({
-      LaboratoryId: 'lab-1',
-      UserId: 'user-1',
+      LaboratoryId: LAB_ID,
+      UserId: USER_ID,
     });
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
-      OrganizationId: 'org-1',
-      LaboratoryId: 'lab-1',
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
     });
     (mockUserService.prototype.get as jest.Mock).mockResolvedValue({
-      UserId: 'user-1',
+      UserId: USER_ID,
     });
 
     mockValidateOrgAdmin.mockReturnValue(false);

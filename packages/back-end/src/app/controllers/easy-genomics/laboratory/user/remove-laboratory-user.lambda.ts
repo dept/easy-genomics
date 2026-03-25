@@ -44,7 +44,7 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
-    const response: boolean = await platformUserService.removeExistingUserFromLaboratory(
+    const response: Boolean = await platformUserService.removeExistingUserFromLaboratory(
       {
         ...existingUser,
         ModifiedAt: new Date().toISOString(),
@@ -54,6 +54,8 @@ export const handler: Handler = async (
     );
     if (response) {
       return buildResponse(200, JSON.stringify({ Status: 'Success' }), event);
+    } else {
+      throw new Error('Unable to remove Laboratory User');
     }
   } catch (err: any) {
     console.error(err);

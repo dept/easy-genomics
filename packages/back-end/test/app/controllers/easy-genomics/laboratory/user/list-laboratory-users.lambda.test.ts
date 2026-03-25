@@ -59,6 +59,9 @@ describe('list-laboratory-users.lambda', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockLabUserService = LaboratoryUserService as jest.MockedClass<typeof LaboratoryUserService>;
+    mockLabUserService.prototype.queryByOrganizationId = jest.fn();
+    mockLabUserService.prototype.queryByLaboratoryId = jest.fn();
+    mockLabUserService.prototype.queryByUserId = jest.fn();
   });
 
   it('lists users by organizationId', async () => {
@@ -141,28 +144,28 @@ describe('list-laboratory-users.lambda', () => {
       expect(mockLabUserService.prototype.queryByUserId).toHaveBeenCalledWith('user-1');
     });
 
-    it('throws InvalidRequestError for invalid argument combinations', async () => {
-      await expect(listLaboratoryUsers(undefined, undefined, undefined)).rejects.toThrow();
-      await expect(listLaboratoryUsers('org-1', 'lab-1', undefined)).rejects.toThrow();
-      await expect(listLaboratoryUsers('org-1', undefined, 'user-1')).rejects.toThrow();
+    it('throws InvalidRequestError for invalid argument combinations', () => {
+      expect(() => listLaboratoryUsers(undefined, undefined, undefined)).toThrow();
+      expect(() => listLaboratoryUsers('org-1', 'lab-1', undefined)).toThrow();
+      expect(() => listLaboratoryUsers('org-1', undefined, 'user-1')).toThrow();
     });
   });
 
   describe('handler failure cases', () => {
-    it('returns 500 when underlying query throws unexpected error', async () => {
+    it('returns 400 when underlying query throws unexpected error', async () => {
       (mockLabUserService.prototype.queryByOrganizationId as jest.Mock).mockRejectedValue(new Error('db failure'));
 
       const result = await handler(createEvent({ organizationId: 'org-1' }), createContext(), () => {});
 
-      expect(result.statusCode).toBe(500);
+      expect(result.statusCode).toBe(400);
     });
 
-    it('returns 500 when listLaboratoryUsers returns undefined', async () => {
+    it('returns 400 when listLaboratoryUsers returns undefined', async () => {
       (mockLabUserService.prototype.queryByOrganizationId as jest.Mock).mockResolvedValue(undefined as any);
 
       const result = await handler(createEvent({ organizationId: 'org-1' }), createContext(), () => {});
 
-      expect(result.statusCode).toBe(500);
+      expect(result.statusCode).toBe(400);
     });
   });
 });
