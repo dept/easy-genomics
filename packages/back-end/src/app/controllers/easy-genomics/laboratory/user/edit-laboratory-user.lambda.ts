@@ -44,7 +44,7 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
-    const response: boolean = await platformUserService.editExistingUserAccessToLaboratory(
+    const response: Boolean = await platformUserService.editExistingUserAccessToLaboratory(
       {
         ...existingUser,
         ModifiedAt: new Date().toISOString(),
@@ -60,6 +60,8 @@ export const handler: Handler = async (
 
     if (response) {
       return buildResponse(200, JSON.stringify({ Status: 'Success' }), event);
+    } else {
+      throw new Error('Unable to edit Laboratory User access');
     }
   } catch (err: any) {
     console.error(err);
