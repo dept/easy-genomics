@@ -305,6 +305,7 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
         '^@SharedLib/(.*)$': '<rootDir>/../shared-lib/src/app/$1',
         '^@FE/(.*)$': '<rootDir>/../front-end/src/app/$1',
       },
+      collectCoverageFrom: ['<rootDir>/src/app/**/*.ts', '!<rootDir>/src/app/**/*.d.ts'],
     },
   },
   lambdaAutoDiscover: false,
