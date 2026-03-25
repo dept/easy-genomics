@@ -1,15 +1,17 @@
 import {
+  AttributeValue,
   DeleteItemCommandOutput,
   GetItemCommandOutput,
   PutItemCommandOutput,
+  QueryCommandInput,
   QueryCommandOutput,
   ScanCommandOutput,
   UpdateItemCommandOutput,
 } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
-import { LaboratoryRunNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { LaboratoryRunSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
+import { LaboratoryRunNotFoundError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
 
@@ -116,6 +118,83 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
     return results;
   };
 
+  public queryByLaboratoryIdPaginated = async ({
+    laboratoryId,
+    limit,
+    sortBy,
+    sortDirection,
+    filters,
+    exclusiveStartKey,
+  }: {
+    laboratoryId: string;
+    limit: number;
+    sortBy: 'CreatedAt' | 'ModifiedAt';
+    sortDirection: 'asc' | 'desc';
+    filters: { UserId?: string; Status?: string };
+    exclusiveStartKey?: Record<string, AttributeValue>;
+  }): Promise<{
+    items: LaboratoryRun[];
+    lastEvaluatedKey?: Record<string, AttributeValue>;
+  }> => {
+    const logRequestMessage = `Query LaboratoryRuns paginated by LaboratoryId=${laboratoryId} request`;
+    console.info(logRequestMessage);
+
+    const expressionAttributeNames: Record<string, string> = {
+      '#LaboratoryId': 'LaboratoryId',
+    };
+    const expressionAttributeValues: Record<string, AttributeValue> = {
+      ':laboratoryId': { S: laboratoryId },
+    };
+    const filterExpressionParts: string[] = [];
+
+    if (filters.UserId) {
+      expressionAttributeNames['#UserId'] = 'UserId';
+      expressionAttributeValues[':userId'] = { S: filters.UserId };
+      filterExpressionParts.push('#UserId = :userId');
+    }
+
+    if (filters.Status) {
+      expressionAttributeNames['#Status'] = 'Status';
+      expressionAttributeValues[':status'] = { S: filters.Status };
+      filterExpressionParts.push('#Status = :status');
+    }
+
+    const queryInput: QueryCommandInput = {
+      TableName: this.LABORATORY_RUN_TABLE_NAME,
+      KeyConditionExpression: '#LaboratoryId = :laboratoryId',
+      ExpressionAttributeNames: expressionAttributeNames,
+      ExpressionAttributeValues: expressionAttributeValues,
+      ScanIndexForward: sortDirection === 'asc',
+      IndexName: `${sortBy}_Index`,
+      Limit: limit,
+      ExclusiveStartKey: exclusiveStartKey,
+      ...(filterExpressionParts.length > 0 ? { FilterExpression: filterExpressionParts.join(' AND ') } : {}),
+    };
+
+    const items: LaboratoryRun[] = [];
+    let queryResponse: QueryCommandOutput = await this.queryItems(queryInput);
+
+    if (queryResponse.Items) {
+      items.push(...queryResponse.Items.map((item) => <LaboratoryRun>unmarshall(item)));
+    }
+
+    // FilterExpression is applied after reads. Continue querying until page is filled or no more results.
+    while (items.length < limit && queryResponse.LastEvaluatedKey) {
+      const remaining = limit - items.length;
+      queryInput.Limit = remaining;
+      queryInput.ExclusiveStartKey = queryResponse.LastEvaluatedKey;
+      queryResponse = await this.queryItems(queryInput);
+      if (queryResponse.Items) {
+        items.push(...queryResponse.Items.map((item) => <LaboratoryRun>unmarshall(item)));
+      }
+    }
+
+    return {
+      items,
+      lastEvaluatedKey: queryResponse.LastEvaluatedKey,
+    };
+  };
+
   public queryByRunId = async (runId: string): Promise<LaboratoryRun> => {
     const logRequestMessage = `Query LaboratoryRuns by RunId=${runId} request`;
     console.info(logRequestMessage);
@@ -202,72 +281,6 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
     } else {
       throw new Error(`${logRequestMessage} unsuccessful: HTTP Status Code=${response.$metadata.httpStatusCode}`);
     }
-  };
-
-  /**
-   * Updates TTL-related metadata using a DynamoDB UpdateExpression that can SET and/or REMOVE attributes.
-   * Used for retention recomputation where `ExpiresAt` may need to be removed (e.g. retentionMonths=0).
-   */
-  public updateRetentionMetadata = async (params: {
-    LaboratoryId: string;
-    RunId: string;
-    set?: Partial<Pick<LaboratoryRun, 'TerminalAt' | 'ExpiresAt' | 'ModifiedAt' | 'ModifiedBy'>>;
-    remove?: Array<'ExpiresAt' | 'TerminalAt'>;
-  }): Promise<LaboratoryRun> => {
-    const { LaboratoryId, RunId, set, remove } = params;
-
-    const expressionAttributeNames: Record<string, string> = {};
-    const expressionAttributeValues: Record<string, any> = {};
-    const setParts: string[] = [];
-    const removeParts: string[] = [];
-
-    const safeSet = set ?? {};
-    for (const [key, value] of Object.entries(safeSet)) {
-      if (value === undefined) continue;
-      const nameToken = `#${key}`;
-      const valueToken = `:${key.charAt(0).toLowerCase()}${key.slice(1)}`;
-      expressionAttributeNames[nameToken] = key;
-      if (typeof value === 'number') {
-        expressionAttributeValues[valueToken] = { N: `${value}` };
-      } else {
-        expressionAttributeValues[valueToken] = { S: `${value}` };
-      }
-      setParts.push(`${nameToken} = ${valueToken}`);
-    }
-
-    for (const key of remove ?? []) {
-      const nameToken = `#${key}`;
-      expressionAttributeNames[nameToken] = key;
-      removeParts.push(nameToken);
-    }
-
-    if (setParts.length === 0 && removeParts.length === 0) {
-      // No-op; return current record
-      return this.get(LaboratoryId, RunId);
-    }
-
-    const updateExpressionParts: string[] = [];
-    if (setParts.length) updateExpressionParts.push(`SET ${setParts.join(', ')}`);
-    if (removeParts.length) updateExpressionParts.push(`REMOVE ${removeParts.join(', ')}`);
-
-    const response: UpdateItemCommandOutput = await this.updateItem({
-      TableName: this.LABORATORY_RUN_TABLE_NAME,
-      Key: {
-        LaboratoryId: { S: LaboratoryId },
-        RunId: { S: RunId },
-      },
-      ExpressionAttributeNames: expressionAttributeNames,
-      ...(Object.keys(expressionAttributeValues).length
-        ? { ExpressionAttributeValues: expressionAttributeValues }
-        : {}),
-      UpdateExpression: updateExpressionParts.join(' '),
-      ReturnValues: 'ALL_NEW',
-    });
-
-    if (response.$metadata.httpStatusCode === 200 && response.Attributes) {
-      return <LaboratoryRun>unmarshall(response.Attributes);
-    }
-    throw new Error(`UpdateRetentionMetadata LaboratoryId=${LaboratoryId}, RunId=${RunId} unsuccessful`);
   };
 
   public delete = async (laboratoryRun: LaboratoryRun): Promise<boolean> => {
