@@ -2,6 +2,7 @@
   import { useChangeCase } from '@vueuse/integrations/useChangeCase';
   import { useDebounceFn } from '@vueuse/core';
   import { format } from 'date-fns';
+  import type { TableSort } from './EGTable.vue';
   import {
     S3Object,
     S3Response,
@@ -294,18 +295,83 @@
     });
   });
 
+  const sortHelpers = useSort();
+
+  /** Folders often have no lastModified; keep them after dated rows for a stable column sort. */
+  function compareLastModified(
+    a: string | undefined,
+    b: string | undefined,
+    direction: 'asc' | 'desc' = 'asc',
+  ): number {
+    const toTime = (s?: string): number | null => {
+      if (!s) return null;
+      const ms = new Date(s).getTime();
+      return Number.isNaN(ms) ? null : ms;
+    };
+    const ta = toTime(a);
+    const tb = toTime(b);
+    if (ta === null && tb === null) return 0;
+    if (ta === null) return 1;
+    if (tb === null) return -1;
+    const result = ta - tb;
+    return direction === 'asc' ? result : -result;
+  }
+
   const tableColumns = [
-    { key: 'name', label: 'Name', sortable: true, sort: useSort().stringSortCompare },
-    { key: 'type', label: 'Type', sortable: true, sort: useSort().stringSortCompare },
+    {
+      key: 'name',
+      label: 'Name',
+      sortable: true,
+      sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
+        sortHelpers.stringSortCompare(String(a ?? ''), String(b ?? ''), direction),
+    },
+    {
+      key: 'type',
+      label: 'Type',
+      sortable: true,
+      sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
+        sortHelpers.stringSortCompare(String(a ?? ''), String(b ?? ''), direction),
+    },
     {
       key: 'lastModified',
       label: 'Date Modified',
       sortable: true,
-      sort: useSort().dateSortCompare,
+      sort: compareLastModified,
     },
-    { key: 'size', label: 'Size', sortable: true, sort: useSort().numberSortCompare },
+    {
+      key: 'size',
+      label: 'Size',
+      sortable: true,
+      sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
+        sortHelpers.numberSortCompare(Number(a ?? 0), Number(b ?? 0), direction),
+    },
     { key: 'actions', label: 'Actions' },
   ];
+
+  const fileTableSort = ref<TableSort>({ column: 'name', direction: 'asc' });
+
+  const sortedTableData = computed(() => {
+    const items = [...filteredItems.value];
+    const { column, direction } = fileTableSort.value;
+    const col = tableColumns.find((c) => c.key === column);
+    if (!col || !('sortable' in col) || !col.sortable || typeof col.sort !== 'function') {
+      return items;
+    }
+
+    const sortFn = col.sort as (a: unknown, b: unknown, direction: 'asc' | 'desc') => number;
+
+    items.sort((rowA, rowB) => {
+      const va = (rowA as Record<string, unknown>)[column];
+      const vb = (rowB as Record<string, unknown>)[column];
+      const cmp = sortFn(va, vb, direction);
+      if (cmp !== 0) {
+        return cmp;
+      }
+      return sortHelpers.stringSortCompare(String(rowA.name ?? ''), String(rowB.name ?? ''), direction);
+    });
+
+    return items;
+  });
 
   // key is the uniqueString of a file tree node
   // value is the ref containing the progress of the download out of 100
@@ -630,7 +696,8 @@
 
     <EGTable
       :row-click-action="onRowClicked"
-      :table-data="filteredItems"
+      :table-data="sortedTableData"
+      v-model:sort="fileTableSort"
       :columns="tableColumns"
       no-results-msg="No files or folders found"
       :is-loading="isRootLoading || isSearchLoading"
