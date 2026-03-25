@@ -96,7 +96,6 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
     }
   };
 
-<<<<<<< feat/egv-25-tag-based-access-controls
   /**
    * Scans the entire laboratory-run table and returns all runs.
    * Used for one-off operations (e.g. backfilling Omics run tags).
@@ -117,7 +116,8 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
       lastKey = response.LastEvaluatedKey as Record<string, any> | undefined;
     } while (lastKey);
     return results;
-=======
+  };
+
   public queryByLaboratoryIdPaginated = async ({
     laboratoryId,
     limit,
@@ -193,7 +193,6 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
       items,
       lastEvaluatedKey: queryResponse.LastEvaluatedKey,
     };
->>>>>>> development
   };
 
   public queryByRunId = async (runId: string): Promise<LaboratoryRun> => {
