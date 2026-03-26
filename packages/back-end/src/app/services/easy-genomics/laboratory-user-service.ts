@@ -6,9 +6,9 @@ import {
   UpdateItemCommandOutput,
 } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
+import { LaboratoryUserNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { LaboratoryUserSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-user';
 import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
-import { LaboratoryUserNotFoundError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
 

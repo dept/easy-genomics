@@ -14,6 +14,8 @@
     transactionId: string;
     workflowId: string;
     workflowName: string;
+    /** When set, passed to Omics StartRun and stored on the laboratory run */
+    workflowVersionName?: string;
   }>();
 
   const { $api } = useNuxtApp();
@@ -52,6 +54,7 @@
         props.workflowId,
         props.runName,
         withoutEmptyFields(props.params),
+        props.workflowVersionName,
       );
 
       if (!startOmicsRes) {
@@ -70,6 +73,7 @@
           'Platform': 'AWS HealthOmics',
           'Status': 'SUBMITTED',
           'WorkflowName': props.workflowName,
+          ...(props.workflowVersionName ? { WorkflowVersionName: props.workflowVersionName } : {}),
           'ExternalRunId': startOmicsRes.id,
           'InputS3Url': props.params.input.substring(0, props.params.input.lastIndexOf('/')),
           'OutputS3Url': props.params.outdir,
@@ -104,6 +108,10 @@
         <div class="text-md flex border-b px-4 py-4">
           <dt class="w-48 text-black">Workflow</dt>
           <dd class="text-muted text-left">{{ props.workflowName }}</dd>
+        </div>
+        <div class="text-md flex border-b px-4 py-4">
+          <dt class="w-48 text-black">Workflow version</dt>
+          <dd class="text-muted text-left">{{ props.workflowVersionName || 'Default version' }}</dd>
         </div>
         <div class="text-md flex border-b px-4 py-4">
           <dt class="w-48 text-black">Laboratory</dt>

@@ -1,17 +1,17 @@
 import { AttributeValue } from '@aws-sdk/client-dynamodb';
 import { LaboratoryRunSchema } from '@easy-genomics/shared-lib/lib/app/schema/easy-genomics/laboratory-run';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
+import {
+  InvalidRequestError,
+  LaboratoryNotFoundError,
+  UnauthorizedAccessError,
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import {
   ListLaboratoryRunsPaginatedResponse,
   ReadLaboratoryRun,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
-import {
-  InvalidRequestError,
-  LaboratoryNotFoundError,
-  UnauthorizedAccessError,
-} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
@@ -263,6 +263,7 @@ function buildMockRuns(laboratoryId: string, organizationId: string): Laboratory
 
   return Array.from({ length: MOCK_RUNS_COUNT }, (_value, idx) => {
     const runNumber = idx + 1;
+    const platform = platforms[runNumber % platforms.length];
     const createdAt = new Date(now.getTime() - runNumber * 60 * 60 * 1000);
     const modifiedAt = new Date(createdAt.getTime() + (runNumber % 5) * 10 * 60 * 1000);
 
@@ -272,10 +273,11 @@ function buildMockRuns(laboratoryId: string, organizationId: string): Laboratory
       RunId: makeDeterministicUuid(`run-${runNumber}`),
       UserId: makeDeterministicUuid(`user-${(runNumber % 8) + 1}`),
       RunName: `Mock Run ${String(runNumber).padStart(3, '0')}`,
-      Platform: platforms[runNumber % platforms.length],
+      Platform: platform,
       Status: statuses[runNumber % statuses.length],
       Owner: `mock-user-${(runNumber % 8) + 1}@example.com`,
       WorkflowName: `Workflow ${(runNumber % 12) + 1}`,
+      ...(platform === 'AWS HealthOmics' ? { WorkflowVersionName: `mock-omics-v${(runNumber % 5) + 1}` } : {}),
       ExternalRunId: `mock-external-run-${runNumber}`,
       CreatedAt: createdAt.toISOString(),
       ModifiedAt: modifiedAt.toISOString(),

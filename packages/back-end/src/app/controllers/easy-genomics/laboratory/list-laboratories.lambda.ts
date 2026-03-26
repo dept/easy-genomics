@@ -1,13 +1,13 @@
-import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   ExpiredOrganizationAccessError,
   NoLabratoriesFoundError,
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
   UserNotFoundError,
-} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { UserService } from '@BE/services/easy-genomics/user-service';

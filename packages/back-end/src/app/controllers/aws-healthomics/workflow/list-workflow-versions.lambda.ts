@@ -1,10 +1,10 @@
-import { ListWorkflowsCommandInput } from '@aws-sdk/client-omics/dist-types/commands/ListWorkflowsCommand';
+import { ListWorkflowVersionsCommandInput, WorkflowStatus } from '@aws-sdk/client-omics';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   LaboratoryNotFoundError,
+  MissingAWSHealthOmicsAccessError,
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
- MissingAWSHealthOmicsAccessError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
@@ -21,15 +21,14 @@ const laboratoryService = new LaboratoryService();
 const omicsService = new OmicsService();
 
 /**
- * This GET /aws-healthomics/workflow/list-private-workflows?laboratoryId={LaboratoryId}
- * API queries the same region's AWS HealthOmics service to retrieve a list of
- * Private Workflows, and it expects:
- *  - Required Query Parameter:
- *    - 'laboratoryId': to retrieve the Laboratory to verify access to AWS HealthOmics
- *  - Optional Query Parameters:
- *    - 'maxResults': pagination number of results
- *    - 'nextToken': pagination results offset index
- *    - 'name': string to search by the Workflow name attribute
+ * This GET /aws-healthomics/workflow/list-workflow-versions?laboratoryId={LaboratoryId}&workflowId={WorkflowId}
+ * API queries AWS HealthOmics for workflow versions for a private workflow.
+ *
+ * Required query parameters:
+ *  - laboratoryId
+ *  - workflowId
+ *
+ * Optional: maxResults, nextToken (startingToken)
  *
  * @param event
  */
@@ -38,9 +37,11 @@ export const handler: Handler = async (
 ): Promise<APIGatewayProxyResult> => {
   console.log('EVENT: \n' + JSON.stringify(event, null, 2));
   try {
-    // Get required query parameter
     const laboratoryId: string = event.queryStringParameters?.laboratoryId || '';
     if (laboratoryId === '') throw new RequiredIdNotFoundError('laboratoryId');
+
+    const workflowId: string = event.queryStringParameters?.workflowId || '';
+    if (workflowId === '') throw new RequiredIdNotFoundError('workflowId');
 
     const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(laboratoryId);
 
@@ -48,7 +49,6 @@ export const handler: Handler = async (
       throw new LaboratoryNotFoundError();
     }
 
-    // Only available for Org Admins or Laboratory Managers and Technicians
     if (
       !(
         validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
@@ -59,18 +59,20 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
-    // Requires AWS Health Omics access
     if (!laboratory.AwsHealthOmicsEnabled) {
       throw new MissingAWSHealthOmicsAccessError();
     }
 
     const queryParameters: AwsHealthOmicsQueryParameters = getAwsHealthOmicsApiQueryParameters(event);
-    const response = await omicsService.listWorkflows(<ListWorkflowsCommandInput>{
+    const response = await omicsService.listWorkflowVersions(<ListWorkflowVersionsCommandInput>{
+      workflowId,
       type: 'PRIVATE',
       ...queryParameters,
-      status: undefined, // Explicitly exclude status filter for Workflows
     });
-    return buildResponse(200, JSON.stringify(response), event);
+
+    const items = (response.items ?? []).filter((v) => v.status === undefined || v.status === WorkflowStatus.ACTIVE);
+
+    return buildResponse(200, JSON.stringify({ ...response, items }), event);
   } catch (err: any) {
     console.error(err);
     return buildErrorResponse(err, event);

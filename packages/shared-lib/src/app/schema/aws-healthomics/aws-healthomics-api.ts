@@ -28,5 +28,6 @@ export const CreateRunRequestSchema = z
     retentionMode: z.enum(['RETAIN', 'REMOVE']).optional(),
     storageType: z.enum(['STATIC', 'DYNAMIC']).optional(),
     workflowOwnerId: z.string().optional(),
+    workflowVersionName: z.string().min(1).max(64).optional(),
   })
   .strict();
