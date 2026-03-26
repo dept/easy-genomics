@@ -338,7 +338,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         resources: [
           `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
         ],
-        actions: ['sts:AssumeRole'],
+        actions: ['sts:AssumeRole', 'sts:TagSession'],
         effect: Effect.ALLOW,
       }),
     ]);
@@ -360,7 +360,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         resources: [
           `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
         ],
-        actions: ['sts:AssumeRole'],
+        actions: ['sts:AssumeRole', 'sts:TagSession'],
         effect: Effect.ALLOW,
       }),
     ]);
@@ -382,7 +382,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         resources: [
           `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
         ],
-        actions: ['sts:AssumeRole'],
+        actions: ['sts:AssumeRole', 'sts:TagSession'],
         effect: Effect.ALLOW,
       }),
     ]);
@@ -414,7 +414,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         resources: [
           `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
         ],
-        actions: ['sts:AssumeRole'],
+        actions: ['sts:AssumeRole', 'sts:TagSession'],
         effect: Effect.ALLOW,
       }),
     ]);
