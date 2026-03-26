@@ -54,15 +54,6 @@ export const ReadLaboratoryRunSchema = z
   .strict();
 export type ReadLaboratoryRun = z.infer<typeof ReadLaboratoryRunSchema>;
 
-export const ListLaboratoryRunsPaginatedResponseSchema = z
-  .object({
-    items: z.array(ReadLaboratoryRunSchema),
-    hasMore: z.boolean(),
-    nextToken: z.string().optional(),
-  })
-  .strict();
-export type ListLaboratoryRunsPaginatedResponse = z.infer<typeof ListLaboratoryRunsPaginatedResponseSchema>;
-
 export const AddLaboratoryRunSchema = z
   .object({
     LaboratoryId: z.string().uuid(),
