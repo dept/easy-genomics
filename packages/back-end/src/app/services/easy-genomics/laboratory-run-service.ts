@@ -204,6 +204,72 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
     }
   };
 
+  /**
+   * Updates TTL-related metadata using a DynamoDB UpdateExpression that can SET and/or REMOVE attributes.
+   * Used for retention recomputation where `ExpiresAt` may need to be removed (e.g. retentionMonths=0).
+   */
+  public updateRetentionMetadata = async (params: {
+    LaboratoryId: string;
+    RunId: string;
+    set?: Partial<Pick<LaboratoryRun, 'TerminalAt' | 'ExpiresAt' | 'ModifiedAt' | 'ModifiedBy'>>;
+    remove?: Array<'ExpiresAt' | 'TerminalAt'>;
+  }): Promise<LaboratoryRun> => {
+    const { LaboratoryId, RunId, set, remove } = params;
+
+    const expressionAttributeNames: Record<string, string> = {};
+    const expressionAttributeValues: Record<string, any> = {};
+    const setParts: string[] = [];
+    const removeParts: string[] = [];
+
+    const safeSet = set ?? {};
+    for (const [key, value] of Object.entries(safeSet)) {
+      if (value === undefined) continue;
+      const nameToken = `#${key}`;
+      const valueToken = `:${key.charAt(0).toLowerCase()}${key.slice(1)}`;
+      expressionAttributeNames[nameToken] = key;
+      if (typeof value === 'number') {
+        expressionAttributeValues[valueToken] = { N: `${value}` };
+      } else {
+        expressionAttributeValues[valueToken] = { S: `${value}` };
+      }
+      setParts.push(`${nameToken} = ${valueToken}`);
+    }
+
+    for (const key of remove ?? []) {
+      const nameToken = `#${key}`;
+      expressionAttributeNames[nameToken] = key;
+      removeParts.push(nameToken);
+    }
+
+    if (setParts.length === 0 && removeParts.length === 0) {
+      // No-op; return current record
+      return this.get(LaboratoryId, RunId);
+    }
+
+    const updateExpressionParts: string[] = [];
+    if (setParts.length) updateExpressionParts.push(`SET ${setParts.join(', ')}`);
+    if (removeParts.length) updateExpressionParts.push(`REMOVE ${removeParts.join(', ')}`);
+
+    const response: UpdateItemCommandOutput = await this.updateItem({
+      TableName: this.LABORATORY_RUN_TABLE_NAME,
+      Key: {
+        LaboratoryId: { S: LaboratoryId },
+        RunId: { S: RunId },
+      },
+      ExpressionAttributeNames: expressionAttributeNames,
+      ...(Object.keys(expressionAttributeValues).length
+        ? { ExpressionAttributeValues: expressionAttributeValues }
+        : {}),
+      UpdateExpression: updateExpressionParts.join(' '),
+      ReturnValues: 'ALL_NEW',
+    });
+
+    if (response.$metadata.httpStatusCode === 200 && response.Attributes) {
+      return <LaboratoryRun>unmarshall(response.Attributes);
+    }
+    throw new Error(`UpdateRetentionMetadata LaboratoryId=${LaboratoryId}, RunId=${RunId} unsuccessful`);
+  };
+
   public delete = async (laboratoryRun: LaboratoryRun): Promise<boolean> => {
     const logRequestMessage = `Delete LaboratoryRun LaboratoryId=${laboratoryRun.LaboratoryId}, RunId=${laboratoryRun.RunId} request`;
     console.info(logRequestMessage);

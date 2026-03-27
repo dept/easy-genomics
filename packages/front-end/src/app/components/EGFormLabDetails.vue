@@ -6,6 +6,7 @@
     NextFlowTowerApiBaseUrlSchema,
     NextFlowTowerAccessTokenSchema,
     NextFlowTowerWorkspaceIdSchema,
+    RunRetentionMonthsSchema,
     LabDetailsFormModeEnum,
     LabDetailsFormMode,
   } from '@FE/types/labs';
@@ -58,6 +59,7 @@
     Name: '',
     Description: '',
     S3Bucket: '',
+    RunRetentionMonths: 0,
     NextFlowTowerEnabled: false,
     NextFlowTowerAccessToken: '',
     NextFlowTowerWorkspaceId: '',
@@ -185,6 +187,12 @@
   const isSubmittingFormData = computed(
     () => useUiStore().isRequestPending('createLab') || useUiStore().isRequestPending('updateLab'),
   );
+  const isApplyingRetentionPolicy = computed(() => useUiStore().isRequestPending('applyRunRetentionPolicy'));
+  const isApplyRetentionPolicyDialogOpen = ref(false);
+  const retentionMonthsForDialog = computed<number>(() => state.value.RunRetentionMonths ?? 0);
+  const retentionPolicyDescription = computed<string>(() =>
+    retentionMonthsForDialog.value === 0 ? 'never delete run records' : `${retentionMonthsForDialog.value} month(s)`,
+  );
 
   /**
    * Handles form submission for various lab detail modes such as Create and Edit.
@@ -274,11 +282,33 @@
     useToastStore().success(`${lab.Name} successfully updated`);
   }
 
+  async function handleApplyRunRetentionPolicy() {
+    try {
+      useUiStore().setRequestPending('applyRunRetentionPolicy');
+      const retentionMonths = state.value.RunRetentionMonths ?? 0;
+      const result = await $api.labs.applyRunRetentionPolicy(labId, retentionMonths);
+      useToastStore().success(
+        `Applied run retention policy: updated ${result.Updated}, removed ${result.Removed}, skipped ${result.Skipped}.`,
+      );
+      await getLabDetails();
+      emit('updated');
+    } catch (error) {
+      useToastStore().error('Failed to apply run retention policy to existing runs');
+    } finally {
+      useUiStore().setRequestComplete('applyRunRetentionPolicy');
+    }
+  }
+
+  function openApplyRetentionPolicyDialog() {
+    isApplyRetentionPolicyDialogOpen.value = true;
+  }
+
   const validate = (state: LabDetails): FormError[] => {
     const errors: FormError[] = [];
 
     maybeAddFieldValidationErrors(errors, LabNameSchema, 'Name', state.Name);
     maybeAddFieldValidationErrors(errors, LabDescriptionSchema, 'Description', state.Description);
+    maybeAddFieldValidationErrors(errors, RunRetentionMonthsSchema, 'RunRetentionMonths', state.RunRetentionMonths);
 
     // Next Flow fields only required if Next Flow enabled
     if (state.NextFlowTowerEnabled) {
@@ -377,6 +407,19 @@
           :disabled="!isEditing || isSubmittingFormData"
           placeholder="Describe your lab and what runs should be launched by Lab users."
         />
+      </EGFormGroup>
+
+      <EGFormGroup label="Run retention (months)" name="RunRetentionMonths" eager-validation>
+        <EGInput
+          v-model.number="state.RunRetentionMonths"
+          type="number"
+          min="0"
+          max="120"
+          step="1"
+          :disabled="!isEditing || isSubmittingFormData"
+          placeholder="Enter number of months (0 for never)"
+        />
+        <p class="text-muted mt-1 text-xs">0 = never delete run records</p>
       </EGFormGroup>
 
       <EGFormGroup v-if="useUserStore().isOrgAdmin()" label="Default S3 bucket directory" name="S3Bucket" required>
@@ -497,6 +540,14 @@
         :disabled="useUserStore().isSuperuser || !hasEditPermission"
         @click="switchToFormMode(LabDetailsFormModeEnum.enum.Edit)"
       />
+      <EGButton
+        :size="ButtonSizeEnum.enum.sm"
+        :variant="ButtonVariantEnum.enum.secondary"
+        label="Apply To Existing Runs"
+        :loading="isApplyingRetentionPolicy"
+        :disabled="useUserStore().isSuperuser || !hasEditPermission || isApplyingRetentionPolicy"
+        @click="openApplyRetentionPolicyDialog"
+      />
     </div>
 
     <!-- Form Buttons: Edit Mode -->
@@ -518,4 +569,17 @@
       />
     </div>
   </UForm>
+
+  <EGDialog
+    action-label="Apply Retention Policy"
+    :action-variant="ButtonVariantEnum.enum.primary"
+    cancel-label="Cancel"
+    :cancel-variant="ButtonVariantEnum.enum.secondary"
+    @action-triggered="handleApplyRunRetentionPolicy"
+    primary-message="Apply retention policy to existing runs?"
+    :secondary-message="`This may trigger a large update across existing terminal runs in this lab. Policy to apply: ${retentionPolicyDescription}.`"
+    v-model="isApplyRetentionPolicyDialogOpen"
+    :loading="isApplyingRetentionPolicy"
+    :buttons-disabled="isApplyingRetentionPolicy"
+  />
 </template>

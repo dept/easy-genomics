@@ -46,4 +46,16 @@ export interface LaboratoryRun extends BaseAttributes {
   OutputS3Url?: string;
   SampleSheetS3Url?: string;
   Settings?: string; // JSON string
+
+  /**
+   * ISO timestamp indicating when the run first reached a terminal state.
+   * Used as the anchor for retention/TTL recomputation.
+   */
+  TerminalAt?: string;
+
+  /**
+   * DynamoDB TTL epoch timestamp (in seconds).
+   * When present, DynamoDB will remove the item after this timestamp.
+   */
+  ExpiresAt?: number;
 }

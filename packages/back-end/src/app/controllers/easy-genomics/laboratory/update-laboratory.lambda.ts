@@ -73,6 +73,7 @@ export const handler: Handler = async (
           NextFlowTowerEnabled: request.NextFlowTowerEnabled,
           NextFlowTowerApiBaseUrl: request.NextFlowTowerApiBaseUrl,
           NextFlowTowerWorkspaceId: request.NextFlowTowerWorkspaceId,
+          RunRetentionMonths: request.RunRetentionMonths,
           ModifiedAt: new Date().toISOString(),
           ModifiedBy: userId,
         },

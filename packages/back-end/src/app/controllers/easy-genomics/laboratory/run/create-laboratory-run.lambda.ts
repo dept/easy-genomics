@@ -21,6 +21,12 @@ import {
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
+import {
+  calculateExpiresAtEpochSeconds,
+  getRetentionMonthsOrDefault,
+  isTerminalLaboratoryRunStatus,
+  shouldExpireWithRetentionMonths,
+} from '@BE/utils/laboratory-run-ttl-utils';
 
 const laboratoryRunService = new LaboratoryRunService();
 const laboratoryService = new LaboratoryService();
@@ -57,6 +63,14 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
+    const createdAt = new Date();
+    const isTerminalAtCreate = isTerminalLaboratoryRunStatus(request.Status);
+    const retentionMonths = getRetentionMonthsOrDefault(laboratory.RunRetentionMonths);
+    const laboratorioRunExpiresAt: number | undefined =
+      isTerminalAtCreate && shouldExpireWithRetentionMonths(retentionMonths)
+        ? calculateExpiresAtEpochSeconds(createdAt, retentionMonths)
+        : undefined;
+
     const laboratoryRun: LaboratoryRun = await laboratoryRunService.add(<LaboratoryRun>{
       LaboratoryId: laboratory.LaboratoryId,
       RunId: request.RunId,
@@ -73,8 +87,10 @@ export const handler: Handler = async (
       OutputS3Url: request.OutputS3Url,
       SampleSheetS3Url: request.SampleSheetS3Url,
       Settings: JSON.stringify(request.Settings || {}),
-      CreatedAt: new Date().toISOString(),
+      CreatedAt: createdAt.toISOString(),
       CreatedBy: currentUserId,
+      ...(isTerminalAtCreate ? { TerminalAt: createdAt.toISOString() } : {}),
+      ...(laboratorioRunExpiresAt !== undefined ? { ExpiresAt: laboratorioRunExpiresAt } : {}),
     });
 
     if (laboratoryRun.ExternalRunId) {

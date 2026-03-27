@@ -382,6 +382,8 @@ backEndApp.addScripts({
   ['invoke-process-handler']: 'tsx src/local-server/invoke-process-handler.ts',
   ['backfill-omics-run-tags']: 'tsx scripts/backfill-omics-run-tags.ts',
   ['backfill-omics-run-tags:dry-run']: 'tsx scripts/backfill-omics-run-tags.ts --dry-run',
+  ['recompute-laboratory-run-retention']:
+    'tsx scripts/recompute-laboratory-run-retention.ts --laboratoryId $LAB_ID --retentionMonths $RETENTION_MONTHS',
 });
 
 if (backEndApp.eslint) {
