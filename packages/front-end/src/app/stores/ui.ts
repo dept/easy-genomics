@@ -27,6 +27,7 @@ type PendingRequest =
   | 'editOrg'
   | 'createLab'
   | 'updateLab'
+  | 'applyRunRetentionPolicy'
   | 'getLabs'
   | 'deleteLab'
   | 'fetchOrgLabs'

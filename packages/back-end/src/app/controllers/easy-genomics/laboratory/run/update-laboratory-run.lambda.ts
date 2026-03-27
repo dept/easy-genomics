@@ -14,16 +14,25 @@ import {
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
+import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { SnsService } from '@BE/services/sns-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
+import {
+  calculateExpiresAtEpochSeconds,
+  getRetentionMonthsOrDefault,
+  getTerminalAtIsoString,
+  isTerminalLaboratoryRunStatus,
+  shouldExpireWithRetentionMonths,
+} from '@BE/utils/laboratory-run-ttl-utils';
 
 const snsService = new SnsService();
 
 const laboratoryRunService = new LaboratoryRunService();
+const laboratoryService = new LaboratoryService();
 
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -63,12 +72,32 @@ export const handler: Handler = async (
     }
 
     const settings: string | undefined = request.Settings ? JSON.stringify(request.Settings) : existing.Settings;
+    const now = new Date();
+
+    const laboratory = await laboratoryService.queryByLaboratoryId(existing.LaboratoryId);
+    const retentionMonths = getRetentionMonthsOrDefault(laboratory?.RunRetentionMonths);
+
+    const nextStatusTerminal = isTerminalLaboratoryRunStatus(request.Status);
+    const terminalAtIso = nextStatusTerminal ? getTerminalAtIsoString(existing, now) : undefined;
+    const shouldSetTerminalAt = nextStatusTerminal && existing.TerminalAt == null && terminalAtIso != null;
+
+    const shouldSetExpiresAt =
+      nextStatusTerminal &&
+      existing.ExpiresAt == null &&
+      shouldExpireWithRetentionMonths(retentionMonths) &&
+      terminalAtIso != null;
+    const expiresAt: number | undefined =
+      shouldSetExpiresAt && terminalAtIso
+        ? calculateExpiresAtEpochSeconds(new Date(terminalAtIso), retentionMonths)
+        : undefined;
 
     const response: LaboratoryRun = await laboratoryRunService.update(<LaboratoryRun>{
       ...existing,
       ...request,
       Settings: settings,
-      ModifiedAt: new Date().toISOString(),
+      ...(expiresAt !== undefined ? { ExpiresAt: expiresAt } : {}),
+      ...(shouldSetTerminalAt ? { TerminalAt: terminalAtIso } : {}),
+      ModifiedAt: now.toISOString(),
       ModifiedBy: currentUserId,
     });
 

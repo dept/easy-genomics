@@ -26,6 +26,16 @@ export const LaboratoryRunSchema = z
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
     ModifiedBy: z.string().optional(),
+    /**
+     * ISO timestamp indicating when the run first reached a terminal state.
+     * Used as the anchor for retention/TTL recomputation.
+     */
+    TerminalAt: z.string().optional(),
+    /**
+     * DynamoDB TTL epoch timestamp (in seconds).
+     * When enabled, DynamoDB will remove items after this timestamp.
+     */
+    ExpiresAt: z.number().optional(),
   })
   .strict();
 
@@ -50,6 +60,8 @@ export const ReadLaboratoryRunSchema = z
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
     ModifiedBy: z.string().optional(),
+    TerminalAt: z.string().optional(),
+    ExpiresAt: z.number().optional(),
   })
   .strict();
 export type ReadLaboratoryRun = z.infer<typeof ReadLaboratoryRunSchema>;
