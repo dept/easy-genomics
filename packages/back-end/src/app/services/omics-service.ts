@@ -25,7 +25,11 @@ import {
   StartRunCommand,
   StartRunCommandInput,
   StartRunCommandOutput,
+  TagResourceCommand,
+  TagResourceCommandInput,
+  TagResourceCommandOutput,
 } from '@aws-sdk/client-omics';
+import type { AwsCredentialIdentity } from '@aws-sdk/types';
 
 export enum OmicsCommand {
   CANCEL_RUN = 'cancel-run',
@@ -36,13 +40,19 @@ export enum OmicsCommand {
   LIST_WORKFLOW_VERSIONS = 'list-workflow-versions',
   LIST_SHARED_WORKFLOWS = 'list-shared-workflows',
   START_RUN = 'start-run',
+  TAG_RESOURCE = 'tag-resource',
 }
 
 export class OmicsService {
-  private readonly omicsClient;
+  private readonly omicsClient: OmicsClient;
 
-  public constructor() {
-    this.omicsClient = new OmicsClient();
+  /**
+   * @param credentials - Optional. When provided, all Omics API calls use these
+   * credentials (e.g. lab-scoped session from STS AssumeRole). When omitted,
+   * the default credential chain is used (e.g. Lambda execution role).
+   */
+  public constructor(credentials?: AwsCredentialIdentity) {
+    this.omicsClient = credentials != null ? new OmicsClient({ credentials }) : new OmicsClient();
   }
 
   public cancelRun = async (cancelRunCommandInput: CancelRunCommandInput): Promise<CancelRunCommandOutput> => {
@@ -98,6 +108,13 @@ export class OmicsService {
     return this.omicsRequest<StartRunCommandInput, StartRunCommandOutput>(OmicsCommand.START_RUN, startRunCommandInput);
   };
 
+  public tagResource = async (tagResourceCommandInput: TagResourceCommandInput): Promise<TagResourceCommandOutput> => {
+    return this.omicsRequest<TagResourceCommandInput, TagResourceCommandOutput>(
+      OmicsCommand.TAG_RESOURCE,
+      tagResourceCommandInput,
+    );
+  };
+
   private omicsRequest = async <RequestType, ResponseType>(
     command: OmicsCommand,
     data?: RequestType,
@@ -132,6 +149,8 @@ export class OmicsService {
         return new ListSharesCommand(data as ListSharesCommandInput);
       case OmicsCommand.START_RUN:
         return new StartRunCommand(data as StartRunCommandInput);
+      case OmicsCommand.TAG_RESOURCE:
+        return new TagResourceCommand(data as TagResourceCommandInput);
       default:
         throw new Error(`Unsupported Omics Management Command '${command}'`);
     }

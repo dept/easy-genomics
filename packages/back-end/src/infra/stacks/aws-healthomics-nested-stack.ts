@@ -1,5 +1,13 @@
 import { NestedStack } from 'aws-cdk-lib';
-import { Effect, PolicyDocument, PolicyStatement, Role, ServicePrincipal, Policy } from 'aws-cdk-lib/aws-iam';
+import {
+  Effect,
+  PolicyDocument,
+  PolicyStatement,
+  Role,
+  ServicePrincipal,
+  Policy,
+  ArnPrincipal,
+} from 'aws-cdk-lib/aws-iam';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 import { IamConstruct, IamConstructProps } from '../constructs/iam-construct';
@@ -144,6 +152,41 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
     ]);
+
+    // omics-access-role-permissions-policy-statement
+    // Permissions for the Omics access role assumed by Easy Genomics Lambdas
+    this.iam.addPolicyStatements('omics-access-role-permissions-policy-statement', [
+      // Allow StartRun only when request tags match principal tags for lab and org
+      new PolicyStatement({
+        resources: ['*'],
+        actions: ['omics:StartRun'],
+        effect: Effect.ALLOW,
+        conditions: {
+          StringEquals: {
+            'aws:RequestTag/LaboratoryId': '${aws:PrincipalTag/LaboratoryId}',
+            'aws:RequestTag/OrganizationId': '${aws:PrincipalTag/OrganizationId}',
+          },
+        },
+      }),
+      // Allow GetRun, ListRuns, and CancelRun only for Runs tagged with the same LaboratoryId and OrganizationId as the principal
+      new PolicyStatement({
+        resources: ['*'],
+        actions: ['omics:GetRun', 'omics:ListRuns', 'omics:CancelRun'],
+        effect: Effect.ALLOW,
+        conditions: {
+          StringEquals: {
+            'aws:ResourceTag/LaboratoryId': '${aws:PrincipalTag/LaboratoryId}',
+            'aws:ResourceTag/OrganizationId': '${aws:PrincipalTag/OrganizationId}',
+          },
+        },
+      }),
+      // Allow read-only workflow and share APIs without additional tag conditions
+      new PolicyStatement({
+        resources: ['*'],
+        actions: ['omics:ListWorkflows', 'omics:GetWorkflow', 'omics:ListShares'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
   };
 
   private setupPolicyDocuments() {
@@ -164,6 +207,14 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
           // Omics Pass Role
           ...this.iam.getPolicyStatements('iam-get-role-pass-role-policy-statement'),
         ],
+      }),
+    );
+
+    // omics-access-role-policy-document
+    this.iam.addPolicyDocument(
+      'omics-access-role-policy-document',
+      new PolicyDocument({
+        statements: [...this.iam.getPolicyStatements('omics-access-role-permissions-policy-statement')],
       }),
     );
   }
@@ -197,6 +248,28 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
     });
 
     this.iam.addRole('easy-genomics-healthomics-workflow-run-role', role);
+
+    // easy-genomics-omics-access-role
+    // Role assumed by Easy Genomics Lambda functions (via STS) to call AWS HealthOmics
+    // with lab-scoped access enforced by IAM conditions on principal and resource tags.
+    const omicsAccessRole = new Role(this, `${this.props.namePrefix}-easy-genomics-omics-access-role`, {
+      roleName: `${this.props.namePrefix}-easy-genomics-omics-access-role`,
+      // Trust any IAM principal in this account; permissions policy still constrains what can be done.
+      assumedBy: new ArnPrincipal(`arn:aws:iam::${this.props.env.account!}:root`),
+      description:
+        'Role assumed by Easy Genomics Lambdas to access AWS HealthOmics with laboratory-scoped IAM enforcement.',
+    });
+
+    new Policy(this, `${this.props.namePrefix}-omics-access-role-policy`, {
+      policyName: `${this.props.namePrefix}-omics-access-role-policy`,
+      statements: this.iam
+        .getPolicyDocument('omics-access-role-policy-document')
+        .toJSON()
+        .Statement.map((stmt: any) => PolicyStatement.fromJson(stmt)),
+      roles: [omicsAccessRole],
+    });
+
+    this.iam.addRole('easy-genomics-omics-access-role', omicsAccessRole);
   }
 
   private setupLambdaPolicyStatements() {
@@ -277,6 +350,13 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         actions: ['omics:ListRuns'],
         effect: Effect.ALLOW,
       }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
+        ],
+        actions: ['sts:AssumeRole'],
+        effect: Effect.ALLOW,
+      }),
     ]);
     // /aws-healthomics/run/read-run
     this.iam.addPolicyStatements('/aws-healthomics/run/read-run', [
@@ -292,6 +372,13 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         actions: ['omics:GetRun'],
         effect: Effect.ALLOW,
       }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
+        ],
+        actions: ['sts:AssumeRole'],
+        effect: Effect.ALLOW,
+      }),
     ]);
     // /aws-healthomics/run/cancel-run-execution
     this.iam.addPolicyStatements('/aws-healthomics/run/cancel-run-execution', [
@@ -305,6 +392,13 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:run/*`],
         actions: ['omics:CancelRun'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
+        ],
+        actions: ['sts:AssumeRole'],
         effect: Effect.ALLOW,
       }),
     ]);
@@ -330,6 +424,13 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
           `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-healthomics-workflow-run-role`,
         ],
         actions: ['iam:PassRole'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
+        ],
+        actions: ['sts:AssumeRole'],
         effect: Effect.ALLOW,
       }),
     ]);
