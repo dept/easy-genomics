@@ -2,10 +2,12 @@ import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { handler } from '../../../../../../src/app/controllers/easy-genomics/laboratory/run/update-laboratory-run.lambda';
 
 jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-run-service');
+jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../../src/app/services/sns-service');
 jest.mock('../../../../../../src/app/utils/auth-utils');
 
 import { LaboratoryRunService } from '../../../../../../src/app/services/easy-genomics/laboratory-run-service';
+import { LaboratoryService } from '../../../../../../src/app/services/easy-genomics/laboratory-service';
 import { SnsService } from '../../../../../../src/app/services/sns-service';
 import {
   validateLaboratoryManagerAccess,
@@ -18,12 +20,14 @@ describe('update-laboratory-run.lambda', () => {
   const RUN_ID = '00000000-0000-0000-0000-000000000004';
 
   let mockRunService: jest.MockedClass<typeof LaboratoryRunService>;
+  let mockLabService: jest.MockedClass<typeof LaboratoryService>;
   let mockSnsService: jest.MockedClass<typeof SnsService>;
   let mockValidateOrgAdmin: jest.MockedFunction<typeof validateOrganizationAdminAccess>;
   let mockValidateLabManager: jest.MockedFunction<typeof validateLaboratoryManagerAccess>;
   let mockValidateLabTechnician: jest.MockedFunction<typeof validateLaboratoryTechnicianAccess>;
 
   let mockQueryByRunId: jest.Mock;
+  let mockQueryByLaboratoryId: jest.Mock;
   let mockUpdateRun: jest.Mock;
   let mockPublish: jest.Mock;
 
@@ -81,6 +85,7 @@ describe('update-laboratory-run.lambda', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockRunService = LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>;
+    mockLabService = LaboratoryService as jest.MockedClass<typeof LaboratoryService>;
     mockSnsService = SnsService as jest.MockedClass<typeof SnsService>;
     mockValidateOrgAdmin = validateOrganizationAdminAccess as any;
     mockValidateLabManager = validateLaboratoryManagerAccess as any;
@@ -91,12 +96,20 @@ describe('update-laboratory-run.lambda', () => {
     mockValidateLabTechnician.mockReturnValue(false);
 
     mockQueryByRunId = jest.fn();
+    mockQueryByLaboratoryId = jest.fn();
     mockUpdateRun = jest.fn();
     mockPublish = jest.fn();
 
     mockRunService.prototype.queryByRunId = mockQueryByRunId;
     mockRunService.prototype.update = mockUpdateRun;
+    mockLabService.prototype.queryByLaboratoryId = mockQueryByLaboratoryId;
     mockSnsService.prototype.publish = mockPublish;
+
+    mockQueryByLaboratoryId.mockResolvedValue({
+      LaboratoryId: LAB_ID,
+      OrganizationId: '00000000-0000-0000-0000-000000000001',
+      RunRetentionMonths: 0,
+    });
 
     process.env.SNS_LABORATORY_RUN_UPDATE_TOPIC = 'arn:aws:sns:region:acct:lab-run-update';
   });

@@ -76,6 +76,12 @@ describe('process-update-laboratory-run.lambda', () => {
     mockSsmService.prototype.getParameter = mockGetParameter;
     mockOmicsService.prototype.getRun = mockGetRun;
 
+    mockQueryByLaboratoryId.mockResolvedValue({
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      RunRetentionMonths: 0,
+    });
+
     (getNextFlowApiQueryParameters as jest.Mock).mockReturnValue('workspaceId=ws-1');
     process.env.SEQERA_API_BASE_URL = 'https://tower.example.com';
   });

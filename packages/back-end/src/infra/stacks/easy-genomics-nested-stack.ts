@@ -1000,6 +1000,26 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
     ]);
 
+    // /easy-genomics/laboratory/run/request-apply-run-retention-policy
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/run/request-apply-run-retention-policy', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
+        ],
+        actions: ['dynamodb:Query', 'dynamodb:UpdateItem'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
     // /easy-genomics/laboratory/run/update-laboratory-run
     this.iam.addPolicyStatements('/easy-genomics/laboratory/run/update-laboratory-run', [
       new PolicyStatement({
@@ -1571,6 +1591,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
         name: 'RunId',
         type: AttributeType.STRING,
       },
+      timeToLiveAttribute: 'ExpiresAt',
       gsi: [
         {
           partitionKey: {
