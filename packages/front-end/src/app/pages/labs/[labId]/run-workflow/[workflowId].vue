@@ -42,7 +42,12 @@
 
   const labName = computed<string>(() => labsStore.labs[labId].Name);
 
+  /** Must match EGRunFormRunDetails default sentinel for Omics workflow version */
+  const OMICS_DEFAULT_WORKFLOW_VERSION = '__omics_default_version__';
+
   const omicsRunTempId = computed<string>(() => $route.query.omicsRunTempId as string);
+
+  const workflowVersionOptions = ref<{ value: string; label: string }[] | undefined>(undefined);
 
   const wipOmicsRun = computed<WipRun | null>(() => runStore.wipOmicsRuns[omicsRunTempId.value] || null);
 
@@ -116,6 +121,24 @@
     // get full workflow details from API and save them in the store
     const omicsWorkflow: ReadWorkflow = await $api.omicsWorkflows.get(labId, workflowId);
     omicsWorkflowsStore.workflows[workflowId] = omicsWorkflow;
+
+    try {
+      const versionsRes = await $api.omicsWorkflows.listVersions(labId, workflowId);
+      const names = (versionsRes.items ?? [])
+        .map((v) => v.versionName)
+        .filter((n): n is string => !!n)
+        .sort((a, b) => a.localeCompare(b));
+      if (names.length > 0) {
+        workflowVersionOptions.value = [
+          { value: OMICS_DEFAULT_WORKFLOW_VERSION, label: 'Default version' },
+          ...names.map((n) => ({ value: n, label: n })),
+        ];
+      } else {
+        workflowVersionOptions.value = undefined;
+      }
+    } catch {
+      workflowVersionOptions.value = undefined;
+    }
 
     // Identify AWS HealthOmics workflow schema required parameters
     const paramsRequired: string[] = Object.entries(omicsWorkflow.parameterTemplate)
@@ -296,6 +319,7 @@
               :wip-run-temp-id="omicsRunTempId"
               :pipeline-or-workflow-name="workflow?.name"
               :pipeline-or-workflow-description="workflow?.description || ''"
+              :workflow-version-options="workflowVersionOptions"
               @next-step="() => nextStep('upload')"
               @step-validated="($event) => setStepEnabled('upload', $event)"
             />
@@ -340,6 +364,7 @@
               :transaction-id="wipOmicsRun?.transactionId"
               :workflow-id="workflowId"
               :workflow-name="workflow.name"
+              :workflow-version-name="wipOmicsRun?.workflowVersionName"
               @submit-launch-request="() => handleSubmitLaunchRequest()"
               @submit-launch-request-error="() => handleSubmitLaunchRequestError()"
               @has-launched="() => handleLaunchSuccess()"
