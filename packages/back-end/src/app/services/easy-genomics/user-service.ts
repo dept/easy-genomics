@@ -20,12 +20,17 @@ export class UserService extends DynamoDBService implements Service<User> {
     super();
   }
 
-  async add(user: User): Promise<User> {
-    const logRequestMessage = `Add User UserId=${user.UserId} request`;
-    console.info(logRequestMessage);
+  /** Validates and returns a canonical user shape (unknown keys removed — see UserSchema in shared-lib). */
+  private validatedUserForWrite(user: User): User {
+    const parsed = UserSchema.safeParse(user);
+    if (!parsed.success) throw new Error('Invalid request');
+    return parsed.data;
+  }
 
-    // Data validation safety check
-    if (!UserSchema.safeParse(user).success) throw new Error('Invalid request');
+  async add(user: User): Promise<User> {
+    const validated = this.validatedUserForWrite(user);
+    const logRequestMessage = `Add User UserId=${validated.UserId} request`;
+    console.info(logRequestMessage);
 
     const response = await this.transactWriteItems({
       TransactItems: [
@@ -36,7 +41,7 @@ export class UserService extends DynamoDBService implements Service<User> {
             ExpressionAttributeNames: {
               '#UserId': 'UserId',
             },
-            Item: marshall(user),
+            Item: marshall(validated),
           },
         },
         {
@@ -48,7 +53,7 @@ export class UserService extends DynamoDBService implements Service<User> {
               '#Type': 'Type',
             },
             Item: marshall({
-              Value: user.Email.toLowerCase(),
+              Value: validated.Email.toLowerCase(),
               Type: 'user-email',
             }),
           },
@@ -57,7 +62,7 @@ export class UserService extends DynamoDBService implements Service<User> {
     });
 
     if (response.$metadata.httpStatusCode === 200) {
-      return user;
+      return validated;
     } else {
       throw new Error(`${logRequestMessage} unsuccessful: HTTP Status Code=${response.$metadata.httpStatusCode}`);
     }
@@ -148,14 +153,12 @@ export class UserService extends DynamoDBService implements Service<User> {
   };
 
   async update(user: User, existing: User): Promise<User> {
-    const logRequestMessage = `Update User UserId=${user.UserId}, Email=${user.Email} request`;
+    const validated = this.validatedUserForWrite(user);
+    const logRequestMessage = `Update User UserId=${validated.UserId}, Email=${validated.Email} request`;
     console.info(logRequestMessage);
 
-    // Data validation safety check
-    if (!UserSchema.safeParse(user).success) throw new Error('Invalid request');
-
     // Check if User Email is unchanged
-    if (user.Email.toLowerCase() === existing.Email.toLowerCase()) {
+    if (validated.Email.toLowerCase() === existing.Email.toLowerCase()) {
       // Perform normal update request
       const response: PutItemCommandOutput = await this.putItem({
         TableName: this.USER_TABLE_NAME,
@@ -163,10 +166,10 @@ export class UserService extends DynamoDBService implements Service<User> {
         ExpressionAttributeNames: {
           '#UserId': 'UserId',
         },
-        Item: marshall(user),
+        Item: marshall(validated),
       });
       if (response.$metadata.httpStatusCode === 200) {
-        return this.get(user.UserId);
+        return this.get(validated.UserId);
       } else {
         throw new Error(`${logRequestMessage} unsuccessful: HTTP Status Code=${response.$metadata.httpStatusCode}`);
       }
@@ -181,7 +184,7 @@ export class UserService extends DynamoDBService implements Service<User> {
               ExpressionAttributeNames: {
                 '#UserId': 'UserId',
               },
-              Item: marshall(user),
+              Item: marshall(validated),
             },
           },
           {
@@ -202,7 +205,7 @@ export class UserService extends DynamoDBService implements Service<User> {
                 '#Type': 'Type',
               },
               Item: marshall({
-                Value: user.Email.toLowerCase(),
+                Value: validated.Email.toLowerCase(),
                 Type: 'user-email',
               }),
             },
@@ -211,7 +214,7 @@ export class UserService extends DynamoDBService implements Service<User> {
       });
       if (response.$metadata.httpStatusCode === 200) {
         // Transaction Updates do not return the updated User details, so explicitly retrieve it
-        return this.get(user.UserId);
+        return this.get(validated.UserId);
       } else {
         throw new Error(`${logRequestMessage} unsuccessful: HTTP Status Code=${response.$metadata.httpStatusCode}`);
       }

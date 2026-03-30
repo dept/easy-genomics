@@ -354,7 +354,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         resources: [
           `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
         ],
-        actions: ['sts:AssumeRole'],
+        actions: ['sts:AssumeRole', 'sts:TagSession'],
         effect: Effect.ALLOW,
       }),
     ]);
@@ -376,7 +376,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         resources: [
           `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
         ],
-        actions: ['sts:AssumeRole'],
+        actions: ['sts:AssumeRole', 'sts:TagSession'],
         effect: Effect.ALLOW,
       }),
     ]);
@@ -398,7 +398,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         resources: [
           `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
         ],
-        actions: ['sts:AssumeRole'],
+        actions: ['sts:AssumeRole', 'sts:TagSession'],
         effect: Effect.ALLOW,
       }),
     ]);
@@ -416,7 +416,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
           `arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:run/*`,
           `arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`,
         ],
-        actions: ['omics:StartRun'],
+        actions: ['omics:StartRun', 'omics:TagResource'],
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
@@ -430,7 +430,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         resources: [
           `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
         ],
-        actions: ['sts:AssumeRole'],
+        actions: ['sts:AssumeRole', 'sts:TagSession'],
         effect: Effect.ALLOW,
       }),
     ]);

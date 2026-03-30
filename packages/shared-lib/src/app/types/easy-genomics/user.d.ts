@@ -36,6 +36,7 @@ export interface User extends BaseAttributes {
   DefaultLaboratory?: string; // User last accessed Laboratory
   OrganizationAccess?: OrganizationAccess;
   SampleIdSplitPattern?: string; // User preference for splitting sample IDs from filenames
+  OmicsWorkflowDefaultParams?: Record<string, Record<string, unknown>>; // workflowId -> parameters
 }
 
 export type OrganizationAccess = Record<string, OrganizationAccessDetails>;
