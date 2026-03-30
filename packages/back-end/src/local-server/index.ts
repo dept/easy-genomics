@@ -4,7 +4,7 @@
  */
 
 import path from 'path';
-import { ACCESS_CONTROL_ALLOW_HEADERS } from '@easy-genomics/shared-lib/src/app/utils/common';
+import { ACCESS_CONTROL_ALLOW_HEADERS } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import dotenv from 'dotenv';
 import express, { type Request, type Response } from 'express';
 import { runAuth, attachClaimsToEvent, sendUnauthorizedIfNeeded } from './auth-middleware';

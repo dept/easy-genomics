@@ -131,6 +131,7 @@
     },
     {
       "name": "@aws-sdk/client-omics",
+      "version": "^3.1019.0",
       "type": "runtime"
     },
     {

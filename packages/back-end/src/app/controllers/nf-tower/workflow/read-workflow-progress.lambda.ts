@@ -1,14 +1,14 @@
 import { GetParameterCommandOutput, ParameterNotFound } from '@aws-sdk/client-ssm';
-import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-import { WorkflowProgressResponse } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   LaboratoryAccessTokenUnavailableError,
   LaboratoryNotFoundError,
   MissingNextFlowTowerAccessError,
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
-} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import { WorkflowProgressResponse } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { SsmService } from '@BE/services/ssm-service';

@@ -1,8 +1,8 @@
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { CreateUserInvitationRequestSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user-invitation';
 import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization';
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { CreateUserInvitationRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-invitation';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { OrganizationService } from '@BE/services/easy-genomics/organization-service';
 import { UserInviteService } from '@BE/services/easy-genomics/user-invite-service';

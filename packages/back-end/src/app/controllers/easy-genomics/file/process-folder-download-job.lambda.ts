@@ -1,7 +1,7 @@
 import { PassThrough, type Readable } from 'stream';
 import type { S3Client } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import archiver from 'archiver';
 import { APIGatewayProxyResult, Handler } from 'aws-lambda';
 import { SQSEvent } from 'aws-lambda/trigger/sqs';

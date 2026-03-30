@@ -1,18 +1,18 @@
 import { createHmac } from 'crypto';
 import { buildClient, CommitmentPolicy, KmsKeyringNode } from '@aws-crypto/client-node';
 import { InitiateAuthCommandOutput, NotAuthorizedException } from '@aws-sdk/client-cognito-identity-provider';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
+import {
+  InvalidRequestError,
+  UnauthorizedAccessError,
+  UserNotFoundError,
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { ERROR_MESSAGES } from '@easy-genomics/shared-lib/src/app/constants/errorMessages';
 import { ConfirmUpdateUserInvitationRequestSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user-invitation';
 import { OrganizationUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization-user';
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { ConfirmUserInvitationRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-invitation';
 import { UserInvitationJwt } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-verification-jwt';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
-import {
-  InvalidRequestError,
-  UnauthorizedAccessError,
-  UserNotFoundError,
-} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Handler } from 'aws-lambda';
 import { toByteArray } from 'base64-js';
 import { JwtPayload } from 'jsonwebtoken';

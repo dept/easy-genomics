@@ -17,6 +17,7 @@ export const LaboratoryRunSchema = z
     Status: z.string(),
     Owner: z.string(),
     WorkflowName: z.string().optional(),
+    WorkflowVersionName: z.string().optional(),
     ExternalRunId: z.string().optional(),
     InputS3Url: z.string().optional(),
     OutputS3Url: z.string().optional(),
@@ -51,6 +52,7 @@ export const ReadLaboratoryRunSchema = z
     Status: z.string(),
     Owner: z.string(), // User Email for display purposes
     WorkflowName: z.string().optional(), // Seqera Pipeline Name or AWS HealthOmics Workflow Name
+    WorkflowVersionName: z.string().optional(),
     ExternalRunId: z.string().optional(),
     InputS3Url: z.string().optional(),
     OutputS3Url: z.string().optional(),
@@ -75,6 +77,7 @@ export const AddLaboratoryRunSchema = z
     PlatformApiBaseUrl: z.string().optional(),
     Status: z.string(),
     WorkflowName: z.string().optional(), // Seqera Pipeline Name or AWS HealthOmics Workflow Name
+    WorkflowVersionName: z.string().optional(),
     ExternalRunId: z.string().optional(),
     InputS3Url: z.string().optional(),
     OutputS3Url: z.string().optional(),

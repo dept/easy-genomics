@@ -1,13 +1,13 @@
-import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
-import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
-import { SnsProcessingEvent } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   LaboratoryDeleteFailedError,
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
-} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
+import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
+import { SnsProcessingEvent } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';

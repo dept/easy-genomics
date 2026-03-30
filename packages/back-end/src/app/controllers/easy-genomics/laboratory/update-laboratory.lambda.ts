@@ -1,12 +1,7 @@
 import { TransactionCanceledException } from '@aws-sdk/client-dynamodb';
 import { GetParameterCommandOutput } from '@aws-sdk/client-ssm';
 import { ListComputeEnvsResponse } from '@easy-genomics/shared-lib/lib/app/types/nf-tower/nextflow-tower-api';
-import {
-  UpdateLaboratory,
-  UpdateLaboratorySchema,
-} from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
-import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   InvalidRequestError,
   LaboratoryAccessTokenUnavailableError,
@@ -14,7 +9,12 @@ import {
   LaboratorySeqeraCredentialsIncorrectError,
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
-} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import {
+  UpdateLaboratory,
+  UpdateLaboratorySchema,
+} from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
+import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { SsmService } from '@BE/services/ssm-service';

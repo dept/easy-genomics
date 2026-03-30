@@ -84,8 +84,10 @@ export const handler: Handler = async (
     );
 
     const parameters = JSON.parse(request.parameters!.toString());
+    const { workflowVersionName, ...startRunRequestWithoutVersion } = request;
     const response = await omicsService.startRun(<StartRunCommandInput>{
-      ...request,
+      ...startRunRequestWithoutVersion,
+      ...(workflowVersionName ? { workflowVersionName } : {}),
       parameters: {
         ...parameters,
         outdir: '/mnt/workflow/pubdir', // AWS HealthOmics requires explicitly setting 'outdir' = '/mnt/workflow/pubdir' for internal output

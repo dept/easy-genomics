@@ -125,6 +125,7 @@
     { key: 'CreatedAt', label: 'Created At', sortable: true },
     { key: 'lastUpdated', label: 'Last Updated', sortable: true },
     { key: 'Status', label: 'Status', sortable: true },
+    { key: 'WorkflowVersionName', label: 'Workflow version', sortable: true },
     { key: 'Owner', label: 'Owner', sortable: true },
     { key: 'actions', label: 'Actions' },
   ];
@@ -741,6 +742,12 @@
 
           <template #Status-data="{ row: run }">
             <EGStatusChip :status="run.Status" />
+          </template>
+
+          <template #WorkflowVersionName-data="{ row: run }">
+            <div class="text-body text-sm font-medium">
+              {{ run.WorkflowVersionName || '—' }}
+            </div>
           </template>
 
           <template #Owner-data="{ row: run }">
