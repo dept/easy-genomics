@@ -19,6 +19,7 @@ easy-genomics:
         back-end:
             jwt-secret-key: '123e4567-e89b-12d3-a456-426614174000' # Optional: If undefined, a random value will be generated on deployment for JWT Signature
             seqera-api-base-url: # Optional: Update for self-hosted Seqera API Base URL; if unspecified this defaults to 'https://api.cloud.seqera.io'
+            github-pat-secret-name: # Optional: AWS Secrets Manager secret name containing GitHub Fine-Grained PAT (Contents: Read-only) for fetching nf-core workflow schemas
             ## The System Admin account is required
             sys-admin-email:  'sysadmin@easygenomics.org', # Replace with your institution's preferred System Admin account
             sys-admin-password: # System Admin Password - must be minimum 8 chars long and contain: 1 number, 1 special char, 1 uppercase letter, 1 lowercase letter
