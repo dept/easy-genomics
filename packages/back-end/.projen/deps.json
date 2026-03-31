@@ -139,6 +139,10 @@
       "type": "runtime"
     },
     {
+      "name": "@aws-sdk/client-secrets-manager",
+      "type": "runtime"
+    },
+    {
       "name": "@aws-sdk/client-ses",
       "type": "runtime"
     },

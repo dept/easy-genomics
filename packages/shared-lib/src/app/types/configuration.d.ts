@@ -23,6 +23,7 @@ export interface ConfigurationSettings {
   ['back-end']: {
     ['jwt-secret-key']?: string; // Optional: If undefined, a random value will be generated on deployment for JWT Signature
     ['seqera-api-base-url']?: string; // Optional: Update for self-hosted Seqera API Base URL; if unspecified this defaults to 'https://api.cloud.seqera.io'
+    ['github-pat-secret-name']?: string; // Optional: Secrets Manager secret name for GitHub PAT used to fetch nf-core workflow schemas
     ['vpc-peering']?: VpcPeeringSettings; // Optional: VPC Peering Accepter details
     // The System Admin account is required
     ['sys-admin-email']?: string;
