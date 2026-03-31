@@ -436,8 +436,27 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       }),
     ]);
 
-    // /aws-healthomics/workflow/list-workflow-versions
-    this.iam.addPolicyStatements('/aws-healthomics/workflow/list-workflow-versions', [
+    // /aws-healthomics/workflow/process-fetch-workflow-schema (EventBridge triggered)
+    this.iam.addPolicyStatements('/aws-healthomics/workflow/process-fetch-workflow-schema', [
+      new PolicyStatement({
+        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
+        actions: ['omics:GetWorkflow'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [this.githubPatSecretArn],
+        actions: ['secretsmanager:GetSecretValue'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [this.workflowSchemaTableArn],
+        actions: ['dynamodb:PutItem'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /aws-healthomics/workflow/read-workflow-schema (API Gateway GET)
+    this.iam.addPolicyStatements('/aws-healthomics/workflow/read-workflow-schema', [
       new PolicyStatement({
         resources: [
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
@@ -448,6 +467,22 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
         actions: ['omics:ListWorkflowVersions'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [this.workflowSchemaTableArn],
+        actions: ['dynamodb:GetItem'],
+        effect: Effect.ALLOW,
+      }),
+      // Permissions below are used by the GitHub fallback path only
+      new PolicyStatement({
+        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
+        actions: ['omics:GetWorkflow'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [this.githubPatSecretArn],
+        actions: ['secretsmanager:GetSecretValue'],
         effect: Effect.ALLOW,
       }),
     ]);
