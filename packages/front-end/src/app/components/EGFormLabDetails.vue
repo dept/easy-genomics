@@ -194,6 +194,7 @@
   );
   const isApplyingRetentionPolicy = computed(() => useUiStore().isRequestPending('applyRunRetentionPolicy'));
   const isApplyRetentionPolicyDialogOpen = ref(false);
+  const isSaveRetentionChangeDialogOpen = ref(false);
   const retentionMonthsForDialog = computed<number>(
     () =>
       // ?? only so 0 stays “never delete” for the confirmation modal.
@@ -203,17 +204,17 @@
     retentionMonthsForDialog.value === 0 ? 'never delete run records' : `${retentionMonthsForDialog.value} month(s)`,
   );
 
-  /**
-   * Handles form submission for various lab detail modes such as Create and Edit.
-   *
-   * This method will not perform any actions if the form mode is set to ReadOnly.
-   * It manages the process state and triggers appropriate form handlers based on the current form mode.
-   *
-   * @return {Promise<void>} A promise that resolves when the form submission process is complete.
-   */
-  async function onSubmit() {
-    if (formMode.value === LabDetailsFormModeEnum.enum.ReadOnly) return;
+  function runRetentionMonthsChanged(): boolean {
+    if (formMode.value !== LabDetailsFormModeEnum.enum.Edit || uneditedLabDetails.value == null) {
+      return false;
+    }
+    const prev = uneditedLabDetails.value.RunRetentionMonths;
+    const next = state.value.RunRetentionMonths;
+    const key = (v: number | undefined) => (v === undefined ? '_unset_' : String(Math.floor(Number(v))));
+    return key(prev) !== key(next);
+  }
 
+  async function runSubmitAfterValidation() {
     try {
       if (formMode.value === LabDetailsFormModeEnum.enum.Create) {
         await handleCreateLab();
@@ -232,6 +233,30 @@
       useUiStore().setRequestComplete('createLab');
       useUiStore().setRequestComplete('updateLab');
     }
+  }
+
+  /**
+   * Handles form submission for various lab detail modes such as Create and Edit.
+   *
+   * This method will not perform any actions if the form mode is set to ReadOnly.
+   * It manages the process state and triggers appropriate form handlers based on the current form mode.
+   *
+   * @return {Promise<void>} A promise that resolves when the form submission process is complete.
+   */
+  async function onSubmit() {
+    if (formMode.value === LabDetailsFormModeEnum.enum.ReadOnly) return;
+
+    if (formMode.value === LabDetailsFormModeEnum.enum.Edit && runRetentionMonthsChanged()) {
+      isSaveRetentionChangeDialogOpen.value = true;
+      return;
+    }
+
+    await runSubmitAfterValidation();
+  }
+
+  async function handleConfirmSaveRetentionPolicyChange() {
+    await runSubmitAfterValidation();
+    isSaveRetentionChangeDialogOpen.value = false;
   }
 
   async function handleCreateLab() {
@@ -305,6 +330,7 @@
       useToastStore().error('Failed to apply run retention policy to existing runs');
     } finally {
       useUiStore().setRequestComplete('applyRunRetentionPolicy');
+      isApplyRetentionPolicyDialogOpen.value = false;
     }
   }
 
@@ -429,6 +455,16 @@
           placeholder="Enter number of months (0 for never)"
         />
         <p class="text-muted mt-1 text-xs">0 = never delete run records</p>
+        <div v-if="formMode === LabDetailsFormModeEnum.enum.ReadOnly" class="mt-4">
+          <EGButton
+            :size="ButtonSizeEnum.enum.sm"
+            :variant="ButtonVariantEnum.enum.secondary"
+            label="Apply To Existing Runs"
+            :loading="isApplyingRetentionPolicy"
+            :disabled="useUserStore().isSuperuser || !hasEditPermission || isApplyingRetentionPolicy"
+            @click="openApplyRetentionPolicyDialog"
+          />
+        </div>
       </EGFormGroup>
 
       <EGFormGroup v-if="useUserStore().isOrgAdmin()" label="Default S3 bucket directory" name="S3Bucket" required>
@@ -549,14 +585,6 @@
         :disabled="useUserStore().isSuperuser || !hasEditPermission"
         @click="switchToFormMode(LabDetailsFormModeEnum.enum.Edit)"
       />
-      <EGButton
-        :size="ButtonSizeEnum.enum.sm"
-        :variant="ButtonVariantEnum.enum.secondary"
-        label="Apply To Existing Runs"
-        :loading="isApplyingRetentionPolicy"
-        :disabled="useUserStore().isSuperuser || !hasEditPermission || isApplyingRetentionPolicy"
-        @click="openApplyRetentionPolicyDialog"
-      />
     </div>
 
     <!-- Form Buttons: Edit Mode -->
@@ -590,5 +618,18 @@
     v-model="isApplyRetentionPolicyDialogOpen"
     :loading="isApplyingRetentionPolicy"
     :buttons-disabled="isApplyingRetentionPolicy"
+  />
+
+  <EGDialog
+    action-label="Save Changes"
+    :action-variant="ButtonVariantEnum.enum.primary"
+    cancel-label="Cancel"
+    :cancel-variant="ButtonVariantEnum.enum.secondary"
+    @action-triggered="handleConfirmSaveRetentionPolicyChange"
+    primary-message="Save run retention change?"
+    :secondary-message="`New policy after save: ${retentionPolicyDescription}. This applies when runs reach a final status. Existing terminal runs are not updated until you use Apply To Existing Runs (other lab changes on this save are included).`"
+    v-model="isSaveRetentionChangeDialogOpen"
+    :loading="isSubmittingFormData"
+    :buttons-disabled="isSubmittingFormData"
   />
 </template>
