@@ -59,6 +59,14 @@
   const orgId = computed<string | null>(() => lab.value?.OrganizationId ?? null);
   const labName = computed<string>(() => lab.value?.Name || '');
 
+  /** Pipeline Runs table footer; only when Settings → Run retention (months) is greater than zero. */
+  const runRecordsRetentionNotice = computed((): string | undefined => {
+    // ?? applies default-for-missing only; explicit 0 must stay 0 (footnote hidden).
+    const months = lab.value?.RunRetentionMonths ?? 6;
+    if (months <= 0) return undefined;
+    return `Run records are deleted ${months} month${months > 1 ? 's' : ''} after a run reaches a final status, per this lab's retention policy.`;
+  });
+
   /**
    * Fetch Lab details, pipelines, workflows, runs, and Lab users before component mount and start periodic fetching
    */
@@ -766,6 +774,9 @@
             </div>
           </template>
         </EGTable>
+        <p v-if="runRecordsRetentionNotice" class="text-muted mt-3 max-w-3xl text-xs leading-relaxed">
+          {{ runRecordsRetentionNotice }}
+        </p>
       </div>
 
       <!-- Seqera Pipelines tab -->

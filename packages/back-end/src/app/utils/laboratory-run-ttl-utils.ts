@@ -1,4 +1,4 @@
-const DEFAULT_RETENTION_MONTHS = 0;
+const DEFAULT_RETENTION_MONTHS = 6;
 
 // Terminal workflow/run statuses for both supported backends:
 // - AWS HealthOmics: COMPLETED, FAILED, CANCELLED, DELETED
@@ -42,10 +42,19 @@ export function getDefaultExpiresAtEpochSecondsForTerminalRun(run: {
   return calculateExpiresAtEpochSeconds(terminalAt, DEFAULT_RETENTION_MONTHS);
 }
 
-export function getRetentionMonthsOrDefault(runRetentionMonths: number | undefined): number {
+/**
+ * Resolves the lab retention interval for TTL logic.
+ * - `0` means never delete: callers should pair with {@link shouldExpireWithRetentionMonths}.
+ * - Only `null`/`undefined` (missing policy) uses {@link DEFAULT_RETENTION_MONTHS}; numeric `0` is never treated as “falsy/missing”.
+ * - Coerces numeric strings (e.g. JSON `"0"` / `"6"`) so `0` is not mistaken for invalid input.
+ */
+export function getRetentionMonthsOrDefault(runRetentionMonths: unknown): number {
   if (runRetentionMonths == null) return DEFAULT_RETENTION_MONTHS;
-  if (!Number.isFinite(runRetentionMonths) || runRetentionMonths < 0) return DEFAULT_RETENTION_MONTHS;
-  return Math.floor(runRetentionMonths);
+  if (runRetentionMonths === '') return DEFAULT_RETENTION_MONTHS;
+
+  const n = typeof runRetentionMonths === 'number' ? runRetentionMonths : Number(runRetentionMonths);
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_RETENTION_MONTHS;
+  return Math.floor(n);
 }
 
 export function shouldExpireWithRetentionMonths(retentionMonths: number): boolean {

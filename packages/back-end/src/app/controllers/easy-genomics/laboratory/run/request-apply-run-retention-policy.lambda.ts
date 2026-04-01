@@ -52,6 +52,7 @@ export const handler: Handler = async (
 
     const body: RequestBody = event.body ? JSON.parse(event.body) : {};
     const dryRun = body.dryRun === true;
+    // ?? preserves an explicit body value of 0; do not use || here.
     const retentionMonths = getRetentionMonthsOrDefault(body.retentionMonths ?? laboratory.RunRetentionMonths);
 
     const runs: LaboratoryRun[] = await laboratoryRunService.queryByLaboratoryId(laboratoryId);

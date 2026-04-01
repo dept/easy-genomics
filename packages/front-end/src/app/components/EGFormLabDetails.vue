@@ -59,7 +59,7 @@
     Name: '',
     Description: '',
     S3Bucket: '',
-    RunRetentionMonths: 0,
+    RunRetentionMonths: 6,
     NextFlowTowerEnabled: false,
     NextFlowTowerAccessToken: '',
     NextFlowTowerWorkspaceId: '',
@@ -156,9 +156,14 @@
 
       if (parseResult.success) {
         const labDetails = parseResult.data as Laboratory;
-        state.value = { ...state.value, ...labDetails };
+        const withRetentionDefault = {
+          ...labDetails,
+          // ?? only: RunRetentionMonths 0 (never delete) must not become 6.
+          RunRetentionMonths: labDetails.RunRetentionMonths ?? 6,
+        };
+        state.value = { ...state.value, ...withRetentionDefault };
         // Store the unedited lab details to support the cancel button in Edit mode
-        uneditedLabDetails.value = { ...labDetails };
+        uneditedLabDetails.value = { ...withRetentionDefault };
       } else {
         throw new Error('Failed to parse lab details');
       }
@@ -189,7 +194,11 @@
   );
   const isApplyingRetentionPolicy = computed(() => useUiStore().isRequestPending('applyRunRetentionPolicy'));
   const isApplyRetentionPolicyDialogOpen = ref(false);
-  const retentionMonthsForDialog = computed<number>(() => state.value.RunRetentionMonths ?? 0);
+  const retentionMonthsForDialog = computed<number>(
+    () =>
+      // ?? only so 0 stays “never delete” for the confirmation modal.
+      state.value.RunRetentionMonths ?? 6,
+  );
   const retentionPolicyDescription = computed<string>(() =>
     retentionMonthsForDialog.value === 0 ? 'never delete run records' : `${retentionMonthsForDialog.value} month(s)`,
   );
@@ -285,7 +294,7 @@
   async function handleApplyRunRetentionPolicy() {
     try {
       useUiStore().setRequestPending('applyRunRetentionPolicy');
-      const retentionMonths = state.value.RunRetentionMonths ?? 0;
+      const retentionMonths = state.value.RunRetentionMonths ?? 6; // ?? not ||
       const result = await $api.labs.applyRunRetentionPolicy(labId, retentionMonths);
       useToastStore().success(
         `Applied run retention policy: updated ${result.Updated}, removed ${result.Removed}, skipped ${result.Skipped}.`,
