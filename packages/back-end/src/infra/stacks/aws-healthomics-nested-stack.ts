@@ -459,13 +459,8 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         actions: ['dynamodb:Query'],
       }),
       new PolicyStatement({
-        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
-        actions: ['omics:ListWorkflowVersions'],
-        effect: Effect.ALLOW,
-      }),
-      new PolicyStatement({
         resources: [this.workflowSchemaTableArn],
-        actions: ['dynamodb:GetItem'],
+        actions: ['dynamodb:GetItem', 'dynamodb:PutItem'],
         effect: Effect.ALLOW,
       }),
       // Permissions below are used by the GitHub fallback path only

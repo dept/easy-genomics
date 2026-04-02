@@ -111,6 +111,7 @@ describe('read-workflow-schema.lambda', () => {
     });
 
     mockWorkflowSchemaService.prototype.getSchema = jest.fn().mockResolvedValue(savedSchema);
+    mockWorkflowSchemaService.prototype.saveSchema = jest.fn().mockResolvedValue({});
     mockOmicsService.prototype.getWorkflow = jest.fn();
     mockSecretsManagerService.prototype.getSecretValue = jest.fn();
 
@@ -165,6 +166,9 @@ describe('read-workflow-schema.lambda', () => {
     const body = JSON.parse(result.body);
     expect(body.Schema).toEqual(schemaContent);
     expect(mockOmicsService.prototype.getWorkflow).toHaveBeenCalled();
+    expect(mockWorkflowSchemaService.prototype.saveSchema).toHaveBeenCalledWith(
+      expect.objectContaining({ WorkflowId: wfId, Version: '1', Schema: schemaContent }),
+    );
   });
 
   it('returns 204 when no schema is available from DynamoDB or GitHub', async () => {
