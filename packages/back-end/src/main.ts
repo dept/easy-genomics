@@ -33,6 +33,7 @@ let labManagerPassword: string | undefined;
 let labTechnicianEmail: string | undefined;
 let labTechnicianPassword: string | undefined;
 let seqeraApiBaseUrl: string;
+let githubPatSecretName: string | undefined;
 let vpcPeering: VpcPeering | undefined;
 
 if (process.env.CI_CD === 'true') {
@@ -66,6 +67,7 @@ if (process.env.CI_CD === 'true') {
   labTechnicianPassword = process.env.LAB_TECHNICIAN_PASSWORD;
 
   seqeraApiBaseUrl = process.env.SEQERA_API_BASE_URL || SEQERA_API_BASE_URL;
+  githubPatSecretName = process.env.GITHUB_PAT_SECRET_NAME;
 
   if (
     process.env.EXTERNAL_VPC_ID &&
@@ -180,6 +182,7 @@ if (process.env.CI_CD === 'true') {
   labTechnicianPassword = configSettings['back-end']['lab-technician-password'];
 
   seqeraApiBaseUrl = configSettings['back-end']['seqera-api-base-url'] || SEQERA_API_BASE_URL;
+  githubPatSecretName = configSettings['back-end']['github-pat-secret-name'] || undefined;
 
   const vpcPeeringSettings = configSettings['back-end']['vpc-peering'];
   if (vpcPeeringSettings) {
@@ -301,6 +304,7 @@ new BackEndStack(app, `${namePrefix}-main-back-end-stack`, {
   sysAdminPassword: sysAdminPassword,
   testUsers: testUsers,
   seqeraApiBaseUrl: seqeraApiBaseUrl.replace(/\/+$/, ''), // Remove trailing slashes
+  githubPatSecretName: githubPatSecretName || undefined,
   vpcPeering: vpcPeering,
   googleClientId,
   googleClientSecret,

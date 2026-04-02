@@ -15,6 +15,13 @@ type ListWorkflowVersionsResponse = {
   nextToken?: string;
 };
 
+export interface WorkflowSchemaResponse {
+  WorkflowId: string;
+  Version: string;
+  Schema: object; // Parsed nextflow_schema.json blob
+  UpdatedAt: string;
+}
+
 class OmicsWorkflowsModule extends HttpFactory {
   async list(labId: string): Promise<ListWorkflows> {
     const res = await this.callOmics<ListWorkflows>('GET', `/workflow/list-private-workflows?laboratoryId=${labId}`);
@@ -50,6 +57,15 @@ class OmicsWorkflowsModule extends HttpFactory {
     }
 
     return res;
+  }
+
+  async getSchema(labId: string, workflowId: string): Promise<WorkflowSchemaResponse | null> {
+    const res = await this.callOmics<WorkflowSchemaResponse>(
+      'GET',
+      `/workflow/read-workflow-schema/${workflowId}?laboratoryId=${labId}`,
+    );
+
+    return res ?? null;
   }
 }
 

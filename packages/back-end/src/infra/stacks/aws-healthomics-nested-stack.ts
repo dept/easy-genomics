@@ -1,4 +1,7 @@
 import { NestedStack } from 'aws-cdk-lib';
+import { AttributeType } from 'aws-cdk-lib/aws-dynamodb';
+import { Match, Rule } from 'aws-cdk-lib/aws-events';
+import { LambdaFunction as LambdaFunctionTarget } from 'aws-cdk-lib/aws-events-targets';
 import {
   Effect,
   PolicyDocument,
@@ -8,23 +11,96 @@ import {
   Policy,
   ArnPrincipal,
 } from 'aws-cdk-lib/aws-iam';
+import { IFunction } from 'aws-cdk-lib/aws-lambda';
+import { ISecret, Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
+import { DynamoConstruct } from '../constructs/dynamodb-construct';
 import { IamConstruct, IamConstructProps } from '../constructs/iam-construct';
 import { LambdaConstruct } from '../constructs/lambda-construct';
 import { AwsHealthOmicsNestedStackProps } from '../types/back-end-stack';
 
 export class AwsHealthOmicsNestedStack extends NestedStack {
   readonly props: AwsHealthOmicsNestedStackProps;
+  dynamoDB: DynamoConstruct;
   iam: IamConstruct;
   lambda: LambdaConstruct;
+
+  private readonly workflowSchemaTableName: string;
+  private readonly workflowSchemaTableArn: string;
+  private readonly githubPatSecretArn: string;
+  private readonly githubPatSecretName: string;
+  private readonly workflowTagRule: Rule;
 
   constructor(scope: Construct, id: string, props: AwsHealthOmicsNestedStackProps) {
     super(scope, id);
     this.props = props;
 
+    // --- DynamoDB: workflow-schema-table ---
+    // Caches the nf-core JSON Schema fetched from GitHub per workflow.
+    // PK: WorkflowId, SK: Version
+    this.dynamoDB = new DynamoConstruct(this, `${this.props.constructNamespace}-dynamodb`, {
+      envType: this.props.envType,
+    });
+
+    this.workflowSchemaTableName = `${this.props.namePrefix}-workflow-schema-table`;
+    const workflowSchemaTable = this.dynamoDB.createTable(this.workflowSchemaTableName, {
+      partitionKey: {
+        name: 'WorkflowId',
+        type: AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'Version',
+        type: AttributeType.STRING,
+      },
+    });
+    this.workflowSchemaTableArn = workflowSchemaTable.tableArn;
+
+    // --- Secrets Manager: GitHub Fine-Grained PAT ---
+    // If github-pat-secret-name is configured (yaml or CI/CD env), import the existing secret.
+    // Otherwise, create a placeholder secret — set its value after deploy:
+    //   aws secretsmanager put-secret-value --secret-id <name> --secret-string '<token>'
+    let githubPatSecret: ISecret;
+    if (this.props.githubPatSecretName) {
+      githubPatSecret = Secret.fromSecretNameV2(
+        this,
+        `${this.props.namePrefix}-github-pat-secret`,
+        this.props.githubPatSecretName,
+      );
+    } else {
+      githubPatSecret = new Secret(this, `${this.props.namePrefix}-github-pat-secret`, {
+        secretName: `${this.props.namePrefix}-github-pat-secret`,
+        description:
+          'GitHub Fine-Grained PAT (Contents: Read-only) for fetching nextflow_schema.json from workflow repos. ' +
+          'Set the secret value after deploy.',
+      });
+    }
+    this.githubPatSecretArn = githubPatSecret.secretArn;
+    this.githubPatSecretName = githubPatSecret.secretName;
+
+    // --- EventBridge rule: watch github-repo-url tag changes on HealthOmics workflows ---
+    // Primary event source: aws.tag "Tag Change on Resource".
+    // Note: if aws.tag events prove unreliable for HealthOmics, an alternative is to
+    // capture omics:TagResource via CloudTrail → EventBridge using source: ["aws.cloudtrail"]
+    // and detail.eventName: ["TagResource"].
+    this.workflowTagRule = new Rule(this, `${this.props.namePrefix}-workflow-schema-tag-rule`, {
+      ruleName: `${this.props.namePrefix}-workflow-schema-tag-rule`,
+      description: 'Triggers schema fetch when github-repo-url tag is set or updated on a HealthOmics workflow',
+      eventPattern: {
+        source: ['aws.tag'],
+        detailType: ['Tag Change on Resource'],
+        // Filter to HealthOmics workflow ARNs only
+        resources: Match.prefix(`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/`),
+        // Fire only when the github-repo-url tag key was part of the change
+        detail: {
+          'changed-tag-keys': ['github-repo-url'],
+        },
+      },
+    });
+
+    // --- IAM ---
     this.iam = new IamConstruct(this, `${this.props.constructNamespace}-iam`, {
-      ...(<IamConstructProps>props), // Typecast to IamConstructProps
+      ...(<IamConstructProps>props),
     });
 
     // The following setup order of IAM definitions is mandatory
@@ -33,14 +109,32 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
     this.setupRoles(); // Depends on policy documents
     this.setupLambdaPolicyStatements(); // Depends on policy documents / statements / roles
 
+    // --- Lambda construct ---
     this.lambda = new LambdaConstruct(this, `${this.props.constructNamespace}`, {
       ...this.props,
-      iamPolicyStatements: this.iam.policyStatements, // Pass declared Auth IAM policies for attaching to respective Lambda function
+      iamPolicyStatements: this.iam.policyStatements,
       lambdaFunctionsDir: 'src/app/controllers/aws-healthomics',
       lambdaFunctionsNamespace: `${this.props.constructNamespace}`,
-      lambdaFunctionsResources: {}, // Used for setting specific resources for a given Lambda function (e.g. environment settings, trigger events)
+      lambdaFunctionsResources: {
+        // Schema fetcher: triggered by EventBridge when github-repo-url tag changes
+        '/aws-healthomics/workflow/process-fetch-workflow-schema': {
+          callbacks: [
+            (fn: IFunction) => {
+              this.workflowTagRule.addTarget(new LambdaFunctionTarget(fn));
+            },
+          ],
+          environment: {
+            GITHUB_PAT_SECRET_NAME: this.githubPatSecretName,
+          },
+        },
+        // Schema server: GET endpoint called when user starts a workflow run
+        '/aws-healthomics/workflow/read-workflow-schema': {
+          environment: {
+            GITHUB_PAT_SECRET_NAME: this.githubPatSecretName,
+          },
+        },
+      },
       environment: {
-        // Defines the common environment settings for all lambda functions
         ACCOUNT_ID: this.props.env.account!,
         REGION: this.props.env.region!,
         DOMAIN_NAME: this.props.appDomainName,
@@ -332,6 +426,57 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
         actions: ['omics:ListWorkflowVersions'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /aws-healthomics/workflow/process-fetch-workflow-schema (EventBridge triggered)
+    this.iam.addPolicyStatements('/aws-healthomics/workflow/process-fetch-workflow-schema', [
+      new PolicyStatement({
+        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
+        actions: ['omics:GetWorkflow'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [this.githubPatSecretArn],
+        actions: ['secretsmanager:GetSecretValue'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [this.workflowSchemaTableArn],
+        actions: ['dynamodb:PutItem'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /aws-healthomics/workflow/read-workflow-schema (API Gateway GET)
+    this.iam.addPolicyStatements('/aws-healthomics/workflow/read-workflow-schema', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+      }),
+      new PolicyStatement({
+        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
+        actions: ['omics:ListWorkflowVersions'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [this.workflowSchemaTableArn],
+        actions: ['dynamodb:GetItem'],
+        effect: Effect.ALLOW,
+      }),
+      // Permissions below are used by the GitHub fallback path only
+      new PolicyStatement({
+        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
+        actions: ['omics:GetWorkflow'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [this.githubPatSecretArn],
+        actions: ['secretsmanager:GetSecretValue'],
         effect: Effect.ALLOW,
       }),
     ]);
