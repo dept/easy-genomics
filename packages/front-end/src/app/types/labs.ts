@@ -26,11 +26,18 @@ const S3BucketSchema = z
   .min(1, 'S3 bucket is required')
   .max(63, 'S3 bucket name must be no more than 63 characters');
 
+const RunRetentionMonthsSchema = z
+  .number({ invalid_type_error: 'Run retention must be a number' })
+  .int('Run retention must be a whole number')
+  .min(0, 'Run retention must be 0 or greater')
+  .max(120, 'Run retention must be 120 months or less');
+
 // Just the fields required for read-only display
 const LabDetailsSchema = z.object({
   Name: LabNameSchema,
   Description: LabDescriptionSchema,
   S3Bucket: S3BucketSchema,
+  RunRetentionMonths: RunRetentionMonthsSchema,
   NextFlowTowerEnabled: z.boolean(),
   NextFlowTowerAccessToken: NextFlowTowerAccessTokenSchema,
   NextFlowTowerWorkspaceId: NextFlowTowerWorkspaceIdSchema,
@@ -56,6 +63,7 @@ export {
   NextFlowTowerApiBaseUrlSchema,
   NextFlowTowerAccessTokenSchema,
   NextFlowTowerWorkspaceIdSchema,
+  RunRetentionMonthsSchema,
   S3BucketSchema,
   type LabDetails,
   type LabDetailsFormMode,

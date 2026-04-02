@@ -16,6 +16,13 @@ import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { OmicsService } from '@BE/services/omics-service';
 import { SsmService } from '@BE/services/ssm-service';
+import {
+  calculateExpiresAtEpochSeconds,
+  getRetentionMonthsOrDefault,
+  getTerminalAtIsoString,
+  isTerminalLaboratoryRunStatus,
+  shouldExpireWithRetentionMonths,
+} from '@BE/utils/laboratory-run-ttl-utils';
 import { getNextFlowApiQueryParameters, httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -52,10 +59,35 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
   if (operation === 'UPDATE') {
     console.log('Processing LaboratoryRun Status Update: ', laboratoryRun);
     const existingRun: LaboratoryRun = await laboratoryRunService.queryByRunId(laboratoryRun.RunId);
+    const laboratory: Laboratory | undefined = await laboratoryService.queryByLaboratoryId(existingRun.LaboratoryId);
+    const retentionMonths = getRetentionMonthsOrDefault(laboratory?.RunRetentionMonths);
 
     if (!existingRun.ExternalRunId) {
       console.log('Missing ExternalRunID from laboratory run: skipping');
       return false;
+    }
+
+    // If this run is already in a terminal state but missing terminal/TTL metadata, backfill now.
+    if (
+      isTerminalLaboratoryRunStatus(existingRun.Status) &&
+      (existingRun.TerminalAt == null ||
+        (existingRun.ExpiresAt == null && shouldExpireWithRetentionMonths(retentionMonths)))
+    ) {
+      const now = new Date();
+      const terminalAtIso = getTerminalAtIsoString(existingRun, now);
+      const shouldSetTerminalAt = existingRun.TerminalAt == null;
+      const shouldSetExpiresAt = existingRun.ExpiresAt == null && shouldExpireWithRetentionMonths(retentionMonths);
+
+      await laboratoryRunService.update({
+        ...existingRun,
+        ...(shouldSetTerminalAt ? { TerminalAt: terminalAtIso } : {}),
+        ...(shouldSetExpiresAt
+          ? { ExpiresAt: calculateExpiresAtEpochSeconds(new Date(terminalAtIso), retentionMonths) }
+          : {}),
+        ModifiedAt: now.toISOString(),
+        ModifiedBy: 'Status Check',
+      });
+      return true;
     }
 
     let currentStatus = existingRun.Status;
@@ -70,10 +102,25 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
     if (existingRun.Status.toUpperCase() != currentStatus.toUpperCase()) {
       console.log('status change', existingRun.Status, currentStatus);
 
+      const now = new Date();
+      const newStatusNormalized = currentStatus.toUpperCase();
+      const nextStatusTerminal = isTerminalLaboratoryRunStatus(newStatusNormalized);
+      const terminalAtIso = nextStatusTerminal ? getTerminalAtIsoString(existingRun, now) : undefined;
+      const shouldSetTerminalAt = nextStatusTerminal && existingRun.TerminalAt == null && terminalAtIso != null;
+      const shouldSetExpiresAt =
+        nextStatusTerminal &&
+        existingRun.ExpiresAt == null &&
+        shouldExpireWithRetentionMonths(retentionMonths) &&
+        terminalAtIso != null;
+
       laboratoryRun = await laboratoryRunService.update({
         ...existingRun,
-        Status: currentStatus.toUpperCase(),
-        ModifiedAt: new Date().toISOString(),
+        Status: newStatusNormalized,
+        ...(shouldSetTerminalAt ? { TerminalAt: terminalAtIso } : {}),
+        ...(shouldSetExpiresAt && terminalAtIso
+          ? { ExpiresAt: calculateExpiresAtEpochSeconds(new Date(terminalAtIso), retentionMonths) }
+          : {}),
+        ModifiedAt: now.toISOString(),
         ModifiedBy: 'Status Check',
       });
     }
