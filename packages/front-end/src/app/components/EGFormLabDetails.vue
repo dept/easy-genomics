@@ -148,9 +148,12 @@
   /**
    * Retrieves the lab details from the server and sets the form state.
    */
-  async function getLabDetails() {
+  async function getLabDetails(options?: { showLoader?: boolean }) {
+    const showLoader = options?.showLoader !== false;
     try {
-      isLoadingFormData.value = true;
+      if (showLoader) {
+        isLoadingFormData.value = true;
+      }
       const res = await $api.labs.labDetails(labId);
       const parseResult = ReadLaboratorySchema.safeParse(res);
 
@@ -170,7 +173,9 @@
     } catch (error) {
       useToastStore().error(`Failed to retrieve lab details for lab: ${state.value.Name}`);
     } finally {
-      isLoadingFormData.value = false;
+      if (showLoader) {
+        isLoadingFormData.value = false;
+      }
     }
   }
 
@@ -186,23 +191,61 @@
     state.value = { ...uneditedLabDetails.value! };
     isEditingNextFlowTowerAccessToken.value = false;
     canSubmit.value = false;
+    retentionPreviewCacheMonths.value = null;
+    retentionPreviewCounts.value = null;
     switchToFormMode(LabDetailsFormModeEnum.enum.ReadOnly);
   }
 
   const isSubmittingFormData = computed(
     () => useUiStore().isRequestPending('createLab') || useUiStore().isRequestPending('updateLab'),
   );
-  const isApplyingRetentionPolicy = computed(() => useUiStore().isRequestPending('applyRunRetentionPolicy'));
-  const isApplyRetentionPolicyDialogOpen = ref(false);
+  const isLoadingRetentionPreview = ref(false);
   const isSaveRetentionChangeDialogOpen = ref(false);
+  const retentionPreviewCacheMonths = ref<number | null>(null);
+  const retentionPreviewCounts = ref<{ immediate: number; updated: number } | null>(null);
   const retentionMonthsForDialog = computed<number>(
     () =>
       // ?? only so 0 stays “never delete” for the confirmation modal.
       state.value.RunRetentionMonths ?? 6,
   );
   const retentionPolicyDescription = computed<string>(() =>
-    retentionMonthsForDialog.value === 0 ? 'never delete run records' : `${retentionMonthsForDialog.value} month(s)`,
+    retentionMonthsForDialog.value === 0
+      ? 'never delete run records'
+      : `${retentionMonthsForDialog.value} month${Number(retentionMonthsForDialog.value) === 1 ? '' : 's'}`,
   );
+
+  const retentionSaveDialogSecondaryMessage = computed(() => {
+    const counts = retentionPreviewCounts.value;
+    const policyLine = `New run retention policy after save: ${retentionPolicyDescription.value}.`;
+    if (!counts) return policyLine;
+    return `${policyLine}\n\n${counts.immediate} run${counts.immediate === 1 ? '' : 's'} will be deleted immediately (new expiry is in the past).\n${counts.updated} run${counts.updated === 1 ? '' : 's'} will have their expiration date updated.`;
+  });
+
+  function retentionMonthsKey(): number {
+    return state.value.RunRetentionMonths ?? 6;
+  }
+
+  async function ensureRetentionChangePreviewLoaded(): Promise<boolean> {
+    const months = retentionMonthsKey();
+    if (retentionPreviewCacheMonths.value === months && retentionPreviewCounts.value != null) {
+      return true;
+    }
+    try {
+      isLoadingRetentionPreview.value = true;
+      const result = await $api.labs.applyRunRetentionPolicy(labId, months, { dryRun: true });
+      retentionPreviewCacheMonths.value = months;
+      retentionPreviewCounts.value = {
+        immediate: result.RunsExpireImmediately ?? 0,
+        updated: result.RunsExpirationDateUpdated ?? 0,
+      };
+      return true;
+    } catch {
+      useToastStore().error('Failed to load retention change preview');
+      return false;
+    } finally {
+      isLoadingRetentionPreview.value = false;
+    }
+  }
 
   function runRetentionMonthsChanged(): boolean {
     if (formMode.value !== LabDetailsFormModeEnum.enum.Edit || uneditedLabDetails.value == null) {
@@ -247,7 +290,8 @@
     if (formMode.value === LabDetailsFormModeEnum.enum.ReadOnly) return;
 
     if (formMode.value === LabDetailsFormModeEnum.enum.Edit && runRetentionMonthsChanged()) {
-      isSaveRetentionChangeDialogOpen.value = true;
+      const ok = await ensureRetentionChangePreviewLoaded();
+      if (ok) isSaveRetentionChangeDialogOpen.value = true;
       return;
     }
 
@@ -255,8 +299,54 @@
   }
 
   async function handleConfirmSaveRetentionPolicyChange() {
-    await runSubmitAfterValidation();
-    isSaveRetentionChangeDialogOpen.value = false;
+    useUiStore().setRequestPending('updateLab');
+    try {
+      const parseResult = UpdateLaboratorySchema.safeParse(state.value);
+      if (!parseResult.success) {
+        const message = 'Update lab failed to parse lab details';
+        console.error(`${message}; parseResult: `, parseResult);
+        throw new Error(message);
+      }
+
+      const lab = parseResult.data as UpdateLaboratory;
+      const res = await $api.labs.update(labId, lab);
+
+      if (!res) {
+        useToastStore().error(`Failed to verify details for ${state.value.Name}`);
+        return;
+      }
+
+      const retentionMonths = state.value.RunRetentionMonths ?? 6;
+      try {
+        await $api.labs.applyRunRetentionPolicy(labId, retentionMonths);
+      } catch {
+        useToastStore().error(
+          'Laboratory was saved, but applying the new retention policy to existing runs failed. Try saving again or contact support.',
+        );
+        await getLabDetails({ showLoader: false });
+        return;
+      }
+
+      emit('updated');
+      isEditingNextFlowTowerAccessToken.value = false;
+      switchToFormMode(LabDetailsFormModeEnum.enum.ReadOnly);
+      retentionPreviewCacheMonths.value = null;
+      retentionPreviewCounts.value = null;
+      await getLabDetails();
+
+      useToastStore().success(`${lab.Name} successfully updated`);
+    } catch (error: any) {
+      if (error.message === `Request error: ${ERROR_CODES['EG-304']}`) {
+        useToastStore().error('Laboratory name already taken. Please try again.');
+      } else if (error.message === `Request error: ${ERROR_CODES['EG-308']}`) {
+        useToastStore().error('Invalid Workspace ID or Personal Access Token. Please try again.');
+      } else {
+        useToastStore().error('An unknown error occurred. Please refresh the page and try again.');
+      }
+    } finally {
+      useUiStore().setRequestComplete('updateLab');
+      isSaveRetentionChangeDialogOpen.value = false;
+    }
   }
 
   async function handleCreateLab() {
@@ -314,28 +404,6 @@
     await getLabDetails();
 
     useToastStore().success(`${lab.Name} successfully updated`);
-  }
-
-  async function handleApplyRunRetentionPolicy() {
-    try {
-      useUiStore().setRequestPending('applyRunRetentionPolicy');
-      const retentionMonths = state.value.RunRetentionMonths ?? 6; // ?? not ||
-      const result = await $api.labs.applyRunRetentionPolicy(labId, retentionMonths);
-      useToastStore().success(
-        `Applied run retention policy: updated ${result.Updated}, removed ${result.Removed}, skipped ${result.Skipped}.`,
-      );
-      await getLabDetails();
-      emit('updated');
-    } catch (error) {
-      useToastStore().error('Failed to apply run retention policy to existing runs');
-    } finally {
-      useUiStore().setRequestComplete('applyRunRetentionPolicy');
-      isApplyRetentionPolicyDialogOpen.value = false;
-    }
-  }
-
-  function openApplyRetentionPolicyDialog() {
-    isApplyRetentionPolicyDialogOpen.value = true;
   }
 
   const validate = (state: LabDetails): FormError[] => {
@@ -455,16 +523,6 @@
           placeholder="Enter number of months (0 for never)"
         />
         <p class="text-muted mt-1 text-xs">0 = never delete run records</p>
-        <div v-if="formMode === LabDetailsFormModeEnum.enum.ReadOnly" class="mt-4">
-          <EGButton
-            :size="ButtonSizeEnum.enum.sm"
-            :variant="ButtonVariantEnum.enum.secondary"
-            label="Apply To Existing Runs"
-            :loading="isApplyingRetentionPolicy"
-            :disabled="useUserStore().isSuperuser || !hasEditPermission || isApplyingRetentionPolicy"
-            @click="openApplyRetentionPolicyDialog"
-          />
-        </div>
       </EGFormGroup>
 
       <EGFormGroup v-if="useUserStore().isOrgAdmin()" label="Default S3 bucket directory" name="S3Bucket" required>
@@ -590,8 +648,8 @@
     <!-- Form Buttons: Edit Mode -->
     <div v-if="formMode === LabDetailsFormModeEnum.enum.Edit" class="mt-6 flex space-x-2">
       <EGButton
-        :disabled="!canSubmit || !isS3BucketSelected"
-        :loading="isSubmittingFormData"
+        :disabled="!canSubmit || !isS3BucketSelected || isLoadingRetentionPreview"
+        :loading="isSubmittingFormData || isLoadingRetentionPreview"
         :size="ButtonSizeEnum.enum.sm"
         type="submit"
         label="Save Changes"
@@ -608,26 +666,13 @@
   </UForm>
 
   <EGDialog
-    action-label="Apply Retention Policy"
-    :action-variant="ButtonVariantEnum.enum.primary"
-    cancel-label="Cancel"
-    :cancel-variant="ButtonVariantEnum.enum.secondary"
-    @action-triggered="handleApplyRunRetentionPolicy"
-    primary-message="Apply retention policy to existing runs?"
-    :secondary-message="`This may trigger a large update across existing terminal runs in this lab. Policy to apply: ${retentionPolicyDescription}.`"
-    v-model="isApplyRetentionPolicyDialogOpen"
-    :loading="isApplyingRetentionPolicy"
-    :buttons-disabled="isApplyingRetentionPolicy"
-  />
-
-  <EGDialog
     action-label="Save Changes"
     :action-variant="ButtonVariantEnum.enum.primary"
     cancel-label="Cancel"
     :cancel-variant="ButtonVariantEnum.enum.secondary"
     @action-triggered="handleConfirmSaveRetentionPolicyChange"
-    primary-message="Save run retention change?"
-    :secondary-message="`New policy after save: ${retentionPolicyDescription}. This applies when runs reach a final status. Existing terminal runs are not updated until you use Apply To Existing Runs (other lab changes on this save are included).`"
+    primary-message="Warning: Data Loss Risk"
+    :secondary-message="retentionSaveDialogSecondaryMessage"
     v-model="isSaveRetentionChangeDialogOpen"
     :loading="isSubmittingFormData"
     :buttons-disabled="isSubmittingFormData"

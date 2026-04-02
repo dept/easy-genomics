@@ -64,7 +64,7 @@
     // ?? applies default-for-missing only; explicit 0 must stay 0 (footnote hidden).
     const months = lab.value?.RunRetentionMonths ?? 6;
     if (months <= 0) return undefined;
-    return `Run records are deleted ${months} month${months > 1 ? 's' : ''} after a run reaches a final status, per this lab's retention policy.`;
+    return `Run records are deleted ${months} month${months > 1 ? 's' : ''} after a run reaches a final status, per retention policy.`;
   });
 
   /**
