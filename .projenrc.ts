@@ -269,6 +269,9 @@ const sharedLib = new typescript.TypeScriptProject({
     ...tsConfigOptions,
     compilerOptions: {
       ...tsConfigOptions.compilerOptions,
+      // Emit lib/app/... (not lib/src/app/...) so deep imports like
+      // @easy-genomics/shared-lib/lib/app/utils/common resolve after compile.
+      rootDir: 'src',
       baseUrl: '.',
       paths: {
         '@BE/*': ['../packages/back-end/src/app/*'],
