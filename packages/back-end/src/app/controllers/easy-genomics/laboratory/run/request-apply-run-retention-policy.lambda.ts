@@ -61,9 +61,12 @@ export const handler: Handler = async (
     let updated = 0;
     let removed = 0;
     let skipped = 0;
+    let runsExpireImmediately = 0;
+    let runsExpirationDateUpdated = 0;
 
     for (const run of terminalRuns) {
       const now = new Date();
+      const nowEpochSeconds = Math.floor(now.getTime() / 1000);
       const terminalAtIso = getTerminalAtIsoString(run, now);
 
       const needsTerminalAt = run.TerminalAt == null;
@@ -80,8 +83,19 @@ export const handler: Handler = async (
         continue;
       }
 
+      if (needsExpiresAtSet && desiredExpiresAt != null) {
+        if (desiredExpiresAt <= nowEpochSeconds) {
+          runsExpireImmediately++;
+        } else {
+          runsExpirationDateUpdated++;
+        }
+      } else if (needsExpiresAtRemove) {
+        runsExpirationDateUpdated++;
+      }
+
       if (dryRun) {
-        skipped++;
+        if (needsExpiresAtRemove) removed++;
+        if (needsTerminalAt || needsExpiresAtSet) updated++;
         continue;
       }
 
@@ -113,6 +127,8 @@ export const handler: Handler = async (
         Updated: updated,
         Removed: removed,
         Skipped: skipped,
+        RunsExpireImmediately: runsExpireImmediately,
+        RunsExpirationDateUpdated: runsExpirationDateUpdated,
         DryRun: dryRun,
       }),
       event,

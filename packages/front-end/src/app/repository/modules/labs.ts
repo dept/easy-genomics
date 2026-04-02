@@ -67,6 +67,7 @@ class LabsModule extends HttpFactory {
   async applyRunRetentionPolicy(
     labId: string,
     retentionMonths: number,
+    options?: { dryRun?: boolean },
   ): Promise<{
     Status: string;
     Updated: number;
@@ -74,6 +75,9 @@ class LabsModule extends HttpFactory {
     Skipped: number;
     TerminalRuns: number;
     RetentionMonthsApplied: number;
+    RunsExpireImmediately: number;
+    RunsExpirationDateUpdated: number;
+    DryRun?: boolean;
   }> {
     const res = await this.call<{
       Status: string;
@@ -82,8 +86,12 @@ class LabsModule extends HttpFactory {
       Skipped: number;
       TerminalRuns: number;
       RetentionMonthsApplied: number;
+      RunsExpireImmediately: number;
+      RunsExpirationDateUpdated: number;
+      DryRun?: boolean;
     }>('POST', `/laboratory/run/request-apply-run-retention-policy?laboratoryId=${labId}`, {
       retentionMonths,
+      ...(options?.dryRun === true ? { dryRun: true } : {}),
     });
 
     if (!res) {
