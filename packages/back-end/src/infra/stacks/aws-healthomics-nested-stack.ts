@@ -90,7 +90,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         source: ['aws.tag'],
         detailType: ['Tag Change on Resource'],
         // Filter to HealthOmics workflow ARNs only
-        resources: [Match.prefix(`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/`)],
+        resources: Match.prefix(`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/`),
         // Fire only when the github-repo-url tag key was part of the change
         detail: {
           'changed-tag-keys': ['github-repo-url'],
@@ -410,6 +410,22 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
         actions: ['omics:GetWorkflow'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /aws-healthomics/workflow/list-workflow-versions
+    this.iam.addPolicyStatements('/aws-healthomics/workflow/list-workflow-versions', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+      }),
+      new PolicyStatement({
+        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
+        actions: ['omics:ListWorkflowVersions'],
         effect: Effect.ALLOW,
       }),
     ]);
