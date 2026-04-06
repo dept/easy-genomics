@@ -156,10 +156,10 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
     // omics-access-role-permissions-policy-statement
     // Permissions for the Omics access role assumed by Easy Genomics Lambdas
     this.iam.addPolicyStatements('omics-access-role-permissions-policy-statement', [
-      // Allow StartRun only when request tags match principal tags for lab and org
+      // Allow StartRun and TagResource only when request tags match principal tags for lab and org
       new PolicyStatement({
         resources: ['*'],
-        actions: ['omics:StartRun'],
+        actions: ['omics:StartRun', 'omics:TagResource'],
         effect: Effect.ALLOW,
         conditions: {
           StringEquals: {
@@ -185,6 +185,19 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         resources: ['*'],
         actions: ['omics:ListWorkflows', 'omics:GetWorkflow', 'omics:ListShares'],
         effect: Effect.ALLOW,
+      }),
+      // Allow passing the workflow run role to HealthOmics when starting a run
+      new PolicyStatement({
+        resources: [
+          `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-healthomics-workflow-run-role`,
+        ],
+        actions: ['iam:PassRole'],
+        effect: Effect.ALLOW,
+        conditions: {
+          StringEquals: {
+            'iam:PassedToService': 'omics.amazonaws.com',
+          },
+        },
       }),
     ]);
   };
@@ -259,6 +272,15 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       description:
         'Role assumed by Easy Genomics Lambdas to access AWS HealthOmics with laboratory-scoped IAM enforcement.',
     });
+
+    // Allow sts:TagSession in the trust policy so Lambdas can pass session tags when assuming this role
+    omicsAccessRole.assumeRolePolicy?.addStatements(
+      new PolicyStatement({
+        principals: [new ArnPrincipal(`arn:aws:iam::${this.props.env.account!}:root`)],
+        actions: ['sts:TagSession'],
+        effect: Effect.ALLOW,
+      }),
+    );
 
     new Policy(this, `${this.props.namePrefix}-omics-access-role-policy`, {
       policyName: `${this.props.namePrefix}-omics-access-role-policy`,
