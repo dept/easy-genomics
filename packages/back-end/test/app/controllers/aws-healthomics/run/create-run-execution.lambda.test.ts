@@ -2,6 +2,11 @@ import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { handler } from '../../../../../src/app/controllers/aws-healthomics/run/create-run-execution.lambda';
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
+jest.mock('../../../../../src/app/services/easy-genomics/laboratory-workflow-access-service', () => ({
+  LaboratoryWorkflowAccessService: jest.fn().mockImplementation(() => ({
+    listByLaboratoryId: jest.fn().mockResolvedValue([]),
+  })),
+}));
 jest.mock('../../../../../src/app/services/omics-service');
 jest.mock('../../../../../src/app/services/omics-lab-factory', () => ({
   createOmicsServiceForLab: jest.fn(),

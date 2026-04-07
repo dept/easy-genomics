@@ -15,16 +15,19 @@ import {
 } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
+import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
 import { SsmService } from '@BE/services/ssm-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
+import { assertLaboratoryHasWorkflowAccess } from '@BE/utils/laboratory-workflow-access-utils';
 import { getNextFlowApiQueryParameters, httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
 const ssmService = new SsmService();
+const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
 
 /**
  * This POST /nf-tower/workflow/create-workflow-execution?laboratoryId={LaboratoryId}
@@ -47,6 +50,9 @@ export const handler: Handler = async (
     const laboratoryId: string = event.queryStringParameters?.laboratoryId || '';
     if (laboratoryId === '') throw new RequiredIdNotFoundError('laboratoryId');
 
+    const pipelineId: string = event.queryStringParameters?.pipelineId || '';
+    if (pipelineId === '') throw new RequiredIdNotFoundError('pipelineId');
+
     const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(laboratoryId);
 
     if (!laboratory) {
@@ -68,6 +74,13 @@ export const handler: Handler = async (
     if (!laboratory.NextFlowTowerEnabled) {
       throw new MissingNextFlowTowerAccessError();
     }
+
+    await assertLaboratoryHasWorkflowAccess(
+      laboratory.LaboratoryId,
+      'SEQERA',
+      pipelineId,
+      laboratoryWorkflowAccessService,
+    );
 
     const rawBody = event.isBase64Encoded ? atob(event.body!) : event.body!;
     console.log('rawBody:', rawBody);
@@ -95,7 +108,10 @@ export const handler: Handler = async (
     }
 
     // Get Seqera API Base URL for Laboratory or default to platform-wide configured Seqera API Base URL
-    const seqeraApiBaseUrl: string = laboratory.NextFlowTowerApiBaseUrl || process.env.SEQERA_API_BASE_URL;
+    const seqeraApiBaseUrl: string = laboratory.NextFlowTowerApiBaseUrl || process.env.SEQERA_API_BASE_URL || '';
+    if (!seqeraApiBaseUrl) {
+      throw new MissingNextFlowTowerAccessError();
+    }
     // Get Query Parameters for Seqera Cloud / NextFlow Tower APIs
     const apiQueryParameters: string = getNextFlowApiQueryParameters(event, laboratory.NextFlowTowerWorkspaceId);
     const response: CreateWorkflowLaunchResponse = await httpRequest<CreateWorkflowLaunchResponse>(

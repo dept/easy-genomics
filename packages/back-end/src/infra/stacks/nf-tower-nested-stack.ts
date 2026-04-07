@@ -77,6 +77,17 @@ export class NFTowerNestedStack extends NestedStack {
       }),
     ]);
 
+    this.iam.addPolicyStatements('laboratory-workflow-access-query-policy', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-workflow-access-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-workflow-access-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
     // /nf-tower/compute-env/list-compute-envs
     this.iam.addPolicyStatements('/nf-tower/compute-env/list-compute-envs', [
       ...this.iam.getPolicyStatements('laboratory-id-query-policy'),
@@ -92,21 +103,25 @@ export class NFTowerNestedStack extends NestedStack {
     this.iam.addPolicyStatements('/nf-tower/pipeline/list-pipelines', [
       ...this.iam.getPolicyStatements('laboratory-id-query-policy'),
       ...this.iam.getPolicyStatements('laboratory-get-ssm-access-token-policy'),
+      ...this.iam.getPolicyStatements('laboratory-workflow-access-query-policy'),
     ]);
     // /nf-tower/pipeline/read-pipeline
     this.iam.addPolicyStatements('/nf-tower/pipeline/read-pipeline', [
       ...this.iam.getPolicyStatements('laboratory-id-query-policy'),
       ...this.iam.getPolicyStatements('laboratory-get-ssm-access-token-policy'),
+      ...this.iam.getPolicyStatements('laboratory-workflow-access-query-policy'),
     ]);
     // /nf-tower/pipeline/read-pipeline-launch-details
     this.iam.addPolicyStatements('/nf-tower/pipeline/read-pipeline-launch-details', [
       ...this.iam.getPolicyStatements('laboratory-id-query-policy'),
       ...this.iam.getPolicyStatements('laboratory-get-ssm-access-token-policy'),
+      ...this.iam.getPolicyStatements('laboratory-workflow-access-query-policy'),
     ]);
     // /nf-tower/pipeline/read-pipeline-schema
     this.iam.addPolicyStatements('/nf-tower/pipeline/read-pipeline-schema', [
       ...this.iam.getPolicyStatements('laboratory-id-query-policy'),
       ...this.iam.getPolicyStatements('laboratory-get-ssm-access-token-policy'),
+      ...this.iam.getPolicyStatements('laboratory-workflow-access-query-policy'),
     ]);
 
     // /nf-tower/workflow/cancel-workflow-execution
@@ -118,6 +133,7 @@ export class NFTowerNestedStack extends NestedStack {
     this.iam.addPolicyStatements('/nf-tower/workflow/create-workflow-execution', [
       ...this.iam.getPolicyStatements('laboratory-id-query-policy'),
       ...this.iam.getPolicyStatements('laboratory-get-ssm-access-token-policy'),
+      ...this.iam.getPolicyStatements('laboratory-workflow-access-query-policy'),
     ]);
     // /nf-tower/workflow/list-workflows
     this.iam.addPolicyStatements('/nf-tower/workflow/list-workflows', [
