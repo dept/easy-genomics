@@ -64,6 +64,43 @@ class LabsModule extends HttpFactory {
     return res;
   }
 
+  async applyRunRetentionPolicy(
+    labId: string,
+    retentionMonths: number,
+    options?: { dryRun?: boolean },
+  ): Promise<{
+    Status: string;
+    Updated: number;
+    Removed: number;
+    Skipped: number;
+    TerminalRuns: number;
+    RetentionMonthsApplied: number;
+    RunsExpireImmediately: number;
+    RunsExpirationDateUpdated: number;
+    DryRun?: boolean;
+  }> {
+    const res = await this.call<{
+      Status: string;
+      Updated: number;
+      Removed: number;
+      Skipped: number;
+      TerminalRuns: number;
+      RetentionMonthsApplied: number;
+      RunsExpireImmediately: number;
+      RunsExpirationDateUpdated: number;
+      DryRun?: boolean;
+    }>('POST', `/laboratory/run/request-apply-run-retention-policy?laboratoryId=${labId}`, {
+      retentionMonths,
+      ...(options?.dryRun === true ? { dryRun: true } : {}),
+    });
+
+    if (!res) {
+      throw new Error('Failed to apply run retention policy');
+    }
+
+    return res;
+  }
+
   /**
    * Delete a laboratory
    * @param labId

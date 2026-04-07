@@ -6,6 +6,7 @@
     NextFlowTowerApiBaseUrlSchema,
     NextFlowTowerAccessTokenSchema,
     NextFlowTowerWorkspaceIdSchema,
+    RunRetentionMonthsSchema,
     LabDetailsFormModeEnum,
     LabDetailsFormMode,
   } from '@FE/types/labs';
@@ -58,6 +59,7 @@
     Name: '',
     Description: '',
     S3Bucket: '',
+    RunRetentionMonths: 6,
     NextFlowTowerEnabled: false,
     NextFlowTowerAccessToken: '',
     NextFlowTowerWorkspaceId: '',
@@ -146,24 +148,34 @@
   /**
    * Retrieves the lab details from the server and sets the form state.
    */
-  async function getLabDetails() {
+  async function getLabDetails(options?: { showLoader?: boolean }) {
+    const showLoader = options?.showLoader !== false;
     try {
-      isLoadingFormData.value = true;
+      if (showLoader) {
+        isLoadingFormData.value = true;
+      }
       const res = await $api.labs.labDetails(labId);
       const parseResult = ReadLaboratorySchema.safeParse(res);
 
       if (parseResult.success) {
         const labDetails = parseResult.data as Laboratory;
-        state.value = { ...state.value, ...labDetails };
+        const withRetentionDefault = {
+          ...labDetails,
+          // ?? only: RunRetentionMonths 0 (never delete) must not become 6.
+          RunRetentionMonths: labDetails.RunRetentionMonths ?? 6,
+        };
+        state.value = { ...state.value, ...withRetentionDefault };
         // Store the unedited lab details to support the cancel button in Edit mode
-        uneditedLabDetails.value = { ...labDetails };
+        uneditedLabDetails.value = { ...withRetentionDefault };
       } else {
         throw new Error('Failed to parse lab details');
       }
     } catch (error) {
       useToastStore().error(`Failed to retrieve lab details for lab: ${state.value.Name}`);
     } finally {
-      isLoadingFormData.value = false;
+      if (showLoader) {
+        isLoadingFormData.value = false;
+      }
     }
   }
 
@@ -179,24 +191,73 @@
     state.value = { ...uneditedLabDetails.value! };
     isEditingNextFlowTowerAccessToken.value = false;
     canSubmit.value = false;
+    retentionPreviewCacheMonths.value = null;
+    retentionPreviewCounts.value = null;
     switchToFormMode(LabDetailsFormModeEnum.enum.ReadOnly);
   }
 
   const isSubmittingFormData = computed(
     () => useUiStore().isRequestPending('createLab') || useUiStore().isRequestPending('updateLab'),
   );
+  const isLoadingRetentionPreview = ref(false);
+  const isSaveRetentionChangeDialogOpen = ref(false);
+  const retentionPreviewCacheMonths = ref<number | null>(null);
+  const retentionPreviewCounts = ref<{ immediate: number; updated: number } | null>(null);
+  const retentionMonthsForDialog = computed<number>(
+    () =>
+      // ?? only so 0 stays “never delete” for the confirmation modal.
+      state.value.RunRetentionMonths ?? 6,
+  );
+  const retentionPolicyDescription = computed<string>(() =>
+    retentionMonthsForDialog.value === 0
+      ? 'never delete run records'
+      : `${retentionMonthsForDialog.value} month${Number(retentionMonthsForDialog.value) === 1 ? '' : 's'}`,
+  );
 
-  /**
-   * Handles form submission for various lab detail modes such as Create and Edit.
-   *
-   * This method will not perform any actions if the form mode is set to ReadOnly.
-   * It manages the process state and triggers appropriate form handlers based on the current form mode.
-   *
-   * @return {Promise<void>} A promise that resolves when the form submission process is complete.
-   */
-  async function onSubmit() {
-    if (formMode.value === LabDetailsFormModeEnum.enum.ReadOnly) return;
+  const retentionSaveDialogSecondaryMessage = computed(() => {
+    const counts = retentionPreviewCounts.value;
+    const policyLine = `New run retention policy after save: ${retentionPolicyDescription.value}.`;
+    if (!counts) return policyLine;
+    return `${policyLine}\n\n${counts.immediate} run${counts.immediate === 1 ? '' : 's'} will be deleted immediately (new expiry is in the past).\n${counts.updated} run${counts.updated === 1 ? '' : 's'} will have their expiration date updated.`;
+  });
 
+  function retentionMonthsKey(): number {
+    return state.value.RunRetentionMonths ?? 6;
+  }
+
+  async function ensureRetentionChangePreviewLoaded(): Promise<boolean> {
+    const months = retentionMonthsKey();
+    if (retentionPreviewCacheMonths.value === months && retentionPreviewCounts.value != null) {
+      return true;
+    }
+    try {
+      isLoadingRetentionPreview.value = true;
+      const result = await $api.labs.applyRunRetentionPolicy(labId, months, { dryRun: true });
+      retentionPreviewCacheMonths.value = months;
+      retentionPreviewCounts.value = {
+        immediate: result.RunsExpireImmediately ?? 0,
+        updated: result.RunsExpirationDateUpdated ?? 0,
+      };
+      return true;
+    } catch {
+      useToastStore().error('Failed to load retention change preview');
+      return false;
+    } finally {
+      isLoadingRetentionPreview.value = false;
+    }
+  }
+
+  function runRetentionMonthsChanged(): boolean {
+    if (formMode.value !== LabDetailsFormModeEnum.enum.Edit || uneditedLabDetails.value == null) {
+      return false;
+    }
+    const prev = uneditedLabDetails.value.RunRetentionMonths;
+    const next = state.value.RunRetentionMonths;
+    const key = (v: number | undefined) => (v === undefined ? '_unset_' : String(Math.floor(Number(v))));
+    return key(prev) !== key(next);
+  }
+
+  async function runSubmitAfterValidation() {
     try {
       if (formMode.value === LabDetailsFormModeEnum.enum.Create) {
         await handleCreateLab();
@@ -214,6 +275,77 @@
     } finally {
       useUiStore().setRequestComplete('createLab');
       useUiStore().setRequestComplete('updateLab');
+    }
+  }
+
+  /**
+   * Handles form submission for various lab detail modes such as Create and Edit.
+   *
+   * This method will not perform any actions if the form mode is set to ReadOnly.
+   * It manages the process state and triggers appropriate form handlers based on the current form mode.
+   *
+   * @return {Promise<void>} A promise that resolves when the form submission process is complete.
+   */
+  async function onSubmit() {
+    if (formMode.value === LabDetailsFormModeEnum.enum.ReadOnly) return;
+
+    if (formMode.value === LabDetailsFormModeEnum.enum.Edit && runRetentionMonthsChanged()) {
+      const ok = await ensureRetentionChangePreviewLoaded();
+      if (ok) isSaveRetentionChangeDialogOpen.value = true;
+      return;
+    }
+
+    await runSubmitAfterValidation();
+  }
+
+  async function handleConfirmSaveRetentionPolicyChange() {
+    useUiStore().setRequestPending('updateLab');
+    try {
+      const parseResult = UpdateLaboratorySchema.safeParse(state.value);
+      if (!parseResult.success) {
+        const message = 'Update lab failed to parse lab details';
+        console.error(`${message}; parseResult: `, parseResult);
+        throw new Error(message);
+      }
+
+      const lab = parseResult.data as UpdateLaboratory;
+      const res = await $api.labs.update(labId, lab);
+
+      if (!res) {
+        useToastStore().error(`Failed to verify details for ${state.value.Name}`);
+        return;
+      }
+
+      const retentionMonths = state.value.RunRetentionMonths ?? 6;
+      try {
+        await $api.labs.applyRunRetentionPolicy(labId, retentionMonths);
+      } catch {
+        useToastStore().error(
+          'Laboratory was saved, but applying the new retention policy to existing runs failed. Try saving again or contact support.',
+        );
+        await getLabDetails({ showLoader: false });
+        return;
+      }
+
+      emit('updated');
+      isEditingNextFlowTowerAccessToken.value = false;
+      switchToFormMode(LabDetailsFormModeEnum.enum.ReadOnly);
+      retentionPreviewCacheMonths.value = null;
+      retentionPreviewCounts.value = null;
+      await getLabDetails();
+
+      useToastStore().success(`${lab.Name} successfully updated`);
+    } catch (error: any) {
+      if (error.message === `Request error: ${ERROR_CODES['EG-304']}`) {
+        useToastStore().error('Laboratory name already taken. Please try again.');
+      } else if (error.message === `Request error: ${ERROR_CODES['EG-308']}`) {
+        useToastStore().error('Invalid Workspace ID or Personal Access Token. Please try again.');
+      } else {
+        useToastStore().error('An unknown error occurred. Please refresh the page and try again.');
+      }
+    } finally {
+      useUiStore().setRequestComplete('updateLab');
+      isSaveRetentionChangeDialogOpen.value = false;
     }
   }
 
@@ -279,6 +411,7 @@
 
     maybeAddFieldValidationErrors(errors, LabNameSchema, 'Name', state.Name);
     maybeAddFieldValidationErrors(errors, LabDescriptionSchema, 'Description', state.Description);
+    maybeAddFieldValidationErrors(errors, RunRetentionMonthsSchema, 'RunRetentionMonths', state.RunRetentionMonths);
 
     // Next Flow fields only required if Next Flow enabled
     if (state.NextFlowTowerEnabled) {
@@ -377,6 +510,19 @@
           :disabled="!isEditing || isSubmittingFormData"
           placeholder="Describe your lab and what runs should be launched by Lab users."
         />
+      </EGFormGroup>
+
+      <EGFormGroup label="Run retention (months)" name="RunRetentionMonths" eager-validation>
+        <EGInput
+          v-model.number="state.RunRetentionMonths"
+          type="number"
+          min="0"
+          max="120"
+          step="1"
+          :disabled="!isEditing || isSubmittingFormData"
+          placeholder="Enter number of months (0 for never)"
+        />
+        <p class="text-muted mt-1 text-xs">0 = never delete run records</p>
       </EGFormGroup>
 
       <EGFormGroup v-if="useUserStore().isOrgAdmin()" label="Default S3 bucket directory" name="S3Bucket" required>
@@ -502,8 +648,8 @@
     <!-- Form Buttons: Edit Mode -->
     <div v-if="formMode === LabDetailsFormModeEnum.enum.Edit" class="mt-6 flex space-x-2">
       <EGButton
-        :disabled="!canSubmit || !isS3BucketSelected"
-        :loading="isSubmittingFormData"
+        :disabled="!canSubmit || !isS3BucketSelected || isLoadingRetentionPreview"
+        :loading="isSubmittingFormData || isLoadingRetentionPreview"
         :size="ButtonSizeEnum.enum.sm"
         type="submit"
         label="Save Changes"
@@ -518,4 +664,17 @@
       />
     </div>
   </UForm>
+
+  <EGDialog
+    action-label="Save Changes"
+    :action-variant="ButtonVariantEnum.enum.primary"
+    cancel-label="Cancel"
+    :cancel-variant="ButtonVariantEnum.enum.secondary"
+    @action-triggered="handleConfirmSaveRetentionPolicyChange"
+    primary-message="Warning: Data Loss Risk"
+    :secondary-message="retentionSaveDialogSecondaryMessage"
+    v-model="isSaveRetentionChangeDialogOpen"
+    :loading="isSubmittingFormData"
+    :buttons-disabled="isSubmittingFormData"
+  />
 </template>
