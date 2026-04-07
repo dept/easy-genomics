@@ -49,12 +49,14 @@ interface UiStoreState {
   pendingRequests: Set<string>;
   previousPageRoute: string;
   remountAppKey: number;
+  hasSidebar: boolean;
 }
 
 const initialState = (): UiStoreState => ({
   pendingRequests: new Set<string>(),
   previousPageRoute: '',
   remountAppKey: 0,
+  hasSidebar: false,
 });
 
 const useUiStore = defineStore('uiStore', {
@@ -90,6 +92,10 @@ const useUiStore = defineStore('uiStore', {
 
     incrementRemountAppKey() {
       this.remountAppKey++;
+    },
+
+    setSidebarVisible(visible: boolean) {
+      this.hasSidebar = visible;
     },
   },
 
