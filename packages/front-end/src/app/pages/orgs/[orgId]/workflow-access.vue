@@ -1,8 +1,15 @@
 <script setup lang="ts">
+  const $router = useRouter();
   const $route = useRoute();
 
+  const userStore = useUserStore();
   const orgId = $route.params.orgId as string;
-  const backPath = `/admin/orgs/${orgId}`;
+
+  if (!userStore.canManageOrg(orgId)) {
+    $router.push({ path: '/' });
+  }
+
+  const backPath = `/orgs/${orgId}`;
 </script>
 
 <template>

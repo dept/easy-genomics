@@ -320,7 +320,11 @@
     :skeleton-config="{ titleLines: 1, descriptionLines: 1 }"
     show-org-breadcrumb
   >
-    <NuxtLink v-if="props.superuser" :to="`/admin/orgs/${props.orgId}/workflow-access`" class="mr-2 inline-flex">
+    <NuxtLink
+      v-if="props.superuser || props.orgAdmin"
+      :to="props.superuser ? `/admin/orgs/${props.orgId}/workflow-access` : `/orgs/${props.orgId}/workflow-access`"
+      class="mr-2 inline-flex"
+    >
       <EGButton label="Workflow access" variant="secondary" />
     </NuxtLink>
     <EGButton label="Invite users" @click="() => (showInviteModule = !showInviteModule)" />
