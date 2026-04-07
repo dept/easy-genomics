@@ -243,6 +243,13 @@ export class EasyGenomicsNestedStack extends NestedStack {
             SNS_LABORATORY_RUN_UPDATE_TOPIC: this.sns.snsTopics.get('laboratory-run-update-topic')?.topicArn || '',
           },
         },
+        '/easy-genomics/organization/workflow-access/list-workflow-catalog': {
+          environment: {
+            SEQERA_API_BASE_URL: this.props.seqeraApiBaseUrl,
+          },
+          timeoutSeconds: 60,
+          memorySizeMb: 1024,
+        },
         '/easy-genomics/file/request-folder-download-job': {
           environment: {
             SNS_FOLDER_DOWNLOAD_TOPIC: this.sns.snsTopics.get('folder-download-topic')?.topicArn || '',
@@ -1463,6 +1470,62 @@ export class EasyGenomicsNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
     ]);
+
+    const laboratoryWorkflowAccessTableArn = `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-workflow-access-table`;
+    const laboratoryWorkflowAccessTableAnyIndex = `${laboratoryWorkflowAccessTableArn}/index/*`;
+
+    // /easy-genomics/organization/workflow-access/list-workflow-catalog
+    this.iam.addPolicyStatements('/easy-genomics/organization/workflow-access/list-workflow-catalog', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+      }),
+      new PolicyStatement({
+        resources: ['*'],
+        actions: ['omics:ListWorkflows', 'omics:ListShares'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/nf-access-token`,
+        ],
+        actions: ['ssm:GetParameter'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/organization/workflow-access/list-workflow-access-assignments
+    this.iam.addPolicyStatements('/easy-genomics/organization/workflow-access/list-workflow-access-assignments', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+      }),
+      new PolicyStatement({
+        resources: [laboratoryWorkflowAccessTableArn, laboratoryWorkflowAccessTableAnyIndex],
+        actions: ['dynamodb:Query'],
+      }),
+    ]);
+
+    // /easy-genomics/organization/workflow-access/edit-workflow-access-batch
+    this.iam.addPolicyStatements('/easy-genomics/organization/workflow-access/edit-workflow-access-batch', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+      }),
+      new PolicyStatement({
+        resources: [laboratoryWorkflowAccessTableArn, laboratoryWorkflowAccessTableAnyIndex],
+        actions: ['dynamodb:PutItem', 'dynamodb:DeleteItem'],
+      }),
+    ]);
   };
 
   // Easy Genomics specific DynamoDB tables
@@ -1622,5 +1685,20 @@ export class EasyGenomicsNestedStack extends NestedStack {
       },
     });
     this.dynamoDBTables.set(uniqueReferenceTableName, uniqueReferenceTable);
+
+    // Laboratory workflow access allowlist (HealthOmics + Seqera)
+    const laboratoryWorkflowAccessTableName = `${this.props.namePrefix}-laboratory-workflow-access-table`;
+    const laboratoryWorkflowAccessTable = this.dynamoDB.createTable(laboratoryWorkflowAccessTableName, {
+      partitionKey: {
+        name: 'LaboratoryId',
+        type: AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'WorkflowKey',
+        type: AttributeType.STRING,
+      },
+      lsi: baseLSIAttributes,
+    });
+    this.dynamoDBTables.set(laboratoryWorkflowAccessTableName, laboratoryWorkflowAccessTable);
   };
 }

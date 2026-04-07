@@ -68,7 +68,7 @@
         },
       };
 
-      const res = await $api.seqeraRuns.createPipelineRun(props.labId, launchRequest);
+      const res = await $api.seqeraRuns.createPipelineRun(props.labId, props.pipelineId, launchRequest);
 
       if (!res) {
         throw new Error('Failed to create pipeline run. Response is empty.');

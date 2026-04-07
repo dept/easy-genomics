@@ -4,21 +4,28 @@ import {
   LaboratoryNotFoundError,
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
- MissingAWSHealthOmicsAccessError,
+  MissingAWSHealthOmicsAccessError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
+import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
 import { OmicsService } from '@BE/services/omics-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
+import {
+  allowedWorkflowIdsForPlatform,
+  hasWorkflowAccessRulesForPlatform,
+  workflowIdFromOmicsShare,
+} from '@BE/utils/laboratory-workflow-access-utils';
 import { AwsHealthOmicsQueryParameters, getAwsHealthOmicsApiQueryParameters } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
 const omicsService = new OmicsService();
+const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
 
 /**
  * This GET /aws-healthomics/workflow/list-shared-workflows?laboratoryId={LaboratoryId}
@@ -69,7 +76,18 @@ export const handler: Handler = async (
       resourceOwner: 'OTHER',
       ...queryParameters,
     });
-    return buildResponse(200, JSON.stringify(response), event);
+
+    const accessRows = await laboratoryWorkflowAccessService.listByLaboratoryId(laboratoryId);
+    let shares = response.shares ?? [];
+    if (hasWorkflowAccessRulesForPlatform(accessRows, 'HEALTH_OMICS')) {
+      const allowed = allowedWorkflowIdsForPlatform(accessRows, 'HEALTH_OMICS');
+      shares = shares.filter((s) => {
+        const wid = workflowIdFromOmicsShare(s);
+        return wid != null && allowed.has(wid);
+      });
+    }
+
+    return buildResponse(200, JSON.stringify({ ...response, shares }), event);
   } catch (err: any) {
     console.error(err);
     return buildErrorResponse(err, event);

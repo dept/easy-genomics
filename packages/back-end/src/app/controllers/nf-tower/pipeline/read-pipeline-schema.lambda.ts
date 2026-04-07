@@ -11,16 +11,19 @@ import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomic
 import { DescribePipelineSchemaResponse } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
+import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
 import { SsmService } from '@BE/services/ssm-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
+import { assertLaboratoryHasWorkflowAccess } from '@BE/utils/laboratory-workflow-access-utils';
 import { getNextFlowApiQueryParameters, httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
 const ssmService = new SsmService();
+const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
 
 /**
  * This GET /nf-tower/pipeline/read-pipeline-schema/{:id}?laboratoryId={LaboratoryId}
@@ -67,6 +70,8 @@ export const handler: Handler = async (
     if (!laboratory.NextFlowTowerEnabled) {
       throw new MissingNextFlowTowerAccessError();
     }
+
+    await assertLaboratoryHasWorkflowAccess(laboratory.LaboratoryId, 'SEQERA', id, laboratoryWorkflowAccessService);
 
     // Retrieve Seqera Cloud / NextFlow Tower AccessToken from SSM
     const getParameterResponse: GetParameterCommandOutput | void = await ssmService
