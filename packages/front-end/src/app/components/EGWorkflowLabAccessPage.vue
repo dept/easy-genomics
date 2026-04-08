@@ -67,6 +67,33 @@
     return false;
   });
 
+  function keysForLaboratory(laboratoryId: string, keySet: Set<string>): Set<string> {
+    const prefix = `${laboratoryId}::`;
+    const out = new Set<string>();
+    for (const k of keySet) {
+      if (k.startsWith(prefix)) {
+        out.add(k);
+      }
+    }
+    return out;
+  }
+
+  function isLabDirty(laboratoryId: string): boolean {
+    const baselineForLab = keysForLaboratory(laboratoryId, baselineKeys.value);
+    const pendingForLab = keysForLaboratory(laboratoryId, pendingKeys.value);
+    if (baselineForLab.size !== pendingForLab.size) {
+      return true;
+    }
+    for (const k of baselineForLab) {
+      if (!pendingForLab.has(k)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  const labsWithUnsavedChanges = computed(() => laboratories.value.filter((l) => isLabDirty(l.LaboratoryId)));
+
   async function load() {
     isLoading.value = true;
     try {
@@ -191,6 +218,12 @@
                 aria-hidden="true"
               />
               <span class="min-w-0 flex-1 truncate font-medium">{{ lab.Name }}</span>
+              <span
+                v-if="isLabDirty(lab.LaboratoryId)"
+                class="bg-alert-caution h-1.5 w-1.5 shrink-0 rounded-full"
+                title="Unsaved changes"
+                aria-hidden="true"
+              />
               <UBadge
                 size="xs"
                 class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif ring-0"
@@ -255,9 +288,25 @@
       </EGCard>
     </div>
 
-    <div class="flex flex-wrap justify-end gap-3">
-      <EGButton label="Discard all" variant="secondary" :disabled="!isDirty || isSaving" @click="discardAll" />
-      <EGButton label="Save all changes" :disabled="!isDirty || isSaving" :loading="isSaving" @click="saveAll" />
+    <div class="flex flex-col items-end gap-3">
+      <ul
+        v-if="labsWithUnsavedChanges.length"
+        class="text-text-body m-0 flex w-full list-none flex-col items-end gap-1 p-0 text-right font-serif text-sm"
+        aria-label="Labs with unsaved changes"
+      >
+        <li
+          v-for="lab in labsWithUnsavedChanges"
+          :key="lab.LaboratoryId"
+          class="flex max-w-full items-center justify-end gap-2"
+        >
+          <span class="bg-alert-caution h-1.5 w-1.5 shrink-0 rounded-full" aria-hidden="true" />
+          <span class="truncate">{{ lab.Name }}</span>
+        </li>
+      </ul>
+      <div class="flex flex-wrap justify-end gap-3">
+        <EGButton label="Discard all" variant="secondary" :disabled="!isDirty || isSaving" @click="discardAll" />
+        <EGButton label="Save all changes" :disabled="!isDirty || isSaving" :loading="isSaving" @click="saveAll" />
+      </div>
     </div>
   </div>
 </template>
