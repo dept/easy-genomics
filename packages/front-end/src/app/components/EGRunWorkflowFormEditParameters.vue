@@ -9,9 +9,10 @@
     workflowId: string;
     omicsRunTempId: string;
     nfSchema?: object | null;
+    hasSavedDefaults: boolean;
   }>();
 
-  const emit = defineEmits(['next-step', 'previous-step', 'step-validated']);
+  const emit = defineEmits(['next-step', 'previous-step', 'step-validated', 'defaults-cleared']);
 
   const runStore = useRunStore();
   const labsStore = useLabsStore();
@@ -106,7 +107,8 @@
     },
   });
 
-  const shouldSaveAsDefaults = ref(false);
+  const shouldSaveAsDefaults = ref(props.hasSavedDefaults);
+  let paramsReady = false;
 
   // Auto-populate runname/run_name parameter with the run name from Run Details
   function autoPopulateRunName() {
@@ -121,8 +123,12 @@
     }
   }
 
+  // Auto-populate when component mounts, then enable param change detection
   onMounted(() => {
     autoPopulateRunName();
+    nextTick(() => {
+      paramsReady = true;
+    });
   });
 
   watch(
@@ -170,6 +176,28 @@
     }
   }
 
+  async function clearDefaultsForWorkflow() {
+    try {
+      const { $api } = useNuxtApp();
+      const userStore = useUserStore();
+      const userId = userStore.currentUserDetails.id;
+      if (!userId) return false;
+
+      const user = await $api.users.getUser();
+      const existingDefaults = user.OmicsWorkflowDefaultParams || {};
+      const { [props.workflowId]: _, ...remainingDefaults } = existingDefaults;
+
+      await $api.users.updateUser(userId, {
+        OmicsWorkflowDefaultParams: remainingDefaults,
+      });
+      emit('defaults-cleared');
+      return true;
+    } catch (error) {
+      console.error('Failed to clear workflow defaults', error);
+      return false;
+    }
+  }
+
   async function onSubmit() {
     const paramsRequired = wipOmicsRun.value?.paramsRequired || [];
     const missingParams = paramsRequired.filter((paramName: string) => !wipOmicsRun.value?.params[paramName]);
@@ -190,6 +218,11 @@
           if (success) {
             useToastStore().success('Saved defaults for this workflow.');
           }
+        } else if (props.hasSavedDefaults) {
+          const cleared = await clearDefaultsForWorkflow();
+          if (cleared) {
+            useToastStore().success('Cleared saved defaults for this workflow.');
+          }
         }
         emit('next-step');
       } catch (error) {
@@ -203,6 +236,9 @@
     () => localProps.params,
     (val) => {
       if (val) runStore.updateWipOmicsRunParams(props.omicsRunTempId, val);
+      if (paramsReady) {
+        shouldSaveAsDefaults.value = false;
+      }
     },
     { deep: true },
   );
