@@ -130,7 +130,33 @@
     },
   });
 
-  const isS3BucketSelected = computed(() => selectedS3Bucket.value);
+  /**
+   * Submit requires a usable S3 directory for org admins. The bucket must appear in the infra list,
+   * OR in edit mode we allow the existing persisted bucket when the list does not include it (stale API, rename, permissions).
+   */
+  const isS3BucketValidForSubmit = computed(() => {
+    if (!useUserStore().isOrgAdmin()) {
+      return true;
+    }
+
+    const bucket = state.value.S3Bucket;
+    if (bucket == null || String(bucket).trim() === '') {
+      return false;
+    }
+    if (isLoadingBuckets.value) {
+      return false;
+    }
+
+    if (s3Directories.value.some((dir) => dir === bucket)) {
+      return true;
+    }
+
+    return (
+      formMode.value !== LabDetailsFormModeEnum.enum.Create &&
+      uneditedLabDetails.value != null &&
+      uneditedLabDetails.value.S3Bucket === bucket
+    );
+  });
 
   async function getS3Buckets() {
     try {
@@ -461,20 +487,53 @@
     }
   }
 
+  /** Fields users can change on this form; avoids comparing full Laboratory/server-only keys and fixes retention coercion issues. */
+  const LAB_DETAILS_EDIT_COMPARE_KEYS = [
+    'Name',
+    'Description',
+    'RunRetentionMonths',
+    'S3Bucket',
+    'AwsHealthOmicsEnabled',
+    'NextFlowTowerEnabled',
+    'NextFlowTowerApiBaseUrl',
+    'NextFlowTowerWorkspaceId',
+    'NextFlowTowerAccessToken',
+  ] as const;
+
+  type LabEditCompareKey = (typeof LAB_DETAILS_EDIT_COMPARE_KEYS)[number];
+
+  function valuesDifferForLabEdit(key: LabEditCompareKey, a: unknown, b: unknown): boolean {
+    if (key === 'RunRetentionMonths') {
+      const norm = (v: unknown) => {
+        if (v === undefined || v === null || v === '') return '_unset_';
+        const n = Number(v);
+        return Number.isFinite(n) ? String(Math.floor(n)) : '_invalid_';
+      };
+      return norm(a) !== norm(b);
+    }
+    if (key === 'NextFlowTowerAccessToken' || key === 'Description') {
+      const norm = (v: unknown) => (v === undefined || v === null || v === '' ? '' : v);
+      return norm(a) !== norm(b);
+    }
+    return a !== b;
+  }
+
   /**
    * Determines if the form data has changed from the original lab details.
    * @returns {boolean} True if the form data has changed, otherwise false.
    */
   function formDataChanged(): boolean {
-    if (formMode.value === LabDetailsFormModeEnum.enum.Edit) {
-      for (const key of Object.keys(state.value)) {
-        if (state.value[key] !== uneditedLabDetails.value?.[key]) {
-          // Special handling to assist with the password field display state
-          if (key === 'NextFlowTowerAccessToken') {
-            isEditingNextFlowTowerAccessToken.value = true;
-          }
-          return true;
+    if (formMode.value !== LabDetailsFormModeEnum.enum.Edit || uneditedLabDetails.value == null) {
+      return false;
+    }
+    const baseline = uneditedLabDetails.value as unknown as Record<string, unknown>;
+    const current = state.value as unknown as Record<string, unknown>;
+    for (const key of LAB_DETAILS_EDIT_COMPARE_KEYS) {
+      if (valuesDifferForLabEdit(key, current[key], baseline[key])) {
+        if (key === 'NextFlowTowerAccessToken') {
+          isEditingNextFlowTowerAccessToken.value = true;
         }
+        return true;
       }
     }
     return false;
@@ -618,7 +677,7 @@
     <!-- Form Buttons: Create Mode -->
     <div v-if="formMode === LabDetailsFormModeEnum.enum.Create" class="mt-6 flex space-x-2">
       <EGButton
-        :disabled="!canSubmit || !isS3BucketSelected"
+        :disabled="!canSubmit || !isS3BucketValidForSubmit"
         :loading="isSubmittingFormData"
         :size="ButtonSizeEnum.enum.sm"
         type="submit"
@@ -648,7 +707,7 @@
     <!-- Form Buttons: Edit Mode -->
     <div v-if="formMode === LabDetailsFormModeEnum.enum.Edit" class="mt-6 flex space-x-2">
       <EGButton
-        :disabled="!canSubmit || !isS3BucketSelected || isLoadingRetentionPreview"
+        :disabled="!canSubmit || !isS3BucketValidForSubmit || isLoadingRetentionPreview"
         :loading="isSubmittingFormData || isLoadingRetentionPreview"
         :size="ButtonSizeEnum.enum.sm"
         type="submit"
