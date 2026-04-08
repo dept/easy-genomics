@@ -160,10 +160,15 @@ export const handler: Handler = async (
     // 2. DynamoDB lookup
     let schema = await workflowSchemaService.getSchema(workflowId, SCHEMA_VERSION);
 
-    // 3. GitHub fallback
+    // 3. GitHub fallback — also persist to DynamoDB so subsequent cold starts avoid hitting GitHub
     if (!schema) {
       console.warn(`[read-workflow-schema] No schema in DynamoDB for WorkflowId=${workflowId}, falling back to GitHub`);
       schema = await fetchSchemaFromGitHub(workflowId);
+      if (schema) {
+        workflowSchemaService.saveSchema(schema).catch((err) => {
+          console.warn('[read-workflow-schema] Failed to persist GitHub-fetched schema to DynamoDB:', err);
+        });
+      }
     }
 
     if (!schema) {
