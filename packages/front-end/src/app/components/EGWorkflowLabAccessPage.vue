@@ -7,10 +7,18 @@
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-workflow-access';
   import { parseWorkflowAccessSortKey } from '@easy-genomics/shared-lib/src/app/utils/laboratory-workflow-access-key';
 
-  const props = defineProps<{
-    orgId: string;
-    backPath: string;
-  }>();
+  const props = withDefaults(
+    defineProps<{
+      orgId: string;
+      backPath?: string;
+      /** When true, hide page header (e.g. org hub tab). */
+      embedded?: boolean;
+    }>(),
+    {
+      backPath: '',
+      embedded: false,
+    },
+  );
 
   const $router = useRouter();
   const { $api } = useNuxtApp();
@@ -187,6 +195,7 @@
 
 <template>
   <EGPageHeader
+    v-if="!embedded"
     title="Workflow lab access"
     description="Grant labs access to HealthOmics workflows and Seqera pipelines for this organization."
     :back-action="() => $router.push(props.backPath)"
@@ -194,7 +203,9 @@
     :is-loading="isLoading"
   />
 
-  <div v-if="!isLoading" class="mt-6 flex flex-col gap-6">
+  <div v-if="embedded && isLoading" class="text-text-muted py-10 text-center font-serif text-sm">Loading…</div>
+
+  <div v-else-if="!isLoading" :class="embedded ? 'flex flex-col gap-6' : 'mt-6 flex flex-col gap-6'">
     <div class="flex flex-col gap-4 lg:flex-row lg:items-stretch">
       <EGCard class="block w-full min-w-0 shrink-0 lg:w-72">
         <div class="w-full min-w-0">

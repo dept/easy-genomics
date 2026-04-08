@@ -17,6 +17,7 @@
 
   const { $api } = useNuxtApp();
   const router = useRouter();
+  const route = useRoute();
   const { resendInvite, labsCount } = useUser();
 
   const disabledButtons = ref<Record<number, boolean>>({});
@@ -38,23 +39,58 @@
   // Table-related refs and computed props
   const searchOutput = ref('');
 
-  const tabItems = [
-    {
-      slot: 'users',
-      label: 'All users',
-    },
-    {
-      slot: 'details',
-      label: 'Settings',
-    },
-  ];
+  const showWorkflowAccessTab = computed(() => props.superuser || props.orgAdmin);
 
-  if (props.superuser) {
-    tabItems.unshift({
-      slot: 'labs',
-      label: 'All Labs',
-    });
+  const tabItems = computed(() => {
+    const items: { slot: string; label: string }[] = [];
+    if (props.superuser) {
+      items.push({ slot: 'labs', label: 'All Labs' });
+    }
+    items.push({ slot: 'users', label: 'All users' });
+    if (showWorkflowAccessTab.value) {
+      items.push({ slot: 'workflow-access', label: 'Workflow access' });
+    }
+    items.push({ slot: 'details', label: 'Settings' });
+    return items;
+  });
+
+  const selectedTabIndex = ref(0);
+
+  /** Mount workflow access panel once opened (or via ?tab=) so data loads lazily; stay mounted to keep unsaved edits. */
+  const workflowAccessPanelMounted = ref(false);
+
+  function syncWorkflowAccessTabFromQuery() {
+    if (route.query.tab !== 'workflow-access' || !showWorkflowAccessTab.value) {
+      return;
+    }
+    const idx = tabItems.value.findIndex((t) => t.slot === 'workflow-access');
+    if (idx >= 0) {
+      selectedTabIndex.value = idx;
+      workflowAccessPanelMounted.value = true;
+    }
   }
+
+  watch(tabItems, (items) => {
+    if (selectedTabIndex.value >= items.length) {
+      selectedTabIndex.value = Math.max(0, items.length - 1);
+    }
+  });
+
+  watch(selectedTabIndex, (idx) => {
+    const item = tabItems.value[idx];
+    if (item?.slot === 'workflow-access') {
+      workflowAccessPanelMounted.value = true;
+    }
+  });
+
+  watch(
+    () => route.query.tab,
+    () => syncWorkflowAccessTabFromQuery(),
+  );
+
+  onBeforeMount(() => {
+    syncWorkflowAccessTabFromQuery();
+  });
 
   const tableColumns = [
     {
@@ -320,20 +356,13 @@
     :skeleton-config="{ titleLines: 1, descriptionLines: 1 }"
     show-org-breadcrumb
   >
-    <NuxtLink
-      v-if="props.superuser || props.orgAdmin"
-      :to="props.superuser ? `/admin/orgs/${props.orgId}/workflow-access` : `/orgs/${props.orgId}/workflow-access`"
-      class="mr-2 inline-flex"
-    >
-      <EGButton label="Workflow access" variant="secondary" />
-    </NuxtLink>
     <EGButton label="Invite users" @click="() => (showInviteModule = !showInviteModule)" />
     <div class="mt-2 w-[500px]" v-if="showInviteModule">
       <EGInviteModule @invite-success="refreshUserList($event)" :org-id="props.orgId" />
     </div>
   </EGPageHeader>
 
-  <UTabs :ui="EGTabsStyles" :default-index="0" :items="tabItems">
+  <UTabs v-model="selectedTabIndex" :ui="EGTabsStyles" :items="tabItems">
     <template #details>
       <EGFormOrgDetails
         :key="resetFormKey"
@@ -346,6 +375,10 @@
 
     <template #labs v-if="props.superuser">
       <EGLabsList superuser :org-id="props.orgId" />
+    </template>
+
+    <template #workflow-access>
+      <EGWorkflowLabAccessPage v-if="workflowAccessPanelMounted" :org-id="props.orgId" embedded />
     </template>
 
     <template #users>
