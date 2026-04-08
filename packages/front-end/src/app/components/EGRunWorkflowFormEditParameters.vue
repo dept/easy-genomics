@@ -41,10 +41,11 @@
    */
   const nfSchemaDefMap = computed<Record<string, any>>(() => {
     const schema = props.nfSchema as any;
-    if (!schema?.definitions) return {};
+    const defs = schema?.definitions ?? schema?.$defs;
+    if (!defs) return {};
 
     const map: Record<string, any> = {};
-    for (const section of Object.values(schema.definitions) as any[]) {
+    for (const section of Object.values(defs) as any[]) {
       if (section.properties) {
         for (const [name, def] of Object.entries(section.properties)) {
           map[name] = def;
