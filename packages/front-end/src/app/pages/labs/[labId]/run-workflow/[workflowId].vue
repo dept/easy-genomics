@@ -32,6 +32,7 @@
   const hasLaunched = ref<boolean>(false);
   const exitConfirmed = ref<boolean>(false);
   const nextRoute = ref<string | null>(null);
+  const hasSavedDefaults = ref<boolean>(false);
 
   const selectedStepIndex = ref(0);
   const steps = ref([
@@ -179,6 +180,8 @@
         ),
       );
     }
+
+    hasSavedDefaults.value = Object.keys(workflowDefaultParams).length > 0;
 
     // initialize wip run in store
     runStore.updateWipOmicsRun(omicsRunTempId.value, {
@@ -362,8 +365,10 @@
               :lab-id="labId"
               :workflow-id="workflowId"
               :omics-run-temp-id="omicsRunTempId"
+              :has-saved-defaults="hasSavedDefaults"
               @next-step="() => nextStep('review')"
               @previous-step="() => previousStep()"
+              @defaults-cleared="hasSavedDefaults = false"
             />
           </template>
 
