@@ -8,6 +8,7 @@
     labId: string;
     workflowId: string;
     omicsRunTempId: string;
+    nfSchema?: object | null;
   }>();
 
   const emit = defineEmits(['next-step', 'previous-step', 'step-validated']);
@@ -26,34 +27,81 @@
     name: string;
     description: string;
     optional: boolean;
+    // Enriched from nf-core JSON Schema
+    type?: string;
+    default?: string | boolean | number;
+    enum?: string[];
+    helpText?: string;
+    hidden?: boolean;
   };
+
+  /**
+   * Build a flat lookup of all parameter definitions from the nf-core JSON Schema.
+   * The schema groups parameters into `definitions` sections, each with `properties`.
+   */
+  const nfSchemaDefMap = computed<Record<string, any>>(() => {
+    const schema = props.nfSchema as any;
+    const defs = schema?.definitions ?? schema?.$defs;
+    if (!defs) return {};
+
+    const map: Record<string, any> = {};
+    for (const section of Object.values(defs) as any[]) {
+      if (section.properties) {
+        for (const [name, def] of Object.entries(section.properties)) {
+          map[name] = def;
+        }
+      }
+    }
+    return map;
+  });
 
   const orderedSchema = computed<SchemaItem[]>(() =>
     Object.keys(props.schema)
-      .map((fieldName) => ({
-        name: fieldName,
-        ...props.schema[fieldName],
-      }))
+      .map((fieldName) => {
+        const paramDef = nfSchemaDefMap.value[fieldName] || {};
+        return {
+          name: fieldName,
+          ...(props.schema as any)[fieldName], // description + optional from parameterTemplate
+          type: paramDef.type,
+          default: paramDef.default,
+          enum: paramDef.enum,
+          helpText: paramDef.help_text,
+          hidden: paramDef.hidden,
+        } as SchemaItem;
+      })
+      .filter((field) => !field.hidden)
       .sort((fieldA, fieldB) => {
-        // list mandatory fields first
+        // Required fields first
         if (fieldA.optional !== true && fieldB.optional === true) return -1;
         if (fieldA.optional === true && fieldB.optional !== true) return 1;
-
         return 0;
       }),
   );
 
-  // all schema fields with empty string as default
-  const paramDefaults: { [key: string]: '' } = Object.fromEntries(
-    Object.keys(props.schema).map((fieldName) => [fieldName, '']),
+  /**
+   * Default values for each parameter:
+   * 1. Schema default (from nf-core JSON Schema) when available
+   * 2. Empty string / false for boolean
+   * User-saved defaults in `props.params` overlay these below.
+   */
+  const paramDefaults = computed<Record<string, string | boolean | number>>(() =>
+    Object.fromEntries(
+      Object.keys(props.schema).map((fieldName) => {
+        const paramDef = nfSchemaDefMap.value[fieldName];
+        if (paramDef?.default !== undefined) {
+          return [fieldName, paramDef.default];
+        }
+        return [fieldName, paramDef?.type === 'boolean' ? false : ''];
+      }),
+    ),
   );
 
   const localProps = reactive({
     schema: props.schema,
     params: {
-      // initialize all fields with empty string as default
-      ...paramDefaults,
-      // overwrite with any existing values
+      // Initialize with schema defaults (or empty)
+      ...paramDefaults.value,
+      // Overlay with any user-saved or already-set values
       ...props.params,
     },
   });
@@ -64,7 +112,6 @@
   function autoPopulateRunName() {
     const runName = wipOmicsRun.value?.runName;
     if (runName && localProps.params) {
-      // Check for both 'runname' and 'run_name' parameters
       if ('runname' in localProps.params && !localProps.params['runname']) {
         localProps.params['runname'] = runName;
       }
@@ -74,12 +121,10 @@
     }
   }
 
-  // Auto-populate when component mounts
   onMounted(() => {
     autoPopulateRunName();
   });
 
-  // Watch for changes in run name and auto-populate if needed
   watch(
     () => wipOmicsRun.value?.runName,
     (newRunName) => {
@@ -155,7 +200,6 @@
   }
 
   watch(
-    // watches for input changes in the local params object and updates the store with the new value
     () => localProps.params,
     (val) => {
       if (val) runStore.updateWipOmicsRunParams(props.omicsRunTempId, val);
@@ -185,14 +229,42 @@
     </div>
     <div class="w-3/4">
       <EGCard>
-        <div v-for="schemaField in orderedSchema" class="mb-6">
+        <div v-for="schemaField in orderedSchema" :key="schemaField.name" class="mb-6">
           <EGFormGroup
             :label="schemaField.name"
             :name="schemaField.name"
             :required="wipOmicsRun.paramsRequired.includes(schemaField.name)"
           >
-            <EGParametersStringField
+            <!-- Boolean: toggle -->
+            <EGParametersBooleanField
+              v-if="schemaField.type === 'boolean'"
               :description="schemaField.description"
+              :help-text="schemaField.helpText"
+              :model-value="!!localProps.params[schemaField.name]"
+              @update:model-value="(val) => (localProps.params[schemaField.name] = val)"
+            />
+            <!-- Integer / number: numeric input -->
+            <EGParametersNumberField
+              v-else-if="schemaField.type === 'integer' || schemaField.type === 'number'"
+              :description="schemaField.description"
+              :help-text="schemaField.helpText"
+              :model-value="Number(localProps.params[schemaField.name]) || 0"
+              @update:model-value="(val) => (localProps.params[schemaField.name] = val)"
+            />
+            <!-- Enum: searchable select -->
+            <EGParametersSelectField
+              v-else-if="schemaField.enum?.length"
+              :description="schemaField.description"
+              :help-text="schemaField.helpText"
+              :options="schemaField.enum"
+              :model-value="String(localProps.params[schemaField.name] ?? '')"
+              @update:model-value="(val) => (localProps.params[schemaField.name] = val)"
+            />
+            <!-- Default: text input -->
+            <EGParametersStringField
+              v-else
+              :description="schemaField.description"
+              :help-text="schemaField.helpText"
               v-model="localProps.params[schemaField.name]"
             />
           </EGFormGroup>

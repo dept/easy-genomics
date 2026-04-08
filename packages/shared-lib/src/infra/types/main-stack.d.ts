@@ -31,6 +31,7 @@ export interface BackEndStackProps extends BaseStackProps {
   sysAdminPassword: string;
   testUsers?: TestUserDetails[];
   seqeraApiBaseUrl: string;
+  githubPatSecretName?: string;
   vpcPeering?: VpcPeering;
   googleClientId?: string;
   googleClientSecret?: string;

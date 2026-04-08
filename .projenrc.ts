@@ -341,6 +341,7 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@aws-sdk/client-ses',
     '@aws-sdk/client-sns',
     '@aws-sdk/client-sqs',
+    '@aws-sdk/client-secrets-manager',
     '@aws-sdk/client-ssm',
     '@aws-sdk/client-sso-oidc',
     '@aws-sdk/client-sts',
