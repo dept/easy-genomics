@@ -59,6 +59,14 @@
   const orgId = computed<string | null>(() => lab.value?.OrganizationId ?? null);
   const labName = computed<string>(() => lab.value?.Name || '');
 
+  /** Pipeline Runs table footer; only when Settings → Run retention (months) is greater than zero. */
+  const runRecordsRetentionNotice = computed((): string | undefined => {
+    // ?? applies default-for-missing only; explicit 0 must stay 0 (footnote hidden).
+    const months = lab.value?.RunRetentionMonths ?? 6;
+    if (months <= 0) return undefined;
+    return `Run records are deleted ${months} month${months > 1 ? 's' : ''} after a run reaches a final status, per retention policy.`;
+  });
+
   /**
    * Fetch Lab details, pipelines, workflows, runs, and Lab users before component mount and start periodic fetching
    */
@@ -68,15 +76,13 @@
   });
 
   onMounted(async () => {
-    // set tabIndex according to initialTab prop
     setTabIndex();
+    uiStore.setSidebarVisible(true);
 
-    // clean up timeout
     if (intervalId) {
       clearTimeout(intervalId);
     }
 
-    // update most recent lab
     await updateDefaultLab(props.labId);
   });
 
@@ -84,16 +90,17 @@
     if (intervalId) {
       clearTimeout(intervalId);
     }
+    uiStore.setSidebarVisible(false);
   });
 
   // Page Tabs
 
-  const tabItems = computed<{ key: string; label: string }[]>(() => {
-    const runsTab = { key: 'runs', label: 'Pipeline Runs' };
-    const seqeraPipelinesTab = { key: 'seqeraPipelines', label: 'Seqera Pipelines' };
-    const omicsWorkflowsTab = { key: 'omicsWorkflows', label: 'HealthOmics Workflows' };
-    const usersTab = { key: 'users', label: 'Users' };
-    const detailsTab = { key: 'details', label: 'Settings' };
+  const tabItems = computed<{ key: string; label: string; icon: string; dividerBefore?: boolean }[]>(() => {
+    const runsTab = { key: 'runs', label: 'Pipeline Runs', icon: 'i-heroicons-clock' };
+    const seqeraPipelinesTab = { key: 'seqeraPipelines', label: 'Seqera Pipelines', icon: 'i-heroicons-command-line' };
+    const omicsWorkflowsTab = { key: 'omicsWorkflows', label: 'HealthOmics Workflows', icon: 'i-heroicons-beaker' };
+    const usersTab = { key: 'users', label: 'Users', icon: 'i-heroicons-users' };
+    const detailsTab = { key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth' };
 
     const seqeraAvailable = lab.value?.NextFlowTowerEnabled && !missingPAT.value;
     const omicsAvailable = lab.value?.AwsHealthOmicsEnabled;
@@ -105,15 +112,33 @@
       if (seqeraAvailable) items.push(seqeraPipelinesTab);
       if (omicsAvailable) items.push(omicsWorkflowsTab);
     }
-    items.push(usersTab);
+    items.push({ ...usersTab, dividerBefore: items.length > 0 });
     items.push(detailsTab);
 
     return items;
   });
 
+  const activeTabKey = computed(() => tabItems.value[tabIndex.value]?.key || '');
+
+  const pageDescription = computed(() => {
+    const descriptions: Record<string, string> = {
+      runs: 'View your pipeline runs',
+      seqeraPipelines: 'View your Seqera pipelines',
+      omicsWorkflows: 'View your HealthOmics workflows',
+      users: 'View your lab users',
+      details: 'View your lab settings',
+    };
+    return descriptions[activeTabKey.value] || '';
+  });
+
   function setTabIndex() {
     const tabMatchIndex = tabItems.value.findIndex((tab) => tab.label === props.initialTab);
     tabIndex.value = tabMatchIndex !== -1 ? tabMatchIndex : 0;
+  }
+
+  function handleTabChange(newIndex: number) {
+    $router.push({ query: { ...$router.currentRoute.query, tab: tabItems.value[newIndex].label } });
+    tabIndex.value = newIndex;
   }
 
   // Lab Runs Tab
@@ -125,6 +150,7 @@
     { key: 'CreatedAt', label: 'Created At', sortable: true },
     { key: 'lastUpdated', label: 'Last Updated', sortable: true },
     { key: 'Status', label: 'Status', sortable: true },
+    { key: 'WorkflowVersionName', label: 'Workflow version', sortable: true },
     { key: 'Owner', label: 'Owner', sortable: true },
     { key: 'actions', label: 'Actions' },
   ];
@@ -629,51 +655,27 @@
 
     await Promise.all(promises);
   });
-
-  // Note: the UTabs :ui attribute has to be defined locally in this file - if it is imported from another file,
-  //  Tailwind won't pick up and include the classes used and styles will be missing.
-  // To keep the tab styling consistent throughout the app, any changes made here need to be duplicated to all other
-  //  UTabs that use an "EGTabsStyles" as input to the :ui attribute.
-  const EGTabsStyles = {
-    base: 'focus:outline-none',
-    list: {
-      base: '!flex rounded-none mb-6 mt-0',
-      padding: 'p-0',
-      height: 'h-14',
-      marker: {
-        background: '',
-        shadow: '',
-      },
-      tab: {
-        base: 'font-serif w-auto mr-3 rounded-xl border border-solid',
-        background: '',
-        active: 'text-white bg-primary border-primary',
-        inactive: 'font-serif text-text-body border-background-dark-grey',
-        height: '',
-        padding: 'px-5 py-2',
-        size: 'text-sm',
-      },
-    },
-  };
 </script>
 
 <template>
+  <EGSidebarNav v-if="lab" :items="tabItems" :model-value="tabIndex" @update:model-value="handleTabChange" />
+
   <EGPageHeader
     :title="labName"
-    description="View your Lab users, details and pipelines/workflows"
+    :description="pageDescription"
     :back-action="() => (superuser ? $router.push(`/orgs/${orgId || ''}`) : $router.push('/labs'))"
     :show-back="true"
     show-org-breadcrumb
     show-lab-breadcrumb
   >
     <EGButton
+      v-if="!superuser && activeTabKey === 'users'"
       label="Add Lab Users"
-      v-if="!superuser"
       :disabled="!canAddUsers"
       @click="showAddUserModule = !showAddUserModule"
     />
     <EGAddLabUsersModule
-      v-if="showAddUserModule && !!orgId"
+      v-if="showAddUserModule && activeTabKey === 'users' && !!orgId"
       @added-user-to-lab="handleUserAddedToLab()"
       :org-id="orgId"
       :lab-id="labId"
@@ -683,216 +685,201 @@
     />
   </EGPageHeader>
 
-  <UTabs
-    v-if="lab"
-    :ui="EGTabsStyles"
-    :default-index="0"
-    :items="tabItems"
-    :model-value="tabIndex"
-    @update:model-value="
-      (newIndex) => {
-        $router.push({ query: { ...$router.currentRoute.query, tab: tabItems[newIndex].label } });
-        tabIndex = newIndex;
-      }
-    "
-  >
-    <template #item="{ item }">
-      <!-- Runs tab -->
-      <div v-if="item.key === 'runs'">
-        <div class="mb-6">
-          <div class="flex flex-row items-center gap-4">
-            <EGSearchInput
-              @input-event="updateRunsSearchQuery"
-              placeholder="Search runs"
-              :disabled="useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
-              class="w-[408px]"
-            />
-            <UCheckbox label="My runs only" :ui="{ base: 'size-[24px]' }" v-model="runsTableFilterMyRunsOnly" />
-          </div>
-          <p class="text-muted mt-1 text-xs">
-            Search by all run fields or use queries like
-            <span class="font-mono">"status"=completed</span>
-            .
-          </p>
-        </div>
-
-        <EGTable
-          :row-click-action="viewRunDetails"
-          :table-data="filteredRunsTableItems"
-          :columns="runsTableColumns"
-          v-model:sort="runsTableSort"
-          :is-loading="useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
-          :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
-        >
-          <template #RunName-data="{ row: run }">
-            <div v-if="run.RunName" class="text-body text-sm font-medium">{{ run.RunName }}</div>
-            <div v-if="run.WorkflowName" class="text-muted text-xs font-normal">{{ run.WorkflowName }}</div>
-          </template>
-
-          <template #CreatedAt-data="{ row: run }">
-            <div class="text-body text-sm font-medium">{{ getDate(run.CreatedAt) }}</div>
-            <div class="text-muted">{{ getTime(run.CreatedAt) }}</div>
-          </template>
-
-          <template #lastUpdated-data="{ row: run }">
-            <div class="text-body text-sm font-medium">{{ getDate(run.ModifiedAt) }}</div>
-            <div class="text-muted">{{ getTime(run.ModifiedAt) }}</div>
-          </template>
-
-          <template #Status-data="{ row: run }">
-            <EGStatusChip :status="run.Status" />
-          </template>
-
-          <template #Owner-data="{ row: run }">
-            <div class="text-body text-sm font-medium">{{ run.Owner }}</div>
-          </template>
-
-          <template #actions-data="{ row }">
-            <div class="flex justify-end">
-              <EGActionButton :items="runsActionItems(row)" class="ml-2" @click="$event.stopPropagation()" />
-            </div>
-          </template>
-
-          <template #empty-state>
-            <div class="text-muted flex h-24 items-center justify-center font-normal">
-              There are no Runs in your Lab
-            </div>
-          </template>
-        </EGTable>
-      </div>
-
-      <!-- Seqera Pipelines tab -->
-      <div v-if="item.key === 'seqeraPipelines'">
-        <EGTable
-          :row-click-action="viewRunSeqeraPipeline"
-          :table-data="seqeraPipelines"
-          :columns="seqeraPipelinesTableColumns"
-          :is-loading="useUiStore().anyRequestPending(['loadLabData', 'getSeqeraPipelines'])"
-          :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'getSeqeraPipelines'])"
-        >
-          <template #Name-data="{ row: pipeline }">
-            <div class="flex items-center">
-              {{ pipeline?.name }}
-            </div>
-          </template>
-
-          <template #description-data="{ row: pipeline }">
-            {{ pipeline?.description }}
-          </template>
-
-          <template #actions-data="{ row }">
-            <div class="flex justify-end">
-              <EGActionButton :items="seqeraPipelinesActionItems(row)" class="ml-2" @click="$event.stopPropagation()" />
-            </div>
-          </template>
-
-          <template #empty-state>
-            <div class="text-muted flex h-24 items-center justify-center font-normal">
-              There are no Pipelines assigned to this Lab
-            </div>
-          </template>
-        </EGTable>
-      </div>
-
-      <!-- HealthOmics Pipelines tab -->
-      <div v-if="item.key === 'omicsWorkflows'">
-        <EGTable
-          :row-click-action="viewRunOmicsWorkflow"
-          :table-data="omicsWorkflows"
-          :columns="omicsWorkflowsTableColumns"
-          :is-loading="useUiStore().anyRequestPending(['loadLabData', 'getOmicsWorkflows'])"
-          :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'getOmicsWorkflows'])"
-        >
-          <template #Name-data="{ row: workflow }">
-            <div class="flex items-center">
-              {{ workflow?.name }}
-            </div>
-          </template>
-
-          <template #description-data="{ row: workflow }">
-            {{ workflow?.description }}
-          </template>
-
-          <template #actions-data="{ row: workflow }">
-            <div class="flex justify-end">
-              <EGActionButton
-                :items="omicsWorkflowsActionItems(workflow)"
-                class="ml-2"
-                @click="$event.stopPropagation()"
-              />
-            </div>
-          </template>
-
-          <template #empty-state>
-            <div class="text-muted flex h-24 items-center justify-center font-normal">
-              There are no Workflows assigned to this Lab
-            </div>
-          </template>
-        </EGTable>
-      </div>
-
-      <!-- Lab Users tab -->
-      <div v-if="item.key === 'users'">
+  <!-- Runs tab -->
+  <div v-if="activeTabKey === 'runs'">
+    <div class="mb-6">
+      <div class="flex flex-row items-center gap-4">
         <EGSearchInput
-          @input-event="updateSearchOutput"
-          placeholder="Search user"
-          :disabled="useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'addUserToLab'])"
-          class="my-6 w-[408px]"
+          @input-event="updateRunsSearchQuery"
+          placeholder="Search runs"
+          :disabled="useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
+          class="w-[408px]"
         />
-
-        <EGDialog
-          actionLabel="Remove User"
-          :actionVariant="ButtonVariantEnum.enum.destructive"
-          cancelLabel="Cancel"
-          :cancelVariant="ButtonVariantEnum.enum.secondary"
-          @action-triggered="handleRemoveUserFromLab"
-          :primaryMessage="primaryMessage"
-          v-model="isOpen"
-        />
-
-        <EGTable
-          :table-data="usersTableItems"
-          :columns="usersTableColumns"
-          :is-loading="useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'assignLabRole'])"
-          :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'assignLabRole'])"
-        >
-          <template #displayName-data="{ row: labUser }">
-            <div class="flex items-center">
-              <EGUserDisplay :name="labUser.displayName" :email="labUser.UserEmail" />
-            </div>
-          </template>
-
-          <template #actions-data="{ row: labUser }">
-            <div class="flex items-center">
-              <EGUserRoleDropdownNew
-                :show-remove-from-lab="true"
-                :key="labUser?.LabManager"
-                :disabled="
-                  useUiStore().anyRequestPending(['loadLabData', 'getLabUsers']) ||
-                  !userStore.canEditLabUsers(labId) ||
-                  userStore.isSuperuser
-                "
-                :user="labUser"
-                @assign-lab-role="handleAssignLabRole($event)"
-                @remove-user-from-lab="showRemoveUserDialog($event.user)"
-              />
-            </div>
-          </template>
-
-          <template #empty-state>
-            <div class="text-muted flex h-24 items-center justify-center font-normal">
-              There are no users in your Lab
-            </div>
-          </template>
-        </EGTable>
+        <UCheckbox label="My runs only" :ui="{ base: 'size-[24px]' }" v-model="runsTableFilterMyRunsOnly" />
       </div>
+      <p class="text-muted mt-1 text-xs">
+        Search by all run fields or use queries like
+        <span class="font-mono">"status"=completed</span>
+        .
+      </p>
+    </div>
 
-      <!-- Lab Details -->
-      <div v-if="item.key === 'details'">
-        <EGFormLabDetails @updated="handleDetailsUpdated" />
-      </div>
-    </template>
-  </UTabs>
+    <EGTable
+      :row-click-action="viewRunDetails"
+      :table-data="filteredRunsTableItems"
+      :columns="runsTableColumns"
+      v-model:sort="runsTableSort"
+      :is-loading="useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
+      :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
+    >
+      <template #RunName-data="{ row: run }">
+        <div v-if="run.RunName" class="text-body text-sm font-medium">{{ run.RunName }}</div>
+        <div v-if="run.WorkflowName" class="text-muted text-xs font-normal">{{ run.WorkflowName }}</div>
+      </template>
+
+      <template #CreatedAt-data="{ row: run }">
+        <div class="text-body text-sm font-medium">{{ getDate(run.CreatedAt) }}</div>
+        <div class="text-muted">{{ getTime(run.CreatedAt) }}</div>
+      </template>
+
+      <template #lastUpdated-data="{ row: run }">
+        <div class="text-body text-sm font-medium">{{ getDate(run.ModifiedAt) }}</div>
+        <div class="text-muted">{{ getTime(run.ModifiedAt) }}</div>
+      </template>
+
+      <template #Status-data="{ row: run }">
+        <EGStatusChip :status="run.Status" />
+      </template>
+
+      <template #WorkflowVersionName-data="{ row: run }">
+        <div class="text-body text-sm font-medium">
+          {{ run.WorkflowVersionName || '—' }}
+        </div>
+      </template>
+
+      <template #Owner-data="{ row: run }">
+        <div class="text-body text-sm font-medium">{{ run.Owner }}</div>
+      </template>
+
+      <template #actions-data="{ row }">
+        <div class="flex justify-end">
+          <EGActionButton :items="runsActionItems(row)" class="ml-2" @click="$event.stopPropagation()" />
+        </div>
+      </template>
+
+      <template #empty-state>
+        <div class="text-muted flex h-24 items-center justify-center font-normal">There are no Runs in your Lab</div>
+      </template>
+    </EGTable>
+    <p v-if="runRecordsRetentionNotice" class="text-muted mt-3 max-w-3xl text-xs leading-relaxed">
+      {{ runRecordsRetentionNotice }}
+    </p>
+  </div>
+
+  <!-- Seqera Pipelines tab -->
+  <div v-if="activeTabKey === 'seqeraPipelines'">
+    <EGTable
+      :row-click-action="viewRunSeqeraPipeline"
+      :table-data="seqeraPipelines"
+      :columns="seqeraPipelinesTableColumns"
+      :is-loading="useUiStore().anyRequestPending(['loadLabData', 'getSeqeraPipelines'])"
+      :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'getSeqeraPipelines'])"
+    >
+      <template #Name-data="{ row: pipeline }">
+        <div class="flex items-center">
+          {{ pipeline?.name }}
+        </div>
+      </template>
+
+      <template #description-data="{ row: pipeline }">
+        {{ pipeline?.description }}
+      </template>
+
+      <template #actions-data="{ row }">
+        <div class="flex justify-end">
+          <EGActionButton :items="seqeraPipelinesActionItems(row)" class="ml-2" @click="$event.stopPropagation()" />
+        </div>
+      </template>
+
+      <template #empty-state>
+        <div class="text-muted flex h-24 items-center justify-center font-normal">
+          There are no Pipelines assigned to this Lab
+        </div>
+      </template>
+    </EGTable>
+  </div>
+
+  <!-- HealthOmics Workflows tab -->
+  <div v-if="activeTabKey === 'omicsWorkflows'">
+    <EGTable
+      :row-click-action="viewRunOmicsWorkflow"
+      :table-data="omicsWorkflows"
+      :columns="omicsWorkflowsTableColumns"
+      :is-loading="useUiStore().anyRequestPending(['loadLabData', 'getOmicsWorkflows'])"
+      :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'getOmicsWorkflows'])"
+    >
+      <template #Name-data="{ row: workflow }">
+        <div class="flex items-center">
+          {{ workflow?.name }}
+        </div>
+      </template>
+
+      <template #description-data="{ row: workflow }">
+        {{ workflow?.description }}
+      </template>
+
+      <template #actions-data="{ row: workflow }">
+        <div class="flex justify-end">
+          <EGActionButton :items="omicsWorkflowsActionItems(workflow)" class="ml-2" @click="$event.stopPropagation()" />
+        </div>
+      </template>
+
+      <template #empty-state>
+        <div class="text-muted flex h-24 items-center justify-center font-normal">
+          There are no Workflows assigned to this Lab
+        </div>
+      </template>
+    </EGTable>
+  </div>
+
+  <!-- Lab Users tab -->
+  <div v-if="activeTabKey === 'users'">
+    <EGSearchInput
+      @input-event="updateSearchOutput"
+      placeholder="Search user"
+      :disabled="useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'addUserToLab'])"
+      class="my-6 w-[408px]"
+    />
+
+    <EGDialog
+      actionLabel="Remove User"
+      :actionVariant="ButtonVariantEnum.enum.destructive"
+      cancelLabel="Cancel"
+      :cancelVariant="ButtonVariantEnum.enum.secondary"
+      @action-triggered="handleRemoveUserFromLab"
+      :primaryMessage="primaryMessage"
+      v-model="isOpen"
+    />
+
+    <EGTable
+      :table-data="usersTableItems"
+      :columns="usersTableColumns"
+      :is-loading="useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'assignLabRole'])"
+      :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'assignLabRole'])"
+    >
+      <template #displayName-data="{ row: labUser }">
+        <div class="flex items-center">
+          <EGUserDisplay :name="labUser.displayName" :email="labUser.UserEmail" />
+        </div>
+      </template>
+
+      <template #actions-data="{ row: labUser }">
+        <div class="flex items-center">
+          <EGUserRoleDropdownNew
+            :show-remove-from-lab="true"
+            :key="labUser?.LabManager"
+            :disabled="
+              useUiStore().anyRequestPending(['loadLabData', 'getLabUsers']) ||
+              !userStore.canEditLabUsers(labId) ||
+              userStore.isSuperuser
+            "
+            :user="labUser"
+            @assign-lab-role="handleAssignLabRole($event)"
+            @remove-user-from-lab="showRemoveUserDialog($event.user)"
+          />
+        </div>
+      </template>
+
+      <template #empty-state>
+        <div class="text-muted flex h-24 items-center justify-center font-normal">There are no users in your Lab</div>
+      </template>
+    </EGTable>
+  </div>
+
+  <!-- Lab Details -->
+  <div v-if="activeTabKey === 'details'">
+    <EGFormLabDetails @updated="handleDetailsUpdated" />
+  </div>
 
   <EGDialog
     action-label="Cancel Run"
