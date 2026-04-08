@@ -39,35 +39,24 @@
   // Table-related refs and computed props
   const searchOutput = ref('');
 
-  const showWorkflowAccessTab = computed(() => props.superuser || props.orgAdmin);
+  const tabIndex = ref(0);
 
   const tabItems = computed(() => {
-    const items: { slot: string; label: string }[] = [];
+    const items: { key: string; label: string; icon: string; dividerBefore?: boolean }[] = [];
+
     if (props.superuser) {
-      items.push({ slot: 'labs', label: 'All Labs' });
+      items.push({ key: 'labs', label: 'All Labs', icon: 'i-heroicons-building-library' });
     }
-    items.push({ slot: 'users', label: 'All users' });
-    if (showWorkflowAccessTab.value) {
-      items.push({ slot: 'workflow-access', label: 'Workflow access' });
-    }
-    items.push({ slot: 'details', label: 'Settings' });
+    items.push({ key: 'users', label: 'All users', icon: 'i-heroicons-users' });
+    items.push({ key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth', dividerBefore: true });
+
     return items;
   });
 
-  const selectedTabIndex = ref(0);
+  const activeTabKey = computed(() => tabItems.value[tabIndex.value]?.key || '');
 
-  /** Mount workflow access panel once opened (or via ?tab=) so data loads lazily; stay mounted to keep unsaved edits. */
-  const workflowAccessPanelMounted = ref(false);
-
-  function syncWorkflowAccessTabFromQuery() {
-    if (route.query.tab !== 'workflow-access' || !showWorkflowAccessTab.value) {
-      return;
-    }
-    const idx = tabItems.value.findIndex((t) => t.slot === 'workflow-access');
-    if (idx >= 0) {
-      selectedTabIndex.value = idx;
-      workflowAccessPanelMounted.value = true;
-    }
+  function handleTabChange(newIndex: number) {
+    tabIndex.value = newIndex;
   }
 
   watch(tabItems, (items) => {
@@ -170,6 +159,14 @@
 
   onBeforeMount(async () => {
     await fetchOrgData();
+  });
+
+  onMounted(() => {
+    useUiStore().setSidebarVisible(true);
+  });
+
+  onBeforeUnmount(() => {
+    useUiStore().setSidebarVisible(false);
   });
 
   async function handleRemoveOrgUser() {
@@ -318,35 +315,11 @@
       useUiStore().setRequestComplete('editOrg');
     }
   }
-
-  // Note: the UTabs :ui attribute has to be defined locally in this file - if it is imported from another file,
-  //  Tailwind won't pick up and include the classes used and styles will be missing.
-  // To keep the tab styling consistent throughout the app, any changes made here need to be duplicated to all other
-  //  UTabs that use an "EGTabsStyles" as input to the :ui attribute.
-  const EGTabsStyles = {
-    base: 'focus:outline-none',
-    list: {
-      base: '!flex rounded-none mb-6 mt-0',
-      padding: 'p-0',
-      height: 'h-14',
-      marker: {
-        background: '',
-        shadow: '',
-      },
-      tab: {
-        base: 'font-serif w-auto mr-3 rounded-xl border border-solid',
-        background: '',
-        active: 'text-white bg-primary border-primary',
-        inactive: 'font-serif text-text-body border-background-dark-grey',
-        height: '',
-        padding: 'px-5 py-2',
-        size: 'text-sm',
-      },
-    },
-  };
 </script>
 
 <template>
+  <EGSidebarNav :items="tabItems" :model-value="tabIndex" @update:model-value="handleTabChange" />
+
   <EGPageHeader
     :title="org.Name"
     :description="org.Description"
@@ -356,104 +329,105 @@
     :skeleton-config="{ titleLines: 1, descriptionLines: 1 }"
     show-org-breadcrumb
   >
-    <EGButton label="Invite users" @click="() => (showInviteModule = !showInviteModule)" />
-    <div class="mt-2 w-[500px]" v-if="showInviteModule">
+    <EGButton
+      v-if="activeTabKey === 'users'"
+      label="Invite users"
+      @click="() => (showInviteModule = !showInviteModule)"
+    />
+    <div class="mt-2 w-[500px]" v-if="showInviteModule && activeTabKey === 'users'">
       <EGInviteModule @invite-success="refreshUserList($event)" :org-id="props.orgId" />
     </div>
   </EGPageHeader>
 
-  <UTabs v-model="selectedTabIndex" :ui="EGTabsStyles" :items="tabItems">
-    <template #details>
-      <EGFormOrgDetails
-        :key="resetFormKey"
-        @submit-form-org-details="onSubmit($event)"
-        :name="org.Name"
-        :description="org.Description"
-        :seqera-base-url="org.NextFlowTowerApiBaseUrl"
+  <!-- Settings tab -->
+  <div v-if="activeTabKey === 'details'">
+    <EGFormOrgDetails
+      :key="resetFormKey"
+      @submit-form-org-details="onSubmit($event)"
+      :name="org.Name"
+      :description="org.Description"
+      :seqera-base-url="org.NextFlowTowerApiBaseUrl"
+    />
+  </div>
+
+  <!-- All Labs tab (superuser) -->
+  <div v-if="activeTabKey === 'labs' && props.superuser">
+    <EGLabsList superuser :org-id="props.orgId" />
+  </div>
+
+  <!-- All users tab -->
+  <div v-if="activeTabKey === 'users'">
+    <EGEmptyDataCTA
+      v-if="!isLoading && hasNoData"
+      message="You don't have any users in this organization yet."
+      img-src="/images/empty-state-user.jpg"
+    />
+
+    <template v-if="!hasNoData">
+      <EGSearchInput
+        @input-event="updateSearchOutput"
+        placeholder="Search user"
+        class="my-6 w-[408px]"
+        :disabled="isLoading"
       />
-    </template>
 
-    <template #labs v-if="props.superuser">
-      <EGLabsList superuser :org-id="props.orgId" />
-    </template>
-
-    <template #workflow-access>
-      <EGWorkflowLabAccessPage v-if="workflowAccessPanelMounted" :org-id="props.orgId" embedded />
-    </template>
-
-    <template #users>
-      <EGEmptyDataCTA
-        v-if="!isLoading && hasNoData"
-        message="You don't have any users in this organization yet."
-        img-src="/images/empty-state-user.jpg"
+      <EGDialog
+        actionLabel="Remove User"
+        :actionVariant="ButtonVariantEnum.enum.destructive"
+        cancelLabel="Cancel"
+        :cancelVariant="ButtonVariantEnum.enum.secondary"
+        @action-triggered="handleRemoveOrgUser"
+        :primaryMessage="removeUserModalPrimaryMessage"
+        v-model="isRemoveUserModalOpen"
       />
 
-      <template v-if="!hasNoData">
-        <EGSearchInput
-          @input-event="updateSearchOutput"
-          placeholder="Search user"
-          class="my-6 w-[408px]"
-          :disabled="isLoading"
-        />
+      <EGTable
+        :table-data="filteredTableData"
+        :columns="tableColumns"
+        :is-loading="isLoading"
+        :action-items="actionItems"
+        :show-pagination="!isLoading"
+        :row-click-action="onRowClicked"
+      >
+        <template #displayName-data="{ row }">
+          <div class="flex items-center">
+            <EGUserDisplay
+              class="mr-4"
+              :name="row.displayName"
+              :email="row.UserEmail"
+              :inactive="row.OrganizationUserStatus !== 'Active'"
+            />
+          </div>
+        </template>
+        <template #status-data="{ row }">
+          <span class="text-muted">{{ (row as OrgUser).OrganizationUserStatus }}</span>
+        </template>
+        <template #labs-data="{ row }">
+          <span class="text-muted">{{ labsCount(row) }}</span>
+        </template>
+        <template #actions-data="{ row, index }">
+          <div class="flex items-center justify-end">
+            <EGButton
+              class="relative z-10"
+              size="sm"
+              variant="secondary"
+              label="Resend Invite"
+              v-if="isInvited((row as OrgUser).OrganizationUserStatus)"
+              @click="
+                $event.stopPropagation();
+                resend(row as OrgUser, index);
+              "
+              :disabled="isButtonDisabled(index) || isButtonRequestPending(index)"
+              :loading="isButtonRequestPending(index)"
+            />
+            <EGActionButton @click="$event.stopPropagation()" :items="actionItems(row)" class="ml-2" />
+          </div>
+        </template>
+      </EGTable>
 
-        <EGDialog
-          actionLabel="Remove User"
-          :actionVariant="ButtonVariantEnum.enum.destructive"
-          cancelLabel="Cancel"
-          :cancelVariant="ButtonVariantEnum.enum.secondary"
-          @action-triggered="handleRemoveOrgUser"
-          :primaryMessage="removeUserModalPrimaryMessage"
-          v-model="isRemoveUserModalOpen"
-        />
-
-        <EGTable
-          :table-data="filteredTableData"
-          :columns="tableColumns"
-          :is-loading="isLoading"
-          :action-items="actionItems"
-          :show-pagination="!isLoading"
-          :row-click-action="onRowClicked"
-        >
-          <template #displayName-data="{ row }">
-            <div class="flex items-center">
-              <EGUserDisplay
-                class="mr-4"
-                :name="row.displayName"
-                :email="row.UserEmail"
-                :inactive="row.OrganizationUserStatus !== 'Active'"
-              />
-            </div>
-          </template>
-          <template #status-data="{ row }">
-            <span class="text-muted">{{ (row as OrgUser).OrganizationUserStatus }}</span>
-          </template>
-          <template #labs-data="{ row }">
-            <span class="text-muted">{{ labsCount(row) }}</span>
-          </template>
-          <template #actions-data="{ row, index }">
-            <div class="flex items-center justify-end">
-              <EGButton
-                class="relative z-10"
-                size="sm"
-                variant="secondary"
-                label="Resend Invite"
-                v-if="isInvited((row as OrgUser).OrganizationUserStatus)"
-                @click="
-                  $event.stopPropagation();
-                  resend(row as OrgUser, index);
-                "
-                :disabled="isButtonDisabled(index) || isButtonRequestPending(index)"
-                :loading="isButtonRequestPending(index)"
-              />
-              <EGActionButton @click="$event.stopPropagation()" :items="actionItems(row)" class="ml-2" />
-            </div>
-          </template>
-        </EGTable>
-
-        <div class="text-muted my-6 text-center text-xs">
-          This organization can only be removed by contacting your System administrator at: [System admin email]
-        </div>
-      </template>
+      <div class="text-muted my-6 text-center text-xs">
+        This organization can only be removed by contacting your System administrator at: [System admin email]
+      </div>
     </template>
-  </UTabs>
+  </div>
 </template>
