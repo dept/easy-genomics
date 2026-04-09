@@ -42,16 +42,32 @@
   const tabIndex = ref(0);
 
   const tabItems = computed(() => {
-    const items: { key: string; label: string; icon: string; dividerBefore?: boolean }[] = [];
-
+    const items: { key: string; label: string }[] = [];
     if (props.superuser) {
-      items.push({ key: 'labs', label: 'All Labs', icon: 'i-heroicons-building-library' });
+      items.push({ key: 'labs', label: 'All Labs' });
     }
-    items.push({ key: 'users', label: 'All users', icon: 'i-heroicons-users' });
-    items.push({ key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth', dividerBefore: true });
-
+    items.push({ key: 'users', label: 'All users' });
+    if (showWorkflowAccessTab.value) {
+      items.push({ key: 'workflow-access', label: 'Workflow access' });
+    }
+    items.push({ key: 'details', label: 'Settings' });
     return items;
   });
+
+  /** Mount workflow access panel once opened (or via ?tab=) so data loads lazily; stay mounted to keep unsaved edits. */
+  const workflowAccessPanelMounted = ref(false);
+  const tabIndex = ref(0);
+
+  function syncWorkflowAccessTabFromQuery() {
+    if (String(route.query.tab) !== 'workflow-access' || !showWorkflowAccessTab.value) {
+      return;
+    }
+    const idx = tabItems.value.findIndex((t) => t.key === 'workflow-access');
+    if (idx >= 0) {
+      tabIndex.value = idx;
+      workflowAccessPanelMounted.value = true;
+    }
+  }
 
   const activeTabKey = computed(() => tabItems.value[tabIndex.value]?.key || '');
 
@@ -60,14 +76,14 @@
   }
 
   watch(tabItems, (items) => {
-    if (selectedTabIndex.value >= items.length) {
-      selectedTabIndex.value = Math.max(0, items.length - 1);
+    if (tabIndex.value >= items.length) {
+      tabIndex.value = Math.max(0, items.length - 1);
     }
   });
 
-  watch(selectedTabIndex, (idx) => {
+  watch(tabIndex, (idx) => {
     const item = tabItems.value[idx];
-    if (item?.slot === 'workflow-access') {
+    if (item?.key === 'workflow-access') {
       workflowAccessPanelMounted.value = true;
     }
   });
@@ -353,6 +369,10 @@
   <!-- All Labs tab (superuser) -->
   <div v-if="activeTabKey === 'labs' && props.superuser">
     <EGLabsList superuser :org-id="props.orgId" />
+  </div>
+
+  <div v-if="activeTabKey === 'workflow-access' && showWorkflowAccessTab">
+    <EGWorkflowLabAccessPage v-if="workflowAccessPanelMounted" :org-id="props.orgId" embedded />
   </div>
 
   <!-- All users tab -->
