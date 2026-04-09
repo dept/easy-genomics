@@ -1,6 +1,7 @@
 /**
- * Lab–workflow allowlist stored in laboratory-workflow-access-table.
+ * Lab–workflow grants stored in laboratory-workflow-access-table.
  * Partition key: LaboratoryId; sort key: WorkflowKey = `${Platform}#${WorkflowId}`.
+ * Labs may use only workflows/pipelines that have a row for that lab; missing rows mean no access.
  */
 export const LABORATORY_WORKFLOW_ACCESS_PLATFORMS = ['HEALTH_OMICS', 'SEQERA'] as const;
 export type LaboratoryWorkflowAccessPlatform = (typeof LABORATORY_WORKFLOW_ACCESS_PLATFORMS)[number];

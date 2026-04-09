@@ -1,11 +1,12 @@
 import { WorkflowStatus } from '@aws-sdk/client-omics';
 import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
-import { handler } from '../../../../../src/app/controllers/aws-healthomics/workflow/list-workflow-versions.lambda';
+
+const mockListByLaboratoryId = jest.fn();
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-workflow-access-service', () => ({
   LaboratoryWorkflowAccessService: jest.fn().mockImplementation(() => ({
-    listByLaboratoryId: jest.fn().mockResolvedValue([]),
+    listByLaboratoryId: mockListByLaboratoryId,
   })),
 }));
 jest.mock('../../../../../src/app/services/omics-service');
@@ -18,6 +19,7 @@ import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
 } from '../../../../../src/app/utils/auth-utils';
+import { handler } from '../../../../../src/app/controllers/aws-healthomics/workflow/list-workflow-versions.lambda';
 
 describe('list-workflow-versions.lambda', () => {
   const LAB_ID = '00000000-0000-0000-0000-000000000002';
@@ -76,6 +78,15 @@ describe('list-workflow-versions.lambda', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+
+    mockListByLaboratoryId.mockReset();
+    mockListByLaboratoryId.mockResolvedValue([
+      {
+        LaboratoryId: LAB_ID,
+        WorkflowKey: `HEALTH_OMICS#${WF_ID}`,
+        OrganizationId: ORG_ID,
+      },
+    ]);
 
     mockLabService = LaboratoryService as jest.MockedClass<typeof LaboratoryService>;
     mockOmicsService = OmicsService as jest.MockedClass<typeof OmicsService>;
@@ -189,6 +200,26 @@ describe('list-workflow-versions.lambda', () => {
     );
 
     expect(result.statusCode).toBe(403);
+    expect(mockOmicsService.prototype.listWorkflowVersions).not.toHaveBeenCalled();
+  });
+
+  it('denies workflow access when laboratory has no grant for that workflow', async () => {
+    mockListByLaboratoryId.mockResolvedValueOnce([]);
+
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+    });
+
+    const result = await handler(
+      createEvent({ laboratoryId: LAB_ID, workflowId: WF_ID }) as any,
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(403);
+    expect(JSON.parse(result.body).ErrorCode).toBe('EG-104');
     expect(mockOmicsService.prototype.listWorkflowVersions).not.toHaveBeenCalled();
   });
 });

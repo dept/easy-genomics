@@ -33,14 +33,6 @@ export function parseWorkflowAccessSortKey(workflowKey: string): {
   return { platform, workflowId };
 }
 
-export function hasWorkflowAccessRulesForPlatform(
-  accessList: Pick<LaboratoryWorkflowAccess, 'WorkflowKey'>[],
-  platform: LaboratoryWorkflowAccessPlatform,
-): boolean {
-  const prefix = `${platform}#`;
-  return accessList.some((a) => a.WorkflowKey.startsWith(prefix));
-}
-
 export function allowedWorkflowIdsForPlatform(
   accessList: LaboratoryWorkflowAccess[],
   platform: LaboratoryWorkflowAccessPlatform,
@@ -66,9 +58,6 @@ export async function assertLaboratoryHasWorkflowAccess(
   accessService: LaboratoryWorkflowAccessService,
 ): Promise<void> {
   const rows = await accessService.listByLaboratoryId(laboratoryId);
-  if (!hasWorkflowAccessRulesForPlatform(rows, platform)) {
-    return;
-  }
   const allowed = allowedWorkflowIdsForPlatform(rows, platform);
   if (!allowed.has(externalWorkflowId)) {
     throw new WorkflowAccessDeniedError();

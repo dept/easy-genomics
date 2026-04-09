@@ -1,10 +1,11 @@
 import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
-import { handler } from '../../../../../src/app/controllers/aws-healthomics/run/create-run-execution.lambda';
+
+const mockListByLaboratoryId = jest.fn();
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-workflow-access-service', () => ({
   LaboratoryWorkflowAccessService: jest.fn().mockImplementation(() => ({
-    listByLaboratoryId: jest.fn().mockResolvedValue([]),
+    listByLaboratoryId: mockListByLaboratoryId,
   })),
 }));
 jest.mock('../../../../../src/app/services/omics-service');
@@ -26,6 +27,7 @@ import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
 } from '../../../../../src/app/utils/auth-utils';
+import { handler } from '../../../../../src/app/controllers/aws-healthomics/run/create-run-execution.lambda';
 
 describe('create-run-execution.lambda', () => {
   const LAB_ID = 'lab-123';
@@ -97,6 +99,11 @@ describe('create-run-execution.lambda', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+
+    mockListByLaboratoryId.mockReset();
+    mockListByLaboratoryId.mockResolvedValue([
+      { LaboratoryId: LAB_ID, WorkflowKey: 'HEALTH_OMICS#wf-123', OrganizationId: ORG_ID },
+    ]);
 
     mockLabService = LaboratoryService as jest.MockedClass<typeof LaboratoryService>;
     mockOmicsService = OmicsService as jest.MockedClass<typeof OmicsService>;
@@ -226,6 +233,22 @@ describe('create-run-execution.lambda', () => {
     const result = await handler(createEvent(baseRequest), createContext(), () => {});
 
     expect(result.statusCode).toBe(403);
+    expect(mockOmicsService.prototype.startRun).not.toHaveBeenCalled();
+  });
+
+  it('denies workflow access when laboratory has no grant for that workflow', async () => {
+    mockListByLaboratoryId.mockResolvedValueOnce([]);
+
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+    });
+
+    const result = await handler(createEvent(baseRequest), createContext(), () => {});
+
+    expect(result.statusCode).toBe(403);
+    expect(JSON.parse(result.body).ErrorCode).toBe('EG-104');
     expect(mockOmicsService.prototype.startRun).not.toHaveBeenCalled();
   });
 });

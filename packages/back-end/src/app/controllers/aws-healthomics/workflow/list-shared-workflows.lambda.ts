@@ -16,11 +16,7 @@ import {
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
-import {
-  allowedWorkflowIdsForPlatform,
-  hasWorkflowAccessRulesForPlatform,
-  workflowIdFromOmicsShare,
-} from '@BE/utils/laboratory-workflow-access-utils';
+import { allowedWorkflowIdsForPlatform, workflowIdFromOmicsShare } from '@BE/utils/laboratory-workflow-access-utils';
 import { AwsHealthOmicsQueryParameters, getAwsHealthOmicsApiQueryParameters } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -78,14 +74,11 @@ export const handler: Handler = async (
     });
 
     const accessRows = await laboratoryWorkflowAccessService.listByLaboratoryId(laboratoryId);
-    let shares = response.shares ?? [];
-    if (hasWorkflowAccessRulesForPlatform(accessRows, 'HEALTH_OMICS')) {
-      const allowed = allowedWorkflowIdsForPlatform(accessRows, 'HEALTH_OMICS');
-      shares = shares.filter((s) => {
-        const wid = workflowIdFromOmicsShare(s);
-        return wid != null && allowed.has(wid);
-      });
-    }
+    const allowed = allowedWorkflowIdsForPlatform(accessRows, 'HEALTH_OMICS');
+    const shares = (response.shares ?? []).filter((s) => {
+      const wid = workflowIdFromOmicsShare(s);
+      return wid != null && allowed.has(wid);
+    });
 
     return buildResponse(200, JSON.stringify({ ...response, shares }), event);
   } catch (err: any) {
