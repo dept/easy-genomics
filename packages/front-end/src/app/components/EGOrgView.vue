@@ -42,35 +42,32 @@
   const showWorkflowAccessTab = computed(() => props.superuser || props.orgAdmin);
 
   const tabItems = computed(() => {
-    const items: { slot: string; label: string }[] = [];
+    const items: { key: string; label: string }[] = [];
     if (props.superuser) {
-      items.push({ slot: 'labs', label: 'All Labs' });
+      items.push({ key: 'labs', label: 'All Labs' });
     }
-    items.push({ slot: 'users', label: 'All users' });
+    items.push({ key: 'users', label: 'All users' });
     if (showWorkflowAccessTab.value) {
-      items.push({ slot: 'workflow-access', label: 'Workflow access' });
+      items.push({ key: 'workflow-access', label: 'Workflow access' });
     }
-    items.push({ slot: 'details', label: 'Settings' });
+    items.push({ key: 'details', label: 'Settings' });
     return items;
   });
 
-  const selectedTabIndex = ref(0);
-
   /** Mount workflow access panel once opened (or via ?tab=) so data loads lazily; stay mounted to keep unsaved edits. */
   const workflowAccessPanelMounted = ref(false);
+  const tabIndex = ref(0);
 
   function syncWorkflowAccessTabFromQuery() {
-    if (route.query.tab !== 'workflow-access' || !showWorkflowAccessTab.value) {
+    if (String(route.query.tab) !== 'workflow-access' || !showWorkflowAccessTab.value) {
       return;
     }
-    const idx = tabItems.value.findIndex((t) => t.slot === 'workflow-access');
+    const idx = tabItems.value.findIndex((t) => t.key === 'workflow-access');
     if (idx >= 0) {
-      selectedTabIndex.value = idx;
+      tabIndex.value = idx;
       workflowAccessPanelMounted.value = true;
     }
   }
-
-  const tabIndex = ref(0);
 
   const activeTabKey = computed(() => tabItems.value[tabIndex.value]?.key || '');
 
@@ -79,14 +76,14 @@
   }
 
   watch(tabItems, (items) => {
-    if (selectedTabIndex.value >= items.length) {
-      selectedTabIndex.value = Math.max(0, items.length - 1);
+    if (tabIndex.value >= items.length) {
+      tabIndex.value = Math.max(0, items.length - 1);
     }
   });
 
-  watch(selectedTabIndex, (idx) => {
+  watch(tabIndex, (idx) => {
     const item = tabItems.value[idx];
-    if (item?.slot === 'workflow-access') {
+    if (item?.key === 'workflow-access') {
       workflowAccessPanelMounted.value = true;
     }
   });
@@ -374,7 +371,7 @@
     <EGLabsList superuser :org-id="props.orgId" />
   </div>
 
-  <div v-if="activeTabKey === 'workflow-access' && props.superuser">
+  <div v-if="activeTabKey === 'workflow-access' && showWorkflowAccessTab">
     <EGWorkflowLabAccessPage v-if="workflowAccessPanelMounted" :org-id="props.orgId" embedded />
   </div>
 
