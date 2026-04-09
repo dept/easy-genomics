@@ -18,7 +18,7 @@ import {
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
-import { allowedWorkflowIdsForPlatform } from '@BE/utils/laboratory-workflow-access-utils';
+import { isWorkflowAccessAllowed } from '@BE/utils/laboratory-workflow-access-utils';
 import { getNextFlowApiQueryParameters, httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -99,9 +99,8 @@ export const handler: Handler = async (
     );
 
     const accessRows = await laboratoryWorkflowAccessService.listByLaboratoryId(laboratoryId);
-    const allowed = allowedWorkflowIdsForPlatform(accessRows, 'SEQERA');
     const pipelines = (response.pipelines ?? []).filter(
-      (p) => p.pipelineId != null && allowed.has(String(p.pipelineId)),
+      (p) => p.pipelineId != null && isWorkflowAccessAllowed(laboratory, accessRows, 'SEQERA', String(p.pipelineId)),
     );
 
     return buildResponse(200, JSON.stringify({ ...response, pipelines }), event);

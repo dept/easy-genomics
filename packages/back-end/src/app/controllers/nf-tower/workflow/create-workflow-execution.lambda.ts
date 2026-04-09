@@ -75,12 +75,7 @@ export const handler: Handler = async (
       throw new MissingNextFlowTowerAccessError();
     }
 
-    await assertLaboratoryHasWorkflowAccess(
-      laboratory.LaboratoryId,
-      'SEQERA',
-      pipelineId,
-      laboratoryWorkflowAccessService,
-    );
+    await assertLaboratoryHasWorkflowAccess(laboratory, 'SEQERA', pipelineId, laboratoryWorkflowAccessService);
 
     const rawBody = event.isBase64Encoded ? atob(event.body!) : event.body!;
     console.log('rawBody:', rawBody);

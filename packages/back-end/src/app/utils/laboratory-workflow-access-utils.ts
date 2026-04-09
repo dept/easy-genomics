@@ -1,5 +1,6 @@
 import type { ShareDetails } from '@aws-sdk/client-omics';
 import { WorkflowAccessDeniedError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import type { LaboratoryWorkflowAccess } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-workflow-access';
 import {
   LaboratoryWorkflowAccessPlatform,
@@ -33,7 +34,16 @@ export function parseWorkflowAccessSortKey(workflowKey: string): {
   return { platform, workflowId };
 }
 
-export function allowedWorkflowIdsForPlatform(
+/** Legacy rows and explicit ALLOW. */
+export function rowIsAllow(row: LaboratoryWorkflowAccess): boolean {
+  return row.Effect !== 'DENY';
+}
+
+export function rowIsDeny(row: LaboratoryWorkflowAccess): boolean {
+  return row.Effect === 'DENY';
+}
+
+export function allowIdsForPlatform(
   accessList: LaboratoryWorkflowAccess[],
   platform: LaboratoryWorkflowAccessPlatform,
 ): Set<string> {
@@ -41,6 +51,9 @@ export function allowedWorkflowIdsForPlatform(
   const ids = new Set<string>();
   for (const row of accessList) {
     if (!row.WorkflowKey.startsWith(prefix)) {
+      continue;
+    }
+    if (!rowIsAllow(row)) {
       continue;
     }
     const parsed = parseWorkflowAccessSortKey(row.WorkflowKey);
@@ -51,15 +64,56 @@ export function allowedWorkflowIdsForPlatform(
   return ids;
 }
 
+export function denyIdsForPlatform(
+  accessList: LaboratoryWorkflowAccess[],
+  platform: LaboratoryWorkflowAccessPlatform,
+): Set<string> {
+  const prefix = `${platform}#`;
+  const ids = new Set<string>();
+  for (const row of accessList) {
+    if (!row.WorkflowKey.startsWith(prefix)) {
+      continue;
+    }
+    if (!rowIsDeny(row)) {
+      continue;
+    }
+    const parsed = parseWorkflowAccessSortKey(row.WorkflowKey);
+    if (parsed) {
+      ids.add(parsed.workflowId);
+    }
+  }
+  return ids;
+}
+
+/** @deprecated Use allowIdsForPlatform — same behavior for ALLOW-only rows */
+export function allowedWorkflowIdsForPlatform(
+  accessList: LaboratoryWorkflowAccess[],
+  platform: LaboratoryWorkflowAccessPlatform,
+): Set<string> {
+  return allowIdsForPlatform(accessList, platform);
+}
+
+export function isWorkflowAccessAllowed(
+  laboratory: Pick<Laboratory, 'EnableNewWorkflowsByDefault'>,
+  accessRows: LaboratoryWorkflowAccess[],
+  platform: LaboratoryWorkflowAccessPlatform,
+  workflowId: string,
+): boolean {
+  const defaultOn = laboratory.EnableNewWorkflowsByDefault === true;
+  if (!defaultOn) {
+    return allowIdsForPlatform(accessRows, platform).has(workflowId);
+  }
+  return !denyIdsForPlatform(accessRows, platform).has(workflowId);
+}
+
 export async function assertLaboratoryHasWorkflowAccess(
-  laboratoryId: string,
+  laboratory: Pick<Laboratory, 'LaboratoryId' | 'EnableNewWorkflowsByDefault'>,
   platform: LaboratoryWorkflowAccessPlatform,
   externalWorkflowId: string,
   accessService: LaboratoryWorkflowAccessService,
 ): Promise<void> {
-  const rows = await accessService.listByLaboratoryId(laboratoryId);
-  const allowed = allowedWorkflowIdsForPlatform(rows, platform);
-  if (!allowed.has(externalWorkflowId)) {
+  const rows = await accessService.listByLaboratoryId(laboratory.LaboratoryId);
+  if (!isWorkflowAccessAllowed(laboratory, rows, platform, externalWorkflowId)) {
     throw new WorkflowAccessDeniedError();
   }
 }
