@@ -43,7 +43,7 @@
     top: -1.5rem;
     bottom: 0;
     width: var(--sidebar-width);
-    padding: 2rem 2rem 1rem;
+    padding: 1.25rem 1rem 1rem;
     min-height: calc(100vh - var(--header-height));
     border-right: 1px solid #e5e5e5;
     border-top: 1px solid #e5e5e5;
