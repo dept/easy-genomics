@@ -19,6 +19,7 @@ jest.mock('@easy-genomics/shared-lib/lib/app/schema/aws-healthomics/aws-healthom
   },
 }));
 
+import { handler } from '../../../../../src/app/controllers/aws-healthomics/run/create-run-execution.lambda';
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
 import { createOmicsServiceForLab } from '../../../../../src/app/services/omics-lab-factory';
 import { OmicsService } from '../../../../../src/app/services/omics-service';
@@ -27,7 +28,6 @@ import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
 } from '../../../../../src/app/utils/auth-utils';
-import { handler } from '../../../../../src/app/controllers/aws-healthomics/run/create-run-execution.lambda';
 
 describe('create-run-execution.lambda', () => {
   const LAB_ID = 'lab-123';

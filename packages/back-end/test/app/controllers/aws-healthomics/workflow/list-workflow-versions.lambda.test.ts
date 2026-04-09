@@ -12,6 +12,7 @@ jest.mock('../../../../../src/app/services/easy-genomics/laboratory-workflow-acc
 jest.mock('../../../../../src/app/services/omics-service');
 jest.mock('../../../../../src/app/utils/auth-utils');
 
+import { handler } from '../../../../../src/app/controllers/aws-healthomics/workflow/list-workflow-versions.lambda';
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
 import { OmicsService } from '../../../../../src/app/services/omics-service';
 import {
@@ -19,7 +20,6 @@ import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
 } from '../../../../../src/app/utils/auth-utils';
-import { handler } from '../../../../../src/app/controllers/aws-healthomics/workflow/list-workflow-versions.lambda';
 
 describe('list-workflow-versions.lambda', () => {
   const LAB_ID = '00000000-0000-0000-0000-000000000002';
