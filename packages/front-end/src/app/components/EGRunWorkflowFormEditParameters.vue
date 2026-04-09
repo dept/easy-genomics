@@ -9,9 +9,10 @@
     workflowId: string;
     omicsRunTempId: string;
     nfSchema?: object | null;
+    hasSavedDefaults: boolean;
   }>();
 
-  const emit = defineEmits(['next-step', 'previous-step', 'step-validated']);
+  const emit = defineEmits(['next-step', 'previous-step', 'step-validated', 'defaults-cleared']);
 
   const runStore = useRunStore();
   const labsStore = useLabsStore();
@@ -33,6 +34,14 @@
     enum?: string[];
     helpText?: string;
     hidden?: boolean;
+    // Validation constraints
+    minimum?: number;
+    maximum?: number;
+    exclusiveMinimum?: number;
+    exclusiveMaximum?: number;
+    pattern?: string;
+    minLength?: number;
+    maxLength?: number;
   };
 
   /**
@@ -41,11 +50,11 @@
    */
   const nfSchemaDefMap = computed<Record<string, any>>(() => {
     const schema = props.nfSchema as any;
-    const defs = schema?.definitions ?? schema?.$defs;
-    if (!defs) return {};
+    const definitions = schema?.$defs || schema?.definitions;
+    if (!definitions) return {};
 
     const map: Record<string, any> = {};
-    for (const section of Object.values(defs) as any[]) {
+    for (const section of Object.values(definitions) as any[]) {
       if (section.properties) {
         for (const [name, def] of Object.entries(section.properties)) {
           map[name] = def;
@@ -67,6 +76,13 @@
           enum: paramDef.enum,
           helpText: paramDef.help_text,
           hidden: paramDef.hidden,
+          minimum: paramDef.minimum,
+          maximum: paramDef.maximum,
+          exclusiveMinimum: paramDef.exclusiveMinimum,
+          exclusiveMaximum: paramDef.exclusiveMaximum,
+          pattern: paramDef.pattern,
+          minLength: paramDef.minLength,
+          maxLength: paramDef.maxLength,
         } as SchemaItem;
       })
       .filter((field) => !field.hidden)
@@ -107,6 +123,90 @@
   });
 
   const shouldSaveAsDefaults = ref(false);
+  const fieldErrors = reactive<Record<string, string>>({});
+
+  function validateField(field: SchemaItem, value: any): string | null {
+    const isEmpty = value === '' || value === undefined || value === null;
+
+    if (isEmpty && field.optional !== false) {
+      return null;
+    }
+
+    if (isEmpty) {
+      return null; // Required-field check is handled separately
+    }
+
+    if (field.type === 'integer') {
+      if (!Number.isInteger(Number(value)) || isNaN(Number(value))) {
+        return 'Must be a whole number';
+      }
+    } else if (field.type === 'number') {
+      if (isNaN(Number(value))) {
+        return 'Must be a valid number';
+      }
+    }
+
+    if ((field.type === 'integer' || field.type === 'number') && !isNaN(Number(value))) {
+      const numValue = Number(value);
+      if (field.minimum !== undefined && numValue < field.minimum) {
+        return `Must be at least ${field.minimum}`;
+      }
+      if (field.maximum !== undefined && numValue > field.maximum) {
+        return `Must be at most ${field.maximum}`;
+      }
+      if (field.exclusiveMinimum !== undefined && numValue <= field.exclusiveMinimum) {
+        return `Must be greater than ${field.exclusiveMinimum}`;
+      }
+      if (field.exclusiveMaximum !== undefined && numValue >= field.exclusiveMaximum) {
+        return `Must be less than ${field.exclusiveMaximum}`;
+      }
+    }
+
+    if (field.type === 'string' || (!field.type && typeof value === 'string')) {
+      const strValue = String(value);
+      if (field.minLength !== undefined && strValue.length < field.minLength) {
+        return `Must be at least ${field.minLength} characters`;
+      }
+      if (field.maxLength !== undefined && strValue.length > field.maxLength) {
+        return `Must be at most ${field.maxLength} characters`;
+      }
+      if (field.pattern) {
+        try {
+          if (!new RegExp(field.pattern).test(strValue)) {
+            return 'Value does not match the expected format';
+          }
+        } catch {
+          // Skip validation if the pattern regex is invalid
+        }
+      }
+    }
+
+    if (field.enum?.length) {
+      const stringified = field.enum.map(String);
+      if (!stringified.includes(String(value))) {
+        return `Must be one of: ${field.enum.join(', ')}`;
+      }
+    }
+
+    return null;
+  }
+
+  function validateAllFields(): boolean {
+    let hasErrors = false;
+
+    for (const field of orderedSchema.value) {
+      const value = localProps.params[field.name];
+      const error = validateField(field, value);
+      if (error) {
+        fieldErrors[field.name] = error;
+        hasErrors = true;
+      } else {
+        delete fieldErrors[field.name];
+      }
+    }
+
+    return !hasErrors;
+  }
 
   // Auto-populate runname/run_name parameter with the run name from Run Details
   function autoPopulateRunName() {
@@ -121,8 +221,12 @@
     }
   }
 
+  // Auto-populate when component mounts, then enable param change detection
   onMounted(() => {
     autoPopulateRunName();
+    nextTick(() => {
+      paramsReady = true;
+    });
   });
 
   watch(
@@ -170,32 +274,63 @@
     }
   }
 
+  async function clearDefaultsForWorkflow() {
+    try {
+      const { $api } = useNuxtApp();
+      const userStore = useUserStore();
+      const userId = userStore.currentUserDetails.id;
+      if (!userId) return false;
+
+      const user = await $api.users.getUser();
+      const existingDefaults = user.OmicsWorkflowDefaultParams || {};
+      const { [props.workflowId]: _, ...remainingDefaults } = existingDefaults;
+
+      await $api.users.updateUser(userId, {
+        OmicsWorkflowDefaultParams: remainingDefaults,
+      });
+      emit('defaults-cleared');
+      return true;
+    } catch (error) {
+      console.error('Failed to clear workflow defaults', error);
+      return false;
+    }
+  }
+
   async function onSubmit() {
     const paramsRequired = wipOmicsRun.value?.paramsRequired || [];
     const missingParams = paramsRequired.filter((paramName: string) => !wipOmicsRun.value?.params[paramName]);
 
     if (missingParams.length > 0) {
       useToastStore().error(`The '${missingParams.shift()}' field is required. Please try again.`);
-    } else {
-      try {
-        const userStore = useUserStore();
-        const userId = userStore.currentUserDetails.id;
-        if (!userId) {
-          emit('next-step');
-          return;
-        }
+      return;
+    }
 
-        if (shouldSaveAsDefaults.value) {
-          const success = await saveDefaultsForWorkflow();
-          if (success) {
-            useToastStore().success('Saved defaults for this workflow.');
-          }
-        }
+    if (!validateAllFields()) {
+      const errorCount = Object.keys(fieldErrors).length;
+      useToastStore().error(
+        `${errorCount} parameter${errorCount > 1 ? 's have' : ' has'} invalid values. Please fix the highlighted errors.`,
+      );
+      return;
+    }
+
+    try {
+      const userStore = useUserStore();
+      const userId = userStore.currentUserDetails.id;
+      if (!userId) {
         emit('next-step');
-      } catch (error) {
-        console.error('Failed to check workflow defaults', error);
-        emit('next-step');
+        return;
       }
+
+      if (shouldSaveAsDefaults.value) {
+        const success = await saveDefaultsForWorkflow();
+        if (success) {
+          useToastStore().success('Saved defaults for this workflow.');
+        }
+      }
+      emit('next-step');
+    } catch (error) {
+      console.error('Failed to check workflow defaults', error);
+      emit('next-step');
     }
   }
 
@@ -203,6 +338,19 @@
     () => localProps.params,
     (val) => {
       if (val) runStore.updateWipOmicsRunParams(props.omicsRunTempId, val);
+
+      // Re-validate fields that already have errors so they clear when fixed
+      for (const fieldName of Object.keys(fieldErrors)) {
+        const field = orderedSchema.value.find((f) => f.name === fieldName);
+        if (field) {
+          const error = validateField(field, val[fieldName]);
+          if (!error) {
+            delete fieldErrors[fieldName];
+          } else {
+            fieldErrors[fieldName] = error;
+          }
+        }
+      }
     },
     { deep: true },
   );
@@ -234,6 +382,7 @@
             :label="schemaField.name"
             :name="schemaField.name"
             :required="wipOmicsRun.paramsRequired.includes(schemaField.name)"
+            :error="fieldErrors[schemaField.name]"
           >
             <!-- Boolean: toggle -->
             <EGParametersBooleanField

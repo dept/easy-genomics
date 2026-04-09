@@ -93,6 +93,10 @@ class HttpFactory {
         useUiStore().incrementRemountAppKey();
       }
 
+      if (response.status === 204) {
+        return undefined;
+      }
+
       const jsonResponse = await response.json();
       return jsonResponse as T;
     } catch (error: any) {
