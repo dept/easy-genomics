@@ -17,6 +17,7 @@ export const LaboratorySchema = z
      * - 0 means "never delete run records" (no TTL expiration).
      */
     RunRetentionMonths: z.number().int().min(0).optional(),
+    EnableNewWorkflowsByDefault: z.boolean().optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
@@ -37,6 +38,7 @@ export const CreateLaboratorySchema = z
     NextFlowTowerAccessToken: z.string().optional(),
     NextFlowTowerWorkspaceId: z.string().optional(),
     RunRetentionMonths: z.number().int().min(0).optional(),
+    EnableNewWorkflowsByDefault: z.boolean().optional(),
   })
   .strict();
 export type CreateLaboratory = z.infer<typeof CreateLaboratorySchema>;
@@ -55,6 +57,7 @@ export const ReadLaboratorySchema = z
     NextFlowTowerWorkspaceId: z.string().optional(),
     HasNextFlowTowerAccessToken: z.boolean().optional(), // Return boolean indicator instead of actual NextFlowTowerAccessToken
     RunRetentionMonths: z.number().int().min(0).optional(),
+    EnableNewWorkflowsByDefault: z.boolean().optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
@@ -81,5 +84,6 @@ export const UpdateLaboratorySchema = z.object({
   NextFlowTowerAccessToken: z.string().optional(),
   NextFlowTowerWorkspaceId: z.string().optional(),
   RunRetentionMonths: z.number().int().min(0).optional(),
+  EnableNewWorkflowsByDefault: z.boolean().optional(),
 });
 export type UpdateLaboratory = z.infer<typeof UpdateLaboratorySchema>;

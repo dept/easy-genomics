@@ -11,14 +11,17 @@ import { CreateRunRequest } from '@easy-genomics/shared-lib/src/app/types/aws-he
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
+import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
 import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
+import { assertLaboratoryHasWorkflowAccess } from '@BE/utils/laboratory-workflow-access-utils';
 
 const laboratoryService = new LaboratoryService();
+const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
 
 /**
  * This POST /aws-healthomics/run/create-run-execution?laboratoryId={LaboratoryId}
@@ -68,6 +71,13 @@ export const handler: Handler = async (
     ) {
       throw new UnauthorizedAccessError();
     }
+
+    await assertLaboratoryHasWorkflowAccess(
+      laboratory,
+      'HEALTH_OMICS',
+      request.workflowId!,
+      laboratoryWorkflowAccessService,
+    );
 
     // User metadata is optional: IAM access control is enforced via LaboratoryId/OrganizationId tagging.
     // We still accept missing `sub/email` so run creation doesn't fail for users depending on claim mapping.

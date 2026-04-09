@@ -1,7 +1,13 @@
 import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
-import { handler } from '../../../../../src/app/controllers/aws-healthomics/run/create-run-execution.lambda';
+
+const mockListByLaboratoryId = jest.fn();
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
+jest.mock('../../../../../src/app/services/easy-genomics/laboratory-workflow-access-service', () => ({
+  LaboratoryWorkflowAccessService: jest.fn().mockImplementation(() => ({
+    listByLaboratoryId: mockListByLaboratoryId,
+  })),
+}));
 jest.mock('../../../../../src/app/services/omics-service');
 jest.mock('../../../../../src/app/services/omics-lab-factory', () => ({
   createOmicsServiceForLab: jest.fn(),
@@ -13,6 +19,7 @@ jest.mock('@easy-genomics/shared-lib/lib/app/schema/aws-healthomics/aws-healthom
   },
 }));
 
+import { handler } from '../../../../../src/app/controllers/aws-healthomics/run/create-run-execution.lambda';
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
 import { createOmicsServiceForLab } from '../../../../../src/app/services/omics-lab-factory';
 import { OmicsService } from '../../../../../src/app/services/omics-service';
@@ -92,6 +99,11 @@ describe('create-run-execution.lambda', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+
+    mockListByLaboratoryId.mockReset();
+    mockListByLaboratoryId.mockResolvedValue([
+      { LaboratoryId: LAB_ID, WorkflowKey: 'HEALTH_OMICS#wf-123', OrganizationId: ORG_ID },
+    ]);
 
     mockLabService = LaboratoryService as jest.MockedClass<typeof LaboratoryService>;
     mockOmicsService = OmicsService as jest.MockedClass<typeof OmicsService>;
@@ -221,6 +233,66 @@ describe('create-run-execution.lambda', () => {
     const result = await handler(createEvent(baseRequest), createContext(), () => {});
 
     expect(result.statusCode).toBe(403);
+    expect(mockOmicsService.prototype.startRun).not.toHaveBeenCalled();
+  });
+
+  it('denies workflow access when laboratory has no grant for that workflow', async () => {
+    mockListByLaboratoryId.mockResolvedValueOnce([]);
+
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+    });
+
+    const result = await handler(createEvent(baseRequest), createContext(), () => {});
+
+    expect(result.statusCode).toBe(403);
+    expect(JSON.parse(result.body).ErrorCode).toBe('EG-104');
+    expect(mockOmicsService.prototype.startRun).not.toHaveBeenCalled();
+  });
+
+  it('allows workflow access when EnableNewWorkflowsByDefault is true and there is no DENY row', async () => {
+    mockListByLaboratoryId.mockResolvedValueOnce([]);
+
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+      EnableNewWorkflowsByDefault: true,
+    });
+
+    (mockOmicsService.prototype.startRun as jest.Mock).mockResolvedValue({
+      id: 'run-456',
+    });
+
+    const result = await handler(createEvent(baseRequest), createContext(), () => {});
+
+    expect(result.statusCode).toBe(200);
+    expect(mockOmicsService.prototype.startRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('denies workflow access when EnableNewWorkflowsByDefault is true but workflow is explicitly denied', async () => {
+    mockListByLaboratoryId.mockResolvedValueOnce([
+      {
+        LaboratoryId: LAB_ID,
+        WorkflowKey: 'HEALTH_OMICS#wf-123',
+        OrganizationId: ORG_ID,
+        Effect: 'DENY',
+      },
+    ]);
+
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+      EnableNewWorkflowsByDefault: true,
+    });
+
+    const result = await handler(createEvent(baseRequest), createContext(), () => {});
+
+    expect(result.statusCode).toBe(403);
+    expect(JSON.parse(result.body).ErrorCode).toBe('EG-104');
     expect(mockOmicsService.prototype.startRun).not.toHaveBeenCalled();
   });
 });

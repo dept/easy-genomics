@@ -389,6 +389,15 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
   }
 
   private setupLambdaPolicyStatements() {
+    const laboratoryWorkflowAccessTableArn = `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-workflow-access-table`;
+    const laboratoryWorkflowAccessTableAnyIndex = `${laboratoryWorkflowAccessTableArn}/index/*`;
+    const workflowAccessQuery = () =>
+      new PolicyStatement({
+        resources: [laboratoryWorkflowAccessTableArn, laboratoryWorkflowAccessTableAnyIndex],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      });
+
     // /aws-healthomics/workflow/list-private-workflows
     this.iam.addPolicyStatements('/aws-healthomics/workflow/list-private-workflows', [
       new PolicyStatement({
@@ -398,6 +407,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         ],
         actions: ['dynamodb:Query'],
       }),
+      workflowAccessQuery(),
       new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
         actions: ['omics:ListWorkflows'],
@@ -413,6 +423,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         ],
         actions: ['dynamodb:Query'],
       }),
+      workflowAccessQuery(),
       new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:/shares`],
         actions: ['omics:ListShares'],
@@ -429,6 +440,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         ],
         actions: ['dynamodb:Query'],
       }),
+      workflowAccessQuery(),
       new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
         actions: ['omics:GetWorkflow'],
@@ -445,6 +457,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         ],
         actions: ['dynamodb:Query'],
       }),
+      workflowAccessQuery(),
       new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
         actions: ['omics:ListWorkflowVersions'],
@@ -624,6 +637,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         ],
         actions: ['dynamodb:Query'],
       }),
+      workflowAccessQuery(),
       new PolicyStatement({
         resources: [
           `arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:run/*`,

@@ -17,6 +17,7 @@ import {
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
+import { migrateWorkflowAccessOnDefaultModeChange } from '@BE/services/easy-genomics/laboratory-workflow-access-default-migration';
 import { SsmService } from '@BE/services/ssm-service';
 import { validateOrganizationAdminAccess } from '@BE/utils/auth-utils';
 import { httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
@@ -74,6 +75,7 @@ export const handler: Handler = async (
           NextFlowTowerApiBaseUrl: request.NextFlowTowerApiBaseUrl,
           NextFlowTowerWorkspaceId: request.NextFlowTowerWorkspaceId,
           RunRetentionMonths: request.RunRetentionMonths,
+          EnableNewWorkflowsByDefault: request.EnableNewWorkflowsByDefault ?? existing.EnableNewWorkflowsByDefault,
           ModifiedAt: new Date().toISOString(),
           ModifiedBy: userId,
         },
@@ -86,6 +88,17 @@ export const handler: Handler = async (
           throw error;
         }
       });
+
+    const previousDefaultOn = existing.EnableNewWorkflowsByDefault === true;
+    const nextDefaultOn = response.EnableNewWorkflowsByDefault === true;
+    if (previousDefaultOn !== nextDefaultOn) {
+      await migrateWorkflowAccessOnDefaultModeChange({
+        organizationId: existing.OrganizationId,
+        laboratoryId: existing.LaboratoryId,
+        previousDefaultOn,
+        nextDefaultOn,
+      });
+    }
 
     // Update NextFlow AccessToken in SSM if new value supplied
     if (request.NextFlowTowerAccessToken) {
