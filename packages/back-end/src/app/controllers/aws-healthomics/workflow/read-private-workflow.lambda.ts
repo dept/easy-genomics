@@ -70,12 +70,7 @@ export const handler: Handler = async (
       throw new MissingAWSHealthOmicsAccessError();
     }
 
-    await assertLaboratoryHasWorkflowAccess(
-      laboratory.LaboratoryId,
-      'HEALTH_OMICS',
-      id,
-      laboratoryWorkflowAccessService,
-    );
+    await assertLaboratoryHasWorkflowAccess(laboratory, 'HEALTH_OMICS', id, laboratoryWorkflowAccessService);
 
     const response = await omicsService
       .getWorkflow(<GetWorkflowCommandInput>{

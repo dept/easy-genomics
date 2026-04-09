@@ -1,4 +1,5 @@
 <script setup lang="ts">
+  import type { UpdateLaboratory } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
   import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import {
     type BatchLaboratoryWorkflowAccessAssignment,
@@ -32,6 +33,13 @@
   const baselineKeys = ref<Set<string>>(new Set());
   const pendingKeys = ref<Set<string>>(new Set());
 
+  const baselineEnableNewByDefault = ref<Record<string, boolean>>({});
+  const pendingEnableNewByDefault = ref<Record<string, boolean>>({});
+
+  function rowIsDeny(a: LaboratoryWorkflowAccess): boolean {
+    return a.Effect === 'DENY';
+  }
+
   function toApiPlatform(row: UnifiedWorkflowCatalogEntry): 'HEALTH_OMICS' | 'SEQERA' {
     return row.platform === 'HealthOmics' ? 'HEALTH_OMICS' : 'SEQERA';
   }
@@ -40,16 +48,60 @@
     return `${laboratoryId}::${toApiPlatform(row)}::${row.workflowId}`;
   }
 
-  function assignmentsToKeys(assignments: LaboratoryWorkflowAccess[]): Set<string> {
-    const s = new Set<string>();
+  function assignmentsToGrantedKeys(
+    assignments: LaboratoryWorkflowAccess[],
+    labs: Laboratory[],
+    cat: UnifiedWorkflowCatalogEntry[],
+  ): Set<string> {
+    const denyByLab = new Map<string, Set<string>>();
+    const allowByLab = new Map<string, Set<string>>();
+
     for (const a of assignments) {
       const parsed = parseWorkflowAccessSortKey(a.WorkflowKey);
       if (!parsed) {
         continue;
       }
-      s.add(`${a.LaboratoryId}::${parsed.platform}::${parsed.workflowId}`);
+      const k = `${a.LaboratoryId}::${parsed.platform}::${parsed.workflowId}`;
+      if (rowIsDeny(a)) {
+        if (!denyByLab.has(a.LaboratoryId)) {
+          denyByLab.set(a.LaboratoryId, new Set());
+        }
+        denyByLab.get(a.LaboratoryId)!.add(k);
+      } else {
+        if (!allowByLab.has(a.LaboratoryId)) {
+          allowByLab.set(a.LaboratoryId, new Set());
+        }
+        allowByLab.get(a.LaboratoryId)!.add(k);
+      }
     }
-    return s;
+
+    const granted = new Set<string>();
+    for (const lab of labs) {
+      const defaultOn = lab.EnableNewWorkflowsByDefault === true;
+      for (const row of cat) {
+        const k = accessKey(lab.LaboratoryId, row);
+        if (defaultOn) {
+          if (!denyByLab.get(lab.LaboratoryId)?.has(k)) {
+            granted.add(k);
+          }
+        } else if (allowByLab.get(lab.LaboratoryId)?.has(k)) {
+          granted.add(k);
+        }
+      }
+    }
+    return granted;
+  }
+
+  function initDefaultFlagsFromLabs() {
+    const b: Record<string, boolean> = {};
+    const p: Record<string, boolean> = {};
+    for (const lab of laboratories.value) {
+      const v = lab.EnableNewWorkflowsByDefault === true;
+      b[lab.LaboratoryId] = v;
+      p[lab.LaboratoryId] = v;
+    }
+    baselineEnableNewByDefault.value = b;
+    pendingEnableNewByDefault.value = { ...p };
   }
 
   function countForLab(labId: string): { assigned: number; total: number } {
@@ -72,6 +124,17 @@
         return true;
       }
     }
+    for (const k of pendingKeys.value) {
+      if (!baselineKeys.value.has(k)) {
+        return true;
+      }
+    }
+    for (const lab of laboratories.value) {
+      const id = lab.LaboratoryId;
+      if (pendingEnableNewByDefault.value[id] !== baselineEnableNewByDefault.value[id]) {
+        return true;
+      }
+    }
     return false;
   });
 
@@ -87,6 +150,9 @@
   }
 
   function isLabDirty(laboratoryId: string): boolean {
+    if (pendingEnableNewByDefault.value[laboratoryId] !== baselineEnableNewByDefault.value[laboratoryId]) {
+      return true;
+    }
     const baselineForLab = keysForLaboratory(laboratoryId, baselineKeys.value);
     const pendingForLab = keysForLaboratory(laboratoryId, pendingKeys.value);
     if (baselineForLab.size !== pendingForLab.size) {
@@ -97,10 +163,32 @@
         return true;
       }
     }
+    for (const k of pendingForLab) {
+      if (!baselineForLab.has(k)) {
+        return true;
+      }
+    }
     return false;
   }
 
   const labsWithUnsavedChanges = computed(() => laboratories.value.filter((l) => isLabDirty(l.LaboratoryId)));
+
+  const selectedLab = computed(() => laboratories.value.find((l) => l.LaboratoryId === selectedLabId.value));
+
+  function buildUpdateLaboratoryPayload(lab: Laboratory): UpdateLaboratory {
+    return {
+      Name: lab.Name,
+      Status: lab.Status,
+      Description: lab.Description,
+      S3Bucket: lab.S3Bucket,
+      AwsHealthOmicsEnabled: lab.AwsHealthOmicsEnabled,
+      NextFlowTowerEnabled: lab.NextFlowTowerEnabled,
+      NextFlowTowerApiBaseUrl: lab.NextFlowTowerApiBaseUrl,
+      NextFlowTowerWorkspaceId: lab.NextFlowTowerWorkspaceId,
+      RunRetentionMonths: lab.RunRetentionMonths,
+      EnableNewWorkflowsByDefault: pendingEnableNewByDefault.value[lab.LaboratoryId],
+    };
+  }
 
   async function load() {
     isLoading.value = true;
@@ -112,7 +200,8 @@
       ]);
       catalog.value = catalogRes.workflows;
       laboratories.value = labsRes ?? [];
-      const base = assignmentsToKeys(assignRes.assignments);
+      initDefaultFlagsFromLabs();
+      const base = assignmentsToGrantedKeys(assignRes.assignments, laboratories.value, catalog.value);
       baselineKeys.value = base;
       pendingKeys.value = new Set(base);
       if (laboratories.value.length && !selectedLabId.value) {
@@ -143,46 +232,64 @@
     pendingKeys.value = next;
   }
 
+  function setEnableNewWorkflowsForSelectedLab(value: boolean) {
+    if (!selectedLabId.value) {
+      return;
+    }
+    pendingEnableNewByDefault.value = {
+      ...pendingEnableNewByDefault.value,
+      [selectedLabId.value]: value,
+    };
+  }
+
   function discardAll() {
     pendingKeys.value = new Set(baselineKeys.value);
+    pendingEnableNewByDefault.value = { ...baselineEnableNewByDefault.value };
   }
 
   async function saveAll() {
-    const prev = baselineKeys.value;
-    const next = pendingKeys.value;
-    const assignments: BatchLaboratoryWorkflowAccessAssignment[] = [];
-
-    const allKeys = new Set([...prev, ...next]);
-    for (const key of allKeys) {
-      const parts = key.split('::');
-      const laboratoryId = parts[0];
-      const platform = parts[1];
-      const workflowId = parts.slice(2).join('::');
-      if (!laboratoryId || !platform || !workflowId) {
-        continue;
-      }
-      const inPrev = prev.has(key);
-      const inNext = next.has(key);
-      if (inPrev === inNext) {
-        continue;
-      }
-      const catalogRow = catalog.value.find((r) => toApiPlatform(r) === platform && r.workflowId === workflowId);
-      assignments.push({
-        laboratoryId,
-        platform: platform as 'HEALTH_OMICS' | 'SEQERA',
-        workflowId,
-        workflowName: catalogRow?.name,
-        granted: inNext,
-      });
-    }
-
-    if (!assignments.length) {
-      return;
-    }
     isSaving.value = true;
     try {
-      await $api.workflowAccess.batchUpdate(props.orgId, { assignments });
-      baselineKeys.value = new Set(next);
+      for (const lab of laboratories.value) {
+        const id = lab.LaboratoryId;
+        if (pendingEnableNewByDefault.value[id] !== baselineEnableNewByDefault.value[id]) {
+          await $api.labs.update(id, buildUpdateLaboratoryPayload(lab));
+        }
+      }
+
+      const prev = baselineKeys.value;
+      const next = pendingKeys.value;
+      const assignments: BatchLaboratoryWorkflowAccessAssignment[] = [];
+
+      const allKeys = new Set([...prev, ...next]);
+      for (const key of allKeys) {
+        const parts = key.split('::');
+        const laboratoryId = parts[0];
+        const platform = parts[1];
+        const workflowId = parts.slice(2).join('::');
+        if (!laboratoryId || !platform || !workflowId) {
+          continue;
+        }
+        const inPrev = prev.has(key);
+        const inNext = next.has(key);
+        if (inPrev === inNext) {
+          continue;
+        }
+        const catalogRow = catalog.value.find((r) => toApiPlatform(r) === platform && r.workflowId === workflowId);
+        assignments.push({
+          laboratoryId,
+          platform: platform as 'HEALTH_OMICS' | 'SEQERA',
+          workflowId,
+          workflowName: catalogRow?.name,
+          granted: inNext,
+        });
+      }
+
+      if (assignments.length) {
+        await $api.workflowAccess.batchUpdate(props.orgId, { assignments });
+      }
+
+      await load();
       useToastStore().success('Workflow access saved');
     } catch (e) {
       console.error(e);
@@ -197,7 +304,7 @@
   <EGPageHeader
     v-if="!embedded"
     title="Workflow lab access"
-    description="Grant labs access to HealthOmics workflows and Seqera pipelines for this organization."
+    description="Grant labs access to HealthOmics workflows and Seqera pipelines for this organization. When “new workflows by default” is on, unlisted items stay allowed unless you turn them off (blocks new console workflows from being denied until you block them)."
     :back-action="() => $router.push(props.backPath)"
     :show-back="true"
     :is-loading="isLoading"
@@ -248,7 +355,22 @@
       </EGCard>
 
       <EGCard class="min-w-0 flex-1">
-        <template v-if="selectedLabId">
+        <template v-if="selectedLabId && selectedLab">
+          <div
+            class="border-background-dark-grey mb-4 flex flex-col gap-2 border-b pb-4 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div>
+              <div class="text-text-body font-serif font-medium">Enable new workflows by default</div>
+              <p class="text-text-muted mt-1 max-w-xl text-xs">
+                When on, newly added HealthOmics or Seqera workflows are allowed for this lab until you turn them off
+                here. When off, only workflows you enable are allowed.
+              </p>
+            </div>
+            <UToggle
+              :model-value="pendingEnableNewByDefault[selectedLabId] === true"
+              @update:model-value="setEnableNewWorkflowsForSelectedLab"
+            />
+          </div>
           <div class="overflow-x-auto">
             <table class="w-full min-w-[520px] text-left text-sm">
               <thead>

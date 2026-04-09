@@ -66,12 +66,7 @@ export const handler: Handler = async (
       throw new MissingAWSHealthOmicsAccessError();
     }
 
-    await assertLaboratoryHasWorkflowAccess(
-      laboratory.LaboratoryId,
-      'HEALTH_OMICS',
-      workflowId,
-      laboratoryWorkflowAccessService,
-    );
+    await assertLaboratoryHasWorkflowAccess(laboratory, 'HEALTH_OMICS', workflowId, laboratoryWorkflowAccessService);
 
     const queryParameters: AwsHealthOmicsQueryParameters = getAwsHealthOmicsApiQueryParameters(event);
     const response = await omicsService.listWorkflowVersions(<ListWorkflowVersionsCommandInput>{

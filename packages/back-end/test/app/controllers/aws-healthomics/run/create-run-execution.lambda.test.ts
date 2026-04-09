@@ -251,4 +251,48 @@ describe('create-run-execution.lambda', () => {
     expect(JSON.parse(result.body).ErrorCode).toBe('EG-104');
     expect(mockOmicsService.prototype.startRun).not.toHaveBeenCalled();
   });
+
+  it('allows workflow access when EnableNewWorkflowsByDefault is true and there is no DENY row', async () => {
+    mockListByLaboratoryId.mockResolvedValueOnce([]);
+
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+      EnableNewWorkflowsByDefault: true,
+    });
+
+    (mockOmicsService.prototype.startRun as jest.Mock).mockResolvedValue({
+      id: 'run-456',
+    });
+
+    const result = await handler(createEvent(baseRequest), createContext(), () => {});
+
+    expect(result.statusCode).toBe(200);
+    expect(mockOmicsService.prototype.startRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('denies workflow access when EnableNewWorkflowsByDefault is true but workflow is explicitly denied', async () => {
+    mockListByLaboratoryId.mockResolvedValueOnce([
+      {
+        LaboratoryId: LAB_ID,
+        WorkflowKey: 'HEALTH_OMICS#wf-123',
+        OrganizationId: ORG_ID,
+        Effect: 'DENY',
+      },
+    ]);
+
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+      EnableNewWorkflowsByDefault: true,
+    });
+
+    const result = await handler(createEvent(baseRequest), createContext(), () => {});
+
+    expect(result.statusCode).toBe(403);
+    expect(JSON.parse(result.body).ErrorCode).toBe('EG-104');
+    expect(mockOmicsService.prototype.startRun).not.toHaveBeenCalled();
+  });
 });

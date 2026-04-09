@@ -71,7 +71,7 @@ export const handler: Handler = async (
       throw new MissingNextFlowTowerAccessError();
     }
 
-    await assertLaboratoryHasWorkflowAccess(laboratory.LaboratoryId, 'SEQERA', id, laboratoryWorkflowAccessService);
+    await assertLaboratoryHasWorkflowAccess(laboratory, 'SEQERA', id, laboratoryWorkflowAccessService);
 
     // Retrieve Seqera Cloud / NextFlow Tower AccessToken from SSM
     const getParameterResponse: GetParameterCommandOutput | void = await ssmService

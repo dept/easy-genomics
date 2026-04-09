@@ -73,7 +73,7 @@ export const handler: Handler = async (
     }
 
     await assertLaboratoryHasWorkflowAccess(
-      laboratory.LaboratoryId,
+      laboratory,
       'HEALTH_OMICS',
       request.workflowId!,
       laboratoryWorkflowAccessService,

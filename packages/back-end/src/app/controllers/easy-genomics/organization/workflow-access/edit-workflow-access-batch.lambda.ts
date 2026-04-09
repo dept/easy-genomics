@@ -49,13 +49,28 @@ export const handler: Handler = async (
     }
 
     for (const change of body.assignments) {
+      const lab = labById.get(change.laboratoryId)!;
+      const defaultOn = lab.EnableNewWorkflowsByDefault === true;
       const sortKey = laboratoryWorkflowAccessSortKey(change.platform, change.workflowId);
       if (change.granted) {
+        if (defaultOn) {
+          await accessService.remove(change.laboratoryId, change.platform, change.workflowId);
+        } else {
+          await accessService.upsert({
+            LaboratoryId: change.laboratoryId,
+            WorkflowKey: sortKey,
+            OrganizationId: organizationId,
+            WorkflowName: change.workflowName,
+            Effect: 'ALLOW',
+          });
+        }
+      } else if (defaultOn) {
         await accessService.upsert({
           LaboratoryId: change.laboratoryId,
           WorkflowKey: sortKey,
           OrganizationId: organizationId,
           WorkflowName: change.workflowName,
+          Effect: 'DENY',
         });
       } else {
         await accessService.remove(change.laboratoryId, change.platform, change.workflowId);
