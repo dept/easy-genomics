@@ -63,9 +63,13 @@ export class DynamoConstruct extends Construct {
     if (settings.gsi) {
       // NOTE: Global Secondary Indexes can be added / removed from the table as desired
       settings.gsi.forEach((value: SchemaOptions) => {
+        const gsiPartitionKey = value.partitionKey;
+        if (!gsiPartitionKey) {
+          throw new Error(`GSI for table ${envTableName} is missing partitionKey`);
+        }
         table.addGlobalSecondaryIndex({
-          indexName: `${value.partitionKey.name}_Index`,
-          partitionKey: value.partitionKey,
+          indexName: `${gsiPartitionKey.name}_Index`,
+          partitionKey: gsiPartitionKey,
           sortKey: value.sortKey, // Optional
         });
       });
