@@ -16,6 +16,14 @@ export const OrganizationAccessDetailsSchema = z.object({
 
 export const OrganizationAccessSchema = z.record(z.string(), OrganizationAccessDetailsSchema);
 
+export const FavouriteWorkflowSchema = z.object({
+  WorkflowId: z.string(),
+  WorkflowName: z.string(),
+  Description: z.string().optional(),
+  Platform: z.enum(['Seqera Cloud', 'AWS HealthOmics']),
+  LaboratoryId: z.string(),
+});
+
 export const UserSchema = z.object({
   UserId: z.string().uuid(),
   Email: z.string(),
@@ -28,6 +36,7 @@ export const UserSchema = z.object({
   OrganizationAccess: OrganizationAccessSchema.optional(),
   SampleIdSplitPattern: z.string().optional(),
   OmicsWorkflowDefaultParams: z.record(z.string(), z.record(z.string(), z.any())).optional(),
+  FavouriteWorkflows: z.array(FavouriteWorkflowSchema).optional(),
   CreatedAt: z.string().optional(),
   CreatedBy: z.string().optional(),
   ModifiedAt: z.string().optional(),
@@ -52,6 +61,7 @@ export const UpdateUserSchema = z
     LastName: z.string().optional(),
     SampleIdSplitPattern: z.string().optional(),
     OmicsWorkflowDefaultParams: z.record(z.string(), z.record(z.string(), z.any())).optional(),
+    FavouriteWorkflows: z.array(FavouriteWorkflowSchema).optional(),
   })
   .strict();
 export type UpdateUser = z.infer<typeof UpdateUserSchema>;

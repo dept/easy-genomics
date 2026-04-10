@@ -15,6 +15,7 @@
   import { Pipeline as SeqeraPipeline } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
   import { WorkflowListItem as OmicsWorkflow } from '@aws-sdk/client-omics';
   import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
+  import { FavouriteWorkflow } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
   import { TableSort } from './EGTable.vue';
 
   const props = defineProps<{
@@ -38,6 +39,7 @@
   const { stringSortCompare } = useSort();
 
   const labUsers = ref<LabUser[]>([]);
+  const favouriteWorkflows = ref<FavouriteWorkflow[]>([]);
   const seqeraPipelines = computed<SeqeraPipeline[]>(() => seqeraPipelinesStore.pipelinesForLab(props.labId));
   const omicsWorkflows = computed<OmicsWorkflow[]>(() => omicsWorkflowsStore.workflowsForLab(props.labId));
   const canAddUsers = computed<boolean>(() => userStore.canAddLabUsers(props.labId));
@@ -96,10 +98,12 @@
   // Page Tabs
 
   const tabItems = computed<{ key: string; label: string; icon: string; dividerBefore?: boolean }[]>(() => {
-    const runsTab = { key: 'runs', label: 'Pipeline Runs', icon: 'i-heroicons-clock' };
-    const seqeraPipelinesTab = { key: 'seqeraPipelines', label: 'Seqera Pipelines', icon: 'i-heroicons-command-line' };
+    const dashboardTab = { key: 'dashboard', label: 'Dashboard', icon: 'i-heroicons-squares-2x2' };
+    const runsTab = { key: 'runs', label: 'Runs', icon: 'i-heroicons-clock' };
+    const seqeraPipelinesTab = { key: 'seqeraPipelines', label: 'Seqera Workflows', icon: 'i-heroicons-command-line' };
     const omicsWorkflowsTab = { key: 'omicsWorkflows', label: 'HealthOmics Workflows', icon: 'i-heroicons-beaker' };
-    const usersTab = { key: 'users', label: 'Users', icon: 'i-heroicons-users' };
+    const usersTab = { key: 'users', label: 'Lab Users', icon: 'i-heroicons-users' };
+    const orgsTab = { key: 'organisations', label: 'Organisations', icon: 'i-heroicons-building-office' };
     const detailsTab = { key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth' };
 
     const seqeraAvailable = lab.value?.NextFlowTowerEnabled && !missingPAT.value;
@@ -108,11 +112,13 @@
     const items = [];
 
     if (!props.superuser) {
+      items.push(dashboardTab);
       if (seqeraAvailable || omicsAvailable) items.push(runsTab);
       if (seqeraAvailable) items.push(seqeraPipelinesTab);
       if (omicsAvailable) items.push(omicsWorkflowsTab);
     }
     items.push({ ...usersTab, dividerBefore: items.length > 0 });
+    items.push(orgsTab);
     items.push(detailsTab);
 
     return items;
@@ -127,6 +133,7 @@
       omicsWorkflows: 'View your HealthOmics workflows',
       users: 'View your lab users',
       details: 'View your lab settings',
+      organisations: 'View your organisations',
     };
     return descriptions[activeTabKey.value] || '';
   });
@@ -353,9 +360,53 @@
     { key: 'actions', label: 'Actions' },
   ];
 
-  const omicsWorkflowsActionItems = (workflow: any) => [
-    [{ label: 'Run', click: () => viewRunOmicsWorkflow(workflow) }],
-  ];
+  function isWorkflowFavourited(workflowId: string): boolean {
+    return favouriteWorkflows.value.some((w) => w.WorkflowId === workflowId && w.LaboratoryId === props.labId);
+  }
+
+  async function toggleFavouriteWorkflow(workflow: OmicsWorkflow) {
+    const workflowId = workflow.id ?? '';
+    const isFav = isWorkflowFavourited(workflowId);
+
+    let updated: FavouriteWorkflow[];
+    if (isFav) {
+      updated = favouriteWorkflows.value.filter(
+        (w) => !(w.WorkflowId === workflowId && w.LaboratoryId === props.labId),
+      );
+    } else {
+      const newFav: FavouriteWorkflow = {
+        WorkflowId: workflowId,
+        WorkflowName: workflow.name ?? '',
+        Description: workflow.description ?? undefined,
+        Platform: 'AWS HealthOmics',
+        LaboratoryId: props.labId,
+      };
+      updated = [...favouriteWorkflows.value, newFav];
+    }
+
+    try {
+      await $api.users.updateUser(userStore.currentUserDetails.id!, { FavouriteWorkflows: updated });
+      favouriteWorkflows.value = updated;
+      useToastStore().success(isFav ? 'Workflow removed from favourites' : 'Workflow added to favourites');
+    } catch {
+      useToastStore().error(
+        isFav ? 'Failed to remove workflow from favourites' : 'Failed to add workflow to favourites',
+      );
+    }
+  }
+
+  const omicsWorkflowsActionItems = (workflow: any) => {
+    const isFav = isWorkflowFavourited(workflow.id ?? '');
+    return [
+      [{ label: 'Run', click: () => viewRunOmicsWorkflow(workflow) }],
+      [
+        {
+          label: isFav ? 'Remove from Favourites' : 'Add to Favourites',
+          click: () => toggleFavouriteWorkflow(workflow),
+        },
+      ],
+    ];
+  };
 
   function viewRunOmicsWorkflow(workflow: OmicsWorkflow) {
     $router.push({
@@ -521,6 +572,15 @@
     }
   }
 
+  async function loadFavouriteWorkflows(): Promise<void> {
+    try {
+      const user = await $api.users.getUser();
+      favouriteWorkflows.value = user.FavouriteWorkflows ?? [];
+    } catch (error) {
+      console.error('Error loading favourite workflows', error);
+    }
+  }
+
   // this anticipates these store values being needed on run click
   async function getSeqeraRuns(): Promise<void> {
     useUiStore().setRequestPending('getSeqeraRuns');
@@ -620,10 +680,11 @@
     const promises = [getLabUsers()];
 
     if (props.superuser) {
-      // superuser doesn't view pipelines/workflows or runs so just fetch the users
       await Promise.all(promises);
       return;
     }
+
+    promises.push(loadFavouriteWorkflows());
 
     if (newLab.NextFlowTowerEnabled) {
       if (newLab.HasNextFlowTowerAccessToken == null) {
@@ -661,6 +722,7 @@
   <EGSidebarNav v-if="lab" :items="tabItems" :model-value="tabIndex" @update:model-value="handleTabChange" />
 
   <EGPageHeader
+    v-if="activeTabKey !== 'dashboard'"
     :title="labName"
     :description="pageDescription"
     :back-action="() => (superuser ? $router.push(`/orgs/${orgId || ''}`) : $router.push('/labs'))"
@@ -684,6 +746,11 @@
       class="mt-2"
     />
   </EGPageHeader>
+
+  <!-- Dashboard tab -->
+  <div v-if="activeTabKey === 'dashboard'">
+    <EGDashboard :lab-id="labId" />
+  </div>
 
   <!-- Runs tab -->
   <div v-if="activeTabKey === 'runs'">
