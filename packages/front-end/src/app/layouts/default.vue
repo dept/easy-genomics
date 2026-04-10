@@ -20,7 +20,7 @@
 </script>
 
 <template>
-  <EGToasts class="top-[70px]" />
+  <EGToasts class="top-[52px]" />
   <EGHeader :is-authed="true" key="routeKey" />
   <main class="mb-4 mt-6 px-4" :class="{ 'has-sidebar': uiStore.hasSidebar }">
     <slot v-if="hasInit" />
