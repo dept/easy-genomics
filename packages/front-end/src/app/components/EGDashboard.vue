@@ -256,12 +256,8 @@
     }
   }
 
-  function navigateToOrg() {
-    if (lab.value?.OrganizationId) {
-      $router.push(`/orgs/${lab.value.OrganizationId}`);
-    } else {
-      $router.push('/labs');
-    }
+  function navigateBack() {
+    $router.push('/labs');
   }
 
   async function loadDashboardData() {
@@ -331,7 +327,7 @@
     <!-- Header: Title + Search -->
     <div class="mb-2 flex items-center justify-between">
       <div>
-        <button class="text-primary mb-2 flex items-center gap-1 text-sm font-medium" @click="navigateToOrg">
+        <button class="text-primary mb-2 flex items-center gap-1 text-sm font-medium" @click="navigateBack">
           <UIcon name="i-heroicons-arrow-left" class="h-4 w-4" />
           Back to organisation
         </button>
