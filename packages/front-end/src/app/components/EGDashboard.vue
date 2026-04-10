@@ -418,7 +418,7 @@
 
     <!-- Recent Runs -->
     <div class="mt-10">
-      <EGText tag="h3" class="mb-4">Recent Runs</EGText>
+      <EGText tag="h3" class="mb-8">Recent Runs</EGText>
 
       <EGTable
         :row-click-action="viewRunDetails"
@@ -456,7 +456,7 @@
 
     <!-- Favourite Workflows -->
     <div class="mt-10">
-      <div class="mb-1">
+      <div class="mb-8">
         <EGText tag="h3" class="mb-0">Favourite Workflows</EGText>
         <p class="text-muted text-sm">Quick launch your most used workflows.</p>
       </div>
