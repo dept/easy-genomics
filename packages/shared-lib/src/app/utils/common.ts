@@ -3,16 +3,6 @@ import { APIGatewayProxyWithCognitoAuthorizerEvent, APIGatewayProxyResult, APIGa
 import HttpError from './HttpError';
 
 /**
- * True when {@link error} carries HttpError fields. Used instead of instanceof so errors thrown
- * from the same logical class but a different module instance (e.g. src vs compiled lib in tests)
- * still map to the correct API status and error code.
- */
-function isHttpErrorShape(error: Error): error is HttpError {
-  const e = error as Partial<HttpError>;
-  return typeof e.statusCode === 'number' && typeof e.errorCode === 'string';
-}
-
-/**
  * This defines the HTTP Request types supported for the REST APIs.
  */
 export type HttpRequest = 'POST' | 'GET' | 'PUT' | 'PATCH' | 'DELETE';
@@ -54,7 +44,7 @@ export function buildErrorResponse(
   let errorCode: string = 'EG-100';
   let message: string = error.message;
 
-  if (isHttpErrorShape(error)) {
+  if (error instanceof HttpError) {
     errorCode = error.errorCode;
     statusCode = error.statusCode;
   }
