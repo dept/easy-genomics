@@ -132,6 +132,13 @@ class UsersModule extends HttpFactory {
       LastName?: string;
       SampleIdSplitPattern?: string;
       OmicsWorkflowDefaultParams?: Record<string, Record<string, unknown>>;
+      FavouriteWorkflows?: Array<{
+        WorkflowId: string;
+        WorkflowName: string;
+        Description?: string;
+        Platform: 'Seqera Cloud' | 'AWS HealthOmics';
+        LaboratoryId: string;
+      }>;
     },
   ) {
     const parseResult = UpdateUserSchema.safeParse(data);

@@ -10,7 +10,7 @@
       let dest = '/labs';
 
       if (userStore.mostRecentLabId !== null) {
-        dest += `/${userStore.mostRecentLabId}`;
+        dest += `/${userStore.mostRecentLabId}?tab=Dashboard`;
       }
 
       $router.push(dest);

@@ -39,6 +39,7 @@ type PendingRequest =
   | 'editProfileDetails'
   | 'toggleOrgAdmin'
   | 'loadLabRuns'
+  | 'loadDashboardData'
   | 'updateDefaultOrg'
   | 'generateSampleSheet'
   | 'downloadSampleSheet'
