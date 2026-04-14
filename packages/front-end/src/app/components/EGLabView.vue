@@ -103,7 +103,6 @@
     const seqeraPipelinesTab = { key: 'seqeraPipelines', label: 'Seqera Workflows', icon: 'i-heroicons-command-line' };
     const omicsWorkflowsTab = { key: 'omicsWorkflows', label: 'HealthOmics Workflows', icon: 'i-heroicons-beaker' };
     const usersTab = { key: 'users', label: 'Lab Users', icon: 'i-heroicons-users' };
-    const orgsTab = { key: 'organisations', label: 'Organisations', icon: 'i-heroicons-building-office' };
     const detailsTab = { key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth' };
 
     const seqeraAvailable = lab.value?.NextFlowTowerEnabled && !missingPAT.value;
@@ -118,7 +117,6 @@
       if (omicsAvailable) items.push(omicsWorkflowsTab);
     }
     items.push({ ...usersTab, dividerBefore: items.length > 0 });
-    items.push(orgsTab);
     items.push(detailsTab);
 
     return items;
@@ -133,7 +131,6 @@
       omicsWorkflows: 'View your HealthOmics workflows',
       users: 'View your lab users',
       details: 'View your lab settings',
-      organisations: 'View your organisations',
     };
     return descriptions[activeTabKey.value] || '';
   });
@@ -357,7 +354,8 @@
   const omicsWorkflowsTableColumns = [
     { key: 'Name', label: 'Name' },
     { key: 'description', label: 'Description' },
-    { key: 'actions', label: 'Actions' },
+    { key: 'run', label: 'Run' },
+    { key: 'favourite', label: 'Favourite' },
   ];
 
   function isWorkflowFavourited(workflowId: string): boolean {
@@ -394,19 +392,6 @@
       );
     }
   }
-
-  const omicsWorkflowsActionItems = (workflow: any) => {
-    const isFav = isWorkflowFavourited(workflow.id ?? '');
-    return [
-      [{ label: 'Run', click: () => viewRunOmicsWorkflow(workflow) }],
-      [
-        {
-          label: isFav ? 'Remove from Favourites' : 'Add to Favourites',
-          click: () => toggleFavouriteWorkflow(workflow),
-        },
-      ],
-    ];
-  };
 
   function viewRunOmicsWorkflow(workflow: OmicsWorkflow) {
     $router.push({
@@ -859,12 +844,33 @@
   <!-- HealthOmics Workflows tab -->
   <div v-if="activeTabKey === 'omicsWorkflows'">
     <EGTable
-      :row-click-action="viewRunOmicsWorkflow"
+      narrow-run-and-favourite-columns
       :table-data="omicsWorkflows"
       :columns="omicsWorkflowsTableColumns"
       :is-loading="useUiStore().anyRequestPending(['loadLabData', 'getOmicsWorkflows'])"
       :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'getOmicsWorkflows'])"
     >
+      <template #favourite-data="{ row: workflow }">
+        <button
+          type="button"
+          class="text-primary hover:text-primary-dark hover:bg-primary-muted flex items-center justify-center rounded-full p-1 transition-all duration-150 hover:scale-110"
+          :aria-label="
+            isWorkflowFavourited(workflow.id ?? '') ? 'Remove workflow from favourites' : 'Add workflow to favourites'
+          "
+          :title="
+            isWorkflowFavourited(workflow.id ?? '') ? 'Remove workflow from favourites' : 'Add workflow to favourites'
+          "
+          @click.stop="toggleFavouriteWorkflow(workflow)"
+        >
+          <UIcon
+            :name="isWorkflowFavourited(workflow.id ?? '') ? 'i-heroicons-star-solid' : 'i-heroicons-star'"
+            class="h-6 w-6"
+            :class="isWorkflowFavourited(workflow.id ?? '') ? 'text-primary' : 'text-primary/45 hover:text-primary'"
+            aria-hidden="true"
+          />
+        </button>
+      </template>
+
       <template #Name-data="{ row: workflow }">
         <div class="flex items-center">
           {{ workflow?.name }}
@@ -875,10 +881,16 @@
         {{ workflow?.description }}
       </template>
 
-      <template #actions-data="{ row: workflow }">
-        <div class="flex justify-end">
-          <EGActionButton :items="omicsWorkflowsActionItems(workflow)" class="ml-2" @click="$event.stopPropagation()" />
-        </div>
+      <template #run-data="{ row: workflow }">
+        <button
+          type="button"
+          class="text-primary hover:text-primary-dark hover:bg-primary-muted flex items-center justify-center rounded-full p-1 transition-all duration-150 hover:scale-110"
+          aria-label="Run workflow"
+          title="Run workflow"
+          @click.stop="viewRunOmicsWorkflow(workflow)"
+        >
+          <UIcon name="i-heroicons-play-circle" class="h-6 w-6" aria-hidden="true" />
+        </button>
       </template>
 
       <template #empty-state>

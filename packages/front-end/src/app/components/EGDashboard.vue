@@ -203,7 +203,8 @@
   const favouriteWorkflowsTableColumns = [
     { key: 'WorkflowName', label: 'Name' },
     { key: 'Description', label: 'Description' },
-    { key: 'actions', label: 'Actions' },
+    { key: 'run', label: 'Run' },
+    { key: 'favourite', label: 'Favourite' },
   ];
 
   const displayedFavouriteWorkflows = computed(() => favouriteWorkflows.value.slice(0, 5));
@@ -234,13 +235,6 @@
         : `/labs/${props.labId}/run-workflow/${workflow.WorkflowId}`;
     const queryKey = workflow.Platform === 'Seqera Cloud' ? 'seqeraRunTempId' : 'omicsRunTempId';
     $router.push({ path, query: { [queryKey]: crypto.randomUUID() } });
-  }
-
-  function workflowActionItems(workflow: FavouriteWorkflow): object[] {
-    return [
-      [{ label: 'Run', click: () => runFavouriteWorkflow(workflow) }],
-      [{ label: 'Remove from Favourites', click: () => removeFavouriteWorkflow(workflow) }],
-    ];
   }
 
   async function removeFavouriteWorkflow(workflow: FavouriteWorkflow) {
@@ -458,11 +452,24 @@
       </div>
 
       <EGTable
+        narrow-run-and-favourite-columns
         :table-data="displayedFavouriteWorkflows"
         :columns="favouriteWorkflowsTableColumns"
         :is-loading="uiStore.isRequestPending('loadDashboardData')"
         :show-pagination="false"
       >
+        <template #favourite-data="{ row: workflow }">
+          <button
+            type="button"
+            class="text-primary hover:text-primary-dark hover:bg-primary-muted flex items-center justify-center rounded-full p-1 transition-all duration-150 hover:scale-110"
+            aria-label="Remove workflow from favourites"
+            title="Remove workflow from favourites"
+            @click.stop="removeFavouriteWorkflow(workflow)"
+          >
+            <UIcon name="i-heroicons-star-solid" class="h-6 w-6" aria-hidden="true" />
+          </button>
+        </template>
+
         <template #WorkflowName-data="{ row: workflow }">
           <div class="text-body text-sm font-semibold">{{ workflow.WorkflowName }}</div>
         </template>
@@ -471,10 +478,16 @@
           <div class="text-muted text-sm">{{ workflow.Description || '—' }}</div>
         </template>
 
-        <template #actions-data="{ row }">
-          <div class="flex justify-end">
-            <EGActionButton :items="workflowActionItems(row)" class="ml-2" @click="$event.stopPropagation()" />
-          </div>
+        <template #run-data="{ row: workflow }">
+          <button
+            type="button"
+            class="text-primary hover:text-primary-dark hover:bg-primary-muted flex items-center justify-center rounded-full p-1 transition-all duration-150 hover:scale-110"
+            aria-label="Run workflow"
+            title="Run workflow"
+            @click.stop="runFavouriteWorkflow(workflow)"
+          >
+            <UIcon name="i-heroicons-play-circle" class="h-6 w-6" aria-hidden="true" />
+          </button>
         </template>
 
         <template #empty-state>
