@@ -14,6 +14,7 @@ import { SQSEvent } from 'aws-lambda/trigger/sqs';
 //import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
+import { WorkflowRunIndexService } from '@BE/services/easy-genomics/workflow-run-index-service';
 import { OmicsService } from '@BE/services/omics-service';
 import { SsmService } from '@BE/services/ssm-service';
 import {
@@ -27,6 +28,7 @@ import { getNextFlowApiQueryParameters, httpRequest, REST_API_METHOD } from '@BE
 
 const laboratoryService = new LaboratoryService();
 const laboratoryRunService = new LaboratoryRunService();
+const workflowRunIndexService = new WorkflowRunIndexService();
 const ssmService = new SsmService();
 const omicsService = new OmicsService();
 
@@ -78,7 +80,7 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
       const shouldSetTerminalAt = existingRun.TerminalAt == null;
       const shouldSetExpiresAt = existingRun.ExpiresAt == null && shouldExpireWithRetentionMonths(retentionMonths);
 
-      await laboratoryRunService.update({
+      const updated = await laboratoryRunService.update({
         ...existingRun,
         ...(shouldSetTerminalAt ? { TerminalAt: terminalAtIso } : {}),
         ...(shouldSetExpiresAt
@@ -87,6 +89,7 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         ModifiedAt: now.toISOString(),
         ModifiedBy: 'Status Check',
       });
+      await workflowRunIndexService.upsert(updated);
       return true;
     }
 
@@ -123,6 +126,7 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         ModifiedAt: now.toISOString(),
         ModifiedBy: 'Status Check',
       });
+      await workflowRunIndexService.upsert(laboratoryRun);
     }
   } else {
     console.error(`Unsupported SNS Processing Event Operation: ${operation}`);
