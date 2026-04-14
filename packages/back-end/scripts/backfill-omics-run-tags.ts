@@ -19,7 +19,6 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import { LaboratoryRunService } from '../src/app/services/easy-genomics/laboratory-run-service';
-import { WorkflowRunIndexService } from '../src/app/services/easy-genomics/workflow-run-index-service';
 import { OmicsService } from '../src/app/services/omics-service';
 
 const AWS_HEALTH_OMICS_PLATFORM = 'AWS HealthOmics';
@@ -54,30 +53,10 @@ async function main(): Promise<void> {
   loadEnv();
 
   const laboratoryRunService = new LaboratoryRunService();
-  const workflowRunIndexService = new WorkflowRunIndexService();
   const omicsService = new OmicsService();
 
   console.log('Scanning laboratory-run table for AWS HealthOmics runs with ExternalRunId...');
   const allRuns = await laboratoryRunService.listAllLaboratoryRuns();
-  console.log(`Backfilling workflow-run-index table with ${allRuns.length} run(s)...\n`);
-
-  let indexed = 0;
-  let indexErrors = 0;
-  for (const run of allRuns) {
-    if (dryRun) {
-      console.log(`[dry-run] Would upsert workflow-run-index for RunId=${run.RunId} LaboratoryId=${run.LaboratoryId}`);
-      indexed++;
-      continue;
-    }
-    try {
-      await workflowRunIndexService.upsert(run);
-      indexed++;
-    } catch (err: any) {
-      console.error(`Error upserting workflow-run-index for RunId=${run.RunId}:`, err.message ?? err);
-      indexErrors++;
-    }
-  }
-  console.log(`Workflow run index backfill complete. Upserted: ${indexed}, errors: ${indexErrors}.\n`);
 
   const toTag = allRuns.filter(
     (r: LaboratoryRun) =>
@@ -128,9 +107,9 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `\nDone. Indexed: ${indexed} (errors: ${indexErrors}). Tagged: ${tagged}, skipped (not found): ${skipped}, errors: ${errors}${dryRun ? ' (dry run)' : ''}.`,
+    `\nDone. Tagged: ${tagged}, skipped (not found): ${skipped}, errors: ${errors}${dryRun ? ' (dry run)' : ''}.`,
   );
-  if (errors > 0 || indexErrors > 0) {
+  if (errors > 0) {
     process.exit(1);
   }
 }

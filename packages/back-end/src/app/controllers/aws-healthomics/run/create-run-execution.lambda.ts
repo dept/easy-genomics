@@ -9,13 +9,11 @@ import {
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { CreateRunRequest } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
-import { WorkflowRunIndexService } from '@BE/services/easy-genomics/workflow-run-index-service';
 import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import {
   validateLaboratoryManagerAccess,
@@ -27,7 +25,6 @@ import { assertLaboratoryHasWorkflowAccess } from '@BE/utils/laboratory-workflow
 const laboratoryService = new LaboratoryService();
 const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
 const laboratoryRunService = new LaboratoryRunService();
-const workflowRunIndexService = new WorkflowRunIndexService();
 
 /**
  * This POST /aws-healthomics/run/create-run-execution?laboratoryId={LaboratoryId}
@@ -135,7 +132,7 @@ export const handler: Handler = async (
     // without calling HealthOmics ListRuns.
     const now = new Date();
     const internalRunId = uuidv4();
-    const laboratoryRun: LaboratoryRun = await laboratoryRunService.add({
+    await laboratoryRunService.add({
       LaboratoryId: laboratory.LaboratoryId,
       RunId: internalRunId,
       UserId: omicsUserId,
@@ -151,7 +148,6 @@ export const handler: Handler = async (
       CreatedAt: now.toISOString(),
       CreatedBy: omicsUserId,
     });
-    await workflowRunIndexService.upsert(laboratoryRun);
 
     const payload = {
       ...response,

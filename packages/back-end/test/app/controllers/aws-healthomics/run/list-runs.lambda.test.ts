@@ -3,8 +3,8 @@ import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 const mockQueryByLaboratoryId = jest.fn();
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
-jest.mock('../../../../../src/app/services/easy-genomics/workflow-run-index-service', () => ({
-  WorkflowRunIndexService: jest.fn().mockImplementation(() => ({
+jest.mock('../../../../../src/app/services/easy-genomics/laboratory-run-service', () => ({
+  LaboratoryRunService: jest.fn().mockImplementation(() => ({
     queryByLaboratoryId: mockQueryByLaboratoryId,
   })),
 }));

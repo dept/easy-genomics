@@ -2,7 +2,6 @@ import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 
 const mockListByLaboratoryId = jest.fn();
 const mockAddLaboratoryRun = jest.fn();
-const mockUpsertWorkflowRunIndex = jest.fn();
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-workflow-access-service', () => ({
@@ -13,11 +12,6 @@ jest.mock('../../../../../src/app/services/easy-genomics/laboratory-workflow-acc
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-run-service', () => ({
   LaboratoryRunService: jest.fn().mockImplementation(() => ({
     add: mockAddLaboratoryRun,
-  })),
-}));
-jest.mock('../../../../../src/app/services/easy-genomics/workflow-run-index-service', () => ({
-  WorkflowRunIndexService: jest.fn().mockImplementation(() => ({
-    upsert: mockUpsertWorkflowRunIndex,
   })),
 }));
 jest.mock('../../../../../src/app/services/omics-service');
@@ -131,8 +125,6 @@ describe('create-run-execution.lambda', () => {
 
     mockAddLaboratoryRun.mockReset();
     mockAddLaboratoryRun.mockImplementation(async (run: any) => run);
-    mockUpsertWorkflowRunIndex.mockReset();
-    mockUpsertWorkflowRunIndex.mockResolvedValue(undefined);
 
     mockValidateOrgAdmin.mockReturnValue(true);
     mockValidateLabManager.mockReturnValue(false);

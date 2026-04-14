@@ -8,8 +8,8 @@ import {
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { WorkflowRunIndexService } from '@BE/services/easy-genomics/workflow-run-index-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
@@ -18,7 +18,7 @@ import {
 import { AwsHealthOmicsQueryParameters, getAwsHealthOmicsApiQueryParameters } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
-const workflowRunIndexService = new WorkflowRunIndexService();
+const laboratoryRunService = new LaboratoryRunService();
 
 /**
  * This GET /aws-healthomics/run/list-runs?laboratoryId={LaboratoryId}
@@ -67,9 +67,9 @@ export const handler: Handler = async (
 
     const queryParameters: AwsHealthOmicsQueryParameters = getAwsHealthOmicsApiQueryParameters(event);
 
-    // DDB-backed listing to avoid relying on HealthOmics ListRuns IAM scoping.
-    // We return an Omics-compatible ListRunsResponse shape, built from our run index.
-    const runs = await workflowRunIndexService.queryByLaboratoryId(laboratory.LaboratoryId);
+    // DDB-backed listing from the canonical laboratory-run table to avoid relying on HealthOmics ListRuns IAM scoping.
+    // We return an Omics-compatible ListRunsResponse shape.
+    const runs = await laboratoryRunService.queryByLaboratoryId(laboratory.LaboratoryId);
 
     const statusFilter = validateRunStatusQueryParameter(queryParameters.status);
     const nameFilter = (queryParameters.name ?? '').toLowerCase().trim();
