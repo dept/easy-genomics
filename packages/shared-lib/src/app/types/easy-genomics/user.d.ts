@@ -37,6 +37,15 @@ export interface User extends BaseAttributes {
   OrganizationAccess?: OrganizationAccess;
   SampleIdSplitPattern?: string; // User preference for splitting sample IDs from filenames
   OmicsWorkflowDefaultParams?: Record<string, Record<string, unknown>>; // workflowId -> parameters
+  FavouriteWorkflows?: FavouriteWorkflow[];
+}
+
+export interface FavouriteWorkflow {
+  WorkflowId: string;
+  WorkflowName: string;
+  Description?: string;
+  Platform: 'Seqera Cloud' | 'AWS HealthOmics';
+  LaboratoryId: string;
 }
 
 export type OrganizationAccess = Record<string, OrganizationAccessDetails>;
