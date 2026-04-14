@@ -9,7 +9,6 @@ import {
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { WorkflowRunIndexService } from '@BE/services/easy-genomics/workflow-run-index-service';
 import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import {
   validateLaboratoryManagerAccess,
@@ -18,7 +17,6 @@ import {
 } from '@BE/utils/auth-utils';
 
 const laboratoryService = new LaboratoryService();
-const workflowRunIndexService = new WorkflowRunIndexService();
 
 /**
  * This PUT /aws-healthomics/run/cancel-run-execution/:{RunId}?laboratoryId={LaboratoryId}
@@ -64,14 +62,6 @@ export const handler: Handler = async (
     // Requires AWS Health Omics access
     if (!laboratory.AwsHealthOmicsEnabled) {
       throw new MissingAWSHealthOmicsAccessError();
-    }
-
-    // Optional hardening: ensure this run is indexed for this lab before canceling via HealthOmics.
-    const indexed = (await workflowRunIndexService.queryByLaboratoryId(laboratory.LaboratoryId)).some(
-      (r) => r.Platform === 'AWS HealthOmics' && r.ExternalRunId === id,
-    );
-    if (!indexed) {
-      throw new UnauthorizedAccessError();
     }
 
     const userId = event.requestContext.authorizer.claims['cognito:username'] as string;

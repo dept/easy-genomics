@@ -269,7 +269,6 @@ export class EasyGenomicsNestedStack extends NestedStack {
         ENV_TYPE: this.props.envType,
         ENV_NAME: this.props.envName,
         NAME_PREFIX: this.props.namePrefix,
-        WORKFLOW_RUN_INDEX_TABLE_NAME: `${this.props.namePrefix}-workflow-run-index-table`,
       },
     });
 
@@ -1057,14 +1056,6 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
       new PolicyStatement({
         resources: [
-          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-workflow-run-index-table`,
-          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-workflow-run-index-table/index/*`,
-        ],
-        actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem'],
-        effect: Effect.ALLOW,
-      }),
-      new PolicyStatement({
-        resources: [
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
         ],
@@ -1680,37 +1671,6 @@ export class EasyGenomicsNestedStack extends NestedStack {
       lsi: baseLSIAttributes,
     });
     this.dynamoDBTables.set(laboratoryRunTableName, laboratoryRunTable);
-
-    // Unified Workflow Run Index table
-    // Used to power the full workflow runs list (Seqera + HealthOmics) with lab-scoped queries.
-    const workflowRunIndexTableName = `${this.props.namePrefix}-workflow-run-index-table`;
-    const workflowRunIndexTable = this.dynamoDB.createTable(workflowRunIndexTableName, {
-      partitionKey: {
-        name: 'LaboratoryId',
-        type: AttributeType.STRING,
-      },
-      sortKey: {
-        name: 'RunId',
-        type: AttributeType.STRING,
-      },
-      timeToLiveAttribute: 'ExpiresAt',
-      gsi: [
-        {
-          partitionKey: {
-            name: 'RunId',
-            type: AttributeType.STRING,
-          },
-        },
-        {
-          partitionKey: {
-            name: 'OrganizationId',
-            type: AttributeType.STRING,
-          },
-        },
-      ],
-      lsi: baseLSIAttributes,
-    });
-    this.dynamoDBTables.set(workflowRunIndexTableName, workflowRunIndexTable);
 
     // Unique-Reference table
     const uniqueReferenceTableName = `${this.props.namePrefix}-unique-reference-table`;
