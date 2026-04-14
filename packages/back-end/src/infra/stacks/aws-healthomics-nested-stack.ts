@@ -580,18 +580,6 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         actions: ['dynamodb:Query'],
         effect: Effect.ALLOW,
       }),
-      new PolicyStatement({
-        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:run/*`],
-        actions: ['omics:ListRuns'],
-        effect: Effect.ALLOW,
-      }),
-      new PolicyStatement({
-        resources: [
-          `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
-        ],
-        actions: ['sts:AssumeRole', 'sts:TagSession'],
-        effect: Effect.ALLOW,
-      }),
     ]);
     // /aws-healthomics/run/read-run
     this.iam.addPolicyStatements('/aws-healthomics/run/read-run', [
