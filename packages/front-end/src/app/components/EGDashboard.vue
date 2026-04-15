@@ -4,7 +4,7 @@
   import { FavouriteWorkflow } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
   import { Pipeline as SeqeraPipeline } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
   import { WorkflowListItem as OmicsWorkflow } from '@aws-sdk/client-omics';
-  import { useToastStore, useUiStore, useSeqeraPipelinesStore, useOmicsWorkflowsStore } from '@FE/stores';
+  import { useUiStore, useSeqeraPipelinesStore, useOmicsWorkflowsStore } from '@FE/stores';
   import { TableSort } from './EGTable.vue';
 
   const props = defineProps<{
@@ -228,7 +228,6 @@
     { key: 'WorkflowName', label: 'Name' },
     { key: 'Description', label: 'Description' },
     { key: 'run', label: 'Run' },
-    { key: 'favourite', label: 'Favourite' },
   ];
 
   const displayedFavouriteWorkflows = computed(() => favouriteWorkflows.value.slice(0, 5));
@@ -259,19 +258,6 @@
         : `/labs/${props.labId}/run-workflow/${workflow.WorkflowId}`;
     const queryKey = workflow.Platform === 'Seqera Cloud' ? 'seqeraRunTempId' : 'omicsRunTempId';
     $router.push({ path, query: { [queryKey]: crypto.randomUUID() } });
-  }
-
-  async function removeFavouriteWorkflow(workflow: FavouriteWorkflow) {
-    const updated = favouriteWorkflows.value.filter(
-      (w) => !(w.WorkflowId === workflow.WorkflowId && w.LaboratoryId === workflow.LaboratoryId),
-    );
-    try {
-      await $api.users.updateUser(userStore.currentUserDetails.id!, { FavouriteWorkflows: updated });
-      favouriteWorkflows.value = updated;
-      useToastStore().success('Workflow removed from favourites');
-    } catch {
-      useToastStore().error('Failed to remove workflow from favourites');
-    }
   }
 
   function navigateBack() {
@@ -482,18 +468,6 @@
         :is-loading="uiStore.isRequestPending('loadDashboardData')"
         :show-pagination="false"
       >
-        <template #favourite-data="{ row: workflow }">
-          <button
-            type="button"
-            class="text-primary hover:text-primary-dark hover:bg-primary-muted flex items-center justify-center rounded-full p-1 transition-all duration-150 hover:scale-110"
-            aria-label="Remove workflow from favourites"
-            title="Remove workflow from favourites"
-            @click.stop="removeFavouriteWorkflow(workflow)"
-          >
-            <UIcon name="i-heroicons-star-solid" class="h-6 w-6" aria-hidden="true" />
-          </button>
-        </template>
-
         <template #WorkflowName-data="{ row: workflow }">
           <div class="text-body text-sm font-semibold">{{ workflow.WorkflowName }}</div>
         </template>
