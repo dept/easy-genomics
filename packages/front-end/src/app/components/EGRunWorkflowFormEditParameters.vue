@@ -122,7 +122,8 @@
     },
   });
 
-  const shouldSaveAsDefaults = ref(false);
+  const shouldSaveAsDefaults = ref(props.hasSavedDefaults);
+  let paramsReady = false;
   const fieldErrors = reactive<Record<string, string>>({});
 
   function isVersionLike(value: unknown): boolean {
@@ -333,6 +334,11 @@
         if (success) {
           useToastStore().success('Saved defaults for this workflow.');
         }
+      } else if (props.hasSavedDefaults) {
+        const cleared = await clearDefaultsForWorkflow();
+        if (cleared) {
+          useToastStore().success('Cleared saved defaults for this workflow.');
+        }
       }
       emit('next-step');
     } catch (error) {
@@ -345,6 +351,10 @@
     () => localProps.params,
     (val) => {
       if (val) runStore.updateWipOmicsRunParams(props.omicsRunTempId, val);
+
+      if (paramsReady) {
+        shouldSaveAsDefaults.value = false;
+      }
 
       // Re-validate fields that already have errors so they clear when fixed
       for (const fieldName of Object.keys(fieldErrors)) {
