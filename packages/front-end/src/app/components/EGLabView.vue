@@ -354,8 +354,8 @@
   const omicsWorkflowsTableColumns = [
     { key: 'Name', label: 'Name' },
     { key: 'description', label: 'Description' },
-    { key: 'run', label: 'Run' },
     { key: 'favourite', label: 'Favourite' },
+    { key: 'run', label: 'Run' },
   ];
 
   function isWorkflowFavourited(workflowId: string): boolean {
