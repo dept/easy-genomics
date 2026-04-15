@@ -78,7 +78,7 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
       const shouldSetTerminalAt = existingRun.TerminalAt == null;
       const shouldSetExpiresAt = existingRun.ExpiresAt == null && shouldExpireWithRetentionMonths(retentionMonths);
 
-      await laboratoryRunService.update({
+      const updated = await laboratoryRunService.update({
         ...existingRun,
         ...(shouldSetTerminalAt ? { TerminalAt: terminalAtIso } : {}),
         ...(shouldSetExpiresAt
@@ -87,6 +87,7 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         ModifiedAt: now.toISOString(),
         ModifiedBy: 'Status Check',
       });
+      void updated;
       return true;
     }
 

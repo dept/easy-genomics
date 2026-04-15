@@ -572,15 +572,11 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         actions: ['dynamodb:Query'],
       }),
       new PolicyStatement({
-        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:run/*`],
-        actions: ['omics:ListRuns'],
-        effect: Effect.ALLOW,
-      }),
-      new PolicyStatement({
         resources: [
-          `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
         ],
-        actions: ['sts:AssumeRole', 'sts:TagSession'],
+        actions: ['dynamodb:Query'],
         effect: Effect.ALLOW,
       }),
     ]);
@@ -592,6 +588,14 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
         ],
         actions: ['dynamodb:Query'],
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
       }),
       new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:run/*`],
@@ -616,6 +620,14 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         actions: ['dynamodb:Query'],
       }),
       new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:run/*`],
         actions: ['omics:CancelRun'],
         effect: Effect.ALLOW,
@@ -636,6 +648,13 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
         ],
         actions: ['dynamodb:Query'],
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+        ],
+        actions: ['dynamodb:PutItem'],
+        effect: Effect.ALLOW,
       }),
       workflowAccessQuery(),
       new PolicyStatement({

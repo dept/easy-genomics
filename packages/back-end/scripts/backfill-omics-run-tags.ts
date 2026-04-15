@@ -57,6 +57,7 @@ async function main(): Promise<void> {
 
   console.log('Scanning laboratory-run table for AWS HealthOmics runs with ExternalRunId...');
   const allRuns = await laboratoryRunService.listAllLaboratoryRuns();
+
   const toTag = allRuns.filter(
     (r: LaboratoryRun) =>
       r.Platform === AWS_HEALTH_OMICS_PLATFORM && r.ExternalRunId != null && r.ExternalRunId.trim() !== '',
