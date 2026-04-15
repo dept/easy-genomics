@@ -125,6 +125,11 @@
   const shouldSaveAsDefaults = ref(false);
   const fieldErrors = reactive<Record<string, string>>({});
 
+  function isVersionLike(value: unknown): boolean {
+    if (typeof value !== 'string') return false;
+    return /^\d+(?:\.\d+)+$/.test(value.trim());
+  }
+
   function validateField(field: SchemaItem, value: any): string | null {
     const isEmpty = value === '' || value === undefined || value === null;
 
@@ -137,12 +142,14 @@
     }
 
     if (field.type === 'integer') {
-      if (!Number.isInteger(Number(value)) || isNaN(Number(value))) {
-        return 'Must be a whole number';
+      const supportsVersionLikeValue = isVersionLike(value);
+      if (!supportsVersionLikeValue && (!Number.isInteger(Number(value)) || isNaN(Number(value)))) {
+        return 'Must be a whole number or version (e.g. 5.3.7)';
       }
     } else if (field.type === 'number') {
-      if (isNaN(Number(value))) {
-        return 'Must be a valid number';
+      const supportsVersionLikeValue = isVersionLike(value);
+      if (!supportsVersionLikeValue && isNaN(Number(value))) {
+        return 'Must be a valid number or version (e.g. 5.3.7)';
       }
     }
 
@@ -392,13 +399,12 @@
               :model-value="!!localProps.params[schemaField.name]"
               @update:model-value="(val) => (localProps.params[schemaField.name] = val)"
             />
-            <!-- Integer / number: numeric input -->
-            <EGParametersNumberField
+            <!-- Integer / number: text input to support dotted versions like 5.3.7 -->
+            <EGParametersStringField
               v-else-if="schemaField.type === 'integer' || schemaField.type === 'number'"
               :description="schemaField.description"
               :help-text="schemaField.helpText"
-              :model-value="Number(localProps.params[schemaField.name]) || 0"
-              @update:model-value="(val) => (localProps.params[schemaField.name] = val)"
+              v-model="localProps.params[schemaField.name]"
             />
             <!-- Enum: searchable select -->
             <EGParametersSelectField
