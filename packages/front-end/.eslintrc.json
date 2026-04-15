@@ -157,6 +157,7 @@
     "import/no-unresolved": [
       "error"
     ],
+    "import/named": "off",
     "import/order": [
       "warn",
       {

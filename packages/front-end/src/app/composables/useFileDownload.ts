@@ -2,7 +2,7 @@ import { FileDownloadResponse } from '@/packages/shared-lib/src/app/types/nf-tow
 import { FolderDownloadJobStatusResponse } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-folder-download-job-status';
 import axios from 'axios';
 import { saveAs } from 'file-saver';
-import { Ref } from '.nuxt/imports';
+import type { Ref } from 'vue';
 
 export default function useFileDownload() {
   const { $api } = useNuxtApp();

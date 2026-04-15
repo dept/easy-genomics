@@ -44,9 +44,17 @@
       s3Contents?: S3Response | null;
       isLoading?: boolean;
       startPath?: string[];
+      /** When true, file rows support multi-select and optional tag display (Data Collections). */
+      selectionMode?: boolean;
+      /** Tag metadata keyed by S3 object key (used when selectionMode). */
+      tagsByS3Key?: Record<string, { TagId: string; Name: string; Color: string }[]>;
+      /** When set with selectionMode, filter file rows (folders remain visible). */
+      tagFilter?: 'all' | 'untagged' | string;
     }>(),
     { isLoading: true },
   );
+
+  const selectedKeys = defineModel<string[]>('selectedKeys', { default: () => [] });
 
   const { handleS3Download, downloadFolder, isFolderZipInProgress } = useFileDownload();
   const { $api } = useNuxtApp();
@@ -314,43 +322,54 @@
     return direction === 'asc' ? result : -result;
   }
 
-  const tableColumns = [
-    {
-      key: 'name',
-      label: 'Name',
-      sortable: true,
-      sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
-        sortHelpers.stringSortCompare(String(a ?? ''), String(b ?? ''), direction),
-    },
-    {
-      key: 'type',
-      label: 'Type',
-      sortable: true,
-      sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
-        sortHelpers.stringSortCompare(String(a ?? ''), String(b ?? ''), direction),
-    },
-    {
-      key: 'lastModified',
-      label: 'Date Modified',
-      sortable: true,
-      sort: compareLastModified,
-    },
-    {
-      key: 'size',
-      label: 'Size',
-      sortable: true,
-      sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
-        sortHelpers.numberSortCompare(Number(a ?? 0), Number(b ?? 0), direction),
-    },
-    { key: 'actions', label: 'Actions' },
-  ];
+  const tableColumns = computed(() => {
+    const core = [
+      {
+        key: 'name',
+        label: 'Name',
+        sortable: true,
+        sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
+          sortHelpers.stringSortCompare(String(a ?? ''), String(b ?? ''), direction),
+      },
+      {
+        key: 'type',
+        label: 'Type',
+        sortable: true,
+        sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
+          sortHelpers.stringSortCompare(String(a ?? ''), String(b ?? ''), direction),
+      },
+      {
+        key: 'lastModified',
+        label: 'Date Modified',
+        sortable: true,
+        sort: compareLastModified,
+      },
+      {
+        key: 'size',
+        label: 'Size',
+        sortable: true,
+        sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
+          sortHelpers.numberSortCompare(Number(a ?? 0), Number(b ?? 0), direction),
+      },
+      { key: 'actions', label: 'Actions' },
+    ];
+    if (!props.selectionMode) {
+      return core;
+    }
+    return [
+      { key: 'select', label: '', sortable: false },
+      ...core.slice(0, -1),
+      { key: 'tags', label: 'Tags', sortable: false },
+      core[core.length - 1],
+    ];
+  });
 
   const fileTableSort = ref<TableSort>({ column: 'name', direction: 'asc' });
 
   const sortedTableData = computed(() => {
     const items = [...filteredItems.value];
     const { column, direction } = fileTableSort.value;
-    const col = tableColumns.find((c) => c.key === column);
+    const col = tableColumns.value.find((c) => c.key === column);
     if (!col || !('sortable' in col) || !col.sortable || typeof col.sort !== 'function') {
       return items;
     }
@@ -369,6 +388,37 @@
 
     return items;
   });
+
+  const displayedTableData = computed(() => {
+    const items = sortedTableData.value;
+    if (!props.selectionMode || !props.tagFilter || props.tagFilter === 'all') {
+      return items;
+    }
+    return items.filter((row: FileTreeNode) => {
+      if (row.type === 'directory') return true;
+      if (!row.s3Key) return false;
+      const tags = props.tagsByS3Key?.[row.s3Key] ?? [];
+      if (props.tagFilter === 'untagged') return tags.length === 0;
+      return tags.some((t) => t.TagId === props.tagFilter);
+    });
+  });
+
+  const emit = defineEmits<{
+    visibleFileKeysChange: [keys: string[]];
+  }>();
+
+  watch(
+    () =>
+      displayedTableData.value
+        .filter((n): n is FileTreeNode & { s3Key: string } => n.type === 'file' && !!n.s3Key)
+        .map((n) => n.s3Key),
+    (keys) => {
+      if (props.selectionMode) {
+        emit('visibleFileKeysChange', keys);
+      }
+    },
+    { immediate: true, deep: true },
+  );
 
   // key is the uniqueString of a file tree node
   // value is the ref containing the progress of the download out of 100
@@ -425,7 +475,27 @@
     return !isNaN(d.getTime());
   }
 
-  const onRowClicked = useDebounceFn((item: FileTreeNode) => {
+  function toggleFileSelection(s3Key: string | undefined) {
+    if (!s3Key || !props.selectionMode) return;
+    const set = new Set(selectedKeys.value);
+    if (set.has(s3Key)) set.delete(s3Key);
+    else set.add(s3Key);
+    selectedKeys.value = [...set];
+  }
+
+  function rowAttrsForExplorer(row: FileTreeNode): Record<string, string> {
+    if (props.selectionMode && row.type === 'file' && row.s3Key) {
+      return { 'data-s3-key': row.s3Key };
+    }
+    return {};
+  }
+
+  function rowClassesExplorer(row: FileTreeNode): string {
+    if (!props.selectionMode || row.type !== 'file' || !row.s3Key) return '';
+    return selectedKeys.value.includes(row.s3Key) ? 'bg-primary-muted/40' : '';
+  }
+
+  const debouncedOpenDirectory = useDebounceFn((item: FileTreeNode) => {
     if (searchQuery.value.trim()) {
       if (item.type === 'directory' && item.isSearchResult) {
         void navigateToSearchDirectory(item);
@@ -436,6 +506,14 @@
       openDirectory(item);
     }
   }, 300);
+
+  const onRowClicked = (item: FileTreeNode) => {
+    if (props.selectionMode && item.type === 'file' && item.s3Key) {
+      toggleFileSelection(item.s3Key);
+      return;
+    }
+    debouncedOpenDirectory(item);
+  };
 
   const navigateTo = (index: number) => {
     if (index >= 0 && index < currentPath.value.length) {
@@ -693,12 +771,40 @@
 
     <EGTable
       :row-click-action="onRowClicked"
-      :table-data="sortedTableData"
+      :row-classes="selectionMode ? rowClassesExplorer : undefined"
+      :row-attrs="selectionMode ? rowAttrsForExplorer : undefined"
+      :rows-per-page="selectionMode ? 100 : 10"
+      :show-pagination="true"
+      :table-data="selectionMode ? displayedTableData : sortedTableData"
       v-model:sort="fileTableSort"
       :columns="tableColumns"
       no-results-msg="No files or folders found"
       :is-loading="isRootLoading || isSearchLoading"
     >
+      <template #select-data="{ row }">
+        <UCheckbox
+          v-if="selectionMode && row.type === 'file' && row.s3Key"
+          :model-value="selectedKeys.includes(row.s3Key)"
+          @click.stop
+          @update:model-value="() => toggleFileSelection(row.s3Key)"
+        />
+      </template>
+      <template #tags-data="{ row }">
+        <div
+          v-if="row.type === 'file' && row.s3Key && tagsByS3Key && tagsByS3Key[row.s3Key]?.length"
+          class="flex max-w-xs flex-wrap gap-1"
+        >
+          <span
+            v-for="t in tagsByS3Key[row.s3Key]"
+            :key="t.TagId"
+            class="rounded px-1.5 py-0.5 text-[10px] font-medium"
+            :style="{ backgroundColor: `${t.Color}22`, color: t.Color }"
+          >
+            {{ t.Name }}
+          </span>
+        </div>
+        <span v-else class="text-gray-400">—</span>
+      </template>
       <template #name-data="{ row }">
         <div class="flex items-center gap-2">
           <span

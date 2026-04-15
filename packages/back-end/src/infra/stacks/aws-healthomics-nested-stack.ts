@@ -262,10 +262,17 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
           },
         },
       }),
-      // Allow GetRun, ListRuns, and CancelRun only for Runs tagged with the same LaboratoryId and OrganizationId as the principal
+      // NOTE: ListRuns is a "list" API and does not reliably support resource-level authorization via aws:ResourceTag.
+      // Keep GetRun/CancelRun scoped via tags, but allow ListRuns without resource tag conditions.
       new PolicyStatement({
         resources: ['*'],
-        actions: ['omics:GetRun', 'omics:ListRuns', 'omics:CancelRun'],
+        actions: ['omics:ListRuns'],
+        effect: Effect.ALLOW,
+      }),
+      // Allow GetRun and CancelRun only for Runs tagged with the same LaboratoryId and OrganizationId as the principal
+      new PolicyStatement({
+        resources: ['*'],
+        actions: ['omics:GetRun', 'omics:CancelRun'],
         effect: Effect.ALLOW,
         conditions: {
           StringEquals: {

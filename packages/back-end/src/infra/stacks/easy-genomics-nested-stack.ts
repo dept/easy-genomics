@@ -260,6 +260,10 @@ export class EasyGenomicsNestedStack extends NestedStack {
           timeoutSeconds: 900,
           memorySizeMb: 3008,
         },
+        '/easy-genomics/data-collection/remove-data-collection-tag': {
+          timeoutSeconds: 120,
+          memorySizeMb: 1024,
+        },
       },
       environment: {
         // Defines the common environment settings for all lambda functions
@@ -1368,6 +1372,44 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
     ]);
 
+    const dataCollectionDdbResources = [
+      `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-data-collection-table`,
+      `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-data-collection-table/index/*`,
+    ];
+    const dataCollectionLabPolicy = [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+      }),
+      new PolicyStatement({
+        resources: dataCollectionDdbResources,
+        actions: [
+          'dynamodb:GetItem',
+          'dynamodb:PutItem',
+          'dynamodb:UpdateItem',
+          'dynamodb:DeleteItem',
+          'dynamodb:Query',
+          'dynamodb:BatchGetItem',
+          'dynamodb:BatchWriteItem',
+        ],
+      }),
+    ];
+    this.iam.addPolicyStatements('/easy-genomics/data-collection/list-data-collection-tags', dataCollectionLabPolicy);
+    this.iam.addPolicyStatements('/easy-genomics/data-collection/create-data-collection-tag', dataCollectionLabPolicy);
+    this.iam.addPolicyStatements('/easy-genomics/data-collection/edit-data-collection-tag', dataCollectionLabPolicy);
+    this.iam.addPolicyStatements('/easy-genomics/data-collection/remove-data-collection-tag', dataCollectionLabPolicy);
+    this.iam.addPolicyStatements(
+      '/easy-genomics/data-collection/request-batch-get-data-collection-file-tags',
+      dataCollectionLabPolicy,
+    );
+    this.iam.addPolicyStatements(
+      '/easy-genomics/data-collection/request-batch-set-data-collection-file-tags',
+      dataCollectionLabPolicy,
+    );
+
     // /easy-genomics/file/request-folder-download-job
     this.iam.addPolicyStatements('/easy-genomics/file/request-folder-download-job', [
       new PolicyStatement({
@@ -1700,5 +1742,24 @@ export class EasyGenomicsNestedStack extends NestedStack {
       lsi: baseLSIAttributes,
     });
     this.dynamoDBTables.set(laboratoryWorkflowAccessTableName, laboratoryWorkflowAccessTable);
+
+    /**
+     * Data Collections: lab-scoped tag definitions and per-S3-key tag assignments.
+     * PK: LaboratoryId. SK: DataCollectionKey — TAG#&lt;uuid&gt; or FILE#&lt;sha256 hex of S3 key&gt;.
+     * Deleting a tag removes the TAG# item and strips that TagId from all FILE# rows for the lab (batched in delete lambda).
+     */
+    const dataCollectionTableName = `${this.props.namePrefix}-data-collection-table`;
+    const dataCollectionTable = this.dynamoDB.createTable(dataCollectionTableName, {
+      partitionKey: {
+        name: 'LaboratoryId',
+        type: AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'DataCollectionKey',
+        type: AttributeType.STRING,
+      },
+      lsi: baseLSIAttributes,
+    });
+    this.dynamoDBTables.set(dataCollectionTableName, dataCollectionTable);
   };
 }

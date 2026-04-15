@@ -4,9 +4,10 @@
     label: string;
     icon?: string;
     dividerBefore?: boolean;
+    to?: string;
   }
 
-  defineProps<{
+  const props = defineProps<{
     items: SidebarNavItem[];
     modelValue: number;
   }>();
@@ -20,7 +21,17 @@
   <nav class="sidebar-nav bg-white">
     <template v-for="(item, index) in items" :key="item.key">
       <div v-if="item.dividerBefore" class="border-background-dark-grey my-3 border-t" />
+      <NuxtLink
+        v-if="item.to"
+        :to="item.to"
+        class="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left font-serif text-sm transition-colors"
+        :class="['text-body hover:bg-background-light-grey']"
+      >
+        <UIcon v-if="item.icon" :name="item.icon" class="h-5 w-5 shrink-0" />
+        <span>{{ item.label }}</span>
+      </NuxtLink>
       <button
+        v-else
         @click="emit('update:modelValue', index)"
         class="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left font-serif text-sm transition-colors"
         :class="[
