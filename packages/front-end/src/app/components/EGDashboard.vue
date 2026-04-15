@@ -193,12 +193,36 @@
 
   const recentRunsSort = ref<TableSort>({ column: 'lastUpdated', direction: 'desc' });
 
-  const recentRunsTableItems = computed(() =>
-    recentRuns.value.map((run) => ({
+  function toSortableString(value: unknown): string {
+    if (value === null || value === undefined) return '';
+    return String(value).toLowerCase();
+  }
+
+  function toSortableTime(value: unknown): number {
+    if (!value) return 0;
+    const t = new Date(String(value)).getTime();
+    return Number.isFinite(t) ? t : 0;
+  }
+
+  const recentRunsTableItems = computed(() => {
+    const items = recentRuns.value.map((run) => ({
       ...run,
       lastUpdated: run.ModifiedAt ?? run.CreatedAt ?? '',
-    })),
-  );
+    }));
+
+    const { column, direction } = recentRunsSort.value ?? { column: 'lastUpdated', direction: 'desc' as const };
+    const dir = direction === 'asc' ? 1 : -1;
+
+    return [...items].sort((a, b) => {
+      if (column === 'lastUpdated') return (toSortableTime(a.lastUpdated) - toSortableTime(b.lastUpdated)) * dir;
+      if (column === 'RunName') return toSortableString(a.RunName).localeCompare(toSortableString(b.RunName)) * dir;
+      if (column === 'Status') return toSortableString(a.Status).localeCompare(toSortableString(b.Status)) * dir;
+
+      const av = (a as any)?.[column];
+      const bv = (b as any)?.[column];
+      return toSortableString(av).localeCompare(toSortableString(bv)) * dir;
+    });
+  });
 
   const favouriteWorkflowsTableColumns = [
     { key: 'WorkflowName', label: 'Name' },
