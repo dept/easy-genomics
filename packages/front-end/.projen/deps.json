@@ -270,6 +270,11 @@
       "type": "runtime"
     },
     {
+      "name": "vue",
+      "version": "3.5.32",
+      "type": "runtime"
+    },
+    {
       "name": "zod",
       "type": "runtime"
     }

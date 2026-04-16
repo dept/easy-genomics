@@ -78,6 +78,7 @@ const eslintGlobalRules = {
   'require-await': 'off',
   'array-callback-return': 'error',
   '@typescript-eslint/indent': 'off',
+  'import/named': 'off',
 };
 
 const tsConfigOptions: TypescriptConfigOptions = {
@@ -194,8 +195,8 @@ if (root.eslint) {
       'import/no-extraneous-dependencies': 'off',
     },
   });
-  root.eslint.addPlugins('prettier');
-  root.eslint.addExtends('plugin:@typescript-eslint/recommended', 'plugin:prettier/recommended');
+  // Use eslint-config-prettier to disable conflicting rules; avoid eslint-plugin-prettier runtime dependency.
+  root.eslint.addExtends('plugin:@typescript-eslint/recommended', 'prettier');
 }
 root.removeScript('build');
 root.addScripts({
@@ -256,11 +257,11 @@ const sharedLib = new typescript.TypeScriptProject({
     '@aws-sdk/client-cognito-identity-provider',
     `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-s3',
-    '@nestjs/config',
     'aws-cdk',
     'aws-cdk-lib',
     'aws-lambda',
     'js-yaml',
+    'strnum',
     'uuid',
     'zod',
   ],
@@ -287,7 +288,8 @@ sharedLib.addScripts({
 
 if (sharedLib.eslint) {
   sharedLib.eslint.addRules({ ...eslintGlobalRules });
-  sharedLib.eslint.addPlugins('prettier');
+  // Keep ESLint independent from prettier plugin runtime resolution under pnpm.
+  sharedLib.eslint.addExtends('prettier');
 }
 
 // Defines the Easy Genomics 'back-end' subproject
@@ -406,7 +408,7 @@ if (backEndApp.eslint) {
       },
     ],
   });
-  backEndApp.eslint.addPlugins('prettier');
+  backEndApp.eslint.addExtends('prettier');
 }
 // Defines the Easy Genomics 'front-end' subproject
 const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
@@ -435,7 +437,7 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
       baseUrl: '.',
       lib: ['DOM', 'ES2022'],
       sourceMap: true,
-      types: ['vue'],
+      types: ['node', 'vue'],
       verbatimModuleSyntax: false,
       paths: {
         '@/*': ['../../*'],
@@ -488,6 +490,7 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     'tailwindcss',
     'unplugin-vue-components',
     'uuid',
+    'vue@3.5.32',
     'zod',
   ],
   devDeps: [
@@ -536,12 +539,8 @@ frontEndApp.addScripts({
 // Setup Frontend App ESLint configuration
 if (frontEndApp.eslint) {
   frontEndApp.eslint.addRules({ ...eslintGlobalRules });
-  frontEndApp.eslint.addExtends(
-    '@nuxtjs/eslint-config-typescript',
-    'plugin:prettier/recommended',
-    'plugin:vue/vue3-recommended',
-  );
-  frontEndApp.eslint.addPlugins('eslint-plugin-vue', 'prettier', 'vue');
+  frontEndApp.eslint.addExtends('@nuxtjs/eslint-config-typescript', 'prettier', 'plugin:vue/vue3-recommended');
+  frontEndApp.eslint.addPlugins('eslint-plugin-vue', 'vue');
 }
 
 // Apply additional project setup

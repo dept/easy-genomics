@@ -1,7 +1,9 @@
 // this import triggers a bizarre eslint problem
 
-import { WorkflowListItem as OmicsWorkflow } from '@aws-sdk/client-omics';
+import type { ListWorkflows } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
 import { defineStore } from 'pinia';
+
+type OmicsWorkflow = NonNullable<ListWorkflows['items']>[number];
 
 interface OmicsWorkflowsStoreState {
   // indexed by workflow id

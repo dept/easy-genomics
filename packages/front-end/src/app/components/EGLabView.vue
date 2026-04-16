@@ -102,6 +102,7 @@
     const runsTab = { key: 'runs', label: 'Runs', icon: 'i-heroicons-clock' };
     const seqeraPipelinesTab = { key: 'seqeraPipelines', label: 'Seqera Workflows', icon: 'i-heroicons-command-line' };
     const omicsWorkflowsTab = { key: 'omicsWorkflows', label: 'HealthOmics Workflows', icon: 'i-heroicons-beaker' };
+    const dataCollectionsTab = { key: 'dataCollections', label: 'Data Collections', icon: 'i-heroicons-tag' };
     const usersTab = { key: 'users', label: 'Lab Users', icon: 'i-heroicons-users' };
     const detailsTab = { key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth' };
 
@@ -115,6 +116,7 @@
       if (seqeraAvailable || omicsAvailable) items.push(runsTab);
       if (seqeraAvailable) items.push(seqeraPipelinesTab);
       if (omicsAvailable) items.push(omicsWorkflowsTab);
+      if (lab.value?.S3Bucket) items.push(dataCollectionsTab);
     }
     items.push({ ...usersTab, dividerBefore: items.length > 0 });
     items.push(detailsTab);
@@ -129,6 +131,7 @@
       runs: 'View your pipeline runs',
       seqeraPipelines: 'View your Seqera pipelines',
       omicsWorkflows: 'View your HealthOmics workflows',
+      dataCollections: 'Browse and tag your lab files',
       users: 'View your lab users',
       details: 'View your lab settings',
     };
@@ -953,6 +956,11 @@
         <div class="text-muted flex h-24 items-center justify-center font-normal">There are no users in your Lab</div>
       </template>
     </EGTable>
+  </div>
+
+  <!-- Data Collections tab -->
+  <div v-if="activeTabKey === 'dataCollections'">
+    <EGDataCollectionsView :lab-id="labId" />
   </div>
 
   <!-- Lab Details -->

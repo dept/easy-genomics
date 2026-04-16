@@ -1,10 +1,12 @@
 // this import triggers a bizarre eslint problem
 
-import { RunListItem as OmicsRun } from '@aws-sdk/client-omics';
 import { Workflow as SeqeraRun } from '@easy-genomics/shared-lib/lib/app/types/nf-tower/nextflow-tower-api';
+import type { ListRuns } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import { defineStore } from 'pinia';
 import { FilePair } from '@FE/components/EGRunFormUploadData.vue';
+
+type OmicsRun = NonNullable<ListRuns['items']>[number];
 
 /*
 The WIP run is a construct for storing all of the data for a pipeline run that's being configured but hasn't been

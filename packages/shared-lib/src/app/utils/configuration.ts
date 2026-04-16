@@ -1,8 +1,19 @@
 import { readFileSync } from 'fs';
-import { ConfigService } from '@nestjs/config';
 import * as yaml from 'js-yaml';
 import { ConfigurationSettingsSchema } from '../schema/configuration';
 import { Configuration, ConfigurationSettings } from '../types/configuration';
+
+function getNestedProperty<T>(obj: Record<string, unknown>, path: string): T | undefined {
+  const keys = path.split('.');
+  let current: unknown = obj;
+  for (const key of keys) {
+    if (current === null || current === undefined || typeof current !== 'object') {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current as T | undefined;
+}
 
 /**
  * Shared function to read the command line argument: --stack {env-name}
@@ -25,10 +36,11 @@ export function getStackEnvName(): string | undefined {
  */
 export function loadConfigurations(filePath: string): { [p: string]: ConfigurationSettings }[] {
   const yamlConfigs: Record<string, any> = loadYamlConfigFile(filePath);
-  const configService = new ConfigService(yamlConfigs);
 
-  const configurations: Configuration[] | undefined =
-    configService.get<Configuration[]>('easy-genomics.configurations');
+  const configurations: Configuration[] | undefined = getNestedProperty<Configuration[]>(
+    yamlConfigs as Record<string, unknown>,
+    'easy-genomics.configurations',
+  );
   if (!configurations) {
     throw new Error('Easy Genomics Configuration(s) missing / invalid, please update: easy-genomics.yaml');
   }

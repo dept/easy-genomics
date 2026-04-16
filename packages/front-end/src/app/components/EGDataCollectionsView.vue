@@ -4,23 +4,19 @@
   import { useDataCollectionLasso } from '@FE/composables/useDataCollectionLasso';
   import { useLabsStore, useToastStore, useUiStore } from '@FE/stores';
 
-  const $route = useRoute();
-  const $router = useRouter();
+  const props = defineProps<{
+    labId: string;
+  }>();
+
   const { $api } = useNuxtApp();
 
   const labsStore = useLabsStore();
   const toastStore = useToastStore();
   const uiStore = useUiStore();
 
-  const labId = $route.params.labId as string;
-
-  const lab = computed<Laboratory | null>(() => labsStore.labs[labId] ?? null);
+  const lab = computed<Laboratory | null>(() => labsStore.labs[props.labId] ?? null);
   const s3Bucket = computed(() => lab.value?.S3Bucket ?? '');
   const s3Prefix = computed(() => (lab.value ? `${lab.value.OrganizationId}/${lab.value.LaboratoryId}/` : ''));
-
-  if (!useUserStore().canViewLab(labId)) {
-    $router.push('/labs');
-  }
 
   const tagDefinitions = ref<DataCollectionTag[]>([]);
   const tagsByS3Key = ref<Record<string, { TagId: string; Name: string; Color: string }[]>>({});
@@ -54,14 +50,14 @@
   });
 
   async function refreshTagDefinitions() {
-    const res = await $api.dataCollection.listDataCollectionTags(labId);
+    const res = await $api.dataCollection.listDataCollectionTags(props.labId);
     tagDefinitions.value = res.Tags;
   }
 
   async function hydrateAssignmentsForKeys(keys: string[]) {
     if (!keys.length) return;
     const res = await $api.dataCollection.requestBatchGetDataCollectionFileTags({
-      LaboratoryId: labId,
+      LaboratoryId: props.labId,
       S3Keys: keys,
     });
     const map = new Map(tagDefinitions.value.map((t) => [t.TagId, t]));
@@ -108,7 +104,7 @@
         return { S3Key: s3Key, TagIds: [...existing] };
       });
       await $api.dataCollection.requestBatchSetDataCollectionFileTags({
-        LaboratoryId: labId,
+        LaboratoryId: props.labId,
         Items: items,
       });
       toastStore.success('Tags updated');
@@ -127,7 +123,7 @@
     uiStore.setRequestPending('dataCollectionCreateTag');
     try {
       await $api.dataCollection.createDataCollectionTag({
-        LaboratoryId: labId,
+        LaboratoryId: props.labId,
         Name: newTagName.value.trim(),
         Color: newTagColor.value,
       });
@@ -147,7 +143,7 @@
   async function removeTag(tagId: string) {
     uiStore.setRequestPending('dataCollectionRemoveTag');
     try {
-      await $api.dataCollection.removeDataCollectionTag({ LaboratoryId: labId, TagId: tagId });
+      await $api.dataCollection.removeDataCollectionTag({ LaboratoryId: props.labId, TagId: tagId });
       toastStore.success('Tag removed');
       if (tagFilter.value === tagId) tagFilter.value = 'all';
       await refreshTagDefinitions();
@@ -167,7 +163,9 @@
   onMounted(async () => {
     uiStore.setRequestPending('loadDataCollectionsLab');
     try {
-      await labsStore.loadLab(labId);
+      if (!lab.value) {
+        await labsStore.loadLab(props.labId);
+      }
       await refreshTagDefinitions();
       tagsReady.value = true;
     } catch (e) {
@@ -177,26 +175,11 @@
       uiStore.setRequestComplete('loadDataCollectionsLab');
     }
   });
-
-  uiStore.setSidebarVisible(true);
-  onBeforeRouteLeave(() => {
-    uiStore.setSidebarVisible(false);
-  });
 </script>
 
 <template>
   <div v-if="lab && s3Bucket" class="flex min-h-0 flex-1 flex-col">
-    <EGPageHeader
-      title="Data Collections"
-      description="Browse lab files, tag them individually or lasso-select, then assign tags in bulk."
-      :show-back="true"
-      :back-action="() => $router.push(`/labs/${labId}`)"
-      show-org-breadcrumb
-      show-lab-breadcrumb
-    />
-
     <div class="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[220px_1fr] lg:gap-6">
-      <!-- Tag rail -->
       <aside class="bg-background-light-grey flex flex-col rounded-2xl border border-gray-200 p-3 lg:min-h-[420px]">
         <p class="text-muted mb-2 text-[10px] font-medium uppercase tracking-wide">Filter by tag</p>
         <button
@@ -281,7 +264,6 @@
         </div>
       </aside>
 
-      <!-- Explorer -->
       <div class="relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white">
         <div ref="explorerArea" class="relative min-h-[360px] flex-1 overflow-auto p-4" @mousedown="onLassoMouseDown">
           <EGFileExplorer
@@ -309,7 +291,6 @@
       </div>
     </div>
 
-    <!-- Bottom bar -->
     <div class="border-t border-gray-200 bg-white px-4 py-3">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p class="text-muted text-sm">

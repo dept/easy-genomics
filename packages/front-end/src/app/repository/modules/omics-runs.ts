@@ -1,5 +1,8 @@
-import { CancelRunCommandOutput, StartRunCommandOutput } from '@aws-sdk/client-omics';
-import { ListRuns, ReadRun } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
+import type {
+  CreateRun,
+  ListRuns,
+  ReadRun,
+} from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
 import HttpFactory from '@FE/repository/factory';
 
 class OmicsRunsModule extends HttpFactory {
@@ -29,7 +32,7 @@ class OmicsRunsModule extends HttpFactory {
     name: string,
     params: object,
     workflowVersionName?: string,
-  ): Promise<StartRunCommandOutput> {
+  ): Promise<CreateRun> {
     const payload: Record<string, string> = {
       workflowId,
       name,
@@ -38,11 +41,7 @@ class OmicsRunsModule extends HttpFactory {
     if (workflowVersionName) {
       payload.workflowVersionName = workflowVersionName;
     }
-    const res = await this.callOmics<StartRunCommandOutput>(
-      'POST',
-      `/run/create-run-execution?laboratoryId=${labId}`,
-      payload,
-    );
+    const res = await this.callOmics<CreateRun>('POST', `/run/create-run-execution?laboratoryId=${labId}`, payload);
 
     if (!res) {
       throw new Error('Failed to start omics run');
@@ -51,8 +50,8 @@ class OmicsRunsModule extends HttpFactory {
     return res;
   }
 
-  async cancelWorkflowRun(labId: string, runId: string): Promise<CancelRunCommandOutput> {
-    const res = await this.callOmics<CancelRunCommandOutput>(
+  async cancelWorkflowRun(labId: string, runId: string): Promise<Record<string, never>> {
+    const res = await this.callOmics<Record<string, never>>(
       'PUT',
       `/run/cancel-run-execution/${runId}?laboratoryId=${labId}`,
     );
