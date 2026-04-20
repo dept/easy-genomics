@@ -39,7 +39,7 @@
   // Table-related refs and computed props
   const searchOutput = ref('');
 
-  const tabIndex = ref(0);
+  const showWorkflowAccessTab = computed(() => props.superuser || props.orgAdmin);
 
   const tabItems = computed(() => {
     const items: { key: string; label: string }[] = [];
