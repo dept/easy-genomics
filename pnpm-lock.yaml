@@ -493,6 +493,9 @@ importers:
       js-yaml:
         specifier: ^4.1.0
         version: 4.1.0
+      strnum:
+        specifier: ^2.2.2
+        version: 2.2.2
       uuid:
         specifier: ^8.3.2
         version: 8.3.2
