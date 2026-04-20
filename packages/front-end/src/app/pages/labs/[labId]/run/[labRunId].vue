@@ -175,6 +175,7 @@
       <!-- Run Details -->
       <div v-if="item.key === 'runDetails'" class="space-y-3">
         <section
+          v-if="labRun"
           class="stroke-light flex flex-col rounded-none rounded-b-2xl border border-solid bg-white p-6 pt-0 max-md:px-5"
         >
           <dl class="mt-4 space-y-0">
@@ -188,10 +189,15 @@
               <dd :class="rowContentStyle">{{ labRun.WorkflowName }}</dd>
             </div>
 
+            <div v-if="labRun.Platform === 'AWS HealthOmics'" :class="rowStyle">
+              <dt :class="rowLabelStyle">Workflow version</dt>
+              <dd :class="rowContentStyle">{{ labRun.WorkflowVersionName || '—' }}</dd>
+            </div>
+
             <div :class="rowStyle">
               <dt :class="rowLabelStyle">{{ pipelineOrWorkflow }} Run Status</dt>
               <dd :class="rowContentStyle">
-                <EGStatusChip :status="labRun?.Status" />
+                <EGStatusChip :status="labRun.Status" />
               </dd>
             </div>
 
@@ -221,7 +227,7 @@
                 <EGS3SampleSheetBar
                   :url="labRun.SampleSheetS3Url"
                   :lab-id="labId"
-                  :lab-name="lab.labName"
+                  :lab-name="lab?.Name ?? ''"
                   :pipeline-or-workflow-name="labRun.WorkflowName"
                   :platform="labRun.Platform"
                   :run-name="labRun.RunName"

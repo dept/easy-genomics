@@ -26,6 +26,11 @@ export type DynamoDBTableDetails = {
   sortKey?: Attribute;
   gsi?: SchemaOptions[];
   lsi?: Attribute[];
+  /**
+   * DynamoDB TTL attribute name.
+   * The attribute value must be a number representing epoch seconds.
+   */
+  timeToLiveAttribute?: string;
 };
 
 export interface DynamoConstructProps {
@@ -50,6 +55,7 @@ export class DynamoConstruct extends Construct {
       partitionKey: partitionKey,
       sortKey: sortKey,
       billingMode: BillingMode.PAY_PER_REQUEST,
+      timeToLiveAttribute: settings.timeToLiveAttribute,
       removalPolicy: removalPolicy,
     });
 

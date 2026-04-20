@@ -13,6 +13,10 @@
       "type": "build"
     },
     {
+      "name": "@types/express",
+      "type": "build"
+    },
+    {
       "name": "@types/jest",
       "type": "build"
     },
@@ -44,6 +48,10 @@
       "type": "build"
     },
     {
+      "name": "aws-jwt-verify",
+      "type": "build"
+    },
+    {
       "name": "aws-sdk-client-mock",
       "type": "build"
     },
@@ -69,6 +77,10 @@
       "type": "build"
     },
     {
+      "name": "express",
+      "type": "build"
+    },
+    {
       "name": "jest",
       "type": "build"
     },
@@ -87,6 +99,10 @@
     },
     {
       "name": "ts-node",
+      "type": "build"
+    },
+    {
+      "name": "tsx",
       "type": "build"
     },
     {
@@ -115,10 +131,15 @@
     },
     {
       "name": "@aws-sdk/client-omics",
+      "version": "^3.1019.0",
       "type": "runtime"
     },
     {
       "name": "@aws-sdk/client-s3",
+      "type": "runtime"
+    },
+    {
+      "name": "@aws-sdk/client-secrets-manager",
       "type": "runtime"
     },
     {

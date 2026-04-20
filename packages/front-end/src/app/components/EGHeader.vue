@@ -71,8 +71,8 @@
 </script>
 
 <template>
-  <header class="lh flex flex-row items-center justify-center">
-    <div class="header-container" :class="{ 'flex w-full flex-row items-center justify-between pl-4': props.isAuthed }">
+  <header class="flex flex-row items-center px-8">
+    <div class="header-container" :class="{ 'flex w-full flex-row items-center justify-between': props.isAuthed }">
       <template v-if="props.isAuthed">
         <img class="mr-2 w-[140px]" src="@/assets/images/easy-genomics-logo.svg" alt="EasyGenomics logo" />
 
@@ -143,8 +143,8 @@
         </div>
       </template>
       <template v-else>
-        <div class="center flex flex-col justify-center text-center">
-          <img class="mr-2 w-[140px]" src="@/assets/images/easy-genomics-logo.svg" alt="EasyGenomics logo" />
+        <div class="flex w-full flex-col items-center justify-center text-center">
+          <img class="w-[140px]" src="@/assets/images/easy-genomics-logo.svg" alt="EasyGenomics logo" />
         </div>
       </template>
     </div>
@@ -156,11 +156,11 @@
 <style scoped lang="scss">
   header {
     background-color: white;
-    max-width: 100%;
-    height: 78px;
+    width: 100%;
+    height: var(--header-height);
   }
   .header-container {
-    max-width: var(--max-page-container-width-px);
+    width: 100%;
   }
 
   .ULink {

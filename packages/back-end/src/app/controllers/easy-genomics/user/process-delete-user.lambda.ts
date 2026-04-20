@@ -1,10 +1,10 @@
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
 import { OrganizationUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization-user';
 import {
   SnsProcessingEvent,
   SnsProcessingOperation,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
 import { APIGatewayProxyResult, Handler, SQSRecord } from 'aws-lambda';
 import { SQSEvent } from 'aws-lambda/trigger/sqs';
 import { LaboratoryUserService } from '@BE/services/easy-genomics/laboratory-user-service';

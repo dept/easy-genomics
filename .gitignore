@@ -92,4 +92,7 @@ packages/back-end/cdk.context.json
 packages/front-end/test-results
 packages/front-end/tests/e2e/.auth/*.json
 packages/front-end/playwright-report
+.pnpm-store
+!packages/back-end/.env.local.example
+!config/.env.nuxt.local.example
 !/.projenrc.ts

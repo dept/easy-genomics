@@ -29,12 +29,16 @@ class OmicsRunsModule extends HttpFactory {
     workflowId: string,
     name: string,
     params: object,
+    workflowVersionName?: string,
   ): Promise<StartRunCommandOutput> {
-    const payload = {
+    const payload: Record<string, string> = {
       workflowId,
       name,
       parameters: JSON.stringify(params),
     };
+    if (workflowVersionName) {
+      payload.workflowVersionName = workflowVersionName;
+    }
     const res = await this.callOmics<StartRunCommandOutput>(
       'POST',
       `/run/create-run-execution?laboratoryId=${labId}`,

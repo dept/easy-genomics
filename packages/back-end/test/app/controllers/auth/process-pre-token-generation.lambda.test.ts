@@ -109,6 +109,7 @@ describe('process-pre-token-generation Lambda', () => {
 
       const claims = result.response.claimsOverrideDetails?.claimsToAddOrOverride;
       expect(claims).toBeDefined();
+      expect(claims!.UserId).toBe('test-user-id');
       expect(claims!.PreferredName).toBe('Jo');
       expect(claims!.FirstName).toBe('John');
       expect(claims!.LastName).toBe('Doe');
@@ -127,6 +128,7 @@ describe('process-pre-token-generation Lambda', () => {
 
       const claims = result.response.claimsOverrideDetails?.claimsToAddOrOverride;
       expect(claims!.PreferredName).toBe('');
+      expect(claims!.UserId).toBe('test-user-id');
       expect(claims!.FirstName).toBe('');
       expect(claims!.LastName).toBe('');
       expect(claims!.DefaultOrganization).toBe('');

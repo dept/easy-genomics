@@ -10,16 +10,21 @@ import {
 import { CreateRunRequest } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { v4 as uuidv4 } from 'uuid';
+import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { OmicsService } from '@BE/services/omics-service';
+import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
+import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
+import { assertLaboratoryHasWorkflowAccess } from '@BE/utils/laboratory-workflow-access-utils';
 
 const laboratoryService = new LaboratoryService();
-const omicsService = new OmicsService();
+const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
+const laboratoryRunService = new LaboratoryRunService();
 
 /**
  * This POST /aws-healthomics/run/create-run-execution?laboratoryId={LaboratoryId}
@@ -70,9 +75,31 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
-    const parameters = JSON.parse(request.parameters.toString());
+    await assertLaboratoryHasWorkflowAccess(
+      laboratory,
+      'HEALTH_OMICS',
+      request.workflowId!,
+      laboratoryWorkflowAccessService,
+    );
+
+    // User metadata is optional: IAM access control is enforced via LaboratoryId/OrganizationId tagging.
+    // We still accept missing `sub/email` so run creation doesn't fail for users depending on claim mapping.
+    const userId: string | undefined =
+      event.requestContext.authorizer?.claims?.sub ?? event.requestContext.authorizer?.claims?.['cognito:username'];
+    const userEmail: string | undefined = event.requestContext.authorizer?.claims?.email;
+    // STS session naming and optional UserId session tag.
+    const omicsUserId = userId ?? 'unknown-user';
+    const omicsService = await createOmicsServiceForLab(
+      laboratory.LaboratoryId,
+      laboratory.OrganizationId,
+      omicsUserId,
+    );
+
+    const parameters = JSON.parse(request.parameters!.toString());
+    const { workflowVersionName, ...startRunRequestWithoutVersion } = request;
     const response = await omicsService.startRun(<StartRunCommandInput>{
-      ...request,
+      ...startRunRequestWithoutVersion,
+      ...(workflowVersionName ? { workflowVersionName } : {}),
       parameters: {
         ...parameters,
         outdir: '/mnt/workflow/pubdir', // AWS HealthOmics requires explicitly setting 'outdir' = '/mnt/workflow/pubdir' for internal output
@@ -80,8 +107,44 @@ export const handler: Handler = async (
       outputUri: parameters.outdir, // AWS HealthOmics requires setting outputUri for copying 'outdir' output to the final destination
       workflowType: 'PRIVATE',
       roleArn: `arn:aws:iam::${process.env.ACCOUNT_ID}:role/${process.env.NAME_PREFIX}-easy-genomics-healthomics-workflow-run-role`,
+      tags: {
+        LaboratoryId: laboratory.LaboratoryId,
+        OrganizationId: laboratory.OrganizationId,
+        WorkflowId: request.workflowId,
+        RunName: request.name,
+        ...(userId && { UserId: userId }),
+        ...(userEmail && { UserEmail: userEmail }),
+        Application: 'easy-genomics',
+        Platform: 'AWS HealthOmics',
+      },
     });
-    return buildResponse(200, JSON.stringify(response), event);
+
+    // Create an internal run record keyed by UUID so the rest of Easy Genomics can list runs
+    // without calling HealthOmics ListRuns.
+    const now = new Date();
+    const internalRunId = uuidv4();
+    await laboratoryRunService.add({
+      LaboratoryId: laboratory.LaboratoryId,
+      RunId: internalRunId,
+      UserId: omicsUserId,
+      OrganizationId: laboratory.OrganizationId,
+      RunName: request.name ?? 'Omics run',
+      Platform: 'AWS HealthOmics',
+      Status: (response.status ?? 'PENDING').toString().toUpperCase(),
+      Owner: userEmail ?? 'unknown',
+      WorkflowName: request.workflowId,
+      WorkflowVersionName: workflowVersionName,
+      ExternalRunId: response.id,
+      Settings: JSON.stringify({ workflowId: request.workflowId, parameters }),
+      CreatedAt: now.toISOString(),
+      CreatedBy: omicsUserId,
+    });
+
+    const payload = {
+      ...response,
+      internalRunId,
+    };
+    return buildResponse(200, JSON.stringify(payload), event);
   } catch (err: any) {
     console.error(err);
     return buildErrorResponse(err, event);

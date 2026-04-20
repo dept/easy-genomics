@@ -3,6 +3,7 @@
   import { useRunStore } from '@FE/stores';
   import { ButtonVariantEnum } from '@FE/types/buttons';
   import { WorkflowParameter } from '@aws-sdk/client-omics';
+  import { WorkflowSchemaResponse } from '@FE/repository/modules/omics-workflows';
   import { v4 as uuidv4 } from 'uuid';
 
   const { $api } = useNuxtApp();
@@ -31,6 +32,7 @@
   const hasLaunched = ref<boolean>(false);
   const exitConfirmed = ref<boolean>(false);
   const nextRoute = ref<string | null>(null);
+  const hasSavedDefaults = ref<boolean>(false);
 
   const selectedStepIndex = ref(0);
   const steps = ref([
@@ -42,13 +44,22 @@
 
   const labName = computed<string>(() => labsStore.labs[labId].Name);
 
+  /** Must match EGRunFormRunDetails default sentinel for Omics workflow version */
+  const OMICS_DEFAULT_WORKFLOW_VERSION = '__omics_default_version__';
+
   const omicsRunTempId = computed<string>(() => $route.query.omicsRunTempId as string);
+
+  const workflowVersionOptions = ref<{ value: string; label: string }[] | undefined>(undefined);
 
   const wipOmicsRun = computed<WipRun | null>(() => runStore.wipOmicsRuns[omicsRunTempId.value] || null);
 
   const workflow = computed<ReadWorkflow | null>(() => omicsWorkflowsStore.workflows[workflowId] || null);
 
   const schema = computed<Record<string, WorkflowParameter> | null>(() => workflow.value?.parameterTemplate ?? null);
+
+  // nf-core JSON Schema fetched from GitHub via the workflow-schema DynamoDB cache.
+  // Optional — some workflows may not have a github-repo-url tag.
+  const nfSchema = ref<object | null>(null);
 
   watch(
     omicsRunTempId,
@@ -108,6 +119,7 @@
 
     // reset state refs
     hasLaunched.value = false;
+    nfSchema.value = null;
     selectedStepIndex.value = 0;
 
     steps.value.forEach((step) => (step.disabled = true));
@@ -116,6 +128,33 @@
     // get full workflow details from API and save them in the store
     const omicsWorkflow: ReadWorkflow = await $api.omicsWorkflows.get(labId, workflowId);
     omicsWorkflowsStore.workflows[workflowId] = omicsWorkflow;
+
+    try {
+      const versionsRes = await $api.omicsWorkflows.listVersions(labId, workflowId);
+      const names = (versionsRes.items ?? [])
+        .map((v) => v.versionName)
+        .filter((n): n is string => !!n)
+        .sort((a, b) => a.localeCompare(b));
+      if (names.length > 0) {
+        workflowVersionOptions.value = [
+          { value: OMICS_DEFAULT_WORKFLOW_VERSION, label: 'Default version' },
+          ...names.map((n) => ({ value: n, label: n })),
+        ];
+      } else {
+        workflowVersionOptions.value = undefined;
+      }
+    } catch {
+      workflowVersionOptions.value = undefined;
+    }
+    // Fetch nf-core JSON Schema from the workflow-schema cache (non-blocking).
+    // The schema enriches the parameterTemplate with types, defaults, enum options, and help text.
+    const schemaResponse: WorkflowSchemaResponse | null = await $api.omicsWorkflows
+      .getSchema(labId, workflowId)
+      .catch((err) => {
+        console.warn('[run-workflow] Could not fetch workflow schema:', err);
+        return null;
+      });
+    nfSchema.value = schemaResponse?.Schema ?? null;
 
     // Identify AWS HealthOmics workflow schema required parameters
     const paramsRequired: string[] = Object.entries(omicsWorkflow.parameterTemplate)
@@ -129,13 +168,27 @@
       })
       .filter((_) => _ != undefined);
 
+    // fetch user defaults for this workflow (if any)
+    const userId = userStore.currentUserDetails.id;
+    let workflowDefaultParams: Record<string, any> = {};
+    if (userId) {
+      const user = await $api.users.getUser();
+      const rawDefaults = user.OmicsWorkflowDefaultParams?.[workflowId] || {};
+      workflowDefaultParams = Object.fromEntries(
+        Object.entries(rawDefaults).filter(([paramName]) =>
+          Object.prototype.hasOwnProperty.call(omicsWorkflow.parameterTemplate, paramName),
+        ),
+      );
+    }
+
+    hasSavedDefaults.value = Object.keys(workflowDefaultParams).length > 0;
+
     // initialize wip run in store
     runStore.updateWipOmicsRun(omicsRunTempId.value, {
       transactionId: omicsRunTempId.value,
       paramsRequired: paramsRequired,
     });
-    // unlike seqera runs, omics runs don't have default values for parameters
-    runStore.updateWipOmicsRunParams(omicsRunTempId.value, {});
+    runStore.updateWipOmicsRunParams(omicsRunTempId.value, workflowDefaultParams);
 
     uiStore.setRequestComplete('loadOmicsWorkflow');
   }
@@ -284,6 +337,7 @@
               :wip-run-temp-id="omicsRunTempId"
               :pipeline-or-workflow-name="workflow?.name"
               :pipeline-or-workflow-description="workflow?.description || ''"
+              :workflow-version-options="workflowVersionOptions"
               @next-step="() => nextStep('upload')"
               @step-validated="($event) => setStepEnabled('upload', $event)"
             />
@@ -307,11 +361,14 @@
             <EGRunWorkflowFormEditParameters
               :params="wipOmicsRun?.params"
               :schema="schema"
+              :nf-schema="nfSchema"
               :lab-id="labId"
               :workflow-id="workflowId"
               :omics-run-temp-id="omicsRunTempId"
+              :has-saved-defaults="hasSavedDefaults"
               @next-step="() => nextStep('review')"
               @previous-step="() => previousStep()"
+              @defaults-cleared="hasSavedDefaults = false"
             />
           </template>
 
@@ -328,6 +385,7 @@
               :transaction-id="wipOmicsRun?.transactionId"
               :workflow-id="workflowId"
               :workflow-name="workflow.name"
+              :workflow-version-name="wipOmicsRun?.workflowVersionName"
               @submit-launch-request="() => handleSubmitLaunchRequest()"
               @submit-launch-request-error="() => handleSubmitLaunchRequestError()"
               @has-launched="() => handleLaunchSuccess()"

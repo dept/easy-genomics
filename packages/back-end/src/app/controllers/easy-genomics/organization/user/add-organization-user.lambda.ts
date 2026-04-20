@@ -1,14 +1,14 @@
 import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
-import { AddOrganizationUserSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/organization-user';
-import { OrganizationUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization-user';
-import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   InvalidRequestError,
   OrganizationNotFoundError,
   OrganizationUserAlreadyExistsError,
   UnauthorizedAccessError,
-} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { AddOrganizationUserSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/organization-user';
+import { OrganizationUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization-user';
+import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { OrganizationService } from '@BE/services/easy-genomics/organization-service';
 import { OrganizationUserService } from '@BE/services/easy-genomics/organization-user-service';
