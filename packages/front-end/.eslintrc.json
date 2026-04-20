@@ -9,7 +9,6 @@
     "@typescript-eslint",
     "import",
     "eslint-plugin-vue",
-    "prettier",
     "vue"
   ],
   "parser": "@typescript-eslint/parser",
@@ -22,7 +21,7 @@
     "plugin:import/typescript",
     "@nuxtjs/eslint-config-typescript",
     "plugin:vue/vue3-recommended",
-    "plugin:prettier/recommended"
+    "prettier"
   ],
   "settings": {
     "import/parsers": {
@@ -233,7 +232,8 @@
     "no-empty": "error",
     "prettier/prettier": "off",
     "require-await": "off",
-    "array-callback-return": "error"
+    "array-callback-return": "error",
+    "import/named": "off"
   },
   "overrides": []
 }
