@@ -1,4 +1,3 @@
-// eslint-disable-next-line import/named
 import { CancelRunCommandOutput, StartRunCommandOutput } from '@aws-sdk/client-omics';
 import { ListRuns, ReadRun } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
 import HttpFactory from '@FE/repository/factory';
