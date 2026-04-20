@@ -87,15 +87,6 @@ export const handler: Handler = async (
     const userId: string | undefined =
       event.requestContext.authorizer?.claims?.sub ?? event.requestContext.authorizer?.claims?.['cognito:username'];
     const userEmail: string | undefined = event.requestContext.authorizer?.claims?.email;
-    const { workflowVersionName, ...startRunRequestWithoutVersion } = request;
-
-    if (!userId) {
-      throw new UnauthorizedAccessError('User ID is required');
-    }
-    if (!userEmail) {
-      throw new UnauthorizedAccessError('User email is required');
-    }
-
     // STS session naming and optional UserId session tag.
     const omicsUserId = userId ?? 'unknown-user';
     const omicsService = await createOmicsServiceForLab(
