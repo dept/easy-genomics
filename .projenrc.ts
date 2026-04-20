@@ -78,6 +78,7 @@ const eslintGlobalRules = {
   'require-await': 'off',
   'array-callback-return': 'error',
   '@typescript-eslint/indent': 'off',
+  'import/named': 'off',
 };
 
 const tsConfigOptions: TypescriptConfigOptions = {
@@ -194,8 +195,8 @@ if (root.eslint) {
       'import/no-extraneous-dependencies': 'off',
     },
   });
-  root.eslint.addPlugins('prettier');
-  root.eslint.addExtends('plugin:@typescript-eslint/recommended', 'plugin:prettier/recommended');
+  // Use eslint-config-prettier to disable conflicting rules; avoid eslint-plugin-prettier runtime dependency.
+  root.eslint.addExtends('plugin:@typescript-eslint/recommended', 'prettier');
 }
 root.removeScript('build');
 root.addScripts({
@@ -256,11 +257,11 @@ const sharedLib = new typescript.TypeScriptProject({
     '@aws-sdk/client-cognito-identity-provider',
     `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-s3',
-    '@nestjs/config',
     'aws-cdk',
     'aws-cdk-lib',
     'aws-lambda',
     'js-yaml',
+    'strnum',
     'uuid',
     'zod',
   ],
@@ -284,7 +285,8 @@ sharedLib.addScripts({
 
 if (sharedLib.eslint) {
   sharedLib.eslint.addRules({ ...eslintGlobalRules });
-  sharedLib.eslint.addPlugins('prettier');
+  // Keep ESLint independent from prettier plugin runtime resolution under pnpm.
+  sharedLib.eslint.addExtends('prettier');
 }
 
 // Defines the Easy Genomics 'back-end' subproject
@@ -375,7 +377,11 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
 backEndApp.addScripts({
   ['cdk-audit']: 'export CDK_AUDIT=true && pnpm exec projen build',
   ['build']: 'pnpm exec projen compile && pnpm exec projen test && pnpm exec projen build',
-  ['deploy']: 'pnpm cdk bootstrap && pnpm exec projen deploy',
+  // NOTE: `--all` is required now that the back-end synthesizes multiple
+  // top-level stacks (`*-main-back-end-stack`, `*-easy-genomics-api-stack`,
+  // and optionally `*-api-domain-stack`). Without it, `cdk deploy` refuses to
+  // pick a default and exits with "specify which stacks to use".
+  ['deploy']: 'pnpm cdk bootstrap && pnpm exec projen deploy --all',
   ['build-and-deploy']: 'pnpm -w run build-back-end && pnpm run deploy --require-approval any-change', // Run root build-back-end script to inc shared-lib
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
   ['local-server']: 'tsx src/local-server/index.ts',
@@ -399,7 +405,7 @@ if (backEndApp.eslint) {
       },
     ],
   });
-  backEndApp.eslint.addPlugins('prettier');
+  backEndApp.eslint.addExtends('prettier');
 }
 // Defines the Easy Genomics 'front-end' subproject
 const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
@@ -428,7 +434,7 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
       baseUrl: '.',
       lib: ['DOM', 'ES2022'],
       sourceMap: true,
-      types: ['vue'],
+      types: ['node', 'vue'],
       verbatimModuleSyntax: false,
       paths: {
         '@/*': ['../../*'],
@@ -529,12 +535,8 @@ frontEndApp.addScripts({
 // Setup Frontend App ESLint configuration
 if (frontEndApp.eslint) {
   frontEndApp.eslint.addRules({ ...eslintGlobalRules });
-  frontEndApp.eslint.addExtends(
-    '@nuxtjs/eslint-config-typescript',
-    'plugin:prettier/recommended',
-    'plugin:vue/vue3-recommended',
-  );
-  frontEndApp.eslint.addPlugins('eslint-plugin-vue', 'prettier', 'vue');
+  frontEndApp.eslint.addExtends('@nuxtjs/eslint-config-typescript', 'prettier', 'plugin:vue/vue3-recommended');
+  frontEndApp.eslint.addPlugins('eslint-plugin-vue', 'vue');
 }
 
 // Apply additional project setup

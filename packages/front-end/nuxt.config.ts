@@ -45,6 +45,12 @@ export default defineNuxtConfig({
       AWS_USER_POOL_ID: process.env.AWS_COGNITO_USER_POOL_ID,
       AWS_CLIENT_ID: process.env.AWS_COGNITO_USER_POOL_CLIENT_ID,
       BASE_API_URL: process.env.AWS_API_GATEWAY_URL?.replace(/\/+$/, ''), // Remove trailing slashes
+      // Optional override for the easy-genomics API. When the back-end is deployed
+      // with easy-genomics split into its own stack (and optionally behind its own
+      // custom domain), this points the front-end at that API's invoke URL
+      // directly so easy-genomics calls bypass `BASE_API_URL + /easy-genomics`.
+      // Falls back to the `BASE_API_URL`-derived path if unset.
+      EASY_GENOMICS_API_URL: process.env.AWS_EASY_GENOMICS_API_URL?.replace(/\/+$/, ''),
       ENV_TYPE: process.env.ENV_TYPE || 'dev',
       GITHUB_RUN_NUMBER: process.env.GITHUB_RUN_NUMBER || 'Unknown',
       AWS_COGNITO_DOMAIN: process.env.AWS_COGNITO_DOMAIN,

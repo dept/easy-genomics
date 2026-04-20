@@ -29,6 +29,7 @@
     "baseUrl": ".",
     "sourceMap": true,
     "types": [
+      "node",
       "vue"
     ],
     "verbatimModuleSyntax": false,
