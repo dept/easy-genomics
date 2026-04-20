@@ -9,11 +9,16 @@ import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { IEventSource, IFunction, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
-import { EasyGenomicsNestedStackProps } from '../types/back-end-stack';
+import { CommonApiNestedStackProps } from '../types/back-end-stack';
 
 export const LAMBDA_FUNCTION_ROOT_DIR = 'src/app/controllers'; // DO NOT CHANGE
 
-export interface LambdaConstructProps extends EasyGenomicsNestedStackProps {
+// LambdaConstruct binds auto-discovered controllers to the RestApi that is
+// explicitly passed in. It deliberately does NOT extend any single domain's
+// nested-stack props, so no domain can accidentally inherit another domain's
+// API ownership just by sharing Cognito/VPC dependencies. If `restApi` is
+// undefined, only event-driven (`process-*`) lambdas are registered.
+export interface LambdaConstructProps extends CommonApiNestedStackProps {
   lambdaFunctionsDir: string;
   lambdaFunctionsNamespace: string;
   lambdaFunctionsResources: {
@@ -167,29 +172,35 @@ export class LambdaConstruct extends Construct {
       });
     } else {
       // Register Lambda Function Endpoint with API Gateway REST API
-      if (this.props.restApi) {
-        const pathResource = this.props.restApi.root.resourceForPath(lambdaApiEndpoint);
-        // Attach REST API Request methods for the respective Lambda function
-        if (lambdaFunction.command in ALLOWED_LAMBDA_FUNCTION_OPERATIONS_WITH_RESOURCE_ID) {
-          const pathResourceWithId: Resource = pathResource.addResource('{id}');
-          pathResourceWithId.addMethod(
-            ALLOWED_LAMBDA_FUNCTION_OPERATIONS_WITH_RESOURCE_ID[lambdaFunction.command],
-            new LambdaIntegration(lambdaHandler),
-            {
-              authorizer: this.authorizer,
-              ...lambdaMethodOptions,
-            },
-          );
-        } else {
-          pathResource.addMethod(
-            ALLOWED_LAMBDA_FUNCTION_OPERATIONS[lambdaFunction.command],
-            new LambdaIntegration(lambdaHandler),
-            {
-              authorizer: this.authorizer,
-              ...lambdaMethodOptions,
-            },
-          );
-        }
+      if (!this.props.restApi) {
+        // Route-bearing controller discovered but this LambdaConstruct wasn't
+        // wired to an API. Fail fast rather than silently drop the route,
+        // otherwise a stack-boundary refactor can hide routes without a build error.
+        throw new Error(
+          `LambdaConstruct "${this.node.id}" discovered HTTP controller "${lambdaApiEndpoint}" but no restApi was provided. ` +
+            'Ensure the owning stack passes its own RestApi, or move the controller to a directory owned by a stack that does.',
+        );
+      }
+      const pathResource = this.props.restApi.root.resourceForPath(lambdaApiEndpoint);
+      if (lambdaFunction.command in ALLOWED_LAMBDA_FUNCTION_OPERATIONS_WITH_RESOURCE_ID) {
+        const pathResourceWithId: Resource = pathResource.addResource('{id}');
+        pathResourceWithId.addMethod(
+          ALLOWED_LAMBDA_FUNCTION_OPERATIONS_WITH_RESOURCE_ID[lambdaFunction.command],
+          new LambdaIntegration(lambdaHandler),
+          {
+            authorizer: this.authorizer,
+            ...lambdaMethodOptions,
+          },
+        );
+      } else {
+        pathResource.addMethod(
+          ALLOWED_LAMBDA_FUNCTION_OPERATIONS[lambdaFunction.command],
+          new LambdaIntegration(lambdaHandler),
+          {
+            authorizer: this.authorizer,
+            ...lambdaMethodOptions,
+          },
+        );
       }
     }
 
