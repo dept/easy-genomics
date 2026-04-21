@@ -13,12 +13,12 @@ import {
 jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-run-service');
 jest.mock('../../../../../../src/app/services/ssm-service');
-jest.mock('../../../../../../src/app/services/omics-service');
+jest.mock('../../../../../../src/app/services/omics-lab-factory');
 jest.mock('../../../../../../src/app/utils/rest-api-utils');
 
 import { LaboratoryRunService } from '../../../../../../src/app/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '../../../../../../src/app/services/easy-genomics/laboratory-service';
-import { OmicsService } from '../../../../../../src/app/services/omics-service';
+import { createOmicsServiceForLab } from '../../../../../../src/app/services/omics-lab-factory';
 import { SsmService } from '../../../../../../src/app/services/ssm-service';
 import { getNextFlowApiQueryParameters, httpRequest } from '../../../../../../src/app/utils/rest-api-utils';
 
@@ -26,7 +26,6 @@ describe('process-update-laboratory-run.lambda', () => {
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
   let mockRunService: jest.MockedClass<typeof LaboratoryRunService>;
   let mockSsmService: jest.MockedClass<typeof SsmService>;
-  let mockOmicsService: jest.MockedClass<typeof OmicsService>;
 
   let mockQueryByRunId: jest.Mock;
   let mockUpdateRun: jest.Mock;
@@ -62,7 +61,6 @@ describe('process-update-laboratory-run.lambda', () => {
     mockLabService = LaboratoryService as jest.MockedClass<typeof LaboratoryService>;
     mockRunService = LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>;
     mockSsmService = SsmService as jest.MockedClass<typeof SsmService>;
-    mockOmicsService = OmicsService as jest.MockedClass<typeof OmicsService>;
 
     mockQueryByRunId = jest.fn();
     mockUpdateRun = jest.fn();
@@ -74,7 +72,7 @@ describe('process-update-laboratory-run.lambda', () => {
     mockRunService.prototype.update = mockUpdateRun;
     mockLabService.prototype.queryByLaboratoryId = mockQueryByLaboratoryId;
     mockSsmService.prototype.getParameter = mockGetParameter;
-    mockOmicsService.prototype.getRun = mockGetRun;
+    (createOmicsServiceForLab as jest.Mock).mockResolvedValue({ getRun: mockGetRun });
 
     mockQueryByLaboratoryId.mockResolvedValue({
       LaboratoryId: 'lab-1',
@@ -118,7 +116,8 @@ describe('process-update-laboratory-run.lambda', () => {
     const result = await handler(event, createContext(), () => {});
 
     expect(result.statusCode).toBe(200);
-    expect(mockOmicsService.prototype.getRun).toHaveBeenCalledWith(<GetRunCommandInput>{ id: 'ext-1' });
+    expect(createOmicsServiceForLab as jest.Mock).toHaveBeenCalledWith('lab-1', 'org-1', 'status-check');
+    expect(mockGetRun).toHaveBeenCalledWith(<GetRunCommandInput>{ id: 'ext-1' });
     expect(mockRunService.prototype.update).toHaveBeenCalled();
   });
 
@@ -145,7 +144,7 @@ describe('process-update-laboratory-run.lambda', () => {
     const result = await handler(event, createContext(), () => {});
 
     expect(result.statusCode).toBe(200);
-    expect(mockOmicsService.prototype.getRun).not.toHaveBeenCalled();
+    expect(mockGetRun).not.toHaveBeenCalled();
     expect(mockRunService.prototype.update).not.toHaveBeenCalled();
   });
 

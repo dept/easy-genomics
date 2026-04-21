@@ -14,7 +14,7 @@ import { SQSEvent } from 'aws-lambda/trigger/sqs';
 //import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { OmicsService } from '@BE/services/omics-service';
+import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import { SsmService } from '@BE/services/ssm-service';
 import {
   calculateExpiresAtEpochSeconds,
@@ -28,7 +28,6 @@ import { getNextFlowApiQueryParameters, httpRequest, REST_API_METHOD } from '@BE
 const laboratoryService = new LaboratoryService();
 const laboratoryRunService = new LaboratoryRunService();
 const ssmService = new SsmService();
-const omicsService = new OmicsService();
 
 export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxyResult> => {
   console.log('EVENT: \n' + JSON.stringify(event, null, 2));
@@ -133,6 +132,13 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
 
 export async function getAWSHealthOmicsStatus(laboratoryRun: LaboratoryRun): Promise<string> {
   console.log('Fetching AWS Health Omics status for run: ', laboratoryRun.RunId);
+
+  const omicsUserId = laboratoryRun.UserId || 'status-check';
+  const omicsService = await createOmicsServiceForLab(
+    laboratoryRun.LaboratoryId,
+    laboratoryRun.OrganizationId,
+    omicsUserId,
+  );
 
   const response = await omicsService.getRun(<GetRunCommandInput>{
     id: laboratoryRun.ExternalRunId,
