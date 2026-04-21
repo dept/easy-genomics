@@ -1,17 +1,11 @@
 import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 
 const mockListByLaboratoryId = jest.fn();
-const mockAddLaboratoryRun = jest.fn();
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-workflow-access-service', () => ({
   LaboratoryWorkflowAccessService: jest.fn().mockImplementation(() => ({
     listByLaboratoryId: mockListByLaboratoryId,
-  })),
-}));
-jest.mock('../../../../../src/app/services/easy-genomics/laboratory-run-service', () => ({
-  LaboratoryRunService: jest.fn().mockImplementation(() => ({
-    add: mockAddLaboratoryRun,
   })),
 }));
 jest.mock('../../../../../src/app/services/omics-service');
@@ -123,9 +117,6 @@ describe('create-run-execution.lambda', () => {
       startRun: mockOmicsService.prototype.startRun,
     });
 
-    mockAddLaboratoryRun.mockReset();
-    mockAddLaboratoryRun.mockImplementation(async (run: any) => run);
-
     mockValidateOrgAdmin.mockReturnValue(true);
     mockValidateLabManager.mockReturnValue(false);
     mockValidateLabTechnician.mockReturnValue(false);
@@ -146,7 +137,8 @@ describe('create-run-execution.lambda', () => {
 
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
-    expect(body.internalRunId).toBeDefined();
+    expect(body.id).toBe('run-123');
+    expect(body.internalRunId).toBeUndefined();
     expect(mockOmicsService.prototype.startRun).toHaveBeenCalledTimes(1);
     const startRunInput = (mockOmicsService.prototype.startRun as jest.Mock).mock.calls[0][0];
 
