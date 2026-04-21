@@ -1079,6 +1079,13 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: ['omics:GetRun'],
         effect: Effect.ALLOW,
       }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
+        ],
+        actions: ['sts:AssumeRole', 'sts:TagSession'],
+        effect: Effect.ALLOW,
+      }),
     ]);
 
     // /easy-genomics/laboratory/run/delete-laboratory-run
