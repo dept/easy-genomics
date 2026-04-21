@@ -209,7 +209,7 @@ export class DynamoDBService {
           };
         } else if (attributeType === 'number') {
           return {
-            [`:${attributeId}`]: { N: attributeValue }, // Number
+            [`:${attributeId}`]: { N: `${attributeValue}` }, // Number
           };
         } else if (attributeType === 'string') {
           return {
@@ -218,8 +218,9 @@ export class DynamoDBService {
         } else if (attributeType === 'object') {
           if (Array.isArray(obj[key])) {
             if (obj[key].every((_: unknown) => typeof _ === 'number')) {
+              const numberSet = (attributeValue as number[]).map((n) => `${n}`);
               return {
-                [`:${attributeId}`]: { NS: attributeValue }, // Number Set
+                [`:${attributeId}`]: { NS: numberSet }, // Number Set
               };
             } else if (obj[key].every((_: unknown) => typeof _ === 'string')) {
               return {
