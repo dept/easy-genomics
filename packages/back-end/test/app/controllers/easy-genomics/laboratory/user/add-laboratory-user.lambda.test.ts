@@ -1,5 +1,5 @@
 import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
-import { LaboratoryUserNotFoundError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+import { LaboratoryUserNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 
 import { handler } from '../../../../../../src/app/controllers/easy-genomics/laboratory/user/add-laboratory-user.lambda';
