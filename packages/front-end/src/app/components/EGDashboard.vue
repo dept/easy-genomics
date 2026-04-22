@@ -138,8 +138,8 @@
     const days = parseInt(overviewTimeFilter.value);
     const cutoff = now - days * 24 * 60 * 60 * 1000;
     return allRuns.value.filter((run) => {
-      const createdAt = run.CreatedAt ? new Date(run.CreatedAt).getTime() : 0;
-      return createdAt >= cutoff;
+      const modifiedAt = run.ModifiedAt ? new Date(run.ModifiedAt).getTime() : 0;
+      return modifiedAt >= cutoff;
     });
   });
 
