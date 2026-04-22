@@ -333,6 +333,7 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@aws-crypto/client-node',
     '@aws-crypto/decrypt-node',
     '@aws-crypto/encrypt-node',
+    '@aws-sdk/client-cloudformation@^3.786.0',
     '@aws-sdk/client-cognito-identity-provider',
     '@aws-sdk/client-dynamodb',
     `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
@@ -343,6 +344,7 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@aws-sdk/client-sso-oidc',
     '@aws-sdk/client-sts',
     '@aws-sdk/client-s3',
+    '@aws-sdk/client-secrets-manager@^3.782.0',
     '@aws-sdk/lib-dynamodb',
     '@aws-sdk/lib-storage',
     '@aws-sdk/s3-request-presigner',
@@ -377,11 +379,25 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
 backEndApp.addScripts({
   ['cdk-audit']: 'export CDK_AUDIT=true && pnpm exec projen build',
   ['build']: 'pnpm exec projen compile && pnpm exec projen test && pnpm exec projen build',
+  // Pre-deploy safety check. Runs before every `cdk deploy` and, on the
+  // first run against an un-armed environment, automatically takes an
+  // on-demand backup, enables `DeletionProtectionEnabled`, and enables
+  // PITR on every existing easy-genomics DynamoDB table before
+  // CloudFormation gets a chance to issue DeleteTable during the
+  // stack-split migration. Missing tables (fresh / greenfield deploys)
+  // are skipped, so there is no bypass flag; the guard is always on.
+  // See `scripts/preflight-deletion-protection.ts` and
+  // `docs/EASY_GENOMICS_PROD_MIGRATION.md`.
+  ['preflight-deletion-protection']: 'tsx scripts/preflight-deletion-protection.ts',
   // NOTE: `--all` is required now that the back-end synthesizes multiple
   // top-level stacks (`*-main-back-end-stack`, `*-easy-genomics-api-stack`,
   // and optionally `*-api-domain-stack`). Without it, `cdk deploy` refuses to
   // pick a default and exits with "specify which stacks to use".
-  ['deploy']: 'pnpm cdk bootstrap && pnpm exec projen deploy --all',
+  //
+  // The preflight guard runs AFTER `cdk bootstrap` (which only touches the
+  // CDK toolkit stack, not app resources) and BEFORE any app-stack deploy,
+  // so a failing guard aborts without any destructive CloudFormation call.
+  ['deploy']: 'pnpm cdk bootstrap && pnpm run preflight-deletion-protection && pnpm exec projen deploy --all',
   ['build-and-deploy']: 'pnpm -w run build-back-end && pnpm run deploy --require-approval any-change', // Run root build-back-end script to inc shared-lib
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
   ['local-server']: 'tsx src/local-server/index.ts',
@@ -588,6 +604,7 @@ root.gitignore.addPatterns(
   'packages/front-end/test-results',
   'packages/front-end/tests/e2e/.auth/*.json',
   'packages/front-end/playwright-report',
+  '.pnpm-store',
 );
 // Exception: Include .env example files (used for local dev setup documentation)
 root.gitignore.addPatterns('!packages/back-end/.env.local.example', '!config/.env.nuxt.local.example');

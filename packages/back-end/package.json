@@ -5,7 +5,7 @@
     "bundle": "pnpm exec projen bundle",
     "compile": "pnpm exec projen compile",
     "default": "pnpm exec projen default",
-    "deploy": "pnpm cdk bootstrap && pnpm exec projen deploy --all",
+    "deploy": "pnpm cdk bootstrap && pnpm run preflight-deletion-protection && pnpm exec projen deploy --all",
     "destroy": "pnpm exec projen destroy",
     "diff": "pnpm exec projen diff",
     "eslint": "pnpm exec projen eslint",
@@ -21,14 +21,14 @@
     "watch": "pnpm exec projen watch",
     "projen": "pnpm exec projen",
     "cdk-audit": "export CDK_AUDIT=true && pnpm exec projen build",
+    "preflight-deletion-protection": "tsx scripts/preflight-deletion-protection.ts",
     "build-and-deploy": "pnpm -w run build-back-end && pnpm run deploy --require-approval any-change",
     "lint": "eslint 'src/**/*.{js,ts}' --fix",
     "local-server": "tsx src/local-server/index.ts",
     "local-server:watch": "tsx watch src/local-server/index.ts",
     "invoke-process-handler": "tsx src/local-server/invoke-process-handler.ts",
     "backfill-omics-run-tags": "tsx scripts/backfill-omics-run-tags.ts",
-    "backfill-omics-run-tags:dry-run": "tsx scripts/backfill-omics-run-tags.ts --dry-run",
-    "recompute-laboratory-run-retention": "tsx scripts/recompute-laboratory-run-retention.ts --laboratoryId $LAB_ID --retentionMonths $RETENTION_MONTHS"
+    "backfill-omics-run-tags:dry-run": "tsx scripts/backfill-omics-run-tags.ts --dry-run"
   },
   "author": {
     "name": "DEPT Agency",
@@ -66,11 +66,12 @@
     "@aws-crypto/client-node": "^4.2.0",
     "@aws-crypto/decrypt-node": "^4.2.0",
     "@aws-crypto/encrypt-node": "^4.2.0",
+    "@aws-sdk/client-cloudformation": "^3.786.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.782.0",
     "@aws-sdk/client-dynamodb": "^3.786.0",
-    "@aws-sdk/client-omics": "^3.1019.0",
+    "@aws-sdk/client-omics": "^3.1014.0",
     "@aws-sdk/client-s3": "^3.782.0",
-    "@aws-sdk/client-secrets-manager": "^3.1020.0",
+    "@aws-sdk/client-secrets-manager": "^3.782.0",
     "@aws-sdk/client-ses": "^3.782.0",
     "@aws-sdk/client-sns": "^3.782.0",
     "@aws-sdk/client-sqs": "^3.782.0",
@@ -105,10 +106,6 @@
       "^@SharedLib/(.*)$": "<rootDir>/../shared-lib/src/app/$1",
       "^@FE/(.*)$": "<rootDir>/../front-end/src/app/$1"
     },
-    "collectCoverageFrom": [
-      "<rootDir>/src/app/**/*.ts",
-      "!<rootDir>/src/app/**/*.d.ts"
-    ],
     "testMatch": [
       "<rootDir>/@(src|test)/**/*(*.)@(spec|test).ts?(x)",
       "<rootDir>/@(src|test)/**/__tests__/**/*.ts?(x)"
