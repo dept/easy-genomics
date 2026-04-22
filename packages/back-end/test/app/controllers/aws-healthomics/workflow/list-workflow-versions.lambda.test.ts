@@ -1,5 +1,5 @@
-import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { WorkflowStatus } from '@aws-sdk/client-omics';
+import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { handler } from '../../../../../src/app/controllers/aws-healthomics/workflow/list-workflow-versions.lambda';
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');

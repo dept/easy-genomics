@@ -2,17 +2,23 @@ import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { handler } from '../../../../../src/app/controllers/aws-healthomics/run/create-run-execution.lambda';
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
+jest.mock('../../../../../src/app/services/easy-genomics/laboratory-workflow-access-service');
+jest.mock('../../../../../src/app/services/easy-genomics/laboratory-run-service');
 jest.mock('../../../../../src/app/services/omics-service');
 jest.mock('../../../../../src/app/services/omics-lab-factory', () => ({
   createOmicsServiceForLab: jest.fn(),
 }));
 jest.mock('../../../../../src/app/utils/auth-utils');
+jest.mock('../../../../../src/app/utils/laboratory-workflow-access-utils', () => ({
+  assertLaboratoryHasWorkflowAccess: jest.fn(),
+}));
 jest.mock('@easy-genomics/shared-lib/lib/app/schema/aws-healthomics/aws-healthomics-api', () => ({
   CreateRunRequestSchema: {
     safeParse: jest.fn((val) => ({ success: !!val && !!val.workflowId && !!val.name && !!val.parameters })),
   },
 }));
 
+import { LaboratoryRunService } from '../../../../../src/app/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
 import { createOmicsServiceForLab } from '../../../../../src/app/services/omics-lab-factory';
 import { OmicsService } from '../../../../../src/app/services/omics-service';
@@ -27,6 +33,7 @@ describe('create-run-execution.lambda', () => {
   const ORG_ID = 'org-123';
 
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
+  let mockLabRunService: jest.MockedClass<typeof LaboratoryRunService>;
   let mockOmicsService: jest.MockedClass<typeof OmicsService>;
   let mockValidateOrgAdmin: jest.MockedFunction<typeof validateOrganizationAdminAccess>;
   let mockValidateLabManager: jest.MockedFunction<typeof validateLaboratoryManagerAccess>;
@@ -94,12 +101,14 @@ describe('create-run-execution.lambda', () => {
     jest.clearAllMocks();
 
     mockLabService = LaboratoryService as jest.MockedClass<typeof LaboratoryService>;
+    mockLabRunService = LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>;
     mockOmicsService = OmicsService as jest.MockedClass<typeof OmicsService>;
     mockValidateOrgAdmin = validateOrganizationAdminAccess as any;
     mockValidateLabManager = validateLaboratoryManagerAccess as any;
     mockValidateLabTechnician = validateLaboratoryTechnicianAccess as any;
 
     mockLabService.prototype.queryByLaboratoryId = jest.fn();
+    mockLabRunService.prototype.add = jest.fn().mockResolvedValue(undefined);
     mockOmicsService.prototype.startRun = jest.fn();
     (createOmicsServiceForLab as jest.Mock).mockResolvedValue({
       startRun: mockOmicsService.prototype.startRun,
