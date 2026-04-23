@@ -37,6 +37,12 @@ export const LaboratoryRunSchema = z
      * When enabled, DynamoDB will remove items after this timestamp.
      */
     ExpiresAt: z.number().optional(),
+    /**
+     * Actual execution duration reported by the underlying platform, in seconds.
+     * Populated by the status-check processor from Seqera `workflow.duration`
+     * or AWS HealthOmics `stopTime - startTime`.
+     */
+    RunDurationSeconds: z.number().nonnegative().optional(),
   })
   .strict();
 
@@ -64,6 +70,7 @@ export const ReadLaboratoryRunSchema = z
     ModifiedBy: z.string().optional(),
     TerminalAt: z.string().optional(),
     ExpiresAt: z.number().optional(),
+    RunDurationSeconds: z.number().nonnegative().optional(),
   })
   .strict();
 export type ReadLaboratoryRun = z.infer<typeof ReadLaboratoryRunSchema>;
