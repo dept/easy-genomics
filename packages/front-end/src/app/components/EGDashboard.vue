@@ -133,14 +133,25 @@
     { label: 'Past 90 days', value: '90' },
   ];
 
+  /**
+   * Returns the timestamp used to anchor a run inside the dashboard's time window.
+   * Prefer the platform-reported completion time when present, then the creation time.
+   * Avoid `ModifiedAt` because backend jobs (retention updates, tag backfills, status
+   * checks) touch it long after execution, which would otherwise pull historical runs
+   * into the "past 7/30/90 days" window and skew metrics.
+   */
+  function getAnchorTime(run: LaboratoryRun): number {
+    const iso = run.RunCompletedAt ?? run.CreatedAt;
+    if (!iso) return 0;
+    const t = new Date(iso).getTime();
+    return Number.isFinite(t) ? t : 0;
+  }
+
   const filteredRunsForOverview = computed(() => {
     const now = Date.now();
     const days = parseInt(overviewTimeFilter.value);
     const cutoff = now - days * 24 * 60 * 60 * 1000;
-    return allRuns.value.filter((run) => {
-      const modifiedAt = run.ModifiedAt ? new Date(run.ModifiedAt).getTime() : 0;
-      return modifiedAt >= cutoff;
-    });
+    return allRuns.value.filter((run) => getAnchorTime(run) >= cutoff);
   });
 
   const activeRuns = computed(() =>
@@ -154,21 +165,25 @@
   const failedRuns = computed(() => filteredRunsForOverview.value.filter((r) => r.Status === 'FAILED'));
 
   const avgRunTime = computed(() => {
-    const terminalRuns = filteredRunsForOverview.value.filter(
-      (r) => r.CreatedAt && r.ModifiedAt && ['COMPLETED', 'SUCCEEDED', 'FAILED', 'CANCELLED'].includes(r.Status),
+    // Dashboard reads the platform-reported execution duration directly from the record
+    // (populated server-side from Seqera `workflow.duration` or AWS HealthOmics
+    // `stopTime - startTime`). Runs without this value are excluded rather than falling
+    // back to CreatedAt/ModifiedAt, which are distorted by background updates (tagging,
+    // retention policy recompute, etc.).
+    const runsWithDuration = filteredRunsForOverview.value.filter(
+      (r) =>
+        typeof r.RunDurationSeconds === 'number' &&
+        Number.isFinite(r.RunDurationSeconds) &&
+        r.RunDurationSeconds >= 0 &&
+        ['COMPLETED', 'SUCCEEDED', 'FAILED', 'CANCELLED'].includes(r.Status),
     );
-    if (terminalRuns.length === 0) return '—';
+    if (runsWithDuration.length === 0) return '—';
 
-    const totalMs = terminalRuns.reduce((sum, r) => {
-      const start = new Date(r.CreatedAt!).getTime();
-      const end = new Date(r.ModifiedAt!).getTime();
-      return sum + Math.max(0, end - start);
-    }, 0);
-
-    const avgMs = totalMs / terminalRuns.length;
-    const hours = avgMs / (1000 * 60 * 60);
+    const totalSeconds = runsWithDuration.reduce((sum, r) => sum + (r.RunDurationSeconds ?? 0), 0);
+    const avgSeconds = totalSeconds / runsWithDuration.length;
+    const hours = avgSeconds / 3600;
     if (hours < 1) {
-      const mins = Math.round(avgMs / (1000 * 60));
+      const mins = Math.round(avgSeconds / 60);
       return `${mins}m`;
     }
     return `${hours.toFixed(1)}h`;
@@ -264,7 +279,97 @@
     $router.push('/labs');
   }
 
+  const TERMINAL_STATUSES = new Set(['FAILED', 'SUCCEEDED', 'CANCELLED', 'COMPLETED', 'DELETED']);
+
+  function terminalRunsMissingDuration(runs: LaboratoryRun[]): LaboratoryRun[] {
+    return runs.filter((r) => TERMINAL_STATUSES.has(r.Status) && r.RunDurationSeconds == null);
+  }
+
+  function runIdsNeedingRefresh(runs: LaboratoryRun[]): string[] {
+    return runs.filter((r) => !TERMINAL_STATUSES.has(r.Status) || r.RunDurationSeconds == null).map((r) => r.RunId);
+  }
+
+  /**
+   * Bounded polling to pick up the result of the async backfill that the SNS processor
+   * runs after `requestLabRunStatusCheck`. The processor writes `RunDurationSeconds`
+   * off-band, so we re-fetch the runs a few times until either every terminal run has
+   * a duration or we hit the timeout. The poll is cancelled if the component unmounts
+   * or another dashboard load starts.
+   */
+  const BACKFILL_POLL_INTERVAL_MS = 3000;
+  const BACKFILL_POLL_TIMEOUT_MS = 30_000;
+  let backfillPollTimer: ReturnType<typeof setTimeout> | null = null;
+  let backfillPollToken = 0;
+
+  function cancelBackfillPoll() {
+    if (backfillPollTimer != null) {
+      clearTimeout(backfillPollTimer);
+      backfillPollTimer = null;
+    }
+    backfillPollToken++;
+  }
+
+  function schedulePendingRuntimePoll(pendingRunIds: Set<string>) {
+    if (pendingRunIds.size === 0) return;
+
+    cancelBackfillPoll();
+    const token = ++backfillPollToken;
+    const startedAt = Date.now();
+
+    const tick = async () => {
+      if (token !== backfillPollToken) return;
+
+      try {
+        const refreshed: LaboratoryRun[] = await $api.labs.listLabRuns(props.labId);
+        if (token !== backfillPollToken) return;
+
+        allRuns.value = refreshed;
+
+        const stillPending = refreshed.some(
+          (r) => pendingRunIds.has(r.RunId) && TERMINAL_STATUSES.has(r.Status) && r.RunDurationSeconds == null,
+        );
+        if (!stillPending) {
+          cancelBackfillPoll();
+          return;
+        }
+      } catch (error) {
+        console.error('Runtime backfill poll failed', error);
+      }
+
+      if (Date.now() - startedAt >= BACKFILL_POLL_TIMEOUT_MS) {
+        cancelBackfillPoll();
+        return;
+      }
+      backfillPollTimer = setTimeout(tick, BACKFILL_POLL_INTERVAL_MS);
+    };
+
+    backfillPollTimer = setTimeout(tick, BACKFILL_POLL_INTERVAL_MS);
+  }
+
+  /**
+   * Fire-and-forget request for the back-end to refresh runtime data. Covers both live
+   * non-terminal runs (normal status refresh) and terminal runs missing
+   * `RunDurationSeconds` (legacy-row backfill). After enqueueing the work, start a
+   * bounded poll so the UI picks up the healed values without a manual reload.
+   */
+  async function requestRuntimeRefresh(runs: LaboratoryRun[]) {
+    const runIds = runIdsNeedingRefresh(runs);
+    if (runIds.length === 0) return;
+
+    const pendingBackfillIds = new Set(terminalRunsMissingDuration(runs).map((r) => r.RunId));
+
+    try {
+      await $api.labs.requestLabRunStatusCheck(props.labId, runIds);
+    } catch (error) {
+      console.error('Failed to request dashboard runtime refresh', error);
+      return;
+    }
+
+    schedulePendingRuntimePoll(pendingBackfillIds);
+  }
+
   async function loadDashboardData() {
+    cancelBackfillPoll();
     uiStore.setRequestPending('loadDashboardData');
     try {
       await labStore.loadLab(props.labId);
@@ -285,6 +390,8 @@
       favouriteWorkflows.value = (user.FavouriteWorkflows ?? []).filter(
         (w: FavouriteWorkflow) => w.LaboratoryId === props.labId,
       );
+
+      void requestRuntimeRefresh(runs);
     } catch (error) {
       console.error('Error loading dashboard data', error);
     } finally {
@@ -293,6 +400,7 @@
   }
 
   onBeforeMount(loadDashboardData);
+  onBeforeUnmount(cancelBackfillPoll);
 
   const overviewStats = computed(() => [
     {

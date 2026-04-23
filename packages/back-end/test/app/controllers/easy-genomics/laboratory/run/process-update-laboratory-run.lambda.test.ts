@@ -230,20 +230,26 @@ describe('process-update-laboratory-run.lambda', () => {
     expect(result.statusCode).toBe(400);
   });
 
-  it('getAWSHealthOmicsStatus returns status from Omics response or UNKNOWN', async () => {
-    mockGetRun.mockResolvedValueOnce({ status: 'COMPLETED' } as any).mockResolvedValueOnce({} as any);
+  it('getAWSHealthOmicsStatus returns status and computes durationSeconds from startTime/stopTime', async () => {
+    const start = new Date('2026-04-01T12:00:00.000Z');
+    const stop = new Date('2026-04-01T13:30:00.000Z'); // 90 minutes = 5400 seconds
+    mockGetRun
+      .mockResolvedValueOnce({ status: 'COMPLETED', startTime: start, stopTime: stop } as any)
+      .mockResolvedValueOnce({} as any);
 
-    const status1 = await getAWSHealthOmicsStatus({
+    const snapshot1 = await getAWSHealthOmicsStatus({
       RunId: 'run-1',
       ExternalRunId: 'ext-1',
     } as any);
-    const status2 = await getAWSHealthOmicsStatus({
+    const snapshot2 = await getAWSHealthOmicsStatus({
       RunId: 'run-2',
       ExternalRunId: 'ext-2',
     } as any);
 
-    expect(status1).toBe('COMPLETED');
-    expect(status2).toBe('UNKNOWN');
+    expect(snapshot1.status).toBe('COMPLETED');
+    expect(snapshot1.durationSeconds).toBe(5400);
+    expect(snapshot2.status).toBe('UNKNOWN');
+    expect(snapshot2.durationSeconds).toBeUndefined();
     expect(mockGetRun).toHaveBeenNthCalledWith(1, <GetRunCommandInput>{ id: 'ext-1' });
     expect(mockGetRun).toHaveBeenNthCalledWith(2, <GetRunCommandInput>{ id: 'ext-2' });
   });
@@ -271,16 +277,22 @@ describe('process-update-laboratory-run.lambda', () => {
 
     (getNextFlowApiQueryParameters as jest.Mock).mockReturnValue('workspaceId=ws-1');
     (httpRequest as jest.Mock).mockResolvedValue({
-      workflow: { status: 'SUCCEEDED' },
+      workflow: {
+        status: 'SUCCEEDED',
+        duration: 5_400_000, // ms -> 5400 seconds
+        start: '2026-04-01T12:00:00.000Z',
+        complete: '2026-04-01T13:30:00.000Z',
+      },
     });
 
-    const status = await getSeqeraCloudStatus({
+    const snapshot = await getSeqeraCloudStatus({
       RunId: 'run-1',
       LaboratoryId: 'lab-1',
       ExternalRunId: 'ext-1',
     } as any);
 
-    expect(status).toBe('SUCCEEDED');
+    expect(snapshot.status).toBe('SUCCEEDED');
+    expect(snapshot.durationSeconds).toBe(5400);
     expect(getNextFlowApiQueryParameters as jest.Mock).toHaveBeenCalledWith(undefined, 'ws-1');
     expect(httpRequest as jest.Mock).toHaveBeenCalledWith(
       expect.stringContaining('/workflow/ext-1?workspaceId=ws-1'),
@@ -327,13 +339,46 @@ describe('process-update-laboratory-run.lambda', () => {
     (getNextFlowApiQueryParameters as jest.Mock).mockReturnValue('workspaceId=ws-1');
     (httpRequest as jest.Mock).mockResolvedValue({});
 
-    const status = await getSeqeraCloudStatus({
+    const snapshot = await getSeqeraCloudStatus({
       RunId: 'run-3',
       LaboratoryId: 'lab-1',
       ExternalRunId: 'ext-3',
     } as any);
 
-    expect(status).toBe('UNKNOWN');
+    expect(snapshot.status).toBe('UNKNOWN');
+    expect(snapshot.durationSeconds).toBeUndefined();
+  });
+
+  it('getSeqeraCloudStatus falls back to start/complete when duration is missing', async () => {
+    mockQueryByLaboratoryId.mockResolvedValue({
+      OrganizationId: 'org-1',
+      LaboratoryId: 'lab-1',
+      NextFlowTowerWorkspaceId: 'ws-1',
+    });
+
+    const ssmResponse: GetParameterCommandOutput = {
+      $metadata: {},
+      Parameter: { Value: 'token' },
+    };
+    mockGetParameter.mockResolvedValue(ssmResponse);
+
+    (getNextFlowApiQueryParameters as jest.Mock).mockReturnValue('workspaceId=ws-1');
+    (httpRequest as jest.Mock).mockResolvedValue({
+      workflow: {
+        status: 'SUCCEEDED',
+        start: '2026-04-01T12:00:00.000Z',
+        complete: '2026-04-01T13:30:00.000Z',
+      },
+    });
+
+    const snapshot = await getSeqeraCloudStatus({
+      RunId: 'run-4',
+      LaboratoryId: 'lab-1',
+      ExternalRunId: 'ext-4',
+    } as any);
+
+    expect(snapshot.status).toBe('SUCCEEDED');
+    expect(snapshot.durationSeconds).toBe(5400);
   });
 
   it('processStatusCheckEvent returns true for non-UPDATE operations', async () => {

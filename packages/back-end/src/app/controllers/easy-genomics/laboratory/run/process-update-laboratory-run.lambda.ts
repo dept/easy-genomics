@@ -54,6 +54,23 @@ export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxy
   }
 };
 
+/**
+ * Platform-agnostic snapshot of a run fetched from its underlying platform.
+ * `durationSeconds` is the actual execution duration as reported by the platform
+ * (Seqera exposes it directly; for AWS HealthOmics it is computed from stop - start
+ * so the rest of the system never has to reason about timestamps).
+ */
+type PlatformRunSnapshot = {
+  status: string;
+  durationSeconds?: number;
+};
+
+function toMsIfPresent(value: Date | string | undefined): number | undefined {
+  if (!value) return undefined;
+  const t = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  return Number.isFinite(t) ? t : undefined;
+}
+
 export async function processStatusCheckEvent(operation: SnsProcessingOperation, laboratoryRun: LaboratoryRun) {
   if (operation === 'UPDATE') {
     console.log('Processing LaboratoryRun Status Update: ', laboratoryRun);
@@ -66,22 +83,37 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
       return false;
     }
 
-    // If this run is already in a terminal state but missing terminal/TTL metadata, backfill now.
-    if (
-      isTerminalLaboratoryRunStatus(existingRun.Status) &&
-      (existingRun.TerminalAt == null ||
-        (existingRun.ExpiresAt == null && shouldExpireWithRetentionMonths(retentionMonths)))
-    ) {
+    const isAlreadyTerminal = isTerminalLaboratoryRunStatus(existingRun.Status);
+    const missingTerminalAt = existingRun.TerminalAt == null;
+    const missingExpiresAt = existingRun.ExpiresAt == null && shouldExpireWithRetentionMonths(retentionMonths);
+    const missingDuration = existingRun.RunDurationSeconds == null;
+
+    // Backfill branch: run is already terminal but missing one or more of
+    // TerminalAt / ExpiresAt / RunDurationSeconds. Fetch platform data once so we can heal
+    // historical rows without waiting for another status transition.
+    if (isAlreadyTerminal && (missingTerminalAt || missingExpiresAt || missingDuration)) {
       const now = new Date();
       const terminalAtIso = getTerminalAtIsoString(existingRun, now);
-      const shouldSetTerminalAt = existingRun.TerminalAt == null;
-      const shouldSetExpiresAt = existingRun.ExpiresAt == null && shouldExpireWithRetentionMonths(retentionMonths);
+
+      let snapshot: PlatformRunSnapshot | undefined;
+      if (missingDuration) {
+        try {
+          snapshot = await fetchPlatformRunSnapshot(existingRun);
+        } catch (err) {
+          // Backfill is best-effort; don't fail the status-check pipeline if the platform
+          // call fails (e.g. run was deleted on the platform side).
+          console.warn(`Runtime backfill failed for RunId=${existingRun.RunId}:`, err);
+        }
+      }
 
       const updated = await laboratoryRunService.update({
         ...existingRun,
-        ...(shouldSetTerminalAt ? { TerminalAt: terminalAtIso } : {}),
-        ...(shouldSetExpiresAt
+        ...(missingTerminalAt ? { TerminalAt: terminalAtIso } : {}),
+        ...(missingExpiresAt
           ? { ExpiresAt: calculateExpiresAtEpochSeconds(new Date(terminalAtIso), retentionMonths) }
+          : {}),
+        ...(snapshot?.durationSeconds != null && existingRun.RunDurationSeconds == null
+          ? { RunDurationSeconds: snapshot.durationSeconds }
           : {}),
         ModifiedAt: now.toISOString(),
         ModifiedBy: 'Status Check',
@@ -90,13 +122,13 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
       return true;
     }
 
-    let currentStatus = existingRun.Status;
+    const snapshot: PlatformRunSnapshot = { status: existingRun.Status };
 
-    if (existingRun.Platform === 'AWS HealthOmics') {
-      currentStatus = await getAWSHealthOmicsStatus(existingRun);
-    } else if (existingRun.Platform === 'Seqera Cloud') {
-      currentStatus = await getSeqeraCloudStatus(existingRun);
+    if (existingRun.Platform === 'AWS HealthOmics' || existingRun.Platform === 'Seqera Cloud') {
+      Object.assign(snapshot, await fetchPlatformRunSnapshot(existingRun));
     }
+
+    const currentStatus = snapshot.status || existingRun.Status;
 
     // Has status changed?
     if (existingRun.Status.toUpperCase() != currentStatus.toUpperCase()) {
@@ -120,6 +152,18 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         ...(shouldSetExpiresAt && terminalAtIso
           ? { ExpiresAt: calculateExpiresAtEpochSeconds(new Date(terminalAtIso), retentionMonths) }
           : {}),
+        ...(snapshot.durationSeconds != null && existingRun.RunDurationSeconds == null
+          ? { RunDurationSeconds: snapshot.durationSeconds }
+          : {}),
+        ModifiedAt: now.toISOString(),
+        ModifiedBy: 'Status Check',
+      });
+    } else if (snapshot.durationSeconds != null && existingRun.RunDurationSeconds == null) {
+      // No status change, but the platform now reports a duration we hadn't captured yet.
+      const now = new Date();
+      laboratoryRun = await laboratoryRunService.update({
+        ...existingRun,
+        RunDurationSeconds: snapshot.durationSeconds,
         ModifiedAt: now.toISOString(),
         ModifiedBy: 'Status Check',
       });
@@ -130,7 +174,17 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
   return true;
 }
 
-export async function getAWSHealthOmicsStatus(laboratoryRun: LaboratoryRun): Promise<string> {
+async function fetchPlatformRunSnapshot(laboratoryRun: LaboratoryRun): Promise<PlatformRunSnapshot> {
+  if (laboratoryRun.Platform === 'AWS HealthOmics') {
+    return getAWSHealthOmicsStatus(laboratoryRun);
+  }
+  if (laboratoryRun.Platform === 'Seqera Cloud') {
+    return getSeqeraCloudStatus(laboratoryRun);
+  }
+  return { status: laboratoryRun.Status };
+}
+
+export async function getAWSHealthOmicsStatus(laboratoryRun: LaboratoryRun): Promise<PlatformRunSnapshot> {
   console.log('Fetching AWS Health Omics status for run: ', laboratoryRun.RunId);
 
   const omicsUserId = laboratoryRun.UserId || 'status-check';
@@ -144,10 +198,19 @@ export async function getAWSHealthOmicsStatus(laboratoryRun: LaboratoryRun): Pro
     id: laboratoryRun.ExternalRunId,
   });
 
-  return response.status || 'UNKNOWN';
+  // Omics exposes startTime and stopTime but not a direct duration, so compute it once here.
+  const startMs = toMsIfPresent(response.startTime);
+  const stopMs = toMsIfPresent(response.stopTime);
+  const durationSeconds =
+    startMs != null && stopMs != null && stopMs >= startMs ? Math.round((stopMs - startMs) / 1000) : undefined;
+
+  return {
+    status: response.status || 'UNKNOWN',
+    durationSeconds,
+  };
 }
 
-export async function getSeqeraCloudStatus(laboratoryRun: LaboratoryRun): Promise<string> {
+export async function getSeqeraCloudStatus(laboratoryRun: LaboratoryRun): Promise<PlatformRunSnapshot> {
   console.log('Fetching NF Tower status for run: ', laboratoryRun.RunId);
   const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(laboratoryRun.LaboratoryId);
 
@@ -181,5 +244,23 @@ export async function getSeqeraCloudStatus(laboratoryRun: LaboratoryRun): Promis
     { Authorization: `Bearer ${accessToken}` },
   );
 
-  return response.workflow?.status || 'UNKNOWN';
+  const workflow: any = response.workflow;
+  // Seqera exposes `duration` directly (milliseconds); prefer it to avoid any ambiguity,
+  // and fall back to start/complete subtraction only if the direct value is unavailable.
+  const durationMsDirect = typeof workflow?.duration === 'number' ? workflow.duration : undefined;
+  let durationSeconds: number | undefined =
+    durationMsDirect != null && durationMsDirect >= 0 ? Math.round(durationMsDirect / 1000) : undefined;
+
+  if (durationSeconds == null) {
+    const startMs = toMsIfPresent(workflow?.start);
+    const completeMs = toMsIfPresent(workflow?.complete);
+    if (startMs != null && completeMs != null && completeMs >= startMs) {
+      durationSeconds = Math.round((completeMs - startMs) / 1000);
+    }
+  }
+
+  return {
+    status: workflow?.status || 'UNKNOWN',
+    durationSeconds,
+  };
 }

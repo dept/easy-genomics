@@ -135,7 +135,7 @@ describe('request-laboratory-run-status-check.lambda', () => {
     expect(result.statusCode).toBe(400);
   });
 
-  it('queues status checks only for non-terminal runs belonging to the lab', async () => {
+  it('queues status checks for non-terminal runs and for terminal runs missing RunDurationSeconds (backfill), skipping runs outside the lab and terminal runs already populated', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
       OrganizationId: 'org-1',
       LaboratoryId: 'lab-1',
@@ -151,22 +151,29 @@ describe('request-laboratory-run-status-check.lambda', () => {
         RunId: 'run-2',
         LaboratoryId: 'lab-1',
         Status: 'COMPLETED',
+        // legacy row: no RunDurationSeconds -> should be queued for backfill
       })
       .mockResolvedValueOnce({
         RunId: 'run-3',
         LaboratoryId: 'other-lab',
         Status: 'RUNNING',
+      })
+      .mockResolvedValueOnce({
+        RunId: 'run-4',
+        LaboratoryId: 'lab-1',
+        Status: 'COMPLETED',
+        RunDurationSeconds: 3600, // already populated -> must be skipped
       });
 
     const result = await handler(
-      createEvent({ laboratoryId: 'lab-1' }, { runIds: ['run-1', 'run-2', 'run-3'] }),
+      createEvent({ laboratoryId: 'lab-1' }, { runIds: ['run-1', 'run-2', 'run-3', 'run-4'] }),
       createContext(),
       () => {},
     );
 
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
-    expect(body.Count).toBe(1);
-    expect(mockSnsService.prototype.publish).toHaveBeenCalledTimes(1);
+    expect(body.Count).toBe(2);
+    expect(mockSnsService.prototype.publish).toHaveBeenCalledTimes(2);
   });
 });
