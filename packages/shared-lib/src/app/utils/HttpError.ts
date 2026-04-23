@@ -69,6 +69,15 @@ export class UnauthorizedAccessError extends HttpError {
 }
 
 /**
+ * Laboratory is not permitted to use this workflow (allowlist).
+ */
+export class WorkflowAccessDeniedError extends HttpError {
+  constructor(messageOpt?: string) {
+    super('Workflow access denied', 403, 'EG-104', messageOpt);
+  }
+}
+
+/**
  * The users organization access in Authorizer is out of date
  *
  * @param message - optional additional message

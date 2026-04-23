@@ -90,6 +90,8 @@ export const handler: Handler = async (
 
     if (response) {
       return buildResponse(200, JSON.stringify({ Status: 'Success' }), event);
+    } else {
+      throw new Error('Unable to add Laboratory User');
     }
   } catch (err: any) {
     console.error(err);

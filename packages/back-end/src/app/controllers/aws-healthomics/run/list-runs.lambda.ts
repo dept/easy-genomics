@@ -1,15 +1,15 @@
-import { ListRunsCommandInput, RunStatus } from '@aws-sdk/client-omics';
+import { ListRunsCommandInput, RunStatus, RunListItem } from '@aws-sdk/client-omics';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   LaboratoryNotFoundError,
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
+  MissingAWSHealthOmicsAccessError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-import { MissingAWSHealthOmicsAccessError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { OmicsService } from '@BE/services/omics-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
@@ -18,7 +18,7 @@ import {
 import { AwsHealthOmicsQueryParameters, getAwsHealthOmicsApiQueryParameters } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
-const omicsService = new OmicsService();
+const laboratoryRunService = new LaboratoryRunService();
 
 /**
  * This GET /aws-healthomics/run/list-runs?laboratoryId={LaboratoryId}
@@ -66,10 +66,49 @@ export const handler: Handler = async (
     }
 
     const queryParameters: AwsHealthOmicsQueryParameters = getAwsHealthOmicsApiQueryParameters(event);
-    const response = await omicsService.listRuns(<ListRunsCommandInput>{
-      ...queryParameters,
-      status: validateRunStatusQueryParameter(queryParameters.status),
+
+    // DDB-backed listing from the canonical laboratory-run table to avoid relying on HealthOmics ListRuns IAM scoping.
+    // We return an Omics-compatible ListRunsResponse shape.
+    const runs = await laboratoryRunService.queryByLaboratoryId(laboratory.LaboratoryId);
+
+    const statusFilter = validateRunStatusQueryParameter(queryParameters.status);
+    const nameFilter = (queryParameters.name ?? '').toLowerCase().trim();
+
+    const filtered = runs.filter((r) => {
+      if (r.Platform !== 'AWS HealthOmics') return false;
+      if (statusFilter && r.Status?.toUpperCase() !== statusFilter.toUpperCase()) return false;
+      if (nameFilter && !r.RunName?.toLowerCase().includes(nameFilter)) return false;
+      return true;
     });
+
+    const maxResults = queryParameters.maxResults ? Number(queryParameters.maxResults) : undefined;
+    const offset = queryParameters.startingToken
+      ? Number(Buffer.from(queryParameters.startingToken, 'base64').toString('utf8'))
+      : 0;
+    const pageSize = maxResults && Number.isFinite(maxResults) ? Math.max(1, Math.min(200, maxResults)) : 50;
+
+    const page = filtered.slice(offset, offset + pageSize);
+    const nextOffset = offset + page.length;
+    const nextToken =
+      nextOffset < filtered.length ? Buffer.from(String(nextOffset), 'utf8').toString('base64') : undefined;
+
+    const items: RunListItem[] = page.map((r) => ({
+      id: r.ExternalRunId ?? '',
+      arn:
+        r.ExternalRunId && process.env.REGION && process.env.ACCOUNT_ID
+          ? `arn:aws:omics:${process.env.REGION}:${process.env.ACCOUNT_ID}:run/${r.ExternalRunId}`
+          : undefined,
+      name: r.RunName,
+      status: r.Status as any,
+      workflowId: r.WorkflowName,
+      creationTime: r.CreatedAt ? new Date(r.CreatedAt) : undefined,
+    }));
+
+    const response = (<any>{
+      items,
+      ...(nextToken ? { nextToken } : {}),
+    }) satisfies Partial<ListRunsCommandInput>;
+
     return buildResponse(200, JSON.stringify(response), event);
   } catch (err: any) {
     console.error(err);

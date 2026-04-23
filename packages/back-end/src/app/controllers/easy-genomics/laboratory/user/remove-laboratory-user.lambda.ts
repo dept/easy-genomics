@@ -1,9 +1,9 @@
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
+import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { RemoveLaboratoryUserSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-user';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
-import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { LaboratoryUserService } from '@BE/services/easy-genomics/laboratory-user-service';
@@ -44,7 +44,7 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
-    const response: boolean = await platformUserService.removeExistingUserFromLaboratory(
+    const response: Boolean = await platformUserService.removeExistingUserFromLaboratory(
       {
         ...existingUser,
         ModifiedAt: new Date().toISOString(),
@@ -54,6 +54,8 @@ export const handler: Handler = async (
     );
     if (response) {
       return buildResponse(200, JSON.stringify({ Status: 'Success' }), event);
+    } else {
+      throw new Error('Unable to remove Laboratory User');
     }
   } catch (err: any) {
     console.error(err);

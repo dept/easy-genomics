@@ -15,6 +15,7 @@
   import { Pipeline as SeqeraPipeline } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
   import { WorkflowListItem as OmicsWorkflow } from '@aws-sdk/client-omics';
   import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
+  import { FavouriteWorkflow } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
   import { TableSort } from './EGTable.vue';
 
   const props = defineProps<{
@@ -38,6 +39,7 @@
   const { stringSortCompare } = useSort();
 
   const labUsers = ref<LabUser[]>([]);
+  const favouriteWorkflows = ref<FavouriteWorkflow[]>([]);
   const seqeraPipelines = computed<SeqeraPipeline[]>(() => seqeraPipelinesStore.pipelinesForLab(props.labId));
   const omicsWorkflows = computed<OmicsWorkflow[]>(() => omicsWorkflowsStore.workflowsForLab(props.labId));
   const canAddUsers = computed<boolean>(() => userStore.canAddLabUsers(props.labId));
@@ -51,11 +53,21 @@
   const userToRemove = ref();
   const missingPAT = ref<boolean>(false);
   const tabIndex = ref(0);
+  /** Prevents infinite loop: only refresh lab once when HasNextFlowTowerAccessToken is null */
+  const hasRefreshedLabForNullToken = ref(false);
   let intervalId: number | undefined;
 
-  const orgId = computed<string | null>(() => labStore.labs[props.labId].OrganizationId ?? null);
   const lab = computed<Laboratory | null>(() => labStore.labs[props.labId] ?? null);
+  const orgId = computed<string | null>(() => lab.value?.OrganizationId ?? null);
   const labName = computed<string>(() => lab.value?.Name || '');
+
+  /** Pipeline Runs table footer; only when Settings → Run retention (months) is greater than zero. */
+  const runRecordsRetentionNotice = computed((): string | undefined => {
+    // ?? applies default-for-missing only; explicit 0 must stay 0 (footnote hidden).
+    const months = lab.value?.RunRetentionMonths ?? 6;
+    if (months <= 0) return undefined;
+    return `Run records are deleted ${months} month${months > 1 ? 's' : ''} after a run reaches a final status, per retention policy.`;
+  });
 
   /**
    * Fetch Lab details, pipelines, workflows, runs, and Lab users before component mount and start periodic fetching
@@ -66,15 +78,13 @@
   });
 
   onMounted(async () => {
-    // set tabIndex according to initialTab prop
     setTabIndex();
+    uiStore.setSidebarVisible(true);
 
-    // clean up timeout
     if (intervalId) {
       clearTimeout(intervalId);
     }
 
-    // update most recent lab
     await updateDefaultLab(props.labId);
   });
 
@@ -82,16 +92,18 @@
     if (intervalId) {
       clearTimeout(intervalId);
     }
+    uiStore.setSidebarVisible(false);
   });
 
   // Page Tabs
 
-  const tabItems = computed<{ key: string; label: string }[]>(() => {
-    const runsTab = { key: 'runs', label: 'Pipeline Runs' };
-    const seqeraPipelinesTab = { key: 'seqeraPipelines', label: 'Seqera Pipelines' };
-    const omicsWorkflowsTab = { key: 'omicsWorkflows', label: 'HealthOmics Workflows' };
-    const usersTab = { key: 'users', label: 'Users' };
-    const detailsTab = { key: 'details', label: 'Settings' };
+  const tabItems = computed<{ key: string; label: string; icon: string; dividerBefore?: boolean }[]>(() => {
+    const dashboardTab = { key: 'dashboard', label: 'Dashboard', icon: 'i-heroicons-squares-2x2' };
+    const runsTab = { key: 'runs', label: 'Runs', icon: 'i-heroicons-clock' };
+    const seqeraPipelinesTab = { key: 'seqeraPipelines', label: 'Seqera Workflows', icon: 'i-heroicons-command-line' };
+    const omicsWorkflowsTab = { key: 'omicsWorkflows', label: 'HealthOmics Workflows', icon: 'i-heroicons-beaker' };
+    const usersTab = { key: 'users', label: 'Lab Users', icon: 'i-heroicons-users' };
+    const detailsTab = { key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth' };
 
     const seqeraAvailable = lab.value?.NextFlowTowerEnabled && !missingPAT.value;
     const omicsAvailable = lab.value?.AwsHealthOmicsEnabled;
@@ -99,19 +111,38 @@
     const items = [];
 
     if (!props.superuser) {
+      items.push(dashboardTab);
       if (seqeraAvailable || omicsAvailable) items.push(runsTab);
       if (seqeraAvailable) items.push(seqeraPipelinesTab);
       if (omicsAvailable) items.push(omicsWorkflowsTab);
     }
-    items.push(usersTab);
+    items.push({ ...usersTab, dividerBefore: items.length > 0 });
     items.push(detailsTab);
 
     return items;
   });
 
+  const activeTabKey = computed(() => tabItems.value[tabIndex.value]?.key || '');
+
+  const pageDescription = computed(() => {
+    const descriptions: Record<string, string> = {
+      runs: 'View your pipeline runs',
+      seqeraPipelines: 'View your Seqera pipelines',
+      omicsWorkflows: 'View your HealthOmics workflows',
+      users: 'View your lab users',
+      details: 'View your lab settings',
+    };
+    return descriptions[activeTabKey.value] || '';
+  });
+
   function setTabIndex() {
     const tabMatchIndex = tabItems.value.findIndex((tab) => tab.label === props.initialTab);
     tabIndex.value = tabMatchIndex !== -1 ? tabMatchIndex : 0;
+  }
+
+  function handleTabChange(newIndex: number) {
+    $router.push({ query: { ...$router.currentRoute.query, tab: tabItems.value[newIndex].label } });
+    tabIndex.value = newIndex;
   }
 
   // Lab Runs Tab
@@ -123,6 +154,7 @@
     { key: 'CreatedAt', label: 'Created At', sortable: true },
     { key: 'lastUpdated', label: 'Last Updated', sortable: true },
     { key: 'Status', label: 'Status', sortable: true },
+    { key: 'WorkflowVersionName', label: 'Workflow version', sortable: true },
     { key: 'Owner', label: 'Owner', sortable: true },
     { key: 'actions', label: 'Actions' },
   ];
@@ -322,12 +354,44 @@
   const omicsWorkflowsTableColumns = [
     { key: 'Name', label: 'Name' },
     { key: 'description', label: 'Description' },
-    { key: 'actions', label: 'Actions' },
+    { key: 'favourite', label: 'Favourite' },
+    { key: 'run', label: 'Run' },
   ];
 
-  const omicsWorkflowsActionItems = (workflow: any) => [
-    [{ label: 'Run', click: () => viewRunOmicsWorkflow(workflow) }],
-  ];
+  function isWorkflowFavourited(workflowId: string): boolean {
+    return favouriteWorkflows.value.some((w) => w.WorkflowId === workflowId && w.LaboratoryId === props.labId);
+  }
+
+  async function toggleFavouriteWorkflow(workflow: OmicsWorkflow) {
+    const workflowId = workflow.id ?? '';
+    const isFav = isWorkflowFavourited(workflowId);
+
+    let updated: FavouriteWorkflow[];
+    if (isFav) {
+      updated = favouriteWorkflows.value.filter(
+        (w) => !(w.WorkflowId === workflowId && w.LaboratoryId === props.labId),
+      );
+    } else {
+      const newFav: FavouriteWorkflow = {
+        WorkflowId: workflowId,
+        WorkflowName: workflow.name ?? '',
+        Description: workflow.description ?? undefined,
+        Platform: 'AWS HealthOmics',
+        LaboratoryId: props.labId,
+      };
+      updated = [...favouriteWorkflows.value, newFav];
+    }
+
+    try {
+      await $api.users.updateUser(userStore.currentUserDetails.id!, { FavouriteWorkflows: updated });
+      favouriteWorkflows.value = updated;
+      useToastStore().success(isFav ? 'Workflow removed from favourites' : 'Workflow added to favourites');
+    } catch {
+      useToastStore().error(
+        isFav ? 'Failed to remove workflow from favourites' : 'Failed to add workflow to favourites',
+      );
+    }
+  }
 
   function viewRunOmicsWorkflow(workflow: OmicsWorkflow) {
     $router.push({
@@ -493,6 +557,15 @@
     }
   }
 
+  async function loadFavouriteWorkflows(): Promise<void> {
+    try {
+      const user = await $api.users.getUser();
+      favouriteWorkflows.value = user.FavouriteWorkflows ?? [];
+    } catch (error) {
+      console.error('Error loading favourite workflows', error);
+    }
+  }
+
   // this anticipates these store values being needed on run click
   async function getSeqeraRuns(): Promise<void> {
     useUiStore().setRequestPending('getSeqeraRuns');
@@ -566,28 +639,49 @@
     setTimeout(setTabIndex, 100); // there's a slight delay to get around a race condition
   }
 
-  watch(lab, async (lab) => {
-    if (lab === null) {
+  /** Tracks which lab we've already run secondary fetches for; avoids re-running when watch re-fires for same reference */
+  const lastProcessedLabRef = ref<Laboratory | null>(null);
+
+  // Reset guards when navigating to a different lab
+  watch(
+    () => props.labId,
+    () => {
+      hasRefreshedLabForNullToken.value = false;
+      lastProcessedLabRef.value = null;
+    },
+  );
+
+  watch(lab, async (newLab) => {
+    if (newLab === null) {
       return;
     }
+
+    // Avoid running secondary fetches multiple times for the same lab object (e.g. re-entrant or duplicate watch runs)
+    if (lastProcessedLabRef.value === newLab) {
+      return;
+    }
+    lastProcessedLabRef.value = newLab;
 
     const promises = [getLabUsers()];
 
     if (props.superuser) {
-      // superuser doesn't view pipelines/workflows or runs so just fetch the users
       await Promise.all(promises);
       return;
     }
 
-    if (lab.NextFlowTowerEnabled) {
-      if (lab.HasNextFlowTowerAccessToken == null) {
-        // Current lab doesn't have the correct details
+    promises.push(loadFavouriteWorkflows());
+
+    if (newLab.NextFlowTowerEnabled) {
+      if (newLab.HasNextFlowTowerAccessToken == null) {
+        // Current lab doesn't have the correct details — refresh at most once to avoid infinite loop
         if (uiStore.isRequestPending('loadLabData')) {
           // In the process of loading the lab, which will trigger this code again when it completes
-        } else {
-          loadLabData(); // Refresh the lab
+        } else if (!hasRefreshedLabForNullToken.value) {
+          hasRefreshedLabForNullToken.value = true;
+          await loadLabData();
+          // loadLabData() assigns a new lab in the store; watch will run again with that new reference and then run the fetches below (lastProcessedLabRef will differ)
         }
-      } else if (!lab.HasNextFlowTowerAccessToken) {
+      } else if (!newLab.HasNextFlowTowerAccessToken) {
         // Seqera enabled but creds not present, show the modal
         missingPAT.value = true;
         showRedirectModal();
@@ -599,7 +693,7 @@
       }
     }
 
-    if (lab.AwsHealthOmicsEnabled) {
+    if (newLab.AwsHealthOmicsEnabled) {
       // fetch the Omics stuff
       promises.push(getOmicsWorkflows());
       promises.push(getOmicsRuns());
@@ -607,51 +701,28 @@
 
     await Promise.all(promises);
   });
-
-  // Note: the UTabs :ui attribute has to be defined locally in this file - if it is imported from another file,
-  //  Tailwind won't pick up and include the classes used and styles will be missing.
-  // To keep the tab styling consistent throughout the app, any changes made here need to be duplicated to all other
-  //  UTabs that use an "EGTabsStyles" as input to the :ui attribute.
-  const EGTabsStyles = {
-    base: 'focus:outline-none',
-    list: {
-      base: '!flex rounded-none mb-6 mt-0',
-      padding: 'p-0',
-      height: 'h-14',
-      marker: {
-        background: '',
-        shadow: '',
-      },
-      tab: {
-        base: 'font-serif w-auto mr-3 rounded-xl border border-solid',
-        background: '',
-        active: 'text-white bg-primary border-primary',
-        inactive: 'font-serif text-text-body border-background-dark-grey',
-        height: '',
-        padding: 'px-5 py-2',
-        size: 'text-sm',
-      },
-    },
-  };
 </script>
 
 <template>
+  <EGSidebarNav v-if="lab" :items="tabItems" :model-value="tabIndex" @update:model-value="handleTabChange" />
+
   <EGPageHeader
+    v-if="activeTabKey !== 'dashboard'"
     :title="labName"
-    description="View your Lab users, details and pipelines/workflows"
+    :description="pageDescription"
     :back-action="() => (superuser ? $router.push(`/orgs/${orgId || ''}`) : $router.push('/labs'))"
     :show-back="true"
     show-org-breadcrumb
     show-lab-breadcrumb
   >
     <EGButton
+      v-if="!superuser && activeTabKey === 'users'"
       label="Add Lab Users"
-      v-if="!superuser"
       :disabled="!canAddUsers"
       @click="showAddUserModule = !showAddUserModule"
     />
     <EGAddLabUsersModule
-      v-if="showAddUserModule && !!orgId"
+      v-if="showAddUserModule && activeTabKey === 'users' && !!orgId"
       @added-user-to-lab="handleUserAddedToLab()"
       :org-id="orgId"
       :lab-id="labId"
@@ -661,216 +732,233 @@
     />
   </EGPageHeader>
 
-  <UTabs
-    v-if="lab"
-    :ui="EGTabsStyles"
-    :default-index="0"
-    :items="tabItems"
-    :model-value="tabIndex"
-    @update:model-value="
-      (newIndex) => {
-        $router.push({ query: { ...$router.currentRoute.query, tab: tabItems[newIndex].label } });
-        tabIndex = newIndex;
-      }
-    "
-  >
-    <template #item="{ item }">
-      <!-- Runs tab -->
-      <div v-if="item.key === 'runs'">
-        <div class="mb-6">
-          <div class="flex flex-row items-center gap-4">
-            <EGSearchInput
-              @input-event="updateRunsSearchQuery"
-              placeholder="Search runs"
-              :disabled="useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
-              class="w-[408px]"
-            />
-            <UCheckbox label="My runs only" :ui="{ base: 'size-[24px]' }" v-model="runsTableFilterMyRunsOnly" />
-          </div>
-          <p class="text-muted mt-1 text-xs">
-            Search by all run fields or use queries like
-            <span class="font-mono">"status"=completed</span>
-            .
-          </p>
-        </div>
+  <!-- Dashboard tab -->
+  <div v-if="activeTabKey === 'dashboard'">
+    <EGDashboard :lab-id="labId" />
+  </div>
 
-        <EGTable
-          :row-click-action="viewRunDetails"
-          :table-data="filteredRunsTableItems"
-          :columns="runsTableColumns"
-          v-model:sort="runsTableSort"
-          :is-loading="useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
-          :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
-        >
-          <template #RunName-data="{ row: run }">
-            <div v-if="run.RunName" class="text-body text-sm font-medium">{{ run.RunName }}</div>
-            <div v-if="run.WorkflowName" class="text-muted text-xs font-normal">{{ run.WorkflowName }}</div>
-          </template>
-
-          <template #CreatedAt-data="{ row: run }">
-            <div class="text-body text-sm font-medium">{{ getDate(run.CreatedAt) }}</div>
-            <div class="text-muted">{{ getTime(run.CreatedAt) }}</div>
-          </template>
-
-          <template #lastUpdated-data="{ row: run }">
-            <div class="text-body text-sm font-medium">{{ getDate(run.ModifiedAt) }}</div>
-            <div class="text-muted">{{ getTime(run.ModifiedAt) }}</div>
-          </template>
-
-          <template #Status-data="{ row: run }">
-            <EGStatusChip :status="run.Status" />
-          </template>
-
-          <template #Owner-data="{ row: run }">
-            <div class="text-body text-sm font-medium">{{ run.Owner }}</div>
-          </template>
-
-          <template #actions-data="{ row }">
-            <div class="flex justify-end">
-              <EGActionButton :items="runsActionItems(row)" class="ml-2" @click="$event.stopPropagation()" />
-            </div>
-          </template>
-
-          <template #empty-state>
-            <div class="text-muted flex h-24 items-center justify-center font-normal">
-              There are no Runs in your Lab
-            </div>
-          </template>
-        </EGTable>
-      </div>
-
-      <!-- Seqera Pipelines tab -->
-      <div v-if="item.key === 'seqeraPipelines'">
-        <EGTable
-          :row-click-action="viewRunSeqeraPipeline"
-          :table-data="seqeraPipelines"
-          :columns="seqeraPipelinesTableColumns"
-          :is-loading="useUiStore().anyRequestPending(['loadLabData', 'getSeqeraPipelines'])"
-          :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'getSeqeraPipelines'])"
-        >
-          <template #Name-data="{ row: pipeline }">
-            <div class="flex items-center">
-              {{ pipeline?.name }}
-            </div>
-          </template>
-
-          <template #description-data="{ row: pipeline }">
-            {{ pipeline?.description }}
-          </template>
-
-          <template #actions-data="{ row }">
-            <div class="flex justify-end">
-              <EGActionButton :items="seqeraPipelinesActionItems(row)" class="ml-2" @click="$event.stopPropagation()" />
-            </div>
-          </template>
-
-          <template #empty-state>
-            <div class="text-muted flex h-24 items-center justify-center font-normal">
-              There are no Pipelines assigned to this Lab
-            </div>
-          </template>
-        </EGTable>
-      </div>
-
-      <!-- HealthOmics Pipelines tab -->
-      <div v-if="item.key === 'omicsWorkflows'">
-        <EGTable
-          :row-click-action="viewRunOmicsWorkflow"
-          :table-data="omicsWorkflows"
-          :columns="omicsWorkflowsTableColumns"
-          :is-loading="useUiStore().anyRequestPending(['loadLabData', 'getOmicsWorkflows'])"
-          :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'getOmicsWorkflows'])"
-        >
-          <template #Name-data="{ row: workflow }">
-            <div class="flex items-center">
-              {{ workflow?.name }}
-            </div>
-          </template>
-
-          <template #description-data="{ row: workflow }">
-            {{ workflow?.description }}
-          </template>
-
-          <template #actions-data="{ row: workflow }">
-            <div class="flex justify-end">
-              <EGActionButton
-                :items="omicsWorkflowsActionItems(workflow)"
-                class="ml-2"
-                @click="$event.stopPropagation()"
-              />
-            </div>
-          </template>
-
-          <template #empty-state>
-            <div class="text-muted flex h-24 items-center justify-center font-normal">
-              There are no Workflows assigned to this Lab
-            </div>
-          </template>
-        </EGTable>
-      </div>
-
-      <!-- Lab Users tab -->
-      <div v-if="item.key === 'users'">
+  <!-- Runs tab -->
+  <div v-if="activeTabKey === 'runs'">
+    <div class="mb-6">
+      <div class="flex flex-row items-center gap-4">
         <EGSearchInput
-          @input-event="updateSearchOutput"
-          placeholder="Search user"
-          :disabled="useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'addUserToLab'])"
-          class="my-6 w-[408px]"
+          @input-event="updateRunsSearchQuery"
+          placeholder="Search runs"
+          :disabled="useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
+          class="w-[408px]"
         />
+        <UCheckbox label="My runs only" :ui="{ base: 'size-[24px]' }" v-model="runsTableFilterMyRunsOnly" />
+      </div>
+      <p class="text-muted mt-1 text-xs">
+        Search by all run fields or use queries like
+        <span class="font-mono">"status"=completed</span>
+        .
+      </p>
+    </div>
 
-        <EGDialog
-          actionLabel="Remove User"
-          :actionVariant="ButtonVariantEnum.enum.destructive"
-          cancelLabel="Cancel"
-          :cancelVariant="ButtonVariantEnum.enum.secondary"
-          @action-triggered="handleRemoveUserFromLab"
-          :primaryMessage="primaryMessage"
-          v-model="isOpen"
-        />
+    <EGTable
+      :row-click-action="viewRunDetails"
+      :table-data="filteredRunsTableItems"
+      :columns="runsTableColumns"
+      v-model:sort="runsTableSort"
+      :is-loading="useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
+      :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
+    >
+      <template #RunName-data="{ row: run }">
+        <div v-if="run.RunName" class="text-body text-sm font-medium">{{ run.RunName }}</div>
+        <div v-if="run.WorkflowName" class="text-muted text-xs font-normal">{{ run.WorkflowName }}</div>
+      </template>
 
-        <EGTable
-          :table-data="usersTableItems"
-          :columns="usersTableColumns"
-          :is-loading="useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'assignLabRole'])"
-          :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'assignLabRole'])"
+      <template #CreatedAt-data="{ row: run }">
+        <div class="text-body text-sm font-medium">{{ getDate(run.CreatedAt) }}</div>
+        <div class="text-muted">{{ getTime(run.CreatedAt) }}</div>
+      </template>
+
+      <template #lastUpdated-data="{ row: run }">
+        <div class="text-body text-sm font-medium">{{ getDate(run.ModifiedAt) }}</div>
+        <div class="text-muted">{{ getTime(run.ModifiedAt) }}</div>
+      </template>
+
+      <template #Status-data="{ row: run }">
+        <EGStatusChip :status="run.Status" />
+      </template>
+
+      <template #WorkflowVersionName-data="{ row: run }">
+        <div class="text-body text-sm font-medium">
+          {{ run.WorkflowVersionName || '—' }}
+        </div>
+      </template>
+
+      <template #Owner-data="{ row: run }">
+        <div class="text-body text-sm font-medium">{{ run.Owner }}</div>
+      </template>
+
+      <template #actions-data="{ row }">
+        <div class="flex justify-end">
+          <EGActionButton :items="runsActionItems(row)" class="ml-2" @click="$event.stopPropagation()" />
+        </div>
+      </template>
+
+      <template #empty-state>
+        <div class="text-muted flex h-24 items-center justify-center font-normal">There are no Runs in your Lab</div>
+      </template>
+    </EGTable>
+    <p v-if="runRecordsRetentionNotice" class="text-muted mt-3 max-w-3xl text-xs leading-relaxed">
+      {{ runRecordsRetentionNotice }}
+    </p>
+  </div>
+
+  <!-- Seqera Pipelines tab -->
+  <div v-if="activeTabKey === 'seqeraPipelines'">
+    <EGTable
+      :row-click-action="viewRunSeqeraPipeline"
+      :table-data="seqeraPipelines"
+      :columns="seqeraPipelinesTableColumns"
+      :is-loading="useUiStore().anyRequestPending(['loadLabData', 'getSeqeraPipelines'])"
+      :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'getSeqeraPipelines'])"
+    >
+      <template #Name-data="{ row: pipeline }">
+        <div class="flex items-center">
+          {{ pipeline?.name }}
+        </div>
+      </template>
+
+      <template #description-data="{ row: pipeline }">
+        {{ pipeline?.description }}
+      </template>
+
+      <template #actions-data="{ row }">
+        <div class="flex justify-end">
+          <EGActionButton :items="seqeraPipelinesActionItems(row)" class="ml-2" @click="$event.stopPropagation()" />
+        </div>
+      </template>
+
+      <template #empty-state>
+        <div class="text-muted flex h-24 items-center justify-center font-normal">
+          There are no Pipelines assigned to this Lab
+        </div>
+      </template>
+    </EGTable>
+  </div>
+
+  <!-- HealthOmics Workflows tab -->
+  <div v-if="activeTabKey === 'omicsWorkflows'">
+    <EGTable
+      narrow-run-and-favourite-columns
+      :table-data="omicsWorkflows"
+      :columns="omicsWorkflowsTableColumns"
+      :is-loading="useUiStore().anyRequestPending(['loadLabData', 'getOmicsWorkflows'])"
+      :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'getOmicsWorkflows'])"
+    >
+      <template #favourite-data="{ row: workflow }">
+        <button
+          type="button"
+          class="text-primary hover:text-primary-dark hover:bg-primary-muted flex items-center justify-center rounded-full p-1 transition-all duration-150 hover:scale-110"
+          :aria-label="
+            isWorkflowFavourited(workflow.id ?? '') ? 'Remove workflow from favourites' : 'Add workflow to favourites'
+          "
+          :title="
+            isWorkflowFavourited(workflow.id ?? '') ? 'Remove workflow from favourites' : 'Add workflow to favourites'
+          "
+          @click.stop="toggleFavouriteWorkflow(workflow)"
         >
-          <template #displayName-data="{ row: labUser }">
-            <div class="flex items-center">
-              <EGUserDisplay :name="labUser.displayName" :email="labUser.UserEmail" />
-            </div>
-          </template>
+          <UIcon
+            :name="isWorkflowFavourited(workflow.id ?? '') ? 'i-heroicons-star-solid' : 'i-heroicons-star'"
+            class="h-6 w-6"
+            :class="isWorkflowFavourited(workflow.id ?? '') ? 'text-primary' : 'text-primary/45 hover:text-primary'"
+            aria-hidden="true"
+          />
+        </button>
+      </template>
 
-          <template #actions-data="{ row: labUser }">
-            <div class="flex items-center">
-              <EGUserRoleDropdownNew
-                :show-remove-from-lab="true"
-                :key="labUser?.LabManager"
-                :disabled="
-                  useUiStore().anyRequestPending(['loadLabData', 'getLabUsers']) ||
-                  !userStore.canEditLabUsers(labId) ||
-                  userStore.isSuperuser
-                "
-                :user="labUser"
-                @assign-lab-role="handleAssignLabRole($event)"
-                @remove-user-from-lab="showRemoveUserDialog($event.user)"
-              />
-            </div>
-          </template>
+      <template #Name-data="{ row: workflow }">
+        <div class="flex items-center">
+          {{ workflow?.name }}
+        </div>
+      </template>
 
-          <template #empty-state>
-            <div class="text-muted flex h-24 items-center justify-center font-normal">
-              There are no users in your Lab
-            </div>
-          </template>
-        </EGTable>
-      </div>
+      <template #description-data="{ row: workflow }">
+        {{ workflow?.description }}
+      </template>
 
-      <!-- Lab Details -->
-      <div v-if="item.key === 'details'">
-        <EGFormLabDetails @updated="handleDetailsUpdated" />
-      </div>
-    </template>
-  </UTabs>
+      <template #run-data="{ row: workflow }">
+        <button
+          type="button"
+          class="text-primary hover:text-primary-dark hover:bg-primary-muted flex items-center justify-center rounded-full p-1 transition-all duration-150 hover:scale-110"
+          aria-label="Run workflow"
+          title="Run workflow"
+          @click.stop="viewRunOmicsWorkflow(workflow)"
+        >
+          <UIcon name="i-heroicons-play-circle" class="h-6 w-6" aria-hidden="true" />
+        </button>
+      </template>
+
+      <template #empty-state>
+        <div class="text-muted flex h-24 items-center justify-center font-normal">
+          There are no Workflows assigned to this Lab
+        </div>
+      </template>
+    </EGTable>
+  </div>
+
+  <!-- Lab Users tab -->
+  <div v-if="activeTabKey === 'users'">
+    <EGSearchInput
+      @input-event="updateSearchOutput"
+      placeholder="Search user"
+      :disabled="useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'addUserToLab'])"
+      class="my-6 w-[408px]"
+    />
+
+    <EGDialog
+      actionLabel="Remove User"
+      :actionVariant="ButtonVariantEnum.enum.destructive"
+      cancelLabel="Cancel"
+      :cancelVariant="ButtonVariantEnum.enum.secondary"
+      @action-triggered="handleRemoveUserFromLab"
+      :primaryMessage="primaryMessage"
+      v-model="isOpen"
+    />
+
+    <EGTable
+      :table-data="usersTableItems"
+      :columns="usersTableColumns"
+      :is-loading="useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'assignLabRole'])"
+      :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'assignLabRole'])"
+    >
+      <template #displayName-data="{ row: labUser }">
+        <div class="flex items-center">
+          <EGUserDisplay :name="labUser.displayName" :email="labUser.UserEmail" />
+        </div>
+      </template>
+
+      <template #actions-data="{ row: labUser }">
+        <div class="flex items-center">
+          <EGUserRoleDropdownNew
+            :show-remove-from-lab="true"
+            :key="labUser?.LabManager"
+            :disabled="
+              useUiStore().anyRequestPending(['loadLabData', 'getLabUsers']) ||
+              !userStore.canEditLabUsers(labId) ||
+              userStore.isSuperuser
+            "
+            :user="labUser"
+            @assign-lab-role="handleAssignLabRole($event)"
+            @remove-user-from-lab="showRemoveUserDialog($event.user)"
+          />
+        </div>
+      </template>
+
+      <template #empty-state>
+        <div class="text-muted flex h-24 items-center justify-center font-normal">There are no users in your Lab</div>
+      </template>
+    </EGTable>
+  </div>
+
+  <!-- Lab Details -->
+  <div v-if="activeTabKey === 'details'">
+    <EGFormLabDetails @updated="handleDetailsUpdated" />
+  </div>
 
   <EGDialog
     action-label="Cancel Run"

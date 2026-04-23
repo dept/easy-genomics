@@ -2,6 +2,7 @@
   import { useChangeCase } from '@vueuse/integrations/useChangeCase';
   import { useDebounceFn } from '@vueuse/core';
   import { format } from 'date-fns';
+  import type { TableSort } from './EGTable.vue';
   import {
     S3Object,
     S3Response,
@@ -48,7 +49,7 @@
     { isLoading: true },
   );
 
-  const { handleS3Download, downloadFolder } = useFileDownload();
+  const { handleS3Download, downloadFolder, isFolderZipInProgress } = useFileDownload();
   const { $api } = useNuxtApp();
 
   const uiStore = useUiStore();
@@ -294,22 +295,120 @@
     });
   });
 
+  const sortHelpers = useSort();
+
+  /** Folders often have no lastModified; keep them after dated rows for a stable column sort. */
+  function compareLastModified(
+    a: string | undefined,
+    b: string | undefined,
+    direction: 'asc' | 'desc' = 'asc',
+  ): number {
+    const toTime = (s?: string): number | null => {
+      if (!s) return null;
+      const ms = new Date(s).getTime();
+      return Number.isNaN(ms) ? null : ms;
+    };
+    const ta = toTime(a);
+    const tb = toTime(b);
+    if (ta === null && tb === null) return 0;
+    if (ta === null) return 1;
+    if (tb === null) return -1;
+    const result = ta - tb;
+    return direction === 'asc' ? result : -result;
+  }
+
   const tableColumns = [
-    { key: 'name', label: 'Name', sortable: true, sort: useSort().stringSortCompare },
-    { key: 'type', label: 'Type', sortable: true, sort: useSort().stringSortCompare },
+    {
+      key: 'name',
+      label: 'Name',
+      sortable: true,
+      sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
+        sortHelpers.stringSortCompare(String(a ?? ''), String(b ?? ''), direction),
+    },
+    {
+      key: 'type',
+      label: 'Type',
+      sortable: true,
+      sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
+        sortHelpers.stringSortCompare(String(a ?? ''), String(b ?? ''), direction),
+    },
     {
       key: 'lastModified',
       label: 'Date Modified',
       sortable: true,
-      sort: useSort().dateSortCompare,
+      sort: compareLastModified,
     },
-    { key: 'size', label: 'Size', sortable: true, sort: useSort().numberSortCompare },
+    {
+      key: 'size',
+      label: 'Size',
+      sortable: true,
+      sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
+        sortHelpers.numberSortCompare(Number(a ?? 0), Number(b ?? 0), direction),
+    },
     { key: 'actions', label: 'Actions' },
   ];
+
+  const fileTableSort = ref<TableSort>({ column: 'name', direction: 'asc' });
+
+  const sortedTableData = computed(() => {
+    const items = [...filteredItems.value];
+    const { column, direction } = fileTableSort.value;
+    const col = tableColumns.find((c) => c.key === column);
+    if (!col || !('sortable' in col) || !col.sortable || typeof col.sort !== 'function') {
+      return items;
+    }
+
+    const sortFn = col.sort as (a: unknown, b: unknown, direction: 'asc' | 'desc') => number;
+
+    items.sort((rowA, rowB) => {
+      const va = (rowA as Record<string, unknown>)[column];
+      const vb = (rowB as Record<string, unknown>)[column];
+      const cmp = sortFn(va, vb, direction);
+      if (cmp !== 0) {
+        return cmp;
+      }
+      return sortHelpers.stringSortCompare(String(rowA.name ?? ''), String(rowB.name ?? ''), direction);
+    });
+
+    return items;
+  });
 
   // key is the uniqueString of a file tree node
   // value is the ref containing the progress of the download out of 100
   const downloads = ref<Record<string, Ref<number>>>({});
+  // Tracks whether a given node is actively downloading (used for button loading state).
+  // We keep this separate from `downloads[...]` so we can fade the green overlay without
+  // showing the spinner forever.
+  const downloadActive = ref<Record<string, boolean>>({});
+
+  const fadeIntervals = new Map<string, ReturnType<typeof setInterval>>();
+
+  function startFadeOutAndCleanup(uniqueString: string, progressRef: Ref<number>) {
+    if (fadeIntervals.has(uniqueString)) return;
+
+    // Keep it short: we only want to visually fade the green overlay.
+    const fadeDurationMs = 700;
+    const intervalMs = 50;
+    const totalSteps = Math.ceil(fadeDurationMs / intervalMs);
+    let step = 0;
+
+    const timer = setInterval(() => {
+      step += 1;
+      const remainingSteps = Math.max(0, totalSteps - step);
+      progressRef.value = Math.round((remainingSteps / totalSteps) * 100);
+
+      if (step >= totalSteps) {
+        const handle = fadeIntervals.get(uniqueString);
+        if (handle) clearInterval(handle);
+        fadeIntervals.delete(uniqueString);
+
+        delete downloads.value[uniqueString];
+        delete downloadActive.value[uniqueString];
+      }
+    }, intervalMs);
+
+    fadeIntervals.set(uniqueString, timer);
+  }
 
   function formatFileSize(value?: number): string {
     if (!value) return '';
@@ -522,21 +621,40 @@
 
   async function downloadFileTreeNode(node: FileTreeNode): Promise<void> {
     const uniqueString = nodeUniqueString(node);
+    // If a fade-out is currently running for this node, stop it so the new download
+    // starts from a clean slate.
+    if (fadeIntervals.has(uniqueString)) {
+      const handle = fadeIntervals.get(uniqueString);
+      if (handle) clearInterval(handle);
+      fadeIntervals.delete(uniqueString);
+    }
+
+    delete downloads.value[uniqueString];
+    delete downloadActive.value[uniqueString];
+
     const progressRef: Ref<number> = ref(0);
     downloads.value[uniqueString] = progressRef;
+    downloadActive.value[uniqueString] = true;
 
     useToastStore().success('Your files have begun downloading');
 
-    if (node.type === 'file') {
-      const fileName = node.s3Key?.split('/').pop() || node.name!;
-      await handleS3Download(
-        props.labId,
-        fileName, // Filename
-        getNodeDirectoryPath(node), // s3://{S3 Bucket}/{S3 Prefix} Path
-        progressRef, // progress value ref to be updated by the function
-      );
-    } else {
-      await downloadFolder(props.labId, getNodeS3Uri(node), progressRef);
+    try {
+      if (node.type === 'file') {
+        const fileName = node.s3Key?.split('/').pop() || node.name!;
+        await handleS3Download(
+          props.labId,
+          fileName, // Filename
+          getNodeDirectoryPath(node), // s3://{S3 Bucket}/{S3 Prefix} Path
+          progressRef, // progress value ref to be updated by the function
+        );
+      } else {
+        await downloadFolder(props.labId, getNodeS3Uri(node), progressRef);
+      }
+    } finally {
+      // Ensure we briefly show "complete" and then fade the overlay out.
+      progressRef.value = 100;
+      downloadActive.value[uniqueString] = false;
+      startFadeOutAndCleanup(uniqueString, progressRef);
     }
   }
 
@@ -545,6 +663,11 @@
 
   watch(searchQuery, (value: string) => {
     onSearchInput(value);
+  });
+
+  onBeforeUnmount(() => {
+    fadeIntervals.forEach((handle) => clearInterval(handle));
+    fadeIntervals.clear();
   });
 </script>
 
@@ -573,7 +696,8 @@
 
     <EGTable
       :row-click-action="onRowClicked"
-      :table-data="filteredItems"
+      :table-data="sortedTableData"
+      v-model:sort="fileTableSort"
       :columns="tableColumns"
       no-results-msg="No files or folders found"
       :is-loading="isRootLoading || isSearchLoading"
@@ -619,12 +743,32 @@
             />
 
             <!-- download -->
-            <EGButton
-              variant="secondary"
-              :label="row?.type === 'file' ? 'Download' : 'Download as zip'"
-              :loading="downloads[nodeUniqueString(row)] !== undefined && downloads[nodeUniqueString(row)] < 100"
-              @click.stop="async () => await downloadFileTreeNode(row)"
-            />
+            <UTooltip
+              :delay-duration="0"
+              :prevent="!isFolderZipInProgress"
+              :ui="{
+                base: 'h-full w-auto text-center',
+              }"
+            >
+              <template #text>
+                <span class="block text-balance">
+                  Another download is currently in progress. Please wait for it to finish before starting a new one.
+                </span>
+              </template>
+              <span class="inline-flex">
+                <EGButton
+                  variant="secondary"
+                  :label="row?.type === 'file' ? 'Download' : 'Download as zip'"
+                  :loading="downloadActive[nodeUniqueString(row)] === true"
+                  :disabled="
+                    row?.type === 'directory' &&
+                    isFolderZipInProgress &&
+                    !(downloads[nodeUniqueString(row)] !== undefined && downloads[nodeUniqueString(row)] < 100)
+                  "
+                  @click.stop="async () => await downloadFileTreeNode(row)"
+                />
+              </span>
+            </UTooltip>
           </template>
         </div>
       </template>

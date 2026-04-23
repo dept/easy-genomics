@@ -1,3 +1,4 @@
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization';
 import {
   SnsProcessingEvent,
@@ -5,7 +6,6 @@ import {
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { QueuedUserInvitationRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-invitation';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
 import { APIGatewayProxyResult, Handler, SQSRecord } from 'aws-lambda';
 import { SQSEvent } from 'aws-lambda/trigger/sqs';
 import { OrganizationService } from '@BE/services/easy-genomics/organization-service';

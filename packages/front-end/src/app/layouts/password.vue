@@ -3,7 +3,7 @@
 </script>
 
 <template>
-  <EGToasts class="top-[70px]" />
+  <EGToasts class="top-[52px]" />
   <EGHeader />
 
   <main class="mx-auto mt-10 flex flex-col justify-center px-4">

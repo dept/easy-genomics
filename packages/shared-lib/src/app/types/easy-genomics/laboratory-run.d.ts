@@ -17,6 +17,7 @@
  *   Status: <string>,
  *   Owner: <string>, // User Email for display purposes
  *   WorkflowName?: <string>, // Seqera Pipeline Name or AWS HealthOmics Workflow Name
+ *   WorkflowVersionName?: <string>, // AWS HealthOmics workflow version name when applicable
  *   ExternalRunId?: <string>,
  *   InputS3Url?: <string>,
  *   OutputS3Url?: <string>,
@@ -41,9 +42,22 @@ export interface LaboratoryRun extends BaseAttributes {
   Status: string;
   Owner: string; // User Email for display purposes
   WorkflowName?: string; // Seqera Pipeline Name or AWS HealthOmics Workflow Name
+  WorkflowVersionName?: string;
   ExternalRunId?: string;
   InputS3Url?: string;
   OutputS3Url?: string;
   SampleSheetS3Url?: string;
   Settings?: string; // JSON string
+
+  /**
+   * ISO timestamp indicating when the run first reached a terminal state.
+   * Used as the anchor for retention/TTL recomputation.
+   */
+  TerminalAt?: string;
+
+  /**
+   * DynamoDB TTL epoch timestamp (in seconds).
+   * When present, DynamoDB will remove the item after this timestamp.
+   */
+  ExpiresAt?: number;
 }

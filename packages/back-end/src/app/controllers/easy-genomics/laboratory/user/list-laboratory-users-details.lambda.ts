@@ -1,8 +1,8 @@
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
 import { LaboratoryUserDetails } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user-details';
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryUserService } from '@BE/services/easy-genomics/laboratory-user-service';
 import { UserService } from '@BE/services/easy-genomics/user-service';
@@ -55,7 +55,7 @@ export const handler: Handler = async (
   }
 };
 
-const listLaboratoryUsers = (
+export const listLaboratoryUsers = (
   organizationId?: string,
   laboratoryId?: string,
   userId?: string,

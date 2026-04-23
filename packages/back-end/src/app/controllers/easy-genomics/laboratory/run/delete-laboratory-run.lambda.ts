@@ -1,11 +1,11 @@
-import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   LaboratoryRunDeleteFailedError,
   LaboratoryRunNotFoundError,
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
-} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import {

@@ -1,26 +1,29 @@
 import { GetParameterCommandOutput, ParameterNotFound } from '@aws-sdk/client-ssm';
-import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-import { ListPipelinesResponse } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   LaboratoryAccessTokenUnavailableError,
   LaboratoryNotFoundError,
   MissingNextFlowTowerAccessError,
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
-} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import { ListPipelinesResponse } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
+import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
 import { SsmService } from '@BE/services/ssm-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
+import { isWorkflowAccessAllowed } from '@BE/utils/laboratory-workflow-access-utils';
 import { getNextFlowApiQueryParameters, httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
 const ssmService = new SsmService();
+const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
 
 /**
  * This GET /nf-tower/pipeline/list-pipelines?laboratoryId={LaboratoryId} API
@@ -94,7 +97,13 @@ export const handler: Handler = async (
       REST_API_METHOD.GET,
       { Authorization: `Bearer ${accessToken}` },
     );
-    return buildResponse(200, JSON.stringify(response), event);
+
+    const accessRows = await laboratoryWorkflowAccessService.listByLaboratoryId(laboratoryId);
+    const pipelines = (response.pipelines ?? []).filter(
+      (p) => p.pipelineId != null && isWorkflowAccessAllowed(laboratory, accessRows, 'SEQERA', String(p.pipelineId)),
+    );
+
+    return buildResponse(200, JSON.stringify({ ...response, pipelines }), event);
   } catch (err: any) {
     console.error(err);
     return buildErrorResponse(err, event);

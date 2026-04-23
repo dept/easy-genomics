@@ -221,7 +221,62 @@ obtain the Easy Genomics project source code and install the project dependencie
    - Each configuration is validated at run-time, if a configuration is incomplete or invalid it will be ignored as part
      of the build and deployment.
 
-3. Deploy the entire Easy Genomics solution to AWS using the following command.
+#### Optional: GitHub PAT Secret for nf-core Workflow Schemas
+
+Easy Genomics can enrich the workflow parameter form with richer type information, default values, dropdown options, and
+help text by fetching the `nextflow_schema.json` from the workflow's GitHub repository. This is enabled by tagging an
+AWS HealthOmics workflow with a `github-repo-url` tag pointing to its GitHub repository.
+
+To fetch schema files from private repositories (or to avoid GitHub API rate limits on public ones), you need to provide
+a GitHub Fine-Grained Personal Access Token (PAT) with **Contents: Read-only** scope.
+
+**Why it's needed:**
+
+The GitHub Contents API requires authentication to read files from private repositories, and unauthenticated requests to
+public repositories are subject to strict rate limits. The PAT is stored securely in AWS Secrets Manager — it is never
+embedded in code or configuration files.
+
+**How to set it up:**
+
+1. Create a GitHub Fine-Grained PAT with **Contents: Read-only** permission scoped to the repositories that host your
+   workflow schemas.
+
+2. Store the token in AWS Secrets Manager. You can use an existing secret or let Easy Genomics create a placeholder
+   secret for you on first deploy and populate it afterwards:
+
+   ```bash
+   # Option A: Create a new secret manually before deploying
+   aws secretsmanager create-secret \
+     --name 'my-github-pat' \
+     --secret-string 'github_pat_xxxxxxxxxxxx'
+
+   # Option B: Populate the CDK-created placeholder after deploying (omit github-pat-secret-name from yaml)
+   aws secretsmanager put-secret-value \
+     --secret-id '{name-prefix}-github-pat-secret' \
+     --secret-string 'github_pat_xxxxxxxxxxxx'
+   ```
+
+3. Set `github-pat-secret-name` in `easy-genomics.yaml` to the name of the secret created in step 2. If this field is
+   left empty, Easy Genomics will create a placeholder secret named `{name-prefix}-github-pat-secret` that you can
+   populate after the first deploy (Option B above).
+
+   ```yaml
+   back-end:
+     github-pat-secret-name: 'my-github-pat' # Optional: leave empty to use the auto-created placeholder
+   ```
+
+4. Tag your AWS HealthOmics workflow with the repository URL:
+
+   ```bash
+   aws omics tag-resource \
+     --resource-arn 'arn:aws:omics:{region}:{account}:workflow/{id}' \
+     --tags 'github-repo-url=https://github.com/your-org/your-workflow'
+   ```
+
+   Easy Genomics will automatically fetch and cache the `nextflow_schema.json` from that repository whenever the tag is
+   added or updated.
+
+5. Deploy the entire Easy Genomics solution to AWS using the following command.
 
    ```
    [easy-genomics]$ pnpm run build-and-deploy
