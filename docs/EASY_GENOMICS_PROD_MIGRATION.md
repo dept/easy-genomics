@@ -24,9 +24,13 @@ currently-deployed template has `DeletionPolicy: Delete` on every easy-genomics 
 `envType != prod`) and is **broken even where it is non-destructive** (tables with `DeletionPolicy: Retain` orphan
 cleanly, but the new stack then fails to create because the old physical names are still in use). Because we cannot
 reliably promote PRs through environments in a strict order — an unrelated PR to `development` can trigger an
-auto-deploy at any time — the migration model below **arms every environment with deletion protection BEFORE the split
-PR is merged**. Deletion protection then turns any mistimed auto-deploy into a loud, safe CloudFormation rollback
-instead of silent data loss.
+auto-deploy at any time — the migration model below relies on a pre-deploy guard
+([`packages/back-end/scripts/preflight-deletion-protection.ts`](../packages/back-end/scripts/preflight-deletion-protection.ts))
+that runs **before every `cdk deploy`**. On the first deploy against a given environment the guard automatically arms
+deletion protection + PITR on every easy-genomics table and halts the deploy; on every subsequent deploy it halts the
+deploy again until the per-environment migration (Phases 1–5) completes. This means the split PR can be merged without
+any pre-merge manual ceremony: the first CI run against each environment does the arming for you, and no CloudFormation
+change is attempted until the operator has explicitly worked through the runbook.
 
 ---
 
@@ -34,21 +38,42 @@ instead of silent data loss.
 
 The migration is executed in three distinct stages:
 
-1. **Phase 0 (one-time, per environment):** Arm deletion protection and PITR on every easy-genomics DynamoDB table in
-   every environment. The back-end preflight script
-   ([`packages/back-end/scripts/preflight-deletion-protection.ts`](../packages/back-end/scripts/preflight-deletion-protection.ts))
-   does this automatically the first time `pnpm run build-and-deploy` runs against an un-armed environment — it takes an
-   on-demand backup, calls `dynamodb:UpdateTable` + `dynamodb:UpdateContinuousBackups`, and halts the deploy with a
-   clear message. If you'd rather do it manually with the AWS CLI (e.g. because you want to arm production ahead of the
-   split PR even merging), sections 0.1–0.4 below document the equivalent commands. Either way, once armed, any
-   subsequent `DeleteTable` call — whether from a developer, an IAM principal, or CloudFormation itself — is rejected by
-   DynamoDB.
+1. **Phase 0 — data protections armed (one-time, per environment):** Arm deletion protection and PITR on every
+   easy-genomics DynamoDB table in every environment. Two paths are supported:
 
-2. **Post-merge steady state (automatic, no data at risk):** When the split PR merges to `development`, CI auto-deploys
-   the new code. CloudFormation tries to delete the easy-genomics nested stack out of `OLD_STACK`. DynamoDB deletion
-   protection refuses the `DeleteTable` calls. The stack update fails and rolls back. The environment stays in its
-   pre-merge state, fully functional. **CI turns red and stays red on that environment until the per-environment
-   migration below completes.** This is the intended signal for operators to schedule the cutover.
+   - **Default:** let the preflight script do it. The back-end `deploy` / `build-and-deploy` tasks invoke
+     [`packages/back-end/scripts/preflight-deletion-protection.ts`](../packages/back-end/scripts/preflight-deletion-protection.ts)
+     before `cdk deploy`. On the first run against an un-armed environment (CI or local) the preflight takes an
+     on-demand backup, calls `dynamodb:UpdateTable DeletionProtectionEnabled=true` +
+     `dynamodb:UpdateContinuousBackups PointInTimeRecoveryEnabled=true` for every table, and halts the deploy with a
+     prescriptive report. This is the recommended path in every environment; no pre-merge ceremony is required.
+   - **Advanced / optional:** pre-arm manually via `aws dynamodb …` ahead of the split PR landing, using sections
+     0.1–0.4 of this runbook. Useful if your change-management policy requires that deletion protection be in place
+     before any new code is merged into the branch that auto-deploys the target environment, or if the deploying
+     principal does not have the IAM permissions the preflight needs (see "Requirements for the auto-arm path" below).
+
+   Once armed, any subsequent `DeleteTable` call — from a developer, an IAM principal, or CloudFormation itself — is
+   rejected by DynamoDB.
+
+2. **Post-merge steady state (no data at risk):** After the split PR merges, CI auto-deploys the new code. The preflight
+   runs before `cdk deploy` on every deploy:
+
+   - **First deploy against an un-armed environment:** preflight auto-arms Phase 0 and halts (exit `1`). `cdk deploy` is
+     never invoked, so no CloudFormation change is attempted.
+   - **Subsequent deploys, before migration:** preflight finds every table compliant, then queries CloudFormation and
+     sees the easy-genomics nested stack still inside `*-main-back-end-stack`. It halts with a "migration pending"
+     report (exit `1`). Again, no CloudFormation change is attempted.
+   - **Preflight unreachable (expired credentials, missing `cloudformation:ListStackResources`, throttling):** the
+     preflight fails closed (exit `2`) and `cdk deploy` is not invoked. See "What happens if the preflight cannot reach
+     CloudFormation" further down.
+   - **Preflight bypassed at the edit-history level (not supported):** if someone reverts the preflight wiring in
+     `.projenrc.ts` or runs `cdk deploy --all` directly without going through `pnpm run build-and-deploy`, the DynamoDB
+     deletion protection armed by Phase 0 is still the final backstop: CloudFormation's `DeleteTable` calls will be
+     rejected, the stack update will fail, and CloudFormation will roll back. Data stays safe, but the error surface is
+     noisier than the preflight's banner.
+
+   **CI turns red and stays red on each environment until the per-environment migration below completes.** That is the
+   intended signal for operators to schedule the cutover.
 
 3. **Phases 1–5 (per environment, at an operator's choosing):** Execute the retain-bridge → detach → import → smoke-test
    → cleanup sequence documented below.
@@ -146,60 +171,74 @@ full runbook against each environment, fix anything that breaks, then promote.
 
 ---
 
-## Phase 0 — Pre-merge arming (one-time, before merging the split PR)
+## Phase 0 — Arm data protections (one-time, per environment)
 
 **Goal: put every easy-genomics table into a state where no actor — CloudFormation, CLI, or SDK — can delete it, BEFORE
-the split PR merges to `development`.**
+any `cdk deploy` of the split-stack code touches that environment.**
 
-This phase is performed **once per environment, before the split PR lands**. It is idempotent and zero-downtime;
-rerunning it is always safe. You can execute it days or weeks ahead of the actual migration. Do this for every
-environment the split PR will eventually deploy to (`dev`, `demo`, `pre-prod`, `prod`).
+This phase is performed **once per environment**. It is idempotent and zero-downtime; rerunning it is always safe. It
+must be completed for every environment the split PR will eventually deploy to (`dev`, `demo`, `pre-prod`, `prod`), but
+the timing — before or after the split PR lands on `development` — is flexible. See the two paths below.
 
-### Why we do this up front
+### Why this phase is mandatory
 
-We cannot reliably serialize PRs through environments. Once the split PR is merged to `development`, any push to that
-branch (including the split PR itself) triggers `cicd-release-quality.yml`, which runs `cdk deploy --all` against the
-target environment. If deletion protection is not already on, CloudFormation will happily call `DeleteTable` on every
-easy-genomics table during the nested-stack removal.
+Once the split PR is merged to `development`, any push to that branch (including the split PR itself) triggers
+`cicd-release-quality.yml`, which runs the back-end deploy against the target environment. If deletion protection is not
+already on by the time CloudFormation starts, CFN will happily call `DeleteTable` on every easy-genomics table during
+the nested-stack removal. In an environment created with `envType: dev` / `demo` / `pre-prod`, the currently-deployed
+template has `DeletionPolicy: Delete` on those tables (that was the pre-split default), so the delete call **succeeds**
+and the data is gone.
 
-In an environment created with `envType: dev` / `demo` / `pre-prod`, the currently-deployed template has
-`DeletionPolicy: Delete` on those tables (that was the pre-split default), so the delete call **succeeds** and the data
-is gone. Arming deletion protection via the AWS API, out-of-band from CloudFormation, is what prevents this.
+Arming deletion protection via the AWS API — out-of-band from CloudFormation — is what prevents this.
 
-### Recommended path: let the preflight do it automatically
+### Default path: let the preflight do it automatically
 
 The back-end `deploy` / `build-and-deploy` tasks run
 [`packages/back-end/scripts/preflight-deletion-protection.ts`](../packages/back-end/scripts/preflight-deletion-protection.ts)
-_before_ `cdk deploy`. By default the preflight auto-arms Phase 0 in one shot, per environment:
+_before_ `cdk deploy`. On the first invocation against an un-armed environment the preflight auto-arms Phase 0 in one
+shot:
 
 1. Takes an on-demand backup of each un-protected table.
 2. Calls `dynamodb:UpdateTable DeletionProtectionEnabled=true`.
 3. Calls `dynamodb:UpdateContinuousBackups PointInTimeRecoveryEnabled=true`.
-4. Halts the deploy with a clear message pointing at Phase 1 of this runbook.
+4. Halts the deploy with a clear "PREFLIGHT AUTO-ARM COMPLETED — deploy intentionally halted" report pointing at Phase 1
+   of this runbook.
 
-This means the simplest way to execute Phase 0 on every environment is to run the ordinary back-end deploy command
-against each one (after the split PR is built locally, or equivalently, once it starts hitting each environment via CI).
-The deploy itself will not succeed until the per-environment Phases 1–5 are executed, but the arming side effect happens
-on the first run and persists.
+This is the recommended path. The simplest way to execute Phase 0 on every environment is to merge the split PR and let
+the first auto-deploy do the arming — no CloudFormation change is attempted (the preflight exits before `cdk deploy`
+runs), so the operation is safe even though CI will red-build.
+
+If you prefer to run it locally instead of via CI, check out the merged code and run `pnpm run build-and-deploy` pointed
+at the target environment. The auto-arm path triggers identically.
 
 Requirements for the auto-arm path:
 
 - The deploying principal must have `dynamodb:UpdateTable`, `dynamodb:UpdateContinuousBackups`, `dynamodb:CreateBackup`,
-  `dynamodb:DescribeTable`, and `dynamodb:DescribeContinuousBackups` on every easy-genomics table. The CI role already
-  does; local developers typically do.
-- You must NOT pass `--no-auto-arm` — that reverts to the manual behaviour described in sections 0.1–0.4 below.
+  `dynamodb:DescribeTable`, and `dynamodb:DescribeContinuousBackups` on every easy-genomics table, plus
+  `cloudformation:ListStackResources` on `*-main-back-end-stack` (used by the post-arming migration-state check). The CI
+  role already has these; local developers typically do.
+- You must NOT pass `--no-auto-arm` — that reverts to a read-only mode where the preflight fails with the manual CLI
+  commands below instead of mutating anything.
 
 There is intentionally **no** full-bypass flag on the preflight — the guard runs on every deploy, including sandbox and
 greenfield environments. Fresh environments are not harmed by this: the preflight reports every easy-genomics table as
 "missing (fresh deploy; skipping)" and exits cleanly.
 
-Sections 0.1–0.4 remain in this runbook as the fallback / reference procedure. Use them when:
+### Advanced path: manual pre-merge arming (optional)
 
-- You want to execute Phase 0 ahead of the split PR merging, from a checkout that doesn't yet have the preflight script
-  wired in.
-- The preflight reports backup failures (the soft path) and you want to retake them with the `--backup-name` of your
-  choice.
-- You're reading this runbook to understand what the preflight is doing under the hood.
+If your change-management policy requires that deletion protection be in place **before** the split PR is merged into
+the branch that auto-deploys the target environment — or if you simply prefer to decouple "PR approval" from
+"first-deploy side effects" — you can pre-arm via the AWS CLI ahead of time. Sections 0.1–0.4 below document the
+equivalent commands. You do NOT need the preflight script checked out for this path; any reasonably current `aws` CLI
+against the target account is enough.
+
+You can mix paths across environments: for example, pre-arm production manually during a scheduled change window and let
+the preflight auto-arm `dev` / `demo` / `pre-prod` on their first post-merge CI run. The preflight's auto-arm is a no-op
+if both protections are already on, so running it against an environment that was already pre-armed is safe and only
+takes a new on-demand backup.
+
+Sections 0.1–0.4 are also useful as reference material — they show exactly what the preflight does under the hood — and
+are the only viable path if the preflight reports a backup failure you want to retake with a specific `--backup-name`.
 
 ### 0.1 Arm deletion protection on every easy-genomics table
 
@@ -242,9 +281,11 @@ for t in "${EG_TABLES[@]}"; do
 done
 ```
 
-Each table must report `True` for deletion protection and `ENABLED` for PITR. **Do not merge the split PR until every
-environment reports green for every table.** A single un-armed table in `dev` is enough to lose that environment's data
-on the first post-merge auto-deploy.
+Each table must report `True` for deletion protection and `ENABLED` for PITR before you run Phase 1 in that environment.
+If you are following the default (preflight-driven) path you will typically see this output automatically at the end of
+the preflight's auto-arm report; if you are on the manual pre-merge path, run the block above before merging the split
+PR. Either way, do not proceed to Phase 1 until every table in the target environment shows both fields green — a single
+un-armed table is enough to let CloudFormation drop it during the Phase 2 detach.
 
 ### 0.4 (Optional but recommended) Snapshot an on-demand backup per table
 
@@ -323,8 +364,9 @@ metadata Phase 2 needs to detach the tables cleanly (via `DELETE_SKIPPED`) rathe
 hard rejection.
 
 Because the split PR is already merged to `development`, the tip of that branch cannot be used directly for this step —
-deploying it would try to remove easy-genomics from `OLD_STACK` (and fail, because deletion protection from Phase 0 is
-still doing its job). Instead, build a short-lived "retain bridge" working tree that keeps the old stack topology but
+`pnpm run build-and-deploy` from that tip will halt at the preflight's "migration pending" check, and even if the
+preflight were bypassed, deletion protection from Phase 0 would reject the `DeleteTable` calls and force a noisy
+CloudFormation rollback. Instead, build a short-lived "retain bridge" working tree that keeps the old stack topology but
 picks up the new `dynamodb-construct.ts`.
 
 ### 1.1 Assemble the retain-bridge working tree
@@ -355,6 +397,12 @@ If `git status` shows any file other than `dynamodb-construct.ts`, stop and clea
 new code means the bridge cannot be constructed this simply, and the rest of the runbook must be revisited.
 
 ### 1.2 Deploy the retain bridge
+
+> Note: Phases 1, 2, and 3 call `pnpm cdk diff` / `pnpm cdk deploy` / `pnpm cdk import` **directly** rather than going
+> through `pnpm run build-and-deploy`. That is intentional. The preflight script is wired into `build-and-deploy` and
+> will halt on "migration pending" until the cutover is complete, which is the correct behaviour for routine CI/CD
+> deploys but would block the migration itself. The raw `cdk` commands below are the supported escape hatch for
+> operators executing the runbook.
 
 ```bash
 pnpm cdk diff "${OLD_STACK}"
@@ -399,8 +447,9 @@ protection kicks in.
 
 ### 1.4 (Optional) Take a fresh on-demand backup
 
-Phase 0.4 created pre-merge backups. Taking a fresh snapshot immediately before detach gives you a narrower RPO if
-rollback is ever needed:
+Phase 0 already produced an on-demand backup per table — either via the preflight's auto-arm (each backup is named
+`preflight-autoarm-<UTC-timestamp>`) or via the manual Phase 0.4 step. Taking a fresh snapshot immediately before detach
+gives you a narrower RPO if rollback is ever needed:
 
 ```bash
 TS=$(date -u +%Y%m%dT%H%M%SZ)
@@ -622,10 +671,17 @@ Traffic can resume. Monitor CloudWatch for 5xx on either API for ~30 min.
 
 If CI auto-deploy fails immediately after PR merge (before Phase 1):
 
-- This is the **expected** behavior of the Phase 0 arming — CloudFormation tried to delete protected tables, DynamoDB
-  refused, and CloudFormation rolled back. The environment is in its pre-merge state.
-- Nothing to undo. Schedule Phases 1–4 at your convenience. Subsequent auto-deploys will keep red-building the same way
-  until the migration completes in this environment.
+- This is the **expected** behavior. What failed depends on the state of that environment:
+  - Environment had never been armed before: the preflight auto-armed deletion protection and PITR on every table, took
+    backups, and halted the deploy (exit `1`, "PREFLIGHT AUTO-ARM COMPLETED" banner). `cdk deploy` was never invoked, so
+    no CloudFormation change was attempted.
+  - Environment was already armed (by a previous preflight run or by the manual Phase 0.1–0.4 path): the preflight
+    queried CloudFormation, found the easy-genomics nested stack still in `*-main-back-end-stack`, and halted the deploy
+    with the "PREFLIGHT: migration pending" banner. Again, `cdk deploy` was never invoked.
+  - Edge case — preflight wiring missing or `cdk deploy --all` invoked directly: CloudFormation tried to delete
+    protected tables, DynamoDB refused, CloudFormation rolled back. The environment is in its pre-merge state.
+- Nothing to undo in any of the three cases. Schedule Phases 1–5 at your convenience. Subsequent auto-deploys will keep
+  red-building with the "migration pending" banner until the migration completes in this environment.
 
 If Phase 1.2 (retain bridge deploy) fails:
 
