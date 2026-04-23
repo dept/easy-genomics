@@ -1,5 +1,5 @@
 // this import triggers a bizarre eslint problem
-// eslint-disable-next-line import/named
+
 import { WorkflowListItem as OmicsWorkflow } from '@aws-sdk/client-omics';
 import { defineStore } from 'pinia';
 
