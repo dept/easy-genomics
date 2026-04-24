@@ -60,4 +60,16 @@ export interface LaboratoryRun extends BaseAttributes {
    * When present, DynamoDB will remove the item after this timestamp.
    */
   ExpiresAt?: number;
+
+  /**
+   * Actual execution duration reported by the underlying platform, in seconds.
+   *
+   * - Seqera Cloud: derived from `workflow.duration` (milliseconds from the Tower API).
+   * - AWS HealthOmics: derived from `stopTime - startTime` from the Omics GetRun response.
+   *
+   * Populated by the status-check processor once the platform has terminal timing data.
+   * Used by the dashboard to compute accurate averages without relying on `ModifiedAt`,
+   * which is bumped by unrelated background updates (retention, tags, etc.).
+   */
+  RunDurationSeconds?: number;
 }
