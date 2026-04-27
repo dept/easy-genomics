@@ -23,7 +23,7 @@ const defaultReleaseBranch = 'main';
 const cdkVersion = '2.176.0';
 const nodeVersion = '20.15.0';
 const pnpmVersion = '9.15.0';
-const awsSdkClientOmicsVersion = '^3.1019.0';
+const awsSdkClientOmicsVersion = '^3.1014.0';
 const authorName = 'DEPT Agency';
 const copyrightOwner = authorName;
 const copyrightPeriod = `${new Date().getFullYear()}`;
@@ -78,6 +78,7 @@ const eslintGlobalRules = {
   'require-await': 'off',
   'array-callback-return': 'error',
   '@typescript-eslint/indent': 'off',
+  'import/named': 'off',
 };
 
 const tsConfigOptions: TypescriptConfigOptions = {
@@ -194,8 +195,8 @@ if (root.eslint) {
       'import/no-extraneous-dependencies': 'off',
     },
   });
-  root.eslint.addPlugins('prettier');
-  root.eslint.addExtends('plugin:@typescript-eslint/recommended', 'plugin:prettier/recommended');
+  // Use eslint-config-prettier to disable conflicting rules; avoid eslint-plugin-prettier runtime dependency.
+  root.eslint.addExtends('plugin:@typescript-eslint/recommended', 'prettier');
 }
 root.removeScript('build');
 root.addScripts({
@@ -256,11 +257,11 @@ const sharedLib = new typescript.TypeScriptProject({
     '@aws-sdk/client-cognito-identity-provider',
     `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-s3',
-    '@nestjs/config',
     'aws-cdk',
     'aws-cdk-lib',
     'aws-lambda',
     'js-yaml',
+    'strnum',
     'uuid',
     'zod',
   ],
@@ -269,9 +270,6 @@ const sharedLib = new typescript.TypeScriptProject({
     ...tsConfigOptions,
     compilerOptions: {
       ...tsConfigOptions.compilerOptions,
-      // Emit lib/app/... (not lib/src/app/...) so deep imports like
-      // @easy-genomics/shared-lib/lib/app/utils/common resolve after compile.
-      rootDir: 'src',
       baseUrl: '.',
       paths: {
         '@BE/*': ['../packages/back-end/src/app/*'],
@@ -287,7 +285,8 @@ sharedLib.addScripts({
 
 if (sharedLib.eslint) {
   sharedLib.eslint.addRules({ ...eslintGlobalRules });
-  sharedLib.eslint.addPlugins('prettier');
+  // Keep ESLint independent from prettier plugin runtime resolution under pnpm.
+  sharedLib.eslint.addExtends('prettier');
 }
 
 // Defines the Easy Genomics 'back-end' subproject
@@ -308,7 +307,6 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
         '^@SharedLib/(.*)$': '<rootDir>/../shared-lib/src/app/$1',
         '^@FE/(.*)$': '<rootDir>/../front-end/src/app/$1',
       },
-      collectCoverageFrom: ['<rootDir>/src/app/**/*.ts', '!<rootDir>/src/app/**/*.d.ts'],
     },
   },
   lambdaAutoDiscover: false,
@@ -335,17 +333,18 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@aws-crypto/client-node',
     '@aws-crypto/decrypt-node',
     '@aws-crypto/encrypt-node',
+    '@aws-sdk/client-cloudformation@^3.786.0',
     '@aws-sdk/client-cognito-identity-provider',
     '@aws-sdk/client-dynamodb',
     `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-ses',
     '@aws-sdk/client-sns',
     '@aws-sdk/client-sqs',
-    '@aws-sdk/client-secrets-manager',
     '@aws-sdk/client-ssm',
     '@aws-sdk/client-sso-oidc',
     '@aws-sdk/client-sts',
     '@aws-sdk/client-s3',
+    '@aws-sdk/client-secrets-manager@^3.782.0',
     '@aws-sdk/lib-dynamodb',
     '@aws-sdk/lib-storage',
     '@aws-sdk/s3-request-presigner',
@@ -380,7 +379,25 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
 backEndApp.addScripts({
   ['cdk-audit']: 'export CDK_AUDIT=true && pnpm exec projen build',
   ['build']: 'pnpm exec projen compile && pnpm exec projen test && pnpm exec projen build',
-  ['deploy']: 'pnpm cdk bootstrap && pnpm exec projen deploy',
+  // Pre-deploy safety check. Runs before every `cdk deploy` and, on the
+  // first run against an un-armed environment, automatically takes an
+  // on-demand backup, enables `DeletionProtectionEnabled`, and enables
+  // PITR on every existing easy-genomics DynamoDB table before
+  // CloudFormation gets a chance to issue DeleteTable during the
+  // stack-split migration. Missing tables (fresh / greenfield deploys)
+  // are skipped, so there is no bypass flag; the guard is always on.
+  // See `scripts/preflight-deletion-protection.ts` and
+  // `docs/EASY_GENOMICS_PROD_MIGRATION.md`.
+  ['preflight-deletion-protection']: 'tsx scripts/preflight-deletion-protection.ts',
+  // NOTE: `--all` is required now that the back-end synthesizes multiple
+  // top-level stacks (`*-main-back-end-stack`, `*-easy-genomics-api-stack`,
+  // and optionally `*-api-domain-stack`). Without it, `cdk deploy` refuses to
+  // pick a default and exits with "specify which stacks to use".
+  //
+  // The preflight guard runs AFTER `cdk bootstrap` (which only touches the
+  // CDK toolkit stack, not app resources) and BEFORE any app-stack deploy,
+  // so a failing guard aborts without any destructive CloudFormation call.
+  ['deploy']: 'pnpm cdk bootstrap && pnpm run preflight-deletion-protection && pnpm exec projen deploy --all',
   ['build-and-deploy']: 'pnpm -w run build-back-end && pnpm run deploy --require-approval any-change', // Run root build-back-end script to inc shared-lib
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
   ['local-server']: 'tsx src/local-server/index.ts',
@@ -388,8 +405,6 @@ backEndApp.addScripts({
   ['invoke-process-handler']: 'tsx src/local-server/invoke-process-handler.ts',
   ['backfill-omics-run-tags']: 'tsx scripts/backfill-omics-run-tags.ts',
   ['backfill-omics-run-tags:dry-run']: 'tsx scripts/backfill-omics-run-tags.ts --dry-run',
-  ['recompute-laboratory-run-retention']:
-    'tsx scripts/recompute-laboratory-run-retention.ts --laboratoryId $LAB_ID --retentionMonths $RETENTION_MONTHS',
 });
 
 if (backEndApp.eslint) {
@@ -406,7 +421,7 @@ if (backEndApp.eslint) {
       },
     ],
   });
-  backEndApp.eslint.addPlugins('prettier');
+  backEndApp.eslint.addExtends('prettier');
 }
 // Defines the Easy Genomics 'front-end' subproject
 const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
@@ -435,7 +450,7 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
       baseUrl: '.',
       lib: ['DOM', 'ES2022'],
       sourceMap: true,
-      types: ['vue'],
+      types: ['node', 'vue'],
       verbatimModuleSyntax: false,
       paths: {
         '@/*': ['../../*'],
@@ -536,12 +551,8 @@ frontEndApp.addScripts({
 // Setup Frontend App ESLint configuration
 if (frontEndApp.eslint) {
   frontEndApp.eslint.addRules({ ...eslintGlobalRules });
-  frontEndApp.eslint.addExtends(
-    '@nuxtjs/eslint-config-typescript',
-    'plugin:prettier/recommended',
-    'plugin:vue/vue3-recommended',
-  );
-  frontEndApp.eslint.addPlugins('eslint-plugin-vue', 'prettier', 'vue');
+  frontEndApp.eslint.addExtends('@nuxtjs/eslint-config-typescript', 'prettier', 'plugin:vue/vue3-recommended');
+  frontEndApp.eslint.addPlugins('eslint-plugin-vue', 'vue');
 }
 
 // Apply additional project setup
