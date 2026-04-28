@@ -24,8 +24,19 @@ export interface AuthNestedStackProps extends BackEndStackProps, NestedStackProp
 }
 
 // Defines the Easy Genomics specific props
+//
+// `dynamoDBTables` is intentionally REQUIRED and INJECTED by the parent
+// `EasyGenomicsApiStack`. Tables are created at the parent (top-level) stack
+// scope rather than inside this nested stack so that:
+//   1. `cdk import "${EasyGenomicsApiStack}"` can actually adopt the tables
+//      during the documented split-stack migration. The CDK CLI's resource
+//      importer only walks a single template per invocation; if tables lived
+//      in this nested stack they would be invisible to import.
+//   2. Cross-stack references (`Map<string, Table>`) stay within the parent
+//      stack process, avoiding a fan-out of `Fn::ImportValue` exports.
 export interface EasyGenomicsNestedStackProps extends CommonApiNestedStackProps {
     cognitoIdpKmsKey?: Key,
+    dynamoDBTables: Map<string, Table>,
 }
 
 // Defines the AWS HealthOmics specific props

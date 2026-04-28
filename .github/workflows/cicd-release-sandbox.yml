@@ -141,5 +141,22 @@ jobs:
           role-duration-seconds: 3600
           aws-region: ${{ secrets.AWS_REGION }}
           audience: sts.amazonaws.com
+      - name: Derive Easy Genomics API URL (optional)
+        run: |-
+          set -euo pipefail
+          STACK_NAME="${ENV_TYPE}-${ENV_NAME}-easy-genomics-api-stack"
+          EG_URL="$(aws cloudformation describe-stacks \
+            --region "$AWS_REGION" \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].Outputs[?OutputKey==`EasyGenomicsApiUrl`].OutputValue' \
+            --output text 2>/dev/null || true)"
+
+          if [ -n "${EG_URL:-}" ] && [ "${EG_URL:-}" != "None" ]; then
+            EG_URL="${EG_URL%/}"
+            echo "AWS_EASY_GENOMICS_API_URL=$EG_URL" >> "$GITHUB_ENV"
+            echo "Derived AWS_EASY_GENOMICS_API_URL=$EG_URL"
+          else
+            echo "Easy Genomics API stack output not found; leaving AWS_EASY_GENOMICS_API_URL unset."
+          fi
       - name: Run CI/CD Build & Deploy Front-End
         run: pnpm cicd-build-deploy-front-end
