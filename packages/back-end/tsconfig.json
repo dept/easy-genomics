@@ -36,6 +36,9 @@
       ],
       "@SharedLib/*": [
         "../packages/shared-lib/src/app/*"
+      ],
+      "@easy-genomics/shared-lib/lib/app/*": [
+        "../packages/shared-lib/src/app/*"
       ]
     }
   },
