@@ -326,6 +326,10 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
         '@BE/*': ['src/app/*'],
         '@FE/*': ['../packages/front-end/src/app/*'],
         '@SharedLib/*': ['../packages/shared-lib/src/app/*'],
+        // Some packages import shared-lib via its compiled output path.
+        // During tests/ts-jest compilation in a workspace, `lib/` may not exist yet,
+        // so we map those deep imports to the source tree.
+        '@easy-genomics/shared-lib/lib/app/*': ['../packages/shared-lib/src/app/*'],
       },
     },
   },
