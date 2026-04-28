@@ -16,13 +16,6 @@ jest.mock('../../../src/infra/constructs/iam-construct', () => ({
   })),
 }));
 
-jest.mock('../../../src/infra/constructs/dynamodb-construct', () => ({
-  baseLSIAttributes: [],
-  DynamoConstruct: jest.fn().mockImplementation(() => ({
-    createTable: jest.fn().mockReturnValue({}),
-  })),
-}));
-
 jest.mock('../../../src/infra/constructs/lambda-construct', () => ({
   LambdaConstruct: jest.fn().mockImplementation(() => ({
     lambdaFunctions: new Map<string, unknown>(),
@@ -60,6 +53,10 @@ jest.mock('../../../src/infra/constructs/sqs-construct', () => ({
 }));
 
 describe('EasyGenomicsNestedStack environment wiring', () => {
+  // Tables live on the parent `EasyGenomicsApiStack` and are injected via
+  // props (see that stack's JSDoc for the rationale tied to `cdk import`).
+  // The wiring tests below don't exercise table identity, so an empty map
+  // is sufficient to satisfy the prop contract.
   const createProps = () =>
     ({
       env: { account: '123456789012', region: 'us-west-2' },
@@ -76,6 +73,7 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
       cognitoIdpKmsKey: { keyArn: 'arn:aws:kms:us-west-2:123456789012:key/abc', keyId: 'abc' } as any,
       userPool: { userPoolId: 'pool-id' } as any,
       userPoolClient: { userPoolClientId: 'client-id' } as any,
+      dynamoDBTables: new Map(),
     }) as any;
 
   beforeEach(() => {

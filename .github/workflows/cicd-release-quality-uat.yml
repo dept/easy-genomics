@@ -141,6 +141,23 @@ jobs:
           role-duration-seconds: 3600
           aws-region: ${{ secrets.AWS_REGION }}
           audience: sts.amazonaws.com
+      - name: Derive Easy Genomics API URL (optional)
+        run: |-
+          set -euo pipefail
+          STACK_NAME="${ENV_TYPE}-${ENV_NAME}-easy-genomics-api-stack"
+          EG_URL="$(aws cloudformation describe-stacks \
+            --region "$AWS_REGION" \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].Outputs[?OutputKey==`EasyGenomicsApiUrl`].OutputValue' \
+            --output text 2>/dev/null || true)"
+
+          if [ -n "${EG_URL:-}" ] && [ "${EG_URL:-}" != "None" ]; then
+            EG_URL="${EG_URL%/}"
+            echo "AWS_EASY_GENOMICS_API_URL=$EG_URL" >> "$GITHUB_ENV"
+            echo "Derived AWS_EASY_GENOMICS_API_URL=$EG_URL"
+          else
+            echo "Easy Genomics API stack output not found; leaving AWS_EASY_GENOMICS_API_URL unset."
+          fi
       - name: Run CI/CD Build & Deploy Front-End
         run: pnpm cicd-build-deploy-front-end
   run-e2e-tests:
@@ -201,6 +218,32 @@ jobs:
         uses: nrwl/nx-set-shas@v4
         with:
           main-branch-name: main
+      - name: Configure AWS Credentials
+        id: configure_iam_credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHub_to_AWS_via_FederatedOIDC
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          role-duration-seconds: 3600
+          aws-region: ${{ secrets.AWS_REGION }}
+          audience: sts.amazonaws.com
+      - name: Derive Easy Genomics API URL (optional)
+        run: |-
+          set -euo pipefail
+          STACK_NAME="${ENV_TYPE}-${ENV_NAME}-easy-genomics-api-stack"
+          EG_URL="$(aws cloudformation describe-stacks \
+            --region "$AWS_REGION" \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].Outputs[?OutputKey==`EasyGenomicsApiUrl`].OutputValue' \
+            --output text 2>/dev/null || true)"
+
+          if [ -n "${EG_URL:-}" ] && [ "${EG_URL:-}" != "None" ]; then
+            EG_URL="${EG_URL%/}"
+            echo "AWS_EASY_GENOMICS_API_URL=$EG_URL" >> "$GITHUB_ENV"
+            echo "Derived AWS_EASY_GENOMICS_API_URL=$EG_URL"
+          else
+            echo "Easy Genomics API stack output not found; leaving AWS_EASY_GENOMICS_API_URL unset."
+          fi
       - name: Clear Playwright Cache
         run: rm -rf /home/runner/.cache/ms-playwright
       - name: Install Playwright + Chromium Only and Slack Reporter
