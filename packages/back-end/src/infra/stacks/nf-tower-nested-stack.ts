@@ -44,7 +44,7 @@ export class NFTowerNestedStack extends NestedStack {
       [
         {
           id: 'AwsSolutions-IAM5',
-          reason: 'Need access to all organisation and laboratory nf token parameters',
+          reason: 'Need access to all organization and laboratory nf token parameters',
           appliesTo: [
             `Resource::arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/nf-access-token`,
           ], // optional
