@@ -65,6 +65,7 @@ export class GithubActionsCICDRelease extends Component {
         steps: [
           ...this.bootstrapSteps(),
           ...this.configureAwsCredentials(),
+          this.deriveEasyGenomicsApiUrlStep(),
           {
             name: 'Run CI/CD Build & Deploy Front-End',
             run: 'pnpm cicd-build-deploy-front-end',
@@ -87,6 +88,8 @@ export class GithubActionsCICDRelease extends Component {
         },
         steps: [
           ...this.bootstrapSteps(),
+          ...this.configureAwsCredentials(),
+          this.deriveEasyGenomicsApiUrlStep(),
           {
             name: 'Clear Playwright Cache',
             run: 'rm -rf /home/runner/.cache/ms-playwright',
@@ -212,5 +215,42 @@ export class GithubActionsCICDRelease extends Component {
         },
       },
     ];
+  }
+
+  /**
+   * Derive `AWS_EASY_GENOMICS_API_URL` from the Easy Genomics API stack output.
+   *
+   * Why: we want split-stack deployments (easy-genomics in its own stack) to
+   * automatically wire the front-end to the new API without requiring a new
+   * GitHub Actions secret/variable. In pre-migration environments this stack
+   * may not exist yet; in that case we intentionally leave the variable unset
+   * so the UI falls back to `AWS_API_GATEWAY_URL + /easy-genomics`.
+   */
+  private deriveEasyGenomicsApiUrlStep(): github.workflows.JobStep {
+    return {
+      name: 'Derive Easy Genomics API URL (optional)',
+      // Note: projen's `JobStep` typing doesn't currently expose `shell`, but
+      // GitHub Actions supports it and we want bash strict mode semantics.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...({ shell: 'bash' } as any),
+      run: [
+        'set -euo pipefail',
+        'STACK_NAME="${ENV_TYPE}-${ENV_NAME}-easy-genomics-api-stack"',
+        // If the stack does not exist (pre-migration) this command fails; treat that as "unset".
+        'EG_URL="$(aws cloudformation describe-stacks \\',
+        '  --region "$AWS_REGION" \\',
+        '  --stack-name "$STACK_NAME" \\',
+        "  --query 'Stacks[0].Outputs[?OutputKey==`EasyGenomicsApiUrl`].OutputValue' \\",
+        '  --output text 2>/dev/null || true)"',
+        '',
+        'if [ -n "${EG_URL:-}" ] && [ "${EG_URL:-}" != "None" ]; then',
+        '  EG_URL="${EG_URL%/}"',
+        '  echo "AWS_EASY_GENOMICS_API_URL=$EG_URL" >> "$GITHUB_ENV"',
+        '  echo "Derived AWS_EASY_GENOMICS_API_URL=$EG_URL"',
+        'else',
+        '  echo "Easy Genomics API stack output not found; leaving AWS_EASY_GENOMICS_API_URL unset."',
+        'fi',
+      ].join('\n'),
+    };
   }
 }

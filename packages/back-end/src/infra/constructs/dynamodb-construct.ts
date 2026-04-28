@@ -1,6 +1,5 @@
 import { CfnResource, RemovalPolicy } from 'aws-cdk-lib';
 import { Attribute, AttributeType, BillingMode, SchemaOptions, Table } from 'aws-cdk-lib/aws-dynamodb';
-import { AwsCustomResource, AwsCustomResourcePolicy, PhysicalResourceId } from 'aws-cdk-lib/custom-resources';
 import { Construct } from 'constructs';
 
 export const baseLSIAttributes: Attribute[] = [
@@ -90,73 +89,29 @@ export class DynamoConstruct extends Construct {
     cfnTable.addOverride('DeletionPolicy', 'Retain');
     cfnTable.addOverride('UpdateReplacePolicy', 'Retain');
 
-    // Defense-in-depth: additionally arm deletion protection and PITR via
-    // direct AWS SDK calls on every deploy (AwsCustomResource backed by a
-    // Lambda). The CDK properties above already set both attributes, so for
-    // tables CREATED by this stack this is redundant. Its real value is for
-    // tables ADOPTED via `cdk import` (see
-    // `docs/EASY_GENOMICS_PROD_MIGRATION.md` Phase 3), where CloudFormation
-    // treats the import as a metadata-only operation and does NOT push the
-    // `DeletionProtectionEnabled` / `PointInTimeRecoverySpecification`
-    // properties onto the existing physical table. The SDK calls below
-    // ensure the physical state matches the template intent immediately.
+    // Note: deletion protection and PITR are armed in two ways already:
+    //   1. The `Table` props above render `DeletionProtectionEnabled: true`
+    //      and `PointInTimeRecoverySpecification` directly into the CFN
+    //      template, so tables CREATED by this stack are armed at create
+    //      time.
+    //   2. `packages/back-end/scripts/preflight-deletion-protection.ts`
+    //      runs before every `cdk deploy` (wired into the projen
+    //      `deploy` / `build-and-deploy` tasks). It calls
+    //      `dynamodb:UpdateTable DeletionProtectionEnabled=true` and
+    //      `dynamodb:UpdateContinuousBackups PointInTimeRecoveryEnabled=true`
+    //      out-of-band on every easy-genomics table, including ones
+    //      adopted via `cdk import` whose CloudFormation-managed metadata
+    //      may not match physical state.
     //
-    // Both operations are idempotent at the DynamoDB API level (setting a
-    // value that's already set is a no-op). `onDelete` is intentionally
-    // omitted so tearing down the stack does NOT un-arm protection; the
-    // `Cleanup / destroy` appendix of the migration runbook documents how
-    // to opt out when genuinely destroying a sandbox.
-    const armDeletionProtection = new AwsCustomResource(this, `${envTableName}-arm-deletion-protection`, {
-      onCreate: {
-        service: 'DynamoDB',
-        action: 'updateTable',
-        parameters: {
-          TableName: envTableName,
-          DeletionProtectionEnabled: true,
-        },
-        physicalResourceId: PhysicalResourceId.of(`${envTableName}-arm-deletion-protection`),
-      },
-      onUpdate: {
-        service: 'DynamoDB',
-        action: 'updateTable',
-        parameters: {
-          TableName: envTableName,
-          DeletionProtectionEnabled: true,
-        },
-        physicalResourceId: PhysicalResourceId.of(`${envTableName}-arm-deletion-protection`),
-      },
-      policy: AwsCustomResourcePolicy.fromSdkCalls({
-        resources: [table.tableArn],
-      }),
-      installLatestAwsSdk: false,
-    });
-    armDeletionProtection.node.addDependency(table);
-
-    const armPitr = new AwsCustomResource(this, `${envTableName}-arm-pitr`, {
-      onCreate: {
-        service: 'DynamoDB',
-        action: 'updateContinuousBackups',
-        parameters: {
-          TableName: envTableName,
-          PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true },
-        },
-        physicalResourceId: PhysicalResourceId.of(`${envTableName}-arm-pitr`),
-      },
-      onUpdate: {
-        service: 'DynamoDB',
-        action: 'updateContinuousBackups',
-        parameters: {
-          TableName: envTableName,
-          PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true },
-        },
-        physicalResourceId: PhysicalResourceId.of(`${envTableName}-arm-pitr`),
-      },
-      policy: AwsCustomResourcePolicy.fromSdkCalls({
-        resources: [table.tableArn],
-      }),
-      installLatestAwsSdk: false,
-    });
-    armPitr.node.addDependency(table);
+    // We previously also added an in-stack `AwsCustomResource` per table
+    // as defense-in-depth, but DynamoDB's `UpdateTable` response includes
+    // the full TableDescription, which exceeds CloudFormation's 4096-byte
+    // custom-resource response limit on tables with several GSIs. That
+    // tripped a `Response object is too long` error and rolled back the
+    // entire stack on first deploy. Removing it brings synth back under
+    // the 500-resource ceiling we're trying to relieve in this PR and
+    // hands sole responsibility for arming to the preflight script (which
+    // has no such response-size limit).
 
     // Add Global Secondary Indexes if defined
     if (settings.gsi) {

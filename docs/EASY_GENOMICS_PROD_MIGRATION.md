@@ -3,8 +3,10 @@
 ## Purpose
 
 This runbook describes the exact sequence of steps required to safely migrate a deployment of the Easy Genomics back-end
-from the pre-split layout (`easy-genomics-nested-stack` owned by `*-main-back-end-stack`) to the split layout
-(`easy-genomics-nested-stack` owned by the new `*-easy-genomics-api-stack`).
+from the pre-split layout (`easy-genomics-nested-stack` owned by `*-main-back-end-stack`, with the eight DynamoDB tables
+defined inside that nested stack) to the split layout (`easy-genomics-nested-stack` owned by the new
+`*-easy-genomics-api-stack`, with the eight DynamoDB tables hoisted up to the **top-level** api stack scope so that
+`cdk import` can adopt them — the CDK importer does not recurse into nested stacks).
 
 **This runbook is intentionally environment-agnostic.** The same sequence of commands applies to `dev`, `demo`,
 `pre-prod`, and `prod`. The Easy Genomics DynamoDB tables are configured with `RemovalPolicy.RETAIN`, deletion
@@ -548,33 +550,103 @@ Every row should read `... ACTIVE <count> True`.
 Goal: stand up `NEW_STACK` with everything except the DynamoDB tables, then use `cdk import` to adopt the eight orphaned
 tables into the new stack.
 
-### 3.1 Import the orphaned tables
+### 3.1 Import the orphaned tables (non-interactive, mapping-file driven)
 
-`cdk import` is the supported CDK command for this. Run it against the new stack. CDK will:
+`cdk import` is the supported CDK command for this. We run it **non-interactively** with a pre-built
+`--resource-mapping` JSON file rather than the interactive prompt flow, for two reasons documented in the "Why a mapping
+file" callout below.
 
-1. Detect that the stack does not yet exist.
-2. Identify the DynamoDB tables as "new" resources that have `DeletionPolicy: Retain`, which is CDK's heuristic for
-   "this is probably an import target".
-3. Prompt you for the physical name of each table.
+The eight tables are owned by the **top-level** `EasyGenomicsApiStack` (not a nested stack), so a single `cdk import`
+invocation against `NEW_STACK` is sufficient to adopt all of them.
+
+#### 3.1.1 Synthesize and build the resource-mapping file
 
 ```bash
-pnpm cdk import "${NEW_STACK}" --require-approval any-change
+cd packages/back-end
+
+# Synthesize the cloud assembly. The preflight script (which guards
+# build-and-deploy) is intentionally skipped here because Phase 0 has
+# already completed for this environment; we just need the template
+# files in cdk.out.
+pnpm cdk synth --quiet
+
+# Generate cdk.out/${NEW_STACK}.import-mapping.json — one entry per
+# easy-genomics DynamoDB table, keyed by the table's CloudFormation
+# LogicalResourceId in the synthesized template.
+pnpm tsx scripts/build-import-mapping.ts --print
 ```
 
-At each prompt, paste the matching physical table name from `$EG_TABLES`. For example:
+The script:
+
+- Reads `cdk.out/${NEW_STACK}.template.json` (produced by the preceding `cdk synth`).
+- Discovers every `AWS::DynamoDB::Table` in that template.
+- Verifies that all eight expected easy-genomics tables are present (it fails closed if any are missing — see
+  troubleshooting below).
+- Writes the mapping JSON to `cdk.out/${NEW_STACK}.import-mapping.json`.
+- With `--print`, also dumps the JSON to stdout so you can sanity-check the LogicalResourceId → TableName pairs before
+  running `cdk import`.
+
+A successful run logs (logical IDs vary by environment because they include CDK-generated hash suffixes):
 
 ```
-demo-easy-genomics-nested-stack/...-organization-table/Resource (AWS::DynamoDB::Table):
-  enter TableName: dev-acme-organization-table
-demo-easy-genomics-nested-stack/...-laboratory-table/Resource (AWS::DynamoDB::Table):
-  enter TableName: dev-acme-laboratory-table
-...
+build-import-mapping: wrote 8 table mapping(s) to .../cdk.out/${NEW_STACK}.import-mapping.json
+  devdemoeasygenomicsdynamodbdevdemoorganizationtable82D88512  =>  TableName=dev-demo-organization-table
+  devdemoeasygenomicsdynamodbdevdemolaboratorytableC343156B    =>  TableName=dev-demo-laboratory-table
+  devdemoeasygenomicsdynamodbdevdemousertable1D1C0BA2          =>  TableName=dev-demo-user-table
+  ...
 ```
 
-If `cdk import` complains that other resources (Lambdas, API Gateway methods, IAM roles) are not importable, accept —
-those are the auto-named, stateless resources that will be freshly created by step 3.2. The `cdk import` command also
-supports a `--resources` flag that restricts it to a specific logical-ID list if you want to narrow the scope; see
-`cdk import --help`.
+Verify the eight `TableName` values match the eight physical names you confirmed orphaned at the end of Phase 2.3 (they
+should — the script computes them from the same `namePrefix` rule the stack uses).
+
+#### 3.1.2 Run `cdk import` non-interactively
+
+```bash
+pnpm cdk import "${NEW_STACK}" \
+  --resource-mapping "cdk.out/${NEW_STACK}.import-mapping.json" \
+  --require-approval any-change
+```
+
+With the mapping file present, `cdk import` does **not** prompt for any resource — it consumes the eight table entries
+from the file and silently skips every other importable resource (Lambdas, API Gateway methods, IAM roles, etc.). Those
+stateless resources will be freshly created in step 3.2.
+
+Expect output similar to:
+
+```
+${NEW_STACK}
+✨  Importing existing resources into stack 'devdemoeasygenomicsapistack'...
+   ✅  AWS::DynamoDB::Table dev-demo-organization-table  (logical id: devdemoeasygenomicsdynamodb...82D88512)
+   ✅  AWS::DynamoDB::Table dev-demo-laboratory-table    (logical id: devdemoeasygenomicsdynamodb...C343156B)
+   ...
+✨  Import complete!
+```
+
+#### Why a mapping file (and not the interactive `cdk import` prompts)
+
+1. `cdk import` walks **every** importable resource in the new stack template — REST API, every API Gateway method,
+   every Lambda permission. That's hundreds of prompts before any DynamoDB prompt appears, and it's easy for an operator
+   to mis-skip a table prompt under that volume.
+2. Earlier development-environment rehearsals hit a worse failure mode: the eight tables previously lived inside
+   `EasyGenomicsNestedStack`, and the CDK importer **does not recurse into nested stacks**. The interactive flow walked
+   all the parent-stack resources, never offered the table prompts, and exited "successfully" with zero tables adopted.
+   The codebase has since reparented the tables onto the top-level `EasyGenomicsApiStack` (so single-stack import is now
+   sufficient), but we keep the mapping-file approach because it is the only way to make the import step reproducible,
+   reviewable in code review, and resistant to operator fatigue.
+
+#### Troubleshooting
+
+- **`build-import-mapping.ts` reports "missing one or more expected easy-genomics tables".** The synthesized template
+  you pointed it at does not contain all eight tables at top-level scope. Either you ran it against the wrong stack
+  name, or you're on a code revision where the tables still live inside a nested stack. Verify with
+  `jq -r '.Resources | to_entries[] | select(.value.Type=="AWS::DynamoDB::Table") | .value.Properties.TableName' cdk.out/${NEW_STACK}.template.json`
+  and reconcile before continuing — DO NOT proceed with a partial mapping.
+
+- **`cdk import` exits "Import complete!" but `aws cloudformation describe-stack-resources` (step 3.3) shows zero
+  DynamoDB tables in `NEW_STACK`.** Almost always means `cdk import` ran without `--resource-mapping` (or the mapping
+  file was empty / wrong stack). Re-generate the mapping file and rerun step 3.1.2 with the explicit
+  `--resource-mapping` flag. The orphaned tables are unaffected by the empty import — Phase 0 deletion protection +
+  `Retain` removal policy guarantee they survive.
 
 ### 3.2 Deploy the new stack normally to create the stateless resources
 
@@ -597,22 +669,26 @@ them again. If it does, stop and re-run `cdk import` — that indicates the impo
 ### 3.3 Sanity-check ownership
 
 ```bash
-aws cloudformation describe-stack-resources \
+aws cloudformation list-stack-resources \
   --region "$AWS_REGION" \
   --stack-name "$NEW_STACK" \
-  --query 'StackResources[?ResourceType==`AWS::DynamoDB::Table`].[LogicalResourceId,PhysicalResourceId]' \
+  --query 'StackResourceSummaries[?ResourceType==`AWS::DynamoDB::Table`].[LogicalResourceId,PhysicalResourceId,ResourceStatus]' \
   --output table
 ```
 
 Expect all eight tables listed under `NEW_STACK`, with the original physical names.
 
+Note: prefer `list-stack-resources` over `describe-stack-resources` here. For large stacks, `describe-stack-resources`
+does not reliably return a complete set of resources (and an empty filter with `--output table` prints nothing), which
+can look like "no tables" even when ownership is correct.
+
 Also confirm the old stack no longer lists them:
 
 ```bash
-aws cloudformation describe-stack-resources \
+aws cloudformation list-stack-resources \
   --region "$AWS_REGION" \
   --stack-name "$OLD_STACK" \
-  --query 'StackResources[?ResourceType==`AWS::DynamoDB::Table`].[LogicalResourceId,PhysicalResourceId]' \
+  --query 'StackResourceSummaries[?ResourceType==`AWS::DynamoDB::Table`].[LogicalResourceId,PhysicalResourceId,ResourceStatus]' \
   --output table
 ```
 
@@ -647,8 +723,18 @@ it returns empty, the import didn't actually adopt the tables; go to the rollbac
 
 ### 4.2 Front-end rollout
 
-Update the front-end's environment config with the new `AWS_EASY_GENOMICS_API_URL` and redeploy. `HttpFactory` will
-route easy-genomics calls to the new API and HealthOmics / NF-Tower calls to the existing back-end API.
+Redeploy the front-end so it routes easy-genomics calls to the new API.
+
+**CI/CD (recommended / default):** you do **not** need to manually create a new GitHub Actions secret or variable. The
+repo's CI workflows derive `AWS_EASY_GENOMICS_API_URL` automatically at deploy time by reading the `EasyGenomicsApiUrl`
+CloudFormation output from the `${ENV_TYPE}-${ENV_NAME}-easy-genomics-api-stack` stack and exporting it into the job
+environment. If that stack/output doesn't exist yet (pre-migration), the variable is left unset and the front-end falls
+back to the legacy single-API behavior.
+
+**Manual / local deployments:** if you're deploying the front-end outside of the repo's CI workflows, you must set
+`AWS_EASY_GENOMICS_API_URL` yourself to the value from Phase 3.4 (the `EasyGenomicsApiUrl` output of `NEW_STACK`, no
+trailing slash), then rebuild/redeploy the front-end. `HttpFactory` will then route easy-genomics calls to the new API
+and HealthOmics / NF-Tower calls to the existing back-end API.
 
 ### 4.3 Re-open traffic
 
@@ -733,21 +819,31 @@ If the team decides to fully abandon the split:
 
 ---
 
-## Appendix A — Table-to-construct-path mapping (for `cdk import` prompts)
+## Appendix A — Table-to-construct-path mapping (for debugging `cdk import`)
 
-`cdk import` prompts you using the CDK construct path, not the final CloudFormation logical ID. The mapping is identical
-across environments; the only thing that changes is `${NAME_PREFIX}`.
+The supported way to drive `cdk import` is the mapping-file flow described in Phase 3.1. This appendix exists for
+operators who need to debug a mapping problem (e.g. cross-checking the JSON the script wrote, or reading raw
+CloudFormation events). It is **not** a manual-prompt fallback — never operate `cdk import` against this stack
+interactively, for the reasons documented in Phase 3.1.
 
-| Physical TableName                                | Construct path (truncated)                                                            |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `${NAME_PREFIX}-organization-table`               | `.../easy-genomics-dynamodb/${NAME_PREFIX}-organization-table/Resource`               |
-| `${NAME_PREFIX}-laboratory-table`                 | `.../easy-genomics-dynamodb/${NAME_PREFIX}-laboratory-table/Resource`                 |
-| `${NAME_PREFIX}-user-table`                       | `.../easy-genomics-dynamodb/${NAME_PREFIX}-user-table/Resource`                       |
-| `${NAME_PREFIX}-organization-user-table`          | `.../easy-genomics-dynamodb/${NAME_PREFIX}-organization-user-table/Resource`          |
-| `${NAME_PREFIX}-laboratory-user-table`            | `.../easy-genomics-dynamodb/${NAME_PREFIX}-laboratory-user-table/Resource`            |
-| `${NAME_PREFIX}-laboratory-run-table`             | `.../easy-genomics-dynamodb/${NAME_PREFIX}-laboratory-run-table/Resource`             |
-| `${NAME_PREFIX}-unique-reference-table`           | `.../easy-genomics-dynamodb/${NAME_PREFIX}-unique-reference-table/Resource`           |
-| `${NAME_PREFIX}-laboratory-workflow-access-table` | `.../easy-genomics-dynamodb/${NAME_PREFIX}-laboratory-workflow-access-table/Resource` |
+The eight tables are created at the **top-level** `EasyGenomicsApiStack` scope (not inside any nested stack). Their
+construct paths inside the synthesized cloud assembly are below; the mapping is identical across environments and the
+only thing that changes is `${NAME_PREFIX}`.
+
+| Physical TableName                                | Construct path                                                                                                                          |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `${NAME_PREFIX}-organization-table`               | `${NAME_PREFIX}-easy-genomics-api-stack/${NAME_PREFIX}-easy-genomics-dynamodb/${NAME_PREFIX}-organization-table/Resource`               |
+| `${NAME_PREFIX}-laboratory-table`                 | `${NAME_PREFIX}-easy-genomics-api-stack/${NAME_PREFIX}-easy-genomics-dynamodb/${NAME_PREFIX}-laboratory-table/Resource`                 |
+| `${NAME_PREFIX}-user-table`                       | `${NAME_PREFIX}-easy-genomics-api-stack/${NAME_PREFIX}-easy-genomics-dynamodb/${NAME_PREFIX}-user-table/Resource`                       |
+| `${NAME_PREFIX}-organization-user-table`          | `${NAME_PREFIX}-easy-genomics-api-stack/${NAME_PREFIX}-easy-genomics-dynamodb/${NAME_PREFIX}-organization-user-table/Resource`          |
+| `${NAME_PREFIX}-laboratory-user-table`            | `${NAME_PREFIX}-easy-genomics-api-stack/${NAME_PREFIX}-easy-genomics-dynamodb/${NAME_PREFIX}-laboratory-user-table/Resource`            |
+| `${NAME_PREFIX}-laboratory-run-table`             | `${NAME_PREFIX}-easy-genomics-api-stack/${NAME_PREFIX}-easy-genomics-dynamodb/${NAME_PREFIX}-laboratory-run-table/Resource`             |
+| `${NAME_PREFIX}-unique-reference-table`           | `${NAME_PREFIX}-easy-genomics-api-stack/${NAME_PREFIX}-easy-genomics-dynamodb/${NAME_PREFIX}-unique-reference-table/Resource`           |
+| `${NAME_PREFIX}-laboratory-workflow-access-table` | `${NAME_PREFIX}-easy-genomics-api-stack/${NAME_PREFIX}-easy-genomics-dynamodb/${NAME_PREFIX}-laboratory-workflow-access-table/Resource` |
+
+The corresponding CloudFormation `LogicalResourceId` is a flattened, hash-suffixed version of that path (see the
+`--print` output of `scripts/build-import-mapping.ts` for the exact IDs in your environment). Do not hand-edit the
+mapping file to use the construct path — `cdk import --resource-mapping` keys on `LogicalResourceId`, not path.
 
 ---
 
