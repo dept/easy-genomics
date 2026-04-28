@@ -1,11 +1,9 @@
 import { Duration, NestedStack } from 'aws-cdk-lib';
-import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Effect, PolicyStatement, StarPrincipal } from 'aws-cdk-lib/aws-iam';
 import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import { Topic } from 'aws-cdk-lib/aws-sns';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
-import { baseLSIAttributes, DynamoConstruct } from '../constructs/dynamodb-construct';
 import { IamConstruct, IamConstructProps } from '../constructs/iam-construct';
 import { LambdaConstruct } from '../constructs/lambda-construct';
 import { SesConstruct } from '../constructs/ses-construct';
@@ -13,11 +11,25 @@ import { SnsConstruct, TopicDetails, Topics } from '../constructs/sns-construct'
 import { QueueDetails, Queues, SqsConstruct } from '../constructs/sqs-construct';
 import { EasyGenomicsNestedStackProps } from '../types/back-end-stack';
 
+/**
+ * Easy Genomics nested stack: lambdas, SNS, SQS, SES, IAM, route registration.
+ *
+ * NOTE: This stack does NOT own the easy-genomics DynamoDB tables. Tables are
+ * created by the parent `EasyGenomicsApiStack` and injected here via
+ * `props.dynamoDBTables` so that:
+ *   1. `cdk import` (which only walks a single template per invocation) can
+ *      adopt the tables during the documented split-stack migration. See
+ *      `docs/EASY_GENOMICS_PROD_MIGRATION.md`.
+ *   2. The same `Map<string, Table>` reference is shared in-process with
+ *      `DataProvisioningNestedStack` without needing CloudFormation exports.
+ *
+ * IAM policy statements in this nested stack reference table ARNs by string
+ * template (built from `props.namePrefix`), so they continue to work
+ * regardless of which stack physically owns the table resources.
+ */
 export class EasyGenomicsNestedStack extends NestedStack {
   readonly props: EasyGenomicsNestedStackProps;
-  readonly dynamoDBTables: Map<string, Table> = new Map();
 
-  dynamoDB: DynamoConstruct;
   iam: IamConstruct;
   lambda: LambdaConstruct;
   ses: SesConstruct;
@@ -96,10 +108,10 @@ export class EasyGenomicsNestedStack extends NestedStack {
     });
     this.setupIamPolicies();
 
-    this.dynamoDB = new DynamoConstruct(this, `${this.props.constructNamespace}-dynamodb`, {
-      envType: this.props.envType,
-    });
-    this.setupDynamoDBTables();
+    // DynamoDB tables are created by the parent `EasyGenomicsApiStack` and
+    // injected via `props.dynamoDBTables`. See class JSDoc for the rationale
+    // (this layout is required for `cdk import` to be able to adopt the
+    // tables during the documented split-stack migration).
 
     this.lambda = new LambdaConstruct(this, `${this.props.constructNamespace}`, {
       ...this.props,
@@ -1540,179 +1552,5 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: ['dynamodb:PutItem', 'dynamodb:DeleteItem'],
       }),
     ]);
-  };
-
-  // Easy Genomics specific DynamoDB tables
-  private setupDynamoDBTables = () => {
-    /** Update the definitions below to update / add additional DynamoDB tables **/
-    // Organization table
-    const organizationTableName = `${this.props.namePrefix}-organization-table`;
-    const organizationTable = this.dynamoDB.createTable(organizationTableName, {
-      partitionKey: {
-        name: 'OrganizationId',
-        type: AttributeType.STRING,
-      },
-      lsi: baseLSIAttributes,
-    });
-    this.dynamoDBTables.set(organizationTableName, organizationTable);
-
-    // Laboratory table
-    const laboratoryTableName = `${this.props.namePrefix}-laboratory-table`;
-    const laboratoryTable = this.dynamoDB.createTable(laboratoryTableName, {
-      partitionKey: {
-        name: 'OrganizationId',
-        type: AttributeType.STRING,
-      },
-      sortKey: {
-        name: 'LaboratoryId',
-        type: AttributeType.STRING,
-      },
-      gsi: [
-        {
-          partitionKey: {
-            name: 'LaboratoryId', // Global Secondary Index to support REST API get / update / delete requests
-            type: AttributeType.STRING,
-          },
-        },
-      ],
-      lsi: baseLSIAttributes,
-    });
-    this.dynamoDBTables.set(laboratoryTableName, laboratoryTable);
-
-    // User table
-    const userTableName = `${this.props.namePrefix}-user-table`;
-    const userTable = this.dynamoDB.createTable(userTableName, {
-      partitionKey: {
-        name: 'UserId',
-        type: AttributeType.STRING,
-      },
-      gsi: [
-        {
-          partitionKey: {
-            name: 'Email', // Global Secondary Index to support lookup by Email requests
-            type: AttributeType.STRING,
-          },
-        },
-      ],
-      lsi: baseLSIAttributes,
-    });
-    this.dynamoDBTables.set(userTableName, userTable);
-
-    // Organization User table
-    const organizationUserTableName = `${this.props.namePrefix}-organization-user-table`;
-    const organizationUserTable = this.dynamoDB.createTable(organizationUserTableName, {
-      partitionKey: {
-        name: 'OrganizationId', // UUID
-        type: AttributeType.STRING,
-      },
-      sortKey: {
-        name: 'UserId', // UUID
-        type: AttributeType.STRING,
-      },
-      gsi: [
-        {
-          partitionKey: {
-            name: 'UserId', // Global Secondary Index to support Organization lookup by UserId requests
-            type: AttributeType.STRING,
-          },
-        },
-      ],
-      lsi: baseLSIAttributes,
-    });
-    this.dynamoDBTables.set(organizationUserTableName, organizationUserTable);
-
-    // Laboratory User table
-    const laboratoryUserTableName = `${this.props.namePrefix}-laboratory-user-table`;
-    const laboratoryUserTable = this.dynamoDB.createTable(laboratoryUserTableName, {
-      partitionKey: {
-        name: 'LaboratoryId',
-        type: AttributeType.STRING,
-      },
-      sortKey: {
-        name: 'UserId',
-        type: AttributeType.STRING,
-      },
-      gsi: [
-        {
-          partitionKey: {
-            name: 'UserId', // Global Secondary Index to support Laboratory lookup by UserId requests
-            type: AttributeType.STRING,
-          },
-        },
-        {
-          partitionKey: {
-            name: 'OrganizationId', // Global Secondary Index to support lookup by OrganizationId requests
-            type: AttributeType.STRING,
-          },
-        },
-      ],
-      lsi: baseLSIAttributes,
-    });
-    this.dynamoDBTables.set(laboratoryUserTableName, laboratoryUserTable);
-
-    // Laboratory Run table
-    const laboratoryRunTableName = `${this.props.namePrefix}-laboratory-run-table`;
-    const laboratoryRunTable = this.dynamoDB.createTable(laboratoryRunTableName, {
-      partitionKey: {
-        name: 'LaboratoryId',
-        type: AttributeType.STRING,
-      },
-      sortKey: {
-        name: 'RunId',
-        type: AttributeType.STRING,
-      },
-      timeToLiveAttribute: 'ExpiresAt',
-      gsi: [
-        {
-          partitionKey: {
-            name: 'RunId', // Global Secondary Index to support Laboratory lookup by RunId requests
-            type: AttributeType.STRING,
-          },
-        },
-        {
-          partitionKey: {
-            name: 'UserId', // Global Secondary Index to support Laboratory lookup by UserId requests
-            type: AttributeType.STRING,
-          },
-        },
-        {
-          partitionKey: {
-            name: 'OrganizationId', // Global Secondary Index to support lookup by OrganizationId requests
-            type: AttributeType.STRING,
-          },
-        },
-      ],
-      lsi: baseLSIAttributes,
-    });
-    this.dynamoDBTables.set(laboratoryRunTableName, laboratoryRunTable);
-
-    // Unique-Reference table
-    const uniqueReferenceTableName = `${this.props.namePrefix}-unique-reference-table`;
-    const uniqueReferenceTable = this.dynamoDB.createTable(uniqueReferenceTableName, {
-      partitionKey: {
-        name: 'Value',
-        type: AttributeType.STRING,
-      },
-      sortKey: {
-        name: 'Type',
-        type: AttributeType.STRING,
-      },
-    });
-    this.dynamoDBTables.set(uniqueReferenceTableName, uniqueReferenceTable);
-
-    // Laboratory workflow access allowlist (HealthOmics + Seqera)
-    const laboratoryWorkflowAccessTableName = `${this.props.namePrefix}-laboratory-workflow-access-table`;
-    const laboratoryWorkflowAccessTable = this.dynamoDB.createTable(laboratoryWorkflowAccessTableName, {
-      partitionKey: {
-        name: 'LaboratoryId',
-        type: AttributeType.STRING,
-      },
-      sortKey: {
-        name: 'WorkflowKey',
-        type: AttributeType.STRING,
-      },
-      lsi: baseLSIAttributes,
-    });
-    this.dynamoDBTables.set(laboratoryWorkflowAccessTableName, laboratoryWorkflowAccessTable);
   };
 }

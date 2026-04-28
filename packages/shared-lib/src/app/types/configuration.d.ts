@@ -11,6 +11,17 @@ export interface ConfigurationSettings {
   ['aws-region']: string;
   ['env-type']: 'dev' | 'pre-prod' | 'prod';
   ['app-domain-name']: string;
+  /**
+   * Optional override for the Easy Genomics API URL used by the Front-End when
+   * easy-genomics is split into its own back-end stack.
+   *
+   * If set, the UI routes easy-genomics calls to this URL directly (instead of
+   * `${AWS_API_GATEWAY_URL}/easy-genomics`).
+   *
+   * Typical value: the `EasyGenomicsApiUrl` output of
+   * `${envType}-${envName}-easy-genomics-api-stack` (no trailing slash).
+   */
+  ['aws-easy-genomics-api-url']?: string;
   // The following Front-End Infrastructure settings will need to be pre-configured in AWS and defined when 'env-type' is 'pre-prod' or 'prod'.
   ['aws-hosted-zone-id']?: string; // Not required when env-type: 'dev', but must exist for the same app-domain-name if configured
   ['aws-certificate-arn']?: string; // Not required when env-type: 'dev', but must exist for the same app-domain-name if configured
