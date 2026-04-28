@@ -32,6 +32,7 @@
         background: 'bg-gray-800/30',
       },
       rounded: 'rounded-3xl',
+      width: 'sm:max-w-2xl',
     }"
     :modelValue="modelValue"
     @update:modelValue="(value) => emit('update:modelValue', value)"
@@ -48,9 +49,9 @@
     >
       <template #header>
         <div class="flex flex-col">
-          <div class="flex">
-            <EGText tag="h3" class="mb-6">{{ primaryMessage }}</EGText>
-            <div>
+          <div class="flex items-start gap-2">
+            <EGText tag="h3" class="mb-6 min-w-0 flex-1 break-all">{{ primaryMessage }}</EGText>
+            <div class="shrink-0">
               <UButton
                 @click="handleCancel"
                 icon="i-heroicons-x-mark"
@@ -63,7 +64,7 @@
             </div>
           </div>
           <div v-if="secondaryMessage">
-            <EGText tag="p" class="mb-6 whitespace-pre-line">{{ secondaryMessage }}</EGText>
+            <EGText tag="p" class="mb-6 whitespace-pre-line break-words">{{ secondaryMessage }}</EGText>
           </div>
           <div class="flex justify-end gap-4">
             <div v-if="cancelLabel">
