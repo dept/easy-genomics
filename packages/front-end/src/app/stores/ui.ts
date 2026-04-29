@@ -44,7 +44,10 @@ type PendingRequest =
   | 'generateSampleSheet'
   | 'downloadSampleSheet'
   | `downloadHtmlFileButton-${string}`
-  | 'switchOrg';
+  | 'switchOrg'
+  | 'dataCollectionsList'
+  | 'dataCollectionsTags'
+  | 'dataCollectionsMutate';
 
 interface UiStoreState {
   pendingRequests: Set<string>;
