@@ -185,7 +185,7 @@ export class GithubActionsCICDRelease extends Component {
       },
       {
         name: 'Install dependencies',
-        run: 'pnpm install',
+        run: 'pnpm install --frozen-lockfile',
       },
       // This determines the sha of the last successful build on the main branch
       // (known as the base sha) and adds to env vars along with the current (head) sha.

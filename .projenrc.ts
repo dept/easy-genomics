@@ -202,27 +202,27 @@ root.removeScript('build');
 root.addScripts({
   // Development convenience scripts
   ['build-back-end']:
-    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --verbose=true',
+    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --verbose=true --outputStyle=stream',
   ['build-front-end']:
     'nx reset && pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --verbose=true',
   ['build-and-deploy']:
-    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --verbose=true && ' +
-    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --verbose=true && ' +
-    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --verbose=true && ' +
-    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --verbose=true',
+    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --verbose=true --outputStyle=stream && ' +
+    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --verbose=true --outputStyle=stream && ' +
+    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --verbose=true --outputStyle=stream && ' +
+    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --verbose=true --outputStyle=stream',
   ['prettier']: "prettier --write '{**/*,*}.{js,ts,vue,scss,json,md,html,mdx}'",
   ['upgrade']:
     'pnpm dlx projen upgrade && ' +
     'pnpm nx run-many --targets=upgrade --projects=@easy-genomics/shared-lib,@easy-genomics/back-end,@easy-genomics/front-end',
   // CI/CD convenience scripts
   ['cicd-build-deploy-back-end']:
-    'export CI_CD=true && ' +
-    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --verbose=true && ' +
-    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --verbose=true',
+    'export CI_CD=true NX_SKIP_NX_CACHE=true && ' +
+    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --verbose=true --outputStyle=stream && ' +
+    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --verbose=true --outputStyle=stream',
   ['cicd-build-deploy-front-end']:
-    'export CI_CD=true && ' +
-    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --verbose=true && ' +
-    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --verbose=true',
+    'export CI_CD=true NX_SKIP_NX_CACHE=true && ' +
+    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --verbose=true --outputStyle=stream && ' +
+    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --verbose=true --outputStyle=stream',
   ['prepare']: 'husky || true', // Enable Husky each time projen is synthesized
   ['projen']: 'nx reset; pnpm exec projen', // Clear NX cache each time projen is synthesized to avoid cache disk-space overconsumption
   ['pre-commit']: 'lint-staged',
@@ -306,6 +306,7 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
         '^@BE/(.*)$': '<rootDir>/src/app/$1',
         '^@SharedLib/(.*)$': '<rootDir>/../shared-lib/src/app/$1',
         '^@FE/(.*)$': '<rootDir>/../front-end/src/app/$1',
+        '^@easy-genomics/shared-lib/lib/app/(.*)$': '<rootDir>/../shared-lib/src/app/$1',
       },
     },
   },
@@ -324,12 +325,12 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
       baseUrl: '.',
       paths: {
         '@BE/*': ['src/app/*'],
-        '@FE/*': ['../packages/front-end/src/app/*'],
-        '@SharedLib/*': ['../packages/shared-lib/src/app/*'],
+        '@FE/*': ['../front-end/src/app/*'],
+        '@SharedLib/*': ['../shared-lib/src/app/*'],
         // Some packages import shared-lib via its compiled output path.
         // During tests/ts-jest compilation in a workspace, `lib/` may not exist yet,
         // so we map those deep imports to the source tree.
-        '@easy-genomics/shared-lib/lib/app/*': ['../packages/shared-lib/src/app/*'],
+        '@easy-genomics/shared-lib/lib/app/*': ['../shared-lib/src/app/*'],
       },
     },
   },
