@@ -1,4 +1,4 @@
-import { ACCESS_CONTROL_ALLOW_HEADERS } from '@easy-genomics/shared-lib/lib/app/utils/common';
+import { ACCESS_CONTROL_ALLOW_HEADERS } from '@easy-genomics/shared-lib/src/app/utils/common';
 import { aws_apigateway, RemovalPolicy, StackProps } from 'aws-cdk-lib';
 import { EndpointType, MethodLoggingLevel, Period, RestApi, UsagePlan } from 'aws-cdk-lib/aws-apigateway';
 import * as logs from 'aws-cdk-lib/aws-logs';

@@ -32,13 +32,13 @@
         "src/app/*"
       ],
       "@FE/*": [
-        "../packages/front-end/src/app/*"
+        "../front-end/src/app/*"
       ],
       "@SharedLib/*": [
-        "../packages/shared-lib/src/app/*"
+        "../shared-lib/src/app/*"
       ],
       "@easy-genomics/shared-lib/lib/app/*": [
-        "../packages/shared-lib/src/app/*"
+        "../shared-lib/src/app/*"
       ]
     }
   },

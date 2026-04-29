@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import path from 'path';
-import { AssociativeArray, HttpRequest } from '@easy-genomics/shared-lib/lib/app/utils/common';
+import { AssociativeArray, HttpRequest } from '@easy-genomics/shared-lib/src/app/utils/common';
 import { toPascalCase } from '@easy-genomics/shared-lib/src/app/utils/string-utils';
 import { aws_lambda, aws_lambda_nodejs, Duration } from 'aws-cdk-lib';
 import { CognitoUserPoolsAuthorizer, JsonSchema, LambdaIntegration, Resource } from 'aws-cdk-lib/aws-apigateway';

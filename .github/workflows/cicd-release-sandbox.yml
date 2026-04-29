@@ -58,7 +58,7 @@ jobs:
           fail-on-cache-miss: false
           key: nx-${{ github.repository_id }}-${{ github.sha }}
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
       - name: Derive SHAs for nx affected commands
         uses: nrwl/nx-set-shas@v4
         with:
@@ -127,7 +127,7 @@ jobs:
           fail-on-cache-miss: false
           key: nx-${{ github.repository_id }}-${{ github.sha }}
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
       - name: Derive SHAs for nx affected commands
         uses: nrwl/nx-set-shas@v4
         with:
