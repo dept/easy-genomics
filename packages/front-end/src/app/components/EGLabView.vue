@@ -15,6 +15,7 @@
   import { Pipeline as SeqeraPipeline } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
   import { WorkflowListItem as OmicsWorkflow } from '@aws-sdk/client-omics';
   import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
+  import EGDataCollectionsPage from '@FE/components/EGDataCollectionsPage.vue';
   import { TableSort } from './EGTable.vue';
 
   const props = defineProps<{
@@ -99,6 +100,11 @@
     const runsTab = { key: 'runs', label: 'Pipeline Runs', icon: 'i-heroicons-clock' };
     const seqeraPipelinesTab = { key: 'seqeraPipelines', label: 'Seqera Pipelines', icon: 'i-heroicons-command-line' };
     const omicsWorkflowsTab = { key: 'omicsWorkflows', label: 'HealthOmics Workflows', icon: 'i-heroicons-beaker' };
+    const dataCollectionsTab = {
+      key: 'dataCollections',
+      label: 'Data Collections',
+      icon: 'i-heroicons-rectangle-stack',
+    };
     const usersTab = { key: 'users', label: 'Users', icon: 'i-heroicons-users' };
     const detailsTab = { key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth' };
 
@@ -112,6 +118,7 @@
       if (seqeraAvailable) items.push(seqeraPipelinesTab);
       if (omicsAvailable) items.push(omicsWorkflowsTab);
     }
+    items.push(dataCollectionsTab);
     items.push({ ...usersTab, dividerBefore: items.length > 0 });
     items.push(detailsTab);
 
@@ -125,6 +132,7 @@
       runs: 'View your pipeline runs',
       seqeraPipelines: 'View your Seqera pipelines',
       omicsWorkflows: 'View your HealthOmics workflows',
+      dataCollections: 'Tag and browse files in your lab S3 bucket',
       users: 'View your lab users',
       details: 'View your lab settings',
     };
@@ -684,6 +692,11 @@
       class="mt-2"
     />
   </EGPageHeader>
+
+  <!-- Data Collections -->
+  <div v-if="activeTabKey === 'dataCollections'" class="mt-4">
+    <EGDataCollectionsPage :lab-id="labId" />
+  </div>
 
   <!-- Runs tab -->
   <div v-if="activeTabKey === 'runs'">

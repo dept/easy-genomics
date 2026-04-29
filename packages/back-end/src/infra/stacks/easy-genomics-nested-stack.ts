@@ -1552,5 +1552,101 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: ['dynamodb:PutItem', 'dynamodb:DeleteItem'],
       }),
     ]);
+
+    const laboratoryDataTaggingTableArn = `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-data-tagging-table`;
+    const laboratoryDataTaggingTableAnyIndex = `${laboratoryDataTaggingTableArn}/index/*`;
+
+    const laboratoryDataTaggingDynamoResources = [laboratoryDataTaggingTableArn, laboratoryDataTaggingTableAnyIndex];
+    const laboratoryDataTaggingDynamoActions = [
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:UpdateItem',
+      'dynamodb:DeleteItem',
+      'dynamodb:Query',
+      'dynamodb:BatchGetItem',
+    ];
+
+    const laboratoryReadForDataCollections = [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+      }),
+    ];
+
+    // /easy-genomics/data-collections/list-tags
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/list-tags', [
+      ...laboratoryReadForDataCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: ['dynamodb:Query'],
+      }),
+    ]);
+
+    // /easy-genomics/data-collections/create-tag
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/create-tag', [
+      ...laboratoryReadForDataCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+    ]);
+
+    // /easy-genomics/data-collections/update-tag
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/update-tag', [
+      ...laboratoryReadForDataCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+    ]);
+
+    // /easy-genomics/data-collections/delete-tag
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/delete-tag', [
+      ...laboratoryReadForDataCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+    ]);
+
+    // /easy-genomics/data-collections/request-list-file-tags
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/request-list-file-tags', [
+      ...laboratoryReadForDataCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+    ]);
+
+    // /easy-genomics/data-collections/add-tags-to-files
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/add-tags-to-files', [
+      ...laboratoryReadForDataCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+    ]);
+
+    // /easy-genomics/data-collections/list-files-by-tag
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/list-files-by-tag', [
+      ...laboratoryReadForDataCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+    ]);
+
+    // /easy-genomics/data-collections/request-laboratory-bucket-objects
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/request-laboratory-bucket-objects', [
+      ...laboratoryReadForDataCollections,
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
   };
 }
