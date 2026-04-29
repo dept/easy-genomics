@@ -1,4 +1,5 @@
 import { defineNuxtPlugin } from '#app';
+import DataCollectionsModule from '@FE/repository/modules/data-collections';
 import FileModule from '@FE/repository/modules/file';
 import InfraModules from '@FE/repository/modules/infra';
 import LabsModule from '@FE/repository/modules/labs';
@@ -12,6 +13,7 @@ import UsersModule from '@FE/repository/modules/users';
 import WorkflowAccessModule from '@FE/repository/modules/workflow-access';
 
 interface IApiInstance {
+  dataCollections: DataCollectionsModule;
   file: FileModule;
   infra: InfraModules;
   labs: LabsModule;
@@ -34,6 +36,7 @@ const createFetchOptions = (nuxtApp): FetchOptions => ({
 });
 
 const createApiInstance = (apiFetcher: any): IApiInstance => ({
+  dataCollections: new DataCollectionsModule(apiFetcher),
   file: new FileModule(apiFetcher),
   infra: new InfraModules(apiFetcher),
   labs: new LabsModule(apiFetcher),

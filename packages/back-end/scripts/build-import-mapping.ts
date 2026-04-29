@@ -97,6 +97,7 @@ const EXPECTED_TABLE_SUFFIXES = [
   'laboratory-run-table',
   'unique-reference-table',
   'laboratory-workflow-access-table',
+  'laboratory-data-tagging-table',
 ] as const;
 
 type DeployEnv = {

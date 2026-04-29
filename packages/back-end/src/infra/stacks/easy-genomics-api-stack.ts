@@ -14,7 +14,7 @@ import {
 
 /**
  * Dedicated top-level stack that owns the Easy Genomics REST API, the
- * eight easy-genomics DynamoDB tables, and all route registrations. It was
+ * nine easy-genomics DynamoDB tables, and all route registrations. It was
  * split out of `BackEndStack` because the Easy Genomics route set alone was
  * enough to push the shared back-end stack past the 500-resource
  * CloudFormation limit (see `split_easy_api_*.plan.md`).
@@ -42,7 +42,7 @@ import {
  *    the refactor is safe: CDK creates this stack and its tables from
  *    scratch.
  *  - For **existing** deploys in ANY environment (dev, demo, pre-prod, prod),
- *    the eight easy-genomics DynamoDB tables carry real data AND are pinned
+ *    the nine easy-genomics DynamoDB tables carry real data AND are pinned
  *    to `RemovalPolicy.RETAIN` with deletion protection (see
  *    `dynamodb-construct.ts`). A naive `cdk deploy --all` will fail because
  *    the retained tables still hold the fixed physical names that the new
@@ -163,6 +163,8 @@ export class EasyGenomicsApiStack extends Stack {
       [
         `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-request-file-download-url/ServiceRole/DefaultPolicy/Resource`,
         `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-request-list-bucket-objects/ServiceRole/DefaultPolicy/Resource`,
+        `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-request-top-level-bucket-objects/ServiceRole/DefaultPolicy/Resource`,
+        `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-request-laboratory-bucket-objects/ServiceRole/DefaultPolicy/Resource`,
         `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-request-search-bucket-objects/ServiceRole/DefaultPolicy/Resource`,
         `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-request-folder-download-job/ServiceRole/DefaultPolicy/Resource`,
         `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-request-folder-download-job-status/ServiceRole/DefaultPolicy/Resource`,
@@ -377,5 +379,32 @@ export class EasyGenomicsApiStack extends Stack {
       lsi: baseLSIAttributes,
     });
     this.dynamoDBTables.set(laboratoryWorkflowAccessTableName, laboratoryWorkflowAccessTable);
+
+    // Laboratory data tagging (user-defined tags on S3 objects within the lab prefix)
+    const laboratoryDataTaggingTableName = `${this.props.namePrefix}-laboratory-data-tagging-table`;
+    const laboratoryDataTaggingTable = this.dynamoDB.createTable(laboratoryDataTaggingTableName, {
+      partitionKey: {
+        name: 'LaboratoryId',
+        type: AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'Sk',
+        type: AttributeType.STRING,
+      },
+      gsi: [
+        {
+          partitionKey: {
+            name: 'Gsi1Pk',
+            type: AttributeType.STRING,
+          },
+          sortKey: {
+            name: 'Gsi1Sk',
+            type: AttributeType.STRING,
+          },
+        },
+      ],
+      lsi: baseLSIAttributes,
+    });
+    this.dynamoDBTables.set(laboratoryDataTaggingTableName, laboratoryDataTaggingTable);
   };
 }
