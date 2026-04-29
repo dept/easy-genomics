@@ -1,4 +1,6 @@
 import {
+  CreateWorkflow,
+  CreateWorkflowRequest,
   ListWorkflows,
   ReadWorkflow,
 } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
@@ -15,12 +17,57 @@ type ListWorkflowVersionsResponse = {
   nextToken?: string;
 };
 
+type CreateWorkflowUploadRequest = {
+  fileName: string;
+  size: number;
+  requestId?: string;
+};
+
+type CreateWorkflowUploadResponse = {
+  requestId: string;
+  bucket: string;
+  key: string;
+  s3Uri: string;
+  uploadUrl: string;
+};
+
 class OmicsWorkflowsModule extends HttpFactory {
   async list(labId: string): Promise<ListWorkflows> {
     const res = await this.callOmics<ListWorkflows>('GET', `/workflow/list-private-workflows?laboratoryId=${labId}`);
 
     if (!res) {
       throw new Error('Failed to retrieve omics workflows details');
+    }
+
+    return res;
+  }
+
+  async create(labId: string, payload: CreateWorkflowRequest): Promise<CreateWorkflow> {
+    const res = await this.callOmics<CreateWorkflow>(
+      'POST',
+      `/workflow/create-private-workflow?laboratoryId=${labId}`,
+      payload,
+    );
+
+    if (!res) {
+      throw new Error('Failed to create omics workflow');
+    }
+
+    return res;
+  }
+
+  async createUploadRequest(
+    labId: string,
+    payload: CreateWorkflowUploadRequest,
+  ): Promise<CreateWorkflowUploadResponse> {
+    const res = await this.callOmics<CreateWorkflowUploadResponse>(
+      'POST',
+      `/workflow/create-workflow-upload-request?laboratoryId=${labId}`,
+      payload,
+    );
+
+    if (!res) {
+      throw new Error('Failed to create workflow upload request');
     }
 
     return res;

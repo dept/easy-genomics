@@ -1,4 +1,7 @@
 import {
+  CreateWorkflowCommand,
+  CreateWorkflowCommandInput,
+  CreateWorkflowCommandOutput,
   CancelRunCommand,
   CancelRunCommandInput,
   CancelRunCommandOutput,
@@ -32,6 +35,7 @@ import {
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
 
 export enum OmicsCommand {
+  CREATE_WORKFLOW = 'create-workflow',
   CANCEL_RUN = 'cancel-run',
   GET_RUN = 'get-run',
   GET_WORKFLOW = 'get-workflow',
@@ -59,6 +63,15 @@ export class OmicsService {
     return this.omicsRequest<CancelRunCommandInput, CancelRunCommandOutput>(
       OmicsCommand.CANCEL_RUN,
       cancelRunCommandInput,
+    );
+  };
+
+  public createWorkflow = async (
+    createWorkflowCommandInput: CreateWorkflowCommandInput,
+  ): Promise<CreateWorkflowCommandOutput> => {
+    return this.omicsRequest<CreateWorkflowCommandInput, CreateWorkflowCommandOutput>(
+      OmicsCommand.CREATE_WORKFLOW,
+      createWorkflowCommandInput,
     );
   };
 
@@ -133,6 +146,8 @@ export class OmicsService {
 
   private getOmicsCommand = (command: OmicsCommand, data: unknown): any => {
     switch (command) {
+      case OmicsCommand.CREATE_WORKFLOW:
+        return new CreateWorkflowCommand(data as CreateWorkflowCommandInput);
       case OmicsCommand.CANCEL_RUN:
         return new CancelRunCommand(data as CancelRunCommandInput);
       case OmicsCommand.GET_RUN:

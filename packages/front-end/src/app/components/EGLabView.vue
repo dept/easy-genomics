@@ -43,6 +43,7 @@
   const omicsWorkflows = computed<OmicsWorkflow[]>(() => omicsWorkflowsStore.workflowsForLab(props.labId));
   const canAddUsers = computed<boolean>(() => userStore.canAddLabUsers(props.labId));
   const showAddUserModule = ref(false);
+  const showCreateOmicsWorkflowForm = ref(false);
   const searchOutput = ref('');
   const runToCancel = ref<LaboratoryRun | null>(null);
   const isCancelDialogOpen = ref<boolean>(false);
@@ -598,6 +599,11 @@
     await getLabUsers();
   }
 
+  async function handleOmicsWorkflowCreated() {
+    showCreateOmicsWorkflowForm.value = false;
+    await getOmicsWorkflows();
+  }
+
   async function handleCancelDialogAction() {
     const runId = runToCancel.value?.RunId;
     const runName = runToCancel.value?.RunName;
@@ -709,6 +715,12 @@
     show-org-breadcrumb
     show-lab-breadcrumb
   >
+    <EGButton
+      v-if="!superuser && activeTabKey === 'omicsWorkflows'"
+      :label="showCreateOmicsWorkflowForm ? 'Close Create Form' : 'Create Workflow'"
+      variant="secondary"
+      @click="showCreateOmicsWorkflowForm = !showCreateOmicsWorkflowForm"
+    />
     <EGButton
       v-if="!superuser && activeTabKey === 'users'"
       label="Add Lab Users"
@@ -842,6 +854,12 @@
 
   <!-- HealthOmics Workflows tab -->
   <div v-if="activeTabKey === 'omicsWorkflows'">
+    <EGCreateOmicsWorkflowForm
+      v-if="showCreateOmicsWorkflowForm"
+      :lab-id="labId"
+      @created="handleOmicsWorkflowCreated"
+      @cancelled="showCreateOmicsWorkflowForm = false"
+    />
     <EGTable
       :row-click-action="viewRunOmicsWorkflow"
       :table-data="omicsWorkflows"
