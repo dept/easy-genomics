@@ -28,10 +28,13 @@
     removeTagFromFile: [payload: { key: string; tagId: string }];
   }>();
 
+  /** Cards grid vs tabular explorer layout. */
+  const explorerView = ref<'cards' | 'table'>('cards');
+
   const scrollEl = ref<HTMLElement | null>(null);
   const lassoActive = ref(false);
   const lassoStyle = ref({
-    display: 'none' as const,
+    display: 'none' as string,
     left: '0px',
     top: '0px',
     width: '0px',
@@ -43,7 +46,7 @@
   let dragSourceKey: string | null = null;
 
   function tagById(id: string): LaboratoryDataTag | undefined {
-    return props.tags.find((t) => t.TagId === id);
+    return props.tags.find((t: LaboratoryDataTag) => t.TagId === id);
   }
 
   function pillTextColor(bgHex: string): string {
@@ -71,10 +74,13 @@
     return `${parts.join('/')}/`;
   }
 
+  /** Placeholder until workflow run state is wired per file. */
+  function fileAnalysisStatus(_key: string): 'Not yet analyzed' | 'Analyzed' {
+    return 'Not yet analyzed';
+  }
+
   /** No file objects returned for this listing (under lab prefix). */
   const noObjectsUnderLabPrefix = computed(() => !props.loading && props.listingFileCount === 0);
-
-  /** Parent still has file rows for this prefix, but search / tag filter hides all of them. */
   const allFilesHiddenByFilters = computed(
     () => !props.loading && props.listingFileCount > 0 && props.visibleFiles.length === 0,
   );
@@ -188,7 +194,27 @@
         size="sm"
         @update:model-value="emit('update:search', $event)"
       />
-      <div class="flex shrink-0">
+      <div class="border-border-muted flex shrink-0 rounded-lg border p-0.5">
+        <UButton
+          size="xs"
+          square
+          icon="i-heroicons-squares-2x2"
+          :variant="explorerView === 'cards' ? 'soft' : 'ghost'"
+          class="rounded-md"
+          aria-label="Card view"
+          @click="explorerView = 'cards'"
+        />
+        <UButton
+          size="xs"
+          square
+          icon="i-heroicons-list-bullet"
+          :variant="explorerView === 'table' ? 'soft' : 'ghost'"
+          class="rounded-md"
+          aria-label="Table view"
+          @click="explorerView = 'table'"
+        />
+      </div>
+      <div class="ml-auto flex shrink-0">
         <UButton v-if="selectedKeys.length" size="xs" variant="ghost" @click="emit('clearSelection')">
           Deselect all ({{ selectedKeys.length }})
         </UButton>
@@ -210,7 +236,7 @@
     </div>
 
     <div ref="scrollEl" class="relative flex-1 overflow-auto p-4" @mousedown="onScrollHostMouseDown">
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div v-if="explorerView === 'cards'" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <div
           v-for="f in visibleFiles"
           :key="f.Key"
@@ -250,6 +276,71 @@
             </span>
           </div>
         </div>
+      </div>
+
+      <div v-else class="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        <table class="w-full min-w-[56rem] border-collapse text-left text-sm">
+          <thead>
+            <tr class="border-border-muted bg-gray-50/90 text-xs uppercase tracking-wide text-gray-600">
+              <th class="border-border-muted w-10 border-b px-3 py-2.5" scope="col" />
+              <th class="border-border-muted border-b px-3 py-2.5 font-semibold" scope="col">Sample ID</th>
+              <th class="border-border-muted border-b px-3 py-2.5 font-semibold" scope="col">Batch</th>
+              <th class="border-border-muted border-b px-3 py-2.5 font-semibold" scope="col">Status</th>
+              <th class="border-border-muted border-b px-3 py-2.5 font-semibold" scope="col">Tags</th>
+              <th class="border-border-muted w-28 border-b px-3 py-2.5 font-semibold" scope="col">Expires</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="f in visibleFiles"
+              :key="f.Key"
+              data-file-card
+              :data-key="f.Key"
+              draggable="true"
+              class="border-border-muted cursor-pointer border-b transition last:border-b-0"
+              :class="{
+                'bg-primary-muted/50': selectedKeys.includes(f.Key),
+                'hover:bg-gray-50/80': !selectedKeys.includes(f.Key),
+              }"
+              @click="emit('toggleKey', f.Key)"
+              @dragstart="onCardDragStart($event, f.Key)"
+              @dragover="onCardDragOver"
+              @dragleave="onCardDragLeave"
+              @drop="onCardDrop($event)"
+            >
+              <td class="px-3 py-2 align-middle" @mousedown.stop @click.stop>
+                <UCheckbox :model-value="selectedKeys.includes(f.Key)" @update:model-value="emit('toggleKey', f.Key)" />
+              </td>
+              <td class="max-w-[14rem] px-3 py-2 align-middle">
+                <div class="font-medium text-gray-900">{{ fileName(f.Key) }}</div>
+                <div v-if="folderPathUnderLab(f.Key)" class="text-muted truncate text-xs">
+                  {{ folderPathUnderLab(f.Key) }}
+                </div>
+              </td>
+              <td class="text-muted px-3 py-2 align-middle">—</td>
+              <td class="px-3 py-2 align-middle text-gray-800">{{ fileAnalysisStatus(f.Key) }}</td>
+              <td class="px-3 py-2 align-middle">
+                <div class="flex flex-wrap gap-1">
+                  <span
+                    v-for="tid in keyToTagIds[f.Key] || []"
+                    :key="tid"
+                    class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+                    draggable="true"
+                    :style="{
+                      background: tagById(tid)?.ColorHex || '#e2e2e8',
+                      color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
+                    }"
+                    @dragstart="onPillDragStart($event, tid, f.Key)"
+                    @click.stop
+                  >
+                    {{ tagById(tid)?.Name || tid }}
+                  </span>
+                </div>
+              </td>
+              <td class="text-muted px-3 py-2 align-middle">—</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <div v-if="noObjectsUnderLabPrefix" class="text-muted mx-auto max-w-lg space-y-3 py-12 text-center text-sm">
