@@ -23,7 +23,7 @@
     'update:search': [v: string];
     'update:selectedKeys': [keys: string[]];
     toggleKey: [key: string];
-    selectAllVisible: [];
+    selectAllDisplayed: [];
     clearSelection: [];
     removeTagFromFile: [payload: { key: string; tagId: string }];
   }>();
@@ -188,16 +188,18 @@
         size="sm"
         @update:model-value="emit('update:search', $event)"
       />
-      <div class="text-muted min-w-0 flex-1 text-xs">
-        <span class="truncate">Listing all files under</span>
-        <code class="border-border-muted bg-primary-muted/40 rounded border px-1 py-0.5 text-[11px]">
-          {{ labRoot }}
-        </code>
-      </div>
-      <div class="flex shrink-0 gap-2">
-        <UButton size="xs" variant="ghost" @click="emit('selectAllVisible')">Select visible</UButton>
-        <UButton size="xs" variant="ghost" :disabled="!selectedKeys.length" @click="emit('clearSelection')">
-          Clear
+      <div class="flex shrink-0">
+        <UButton v-if="selectedKeys.length" size="xs" variant="ghost" @click="emit('clearSelection')">
+          Deselect all ({{ selectedKeys.length }})
+        </UButton>
+        <UButton
+          v-else
+          size="xs"
+          variant="ghost"
+          :disabled="!visibleFiles.length || loading"
+          @click="emit('selectAllDisplayed')"
+        >
+          Select all ({{ visibleFiles.length }})
         </UButton>
       </div>
     </div>
@@ -251,25 +253,7 @@
       </div>
 
       <div v-if="noObjectsUnderLabPrefix" class="text-muted mx-auto max-w-lg space-y-3 py-12 text-center text-sm">
-        <p class="font-medium text-gray-900">No objects under your lab’s prefix in this bucket</p>
-        <p>
-          This view lists every file object whose key starts with your lab prefix (including nested folders). Objects
-          outside that prefix will not appear.
-        </p>
-        <div>
-          <p class="text-muted mb-1 text-xs font-medium uppercase tracking-wide">Required key prefix</p>
-          <code
-            class="border-border-muted bg-primary-muted/40 block break-all rounded border px-2 py-2 text-left text-xs"
-          >
-            {{ labRoot }}
-          </code>
-        </div>
-        <p class="text-xs">
-          Example:
-          <code class="border-border-muted bg-primary-muted/40 rounded border px-1 py-0.5 text-xs">
-            {{ labRoot }}notes.txt
-          </code>
-        </p>
+        <p class="font-medium text-gray-900">No files found under this lab’s prefix in this bucket</p>
       </div>
       <div v-else-if="allFilesHiddenByFilters" class="text-muted py-8 text-center text-sm">
         No files match your current search or tag filter. Clear the search box or choose "All files" or "Untagged" in
