@@ -1,8 +1,8 @@
 // this import triggers a bizarre eslint problem
 
 import { RunListItem as OmicsRun } from '@aws-sdk/client-omics';
-import { Workflow as SeqeraRun } from '@easy-genomics/shared-lib/lib/app/types/nf-tower/nextflow-tower-api';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
+import { Workflow as SeqeraRun } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
 import { defineStore } from 'pinia';
 import { FilePair } from '@FE/components/EGRunFormUploadData.vue';
 
