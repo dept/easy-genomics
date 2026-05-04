@@ -9,6 +9,9 @@
     labRoot: string;
     visibleFiles: { Key: string; Size?: number; LastModified?: string }[];
     keyToTagIds: Record<string, string[]>;
+    /** Batch tag id per file key (optional until parent loads assignments). */
+    keyToBatchTagId?: Record<string, string | undefined>;
+    batchTags?: LaboratoryDataTag[];
     tags: LaboratoryDataTag[];
     selectedKeys: string[];
     loading: boolean;
@@ -84,6 +87,50 @@
   const allFilesHiddenByFilters = computed(
     () => !props.loading && props.listingFileCount > 0 && props.visibleFiles.length === 0,
   );
+
+  const batchTagsResolved = computed(() => props.batchTags ?? []);
+
+  const keyToBatchResolved = computed(() => props.keyToBatchTagId ?? {});
+
+  /** Group visible files by batch for section headers (single scroll, not nested folders). */
+  const fileSections = computed(() => {
+    type Row = (typeof props.visibleFiles)[number];
+    const nameById = new Map<string, string>(
+      batchTagsResolved.value.map((t: LaboratoryDataTag) => [t.TagId, t.Name] as [string, string]),
+    );
+    const groups = new Map<string | null, Row[]>();
+    for (const f of props.visibleFiles) {
+      const bid = keyToBatchResolved.value[f.Key] ?? null;
+      if (!groups.has(bid)) groups.set(bid, []);
+      groups.get(bid)!.push(f);
+    }
+    const batchEntries = [...groups.entries()].filter(([k]) => k !== null) as [string, Row[]][];
+    batchEntries.sort((a, b) => {
+      const na = nameById.get(a[0]) ?? a[0];
+      const nb = nameById.get(b[0]) ?? b[0];
+      return na.localeCompare(nb);
+    });
+    const sections: { batchId: string | null; title: string; files: Row[] }[] = [];
+    const unbatched = groups.get(null);
+    if (unbatched?.length) {
+      sections.push({ batchId: null, title: 'Unbatched', files: unbatched });
+    }
+    for (const [bid, files] of batchEntries) {
+      sections.push({
+        batchId: bid,
+        title: nameById.get(bid) ?? bid,
+        files,
+      });
+    }
+    return sections;
+  });
+
+  function batchDisplayName(key: string): string {
+    const bid = keyToBatchResolved.value[key];
+    if (!bid) return '—';
+    const tag = batchTagsResolved.value.find((b: LaboratoryDataTag) => b.TagId === bid);
+    return tag?.Name ?? bid;
+  }
 
   function onScrollHostMouseDown(e: MouseEvent): void {
     const t = e.target as HTMLElement;
@@ -237,45 +284,50 @@
 
     <div ref="scrollEl" class="relative flex-1 overflow-auto p-4" @mousedown="onScrollHostMouseDown">
       <div v-if="explorerView === 'cards'" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        <div
-          v-for="f in visibleFiles"
-          :key="f.Key"
-          data-file-card
-          :data-key="f.Key"
-          draggable="true"
-          class="border-border-muted relative cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition"
-          :class="{ 'ring-primary ring-2': selectedKeys.includes(f.Key) }"
-          @click="emit('toggleKey', f.Key)"
-          @dragstart="onCardDragStart($event, f.Key)"
-          @dragover="onCardDragOver"
-          @dragleave="onCardDragLeave"
-          @drop="onCardDrop($event)"
-        >
-          <div class="absolute right-2 top-2" @mousedown.stop @click.stop>
-            <UCheckbox :model-value="selectedKeys.includes(f.Key)" @update:model-value="emit('toggleKey', f.Key)" />
+        <template v-for="(sec, secIdx) in fileSections" :key="sec.batchId ?? 'unbatched'">
+          <div class="border-border-muted col-span-full border-b pb-2" :class="secIdx === 0 ? 'mt-0' : 'mt-6'">
+            <h3 class="text-muted text-xs font-semibold uppercase tracking-wide">{{ sec.title }}</h3>
           </div>
-          <div class="pr-8 text-sm font-medium leading-snug">{{ fileName(f.Key) }}</div>
-          <div v-if="folderPathUnderLab(f.Key)" class="text-muted mt-0.5 truncate text-[11px]">
-            {{ folderPathUnderLab(f.Key) }}
+          <div
+            v-for="f in sec.files"
+            :key="f.Key"
+            data-file-card
+            :data-key="f.Key"
+            draggable="true"
+            class="border-border-muted relative cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition"
+            :class="{ 'ring-primary ring-2': selectedKeys.includes(f.Key) }"
+            @click="emit('toggleKey', f.Key)"
+            @dragstart="onCardDragStart($event, f.Key)"
+            @dragover="onCardDragOver"
+            @dragleave="onCardDragLeave"
+            @drop="onCardDrop($event)"
+          >
+            <div class="absolute right-2 top-2" @mousedown.stop @click.stop>
+              <UCheckbox :model-value="selectedKeys.includes(f.Key)" @update:model-value="emit('toggleKey', f.Key)" />
+            </div>
+            <div class="pr-8 text-sm font-medium leading-snug">{{ fileName(f.Key) }}</div>
+            <div v-if="folderPathUnderLab(f.Key)" class="text-muted mt-0.5 truncate text-[11px]">
+              {{ folderPathUnderLab(f.Key) }}
+            </div>
+            <div class="text-muted mt-1 text-xs">{{ f.Size != null ? `${f.Size} bytes` : '' }}</div>
+            <div class="mt-2 flex flex-wrap gap-1">
+              <span
+                v-for="tid in keyToTagIds[f.Key] || []"
+                :key="tid"
+                class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+                draggable="true"
+                :style="{
+                  background: tagById(tid)?.ColorHex || '#e2e2e8',
+                  color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
+                }"
+                @dragstart="onPillDragStart($event, tid, f.Key)"
+                @click.stop
+              >
+                {{ tagById(tid)?.Name || tid }}
+              </span>
+            </div>
           </div>
-          <div class="text-muted mt-1 text-xs">{{ f.Size != null ? `${f.Size} bytes` : '' }}</div>
-          <div class="mt-2 flex flex-wrap gap-1">
-            <span
-              v-for="tid in keyToTagIds[f.Key] || []"
-              :key="tid"
-              class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-              draggable="true"
-              :style="{
-                background: tagById(tid)?.ColorHex || '#e2e2e8',
-                color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
-              }"
-              @dragstart="onPillDragStart($event, tid, f.Key)"
-              @click.stop
-            >
-              {{ tagById(tid)?.Name || tid }}
-            </span>
-          </div>
-        </div>
+        </template>
       </div>
 
       <div v-else class="overflow-x-auto rounded-lg border border-gray-200 bg-white">
@@ -291,54 +343,68 @@
             </tr>
           </thead>
           <tbody>
-            <tr
-              v-for="f in visibleFiles"
-              :key="f.Key"
-              data-file-card
-              :data-key="f.Key"
-              draggable="true"
-              class="border-border-muted cursor-pointer border-b transition last:border-b-0"
-              :class="{
-                'bg-primary-muted/50': selectedKeys.includes(f.Key),
-                'hover:bg-gray-50/80': !selectedKeys.includes(f.Key),
-              }"
-              @click="emit('toggleKey', f.Key)"
-              @dragstart="onCardDragStart($event, f.Key)"
-              @dragover="onCardDragOver"
-              @dragleave="onCardDragLeave"
-              @drop="onCardDrop($event)"
-            >
-              <td class="px-3 py-2 align-middle" @mousedown.stop @click.stop>
-                <UCheckbox :model-value="selectedKeys.includes(f.Key)" @update:model-value="emit('toggleKey', f.Key)" />
-              </td>
-              <td class="max-w-[14rem] px-3 py-2 align-middle">
-                <div class="font-medium text-gray-900">{{ fileName(f.Key) }}</div>
-                <div v-if="folderPathUnderLab(f.Key)" class="text-muted truncate text-xs">
-                  {{ folderPathUnderLab(f.Key) }}
-                </div>
-              </td>
-              <td class="text-muted px-3 py-2 align-middle">—</td>
-              <td class="px-3 py-2 align-middle text-gray-800">{{ fileAnalysisStatus(f.Key) }}</td>
-              <td class="px-3 py-2 align-middle">
-                <div class="flex flex-wrap gap-1">
-                  <span
-                    v-for="tid in keyToTagIds[f.Key] || []"
-                    :key="tid"
-                    class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                    draggable="true"
-                    :style="{
-                      background: tagById(tid)?.ColorHex || '#e2e2e8',
-                      color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
-                    }"
-                    @dragstart="onPillDragStart($event, tid, f.Key)"
-                    @click.stop
-                  >
-                    {{ tagById(tid)?.Name || tid }}
-                  </span>
-                </div>
-              </td>
-              <td class="text-muted px-3 py-2 align-middle">—</td>
-            </tr>
+            <template v-for="sec in fileSections" :key="sec.batchId ?? 'unbatched'">
+              <tr class="bg-gray-50/95">
+                <td
+                  colspan="6"
+                  class="border-border-muted border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-600"
+                  scope="colgroup"
+                >
+                  {{ sec.title }}
+                </td>
+              </tr>
+              <tr
+                v-for="f in sec.files"
+                :key="f.Key"
+                data-file-card
+                :data-key="f.Key"
+                draggable="true"
+                class="border-border-muted cursor-pointer border-b transition last:border-b-0"
+                :class="{
+                  'bg-primary-muted/50': selectedKeys.includes(f.Key),
+                  'hover:bg-gray-50/80': !selectedKeys.includes(f.Key),
+                }"
+                @click="emit('toggleKey', f.Key)"
+                @dragstart="onCardDragStart($event, f.Key)"
+                @dragover="onCardDragOver"
+                @dragleave="onCardDragLeave"
+                @drop="onCardDrop($event)"
+              >
+                <td class="px-3 py-2 align-middle" @mousedown.stop @click.stop>
+                  <UCheckbox
+                    :model-value="selectedKeys.includes(f.Key)"
+                    @update:model-value="emit('toggleKey', f.Key)"
+                  />
+                </td>
+                <td class="max-w-[14rem] px-3 py-2 align-middle">
+                  <div class="font-medium text-gray-900">{{ fileName(f.Key) }}</div>
+                  <div v-if="folderPathUnderLab(f.Key)" class="text-muted truncate text-xs">
+                    {{ folderPathUnderLab(f.Key) }}
+                  </div>
+                </td>
+                <td class="text-muted px-3 py-2 align-middle">{{ batchDisplayName(f.Key) }}</td>
+                <td class="px-3 py-2 align-middle text-gray-800">{{ fileAnalysisStatus(f.Key) }}</td>
+                <td class="px-3 py-2 align-middle">
+                  <div class="flex flex-wrap gap-1">
+                    <span
+                      v-for="tid in keyToTagIds[f.Key] || []"
+                      :key="tid"
+                      class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+                      draggable="true"
+                      :style="{
+                        background: tagById(tid)?.ColorHex || '#e2e2e8',
+                        color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
+                      }"
+                      @dragstart="onPillDragStart($event, tid, f.Key)"
+                      @click.stop
+                    >
+                      {{ tagById(tid)?.Name || tid }}
+                    </span>
+                  </div>
+                </td>
+                <td class="text-muted px-3 py-2 align-middle">—</td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>

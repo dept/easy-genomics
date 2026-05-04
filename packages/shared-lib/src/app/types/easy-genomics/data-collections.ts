@@ -1,7 +1,11 @@
+export type LaboratoryDataTagKind = 'standard' | 'batch';
+
 export type LaboratoryDataTag = {
   TagId: string;
   Name: string;
   ColorHex: string;
+  /** Omitted or `standard` for legacy tag rows. */
+  Kind?: LaboratoryDataTagKind;
   FileCount: number;
   CreatedAt?: string;
   CreatedBy?: string;
@@ -15,7 +19,10 @@ export type ListLaboratoryDataTagsResponse = {
 
 export type FileTagAssignment = {
   Key: string;
+  /** Standard (non-batch) tags only. */
   TagIds: string[];
+  /** At most one batch tag id if the file is assigned to a batch. */
+  BatchTagId?: string;
 };
 
 export type ListFileTagsResponse = {

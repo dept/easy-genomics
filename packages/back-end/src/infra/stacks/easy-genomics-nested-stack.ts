@@ -1630,6 +1630,15 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
     ]);
 
+    // /easy-genomics/data-collections/edit-batch
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/edit-batch', [
+      ...laboratoryReadForDataCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+    ]);
+
     // /easy-genomics/data-collections/list-files-by-tag
     this.iam.addPolicyStatements('/easy-genomics/data-collections/list-files-by-tag', [
       ...laboratoryReadForDataCollections,
