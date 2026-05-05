@@ -1,10 +1,15 @@
+import { CreateWorkflowCommandInput } from '@aws-sdk/client-omics';
 import {
   CreateWorkflow,
-  CreateWorkflowRequest,
   ListWorkflows,
   ReadWorkflow,
 } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
 import HttpFactory from '@FE/repository/factory';
+
+export type CreateOmicsWorkflowRequest = CreateWorkflowCommandInput & {
+  githubRepoUrl?: string;
+  githubRef?: string;
+};
 
 type ListWorkflowVersionsResponse = {
   items?: Array<{
@@ -42,7 +47,7 @@ class OmicsWorkflowsModule extends HttpFactory {
     return res;
   }
 
-  async create(labId: string, payload: CreateWorkflowRequest): Promise<CreateWorkflow> {
+  async create(labId: string, payload: CreateOmicsWorkflowRequest): Promise<CreateWorkflow> {
     const res = await this.callOmics<CreateWorkflow>(
       'POST',
       `/workflow/create-private-workflow?laboratoryId=${labId}`,

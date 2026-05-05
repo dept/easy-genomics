@@ -5,6 +5,7 @@
     LabDescriptionSchema,
     NextFlowTowerApiBaseUrlSchema,
     NextFlowTowerAccessTokenSchema,
+    GitHubAccessTokenSchema,
     NextFlowTowerWorkspaceIdSchema,
     RunRetentionMonthsSchema,
     LabDetailsFormModeEnum,
@@ -62,6 +63,7 @@
     RunRetentionMonths: 6,
     NextFlowTowerEnabled: false,
     NextFlowTowerAccessToken: '',
+    GitHubAccessToken: '',
     NextFlowTowerWorkspaceId: '',
     NextFlowTowerApiBaseUrl: orgsStore.orgs[userStore.currentOrgId || ''].NextFlowTowerApiBaseUrl || '',
     AwsHealthOmicsEnabled: false,
@@ -88,6 +90,7 @@
   // Determine if the NextFlowTowerAccessToken field is being edited to assist with
   // the password field display state
   const isEditingNextFlowTowerAccessToken = ref(false);
+  const isEditingGitHubAccessToken = ref(false);
 
   /**
    * Switches the form input fields disabled/hidden states based on the form mode.
@@ -216,6 +219,7 @@
   function handleCancelEdit() {
     state.value = { ...uneditedLabDetails.value! };
     isEditingNextFlowTowerAccessToken.value = false;
+    isEditingGitHubAccessToken.value = false;
     canSubmit.value = false;
     retentionPreviewCacheMonths.value = null;
     retentionPreviewCounts.value = null;
@@ -355,6 +359,7 @@
 
       emit('updated');
       isEditingNextFlowTowerAccessToken.value = false;
+      isEditingGitHubAccessToken.value = false;
       switchToFormMode(LabDetailsFormModeEnum.enum.ReadOnly);
       retentionPreviewCacheMonths.value = null;
       retentionPreviewCounts.value = null;
@@ -426,6 +431,7 @@
     emit('updated');
 
     isEditingNextFlowTowerAccessToken.value = false;
+    isEditingGitHubAccessToken.value = false;
     switchToFormMode(LabDetailsFormModeEnum.enum.ReadOnly);
     await getLabDetails();
 
@@ -466,6 +472,10 @@
       }
     }
 
+    if (state.AwsHealthOmicsEnabled && formMode.value === LabDetailsFormModeEnum.enum.Create) {
+      maybeAddFieldValidationErrors(errors, GitHubAccessTokenSchema, 'GitHubAccessToken', state.GitHubAccessToken);
+    }
+
     checkCanSubmitFormData(errors.length);
 
     return errors;
@@ -498,6 +508,7 @@
     'NextFlowTowerApiBaseUrl',
     'NextFlowTowerWorkspaceId',
     'NextFlowTowerAccessToken',
+    'GitHubAccessToken',
   ] as const;
 
   type LabEditCompareKey = (typeof LAB_DETAILS_EDIT_COMPARE_KEYS)[number];
@@ -511,7 +522,7 @@
       };
       return norm(a) !== norm(b);
     }
-    if (key === 'NextFlowTowerAccessToken' || key === 'Description') {
+    if (key === 'NextFlowTowerAccessToken' || key === 'GitHubAccessToken' || key === 'Description') {
       const norm = (v: unknown) => (v === undefined || v === null || v === '' ? '' : v);
       return norm(a) !== norm(b);
     }
@@ -532,6 +543,9 @@
       if (valuesDifferForLabEdit(key, current[key], baseline[key])) {
         if (key === 'NextFlowTowerAccessToken') {
           isEditingNextFlowTowerAccessToken.value = true;
+        }
+        if (key === 'GitHubAccessToken') {
+          isEditingGitHubAccessToken.value = true;
         }
         return true;
       }
@@ -671,6 +685,32 @@
         class="flex justify-between"
       >
         <UToggle class="ml-2" v-model="state.AwsHealthOmicsEnabled" :disabled="!isEditing || isSubmittingFormData" />
+      </EGFormGroup>
+      <EGFormGroup
+        v-if="isEditing && state.AwsHealthOmicsEnabled"
+        label="GitHub Personal Access Token"
+        name="GitHubAccessToken"
+        eager-validation
+        :required="formMode === LabDetailsFormModeEnum.enum.Create"
+      >
+        <EGPasswordInput
+          v-if="formMode === LabDetailsFormModeEnum.enum.Create"
+          v-model="state.GitHubAccessToken"
+          :password="true"
+          :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
+          :disabled="!isEditing || isSubmittingFormData"
+        />
+        <EGPasswordInput
+          v-if="formMode === LabDetailsFormModeEnum.enum.Edit"
+          v-model="state.GitHubAccessToken"
+          :select-on-focus="true"
+          :password="true"
+          placeholder="Add or update the GitHub personal access token. Note: A previously set token will never be shown."
+          :show-toggle-password-button="isEditingGitHubAccessToken"
+          :autocomplete="AutoCompleteOptionsEnum.enum.Off"
+          eager-validation
+          :disabled="!isEditing || isSubmittingFormData"
+        />
       </EGFormGroup>
     </EGCard>
 

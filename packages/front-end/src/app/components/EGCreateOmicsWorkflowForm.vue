@@ -22,6 +22,10 @@
     { label: 'WDL', value: 'WDL' },
     { label: 'CWL', value: 'CWL' },
   ];
+  const sourceOptions = [
+    { label: 'Upload ZIP', value: 'ZIP' },
+    { label: 'GitHub repository', value: 'GITHUB' },
+  ];
 
   const nameSchema = z
     .string()
@@ -41,20 +45,37 @@
     .max(127, 'Request ID must be 127 characters or less')
     .regex(/^[a-zA-Z0-9._\-]+$/, 'Request ID allows letters, numbers, dot, underscore, and hyphen');
   const descriptionSchema = z.string().max(256, 'Description must be 256 characters or less').optional();
+  const githubRepoUrlSchema = z
+    .string()
+    .trim()
+    .min(1, 'GitHub repository URL is required')
+    .max(2048, 'GitHub repository URL must be 2048 characters or less')
+    .regex(/^https:\/\/github\.com\/[^/]+\/[^/]+(?:\.git)?(?:\/)?$/i, 'Use a valid GitHub repository URL');
+  const githubRefSchema = z
+    .string()
+    .trim()
+    .min(1, 'GitHub branch or tag is required')
+    .max(128, 'GitHub branch or tag must be 128 characters or less');
 
   type FormState = {
     name: string;
     engine: 'NEXTFLOW' | 'WDL' | 'CWL';
+    source: 'ZIP' | 'GITHUB';
     main: string;
     requestId: string;
+    githubRepoUrl: string;
+    githubRef: string;
     description?: string;
   };
 
   const formState = reactive<FormState>({
     name: '',
     engine: 'NEXTFLOW',
+    source: 'ZIP',
     main: 'main.nf',
     requestId: uuidv4(),
+    githubRepoUrl: '',
+    githubRef: 'main',
     description: '',
   });
 
@@ -74,12 +95,17 @@
     if (state.description) {
       maybeAddFieldValidationErrors(errors, descriptionSchema, 'description', state.description);
     }
-    if (!workflowZipFile.value) {
-      errors.push({ path: 'workflowZipFile', message: 'Workflow ZIP file is required' });
-    } else if (!workflowZipFile.value.name.toLowerCase().endsWith('.zip')) {
-      errors.push({ path: 'workflowZipFile', message: 'Workflow definition must be a .zip file' });
-    } else if (workflowZipFile.value.size > MAX_UPLOAD_SIZE_BYTES) {
-      errors.push({ path: 'workflowZipFile', message: 'Workflow ZIP file cannot exceed 5 GiB' });
+    if (state.source === 'ZIP') {
+      if (!workflowZipFile.value) {
+        errors.push({ path: 'workflowZipFile', message: 'Workflow ZIP file is required' });
+      } else if (!workflowZipFile.value.name.toLowerCase().endsWith('.zip')) {
+        errors.push({ path: 'workflowZipFile', message: 'Workflow definition must be a .zip file' });
+      } else if (workflowZipFile.value.size > MAX_UPLOAD_SIZE_BYTES) {
+        errors.push({ path: 'workflowZipFile', message: 'Workflow ZIP file cannot exceed 5 GiB' });
+      }
+    } else {
+      maybeAddFieldValidationErrors(errors, githubRepoUrlSchema, 'githubRepoUrl', state.githubRepoUrl);
+      maybeAddFieldValidationErrors(errors, githubRefSchema, 'githubRef', state.githubRef);
     }
     canSubmit.value = errors.length === 0;
     return errors;
@@ -94,31 +120,37 @@
   async function onSubmit() {
     try {
       uiStore.setRequestPending('createOmicsWorkflow');
-      if (!workflowZipFile.value) {
-        throw new Error('Workflow ZIP file is required');
-      }
-      const uploadRequest = await $api.omicsWorkflows.createUploadRequest(props.labId, {
-        fileName: workflowZipFile.value.name,
-        size: workflowZipFile.value.size,
-        requestId: formState.requestId.trim(),
-      });
-      const uploadResponse = await fetch(uploadRequest.uploadUrl, {
-        method: 'PUT',
-        body: workflowZipFile.value,
-        headers: {
-          'Content-Type': 'application/zip',
-        },
-      });
-      if (!uploadResponse.ok) {
-        throw new Error('Failed to upload workflow ZIP file');
+      let definitionUri: string | undefined;
+      if (formState.source === 'ZIP') {
+        if (!workflowZipFile.value) {
+          throw new Error('Workflow ZIP file is required');
+        }
+        const uploadRequest = await $api.omicsWorkflows.createUploadRequest(props.labId, {
+          fileName: workflowZipFile.value.name,
+          size: workflowZipFile.value.size,
+          requestId: formState.requestId.trim(),
+        });
+        const uploadResponse = await fetch(uploadRequest.uploadUrl, {
+          method: 'PUT',
+          body: workflowZipFile.value,
+          headers: {
+            'Content-Type': 'application/zip',
+          },
+        });
+        if (!uploadResponse.ok) {
+          throw new Error('Failed to upload workflow ZIP file');
+        }
+        definitionUri = uploadRequest.s3Uri;
       }
       await $api.omicsWorkflows.create(props.labId, {
         name: formState.name.trim(),
         engine: formState.engine,
-        definitionUri: uploadRequest.s3Uri,
+        definitionUri,
         main: formState.main.trim(),
         requestId: formState.requestId.trim(),
         description: formState.description?.trim() || undefined,
+        githubRepoUrl: formState.source === 'GITHUB' ? formState.githubRepoUrl.trim() : undefined,
+        githubRef: formState.source === 'GITHUB' ? formState.githubRef.trim() : undefined,
       });
       toastStore.success('Workflow created successfully');
       emit('created');
@@ -141,8 +173,12 @@
       <EGFormGroup label="Engine" name="engine" required>
         <EGSelect v-model="formState.engine" :options="engineOptions" />
       </EGFormGroup>
+      <EGFormGroup label="Definition source" name="source" required>
+        <EGSelect v-model="formState.source" :options="sourceOptions" />
+      </EGFormGroup>
 
       <EGFormGroup
+        v-if="formState.source === 'ZIP'"
         label="Workflow definition ZIP"
         name="workflowZipFile"
         hint="Upload a .zip file (max 5 GiB)"
@@ -160,7 +196,36 @@
         </div>
       </EGFormGroup>
 
-      <EGFormGroup label="Main file path" name="main" hint="Entry file in the ZIP, e.g. main.nf" required>
+      <EGFormGroup
+        v-if="formState.source === 'GITHUB'"
+        label="GitHub repository URL"
+        name="githubRepoUrl"
+        hint="Example: https://github.com/org/repo"
+        required
+      >
+        <EGInput v-model="formState.githubRepoUrl" placeholder="https://github.com/org/repo" />
+      </EGFormGroup>
+
+      <EGFormGroup
+        v-if="formState.source === 'GITHUB'"
+        label="GitHub branch or tag"
+        name="githubRef"
+        hint="Branch/tag used to build the workflow definition ZIP"
+        required
+      >
+        <EGInput v-model="formState.githubRef" placeholder="main" />
+      </EGFormGroup>
+
+      <EGFormGroup
+        label="Main file path"
+        name="main"
+        :hint="
+          formState.source === 'GITHUB'
+            ? 'Entry file in repository root, e.g. main.nf'
+            : 'Entry file in the ZIP, e.g. main.nf'
+        "
+        required
+      >
         <EGInput v-model="formState.main" placeholder="main.nf" />
       </EGFormGroup>
 

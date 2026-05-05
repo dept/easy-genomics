@@ -24,7 +24,13 @@
   );
 
   // Emit the update event when internalModelValue changes
-  function updateModelValue(newValue: string) {
+  function updateModelValue(newValue: any) {
+    // USelectMenu can return the full option object when options are objects.
+    // Normalize to the `value` field so EGSelect consistently behaves like a string select.
+    if (newValue && typeof newValue === 'object' && 'value' in newValue) {
+      emit('update:modelValue', String(newValue.value));
+      return;
+    }
     emit('update:modelValue', newValue);
   }
 </script>

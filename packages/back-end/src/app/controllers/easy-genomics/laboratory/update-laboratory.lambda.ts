@@ -111,6 +111,16 @@ export const handler: Handler = async (
       });
     }
 
+    if (request.GitHubAccessToken) {
+      await ssmService.putParameter({
+        Name: `/easy-genomics/organization/${existing.OrganizationId}/laboratory/${existing.LaboratoryId}/github-access-token`,
+        Description: `Easy Genomics Laboratory ${existing.LaboratoryId} GitHub AccessToken`,
+        Value: request.GitHubAccessToken,
+        Type: 'SecureString',
+        Overwrite: true,
+      });
+    }
+
     return buildResponse(200, JSON.stringify(response), event);
   } catch (err: any) {
     console.error(err);

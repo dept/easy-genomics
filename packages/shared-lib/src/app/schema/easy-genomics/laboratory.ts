@@ -36,6 +36,7 @@ export const CreateLaboratorySchema = z
     NextFlowTowerEnabled: z.boolean().optional(),
     NextFlowTowerApiBaseUrl: z.string().optional(),
     NextFlowTowerAccessToken: z.string().optional(),
+    GitHubAccessToken: z.string().optional(),
     NextFlowTowerWorkspaceId: z.string().optional(),
     RunRetentionMonths: z.number().int().min(0).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
@@ -56,6 +57,7 @@ export const ReadLaboratorySchema = z
     NextFlowTowerApiBaseUrl: z.string().optional(),
     NextFlowTowerWorkspaceId: z.string().optional(),
     HasNextFlowTowerAccessToken: z.boolean().optional(), // Return boolean indicator instead of actual NextFlowTowerAccessToken
+    HasGitHubAccessToken: z.boolean().optional(), // Return boolean indicator instead of actual GitHubAccessToken
     RunRetentionMonths: z.number().int().min(0).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
     CreatedAt: z.string().optional(),
@@ -82,6 +84,7 @@ export const UpdateLaboratorySchema = z.object({
   NextFlowTowerEnabled: z.boolean().optional(),
   NextFlowTowerApiBaseUrl: z.string().optional(),
   NextFlowTowerAccessToken: z.string().optional(),
+  GitHubAccessToken: z.string().optional(),
   NextFlowTowerWorkspaceId: z.string().optional(),
   RunRetentionMonths: z.number().int().min(0).optional(),
   EnableNewWorkflowsByDefault: z.boolean().optional(),

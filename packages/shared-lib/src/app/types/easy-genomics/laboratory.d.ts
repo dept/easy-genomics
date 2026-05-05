@@ -21,6 +21,7 @@
  *   NextFlowTowerApiBaseUrl?: <string>,
  *   NextFlowTowerWorkspaceId?: <string>,
  *   HasNextFlowTowerAccessToken?: <boolean>,
+ *   HasGitHubAccessToken?: <boolean>,
  *   EnableNewWorkflowsByDefault?: <boolean>,
  *   CreatedAt?: <string>,
  *   CreatedBy?: <string>,
@@ -42,6 +43,7 @@ export interface Laboratory extends BaseAttributes {
   NextFlowTowerApiBaseUrl?: string;
   NextFlowTowerWorkspaceId?: string;
   HasNextFlowTowerAccessToken?: boolean;
+  HasGitHubAccessToken?: boolean;
 
   /**
    * When true, workflows/pipelines without a DENY row are allowed (new AWS-console workflows included).
