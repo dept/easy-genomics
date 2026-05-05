@@ -132,6 +132,40 @@
     return tag?.Name ?? bid;
   }
 
+  function batchSectionHeading(sec: {
+    batchId: string | null;
+    title: string;
+    files: readonly { Key: string }[];
+  }): string {
+    const n = sec.files.length;
+    const samples = n === 1 ? 'sample' : 'samples';
+    if (sec.batchId === null) {
+      return `Unbatched · ${n} ${samples}`;
+    }
+    return `Batch ${sec.title} · ${n} ${samples}`;
+  }
+
+  function batchSectionFullySelected(sec: { files: readonly { Key: string }[] }): boolean {
+    if (!sec.files.length) return false;
+    return sec.files.every((f) => props.selectedKeys.includes(f.Key));
+  }
+
+  /** Selects all files in the section, or clears them from the selection if already fully selected. */
+  function toggleBatchSection(sec: { files: readonly { Key: string }[] }): void {
+    const keys = sec.files.map((f) => f.Key);
+    if (batchSectionFullySelected(sec)) {
+      const remove = new Set(keys);
+      emit(
+        'update:selectedKeys',
+        props.selectedKeys.filter((k: string) => !remove.has(k)),
+      );
+    } else {
+      const merged = new Set(props.selectedKeys);
+      keys.forEach((k) => merged.add(k));
+      emit('update:selectedKeys', [...merged]);
+    }
+  }
+
   function onScrollHostMouseDown(e: MouseEvent): void {
     const t = e.target as HTMLElement;
     if (t.closest('[data-file-card]')) return;
@@ -285,8 +319,20 @@
     <div ref="scrollEl" class="relative flex-1 overflow-auto p-4" @mousedown="onScrollHostMouseDown">
       <div v-if="explorerView === 'cards'" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <template v-for="(sec, secIdx) in fileSections" :key="sec.batchId ?? 'unbatched'">
-          <div class="border-border-muted col-span-full border-b pb-2" :class="secIdx === 0 ? 'mt-0' : 'mt-6'">
-            <h3 class="text-muted text-xs font-semibold uppercase tracking-wide">{{ sec.title }}</h3>
+          <div
+            class="border-border-muted col-span-full flex items-start justify-between gap-3 border-b pb-2"
+            :class="secIdx === 0 ? 'mt-0' : 'mt-6'"
+          >
+            <h3 class="text-muted min-w-0 flex-1 text-xs font-normal leading-snug tracking-wide">
+              {{ batchSectionHeading(sec) }}
+            </h3>
+            <button
+              type="button"
+              class="text-primary shrink-0 text-xs font-normal hover:underline"
+              @click.stop="toggleBatchSection(sec)"
+            >
+              {{ batchSectionFullySelected(sec) ? 'Deselect batch' : 'Select batch' }}
+            </button>
           </div>
           <div
             v-for="f in sec.files"
@@ -345,12 +391,19 @@
           <tbody>
             <template v-for="sec in fileSections" :key="sec.batchId ?? 'unbatched'">
               <tr class="bg-gray-50/95">
-                <td
-                  colspan="6"
-                  class="border-border-muted border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-600"
-                  scope="colgroup"
-                >
-                  {{ sec.title }}
+                <td colspan="6" class="border-border-muted border-b px-3 py-2.5" scope="colgroup">
+                  <div class="flex items-center justify-between gap-4">
+                    <span class="text-muted min-w-0 flex-1 truncate text-xs font-normal leading-snug tracking-wide">
+                      {{ batchSectionHeading(sec) }}
+                    </span>
+                    <button
+                      type="button"
+                      class="text-primary shrink-0 text-xs font-normal hover:underline"
+                      @click.stop="toggleBatchSection(sec)"
+                    >
+                      {{ batchSectionFullySelected(sec) ? 'Deselect batch' : 'Select batch' }}
+                    </button>
+                  </div>
                 </td>
               </tr>
               <tr

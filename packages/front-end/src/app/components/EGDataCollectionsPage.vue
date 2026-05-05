@@ -55,6 +55,23 @@
 
   const batchTags = computed(() => tags.value.filter((t) => (t.Kind ?? 'standard') === 'batch'));
 
+  function batchAssignmentLabelForKey(key: string): string {
+    const bid = keyToBatchTagId.value[key];
+    if (!bid) return 'Unbatched';
+    return tagById(bid)?.Name ?? bid;
+  }
+
+  /** Distinct batch names for the current selection (Change batch modal). */
+  const changeBatchCurrentlyInLine = computed(() => {
+    const sel = selectedKeys.value;
+    if (!sel.length) return '—';
+    const names = new Set<string>();
+    for (const key of sel) {
+      names.add(batchAssignmentLabelForKey(key));
+    }
+    return [...names].sort((a, b) => a.localeCompare(b)).join(', ');
+  });
+
   /** Tags present on the current selection, with count of selected files that have each tag. */
   const tagsOnSelection = computed(() => {
     const sel = selectedKeys.value;
@@ -343,6 +360,10 @@
 
   function closeChangeBatchModal(): void {
     showChangeBatchModal.value = false;
+  }
+
+  function clearExistingBatchSelection(): void {
+    changeBatchSelectedBatchId.value = undefined;
   }
 
   async function assignBatchInChunks(
@@ -634,8 +655,33 @@
         </template>
 
         <div class="space-y-4">
+          <div class="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
+            <dl class="space-y-2.5 text-sm">
+              <div class="flex items-baseline justify-between gap-4">
+                <dt class="text-muted shrink-0">Samples to move</dt>
+                <dd class="font-medium tabular-nums text-gray-900">{{ selectedKeys.length }}</dd>
+              </div>
+              <div class="flex items-start justify-between gap-4">
+                <dt class="text-muted shrink-0 pt-0.5">Currently in</dt>
+                <dd class="min-w-0 flex-1 break-words text-right font-medium leading-snug text-gray-900">
+                  {{ changeBatchCurrentlyInLine }}
+                </dd>
+              </div>
+            </dl>
+          </div>
           <div>
-            <label class="text-muted mb-1 block text-xs font-semibold uppercase tracking-wide">Existing batch</label>
+            <div class="mb-1 flex items-center justify-between gap-2">
+              <label class="text-muted block text-xs font-semibold uppercase tracking-wide">Existing batch</label>
+              <button
+                v-if="changeBatchSelectedBatchId"
+                type="button"
+                class="text-primary shrink-0 text-xs font-normal hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="bulkPanelBusy || !!changeBatchNewName.trim()"
+                @click="clearExistingBatchSelection"
+              >
+                Clear selection
+              </button>
+            </div>
             <USelectMenu
               v-model="changeBatchSelectedBatchId"
               :options="batchTags"
@@ -648,14 +694,17 @@
             />
           </div>
           <div>
-            <label class="text-muted mb-1 block text-xs font-semibold uppercase tracking-wide">New batch</label>
+            <label class="text-muted mb-1 block text-xs font-semibold uppercase tracking-wide">
+              Or create new batch
+            </label>
             <UInput
               v-model="changeBatchNewName"
-              placeholder="Create a new batch"
+              placeholder="e.g. Nov-2024-FluPanel"
               size="sm"
               class="w-full"
               :disabled="bulkPanelBusy || !!changeBatchSelectedBatchId"
             />
+            <p class="text-muted mt-1.5 text-xs leading-snug">Leave blank to use the existing batch selected above.</p>
           </div>
         </div>
 
@@ -664,7 +713,7 @@
           <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="clearBatchFromModal">
             Remove from batch
           </UButton>
-          <UButton size="sm" :loading="bulkPanelBusy" @click="applyChangeBatch">Apply</UButton>
+          <UButton size="sm" :loading="bulkPanelBusy" @click="applyChangeBatch">Move samples</UButton>
         </div>
       </UCard>
     </UModal>
