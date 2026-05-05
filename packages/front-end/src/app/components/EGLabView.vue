@@ -701,6 +701,7 @@
   <EGSidebarNav v-if="lab" :items="tabItems" :model-value="tabIndex" @update:model-value="handleTabChange" />
 
   <EGPageHeader
+    v-if="activeTabKey !== 'dashboard'"
     :title="labName"
     :description="pageDescription"
     :back-action="() => (superuser ? $router.push(`/orgs/${orgId || ''}`) : $router.push('/labs'))"
@@ -724,6 +725,11 @@
       class="mt-2"
     />
   </EGPageHeader>
+
+  <!-- Dashboard tab -->
+  <div v-if="activeTabKey === 'dashboard'">
+    <EGDashboard :lab-id="labId" />
+  </div>
 
   <!-- Data Collections -->
   <div v-if="activeTabKey === 'dataCollections'" class="mt-4">
