@@ -96,6 +96,7 @@
   // Page Tabs
 
   const tabItems = computed<{ key: string; label: string; icon: string; dividerBefore?: boolean }[]>(() => {
+    const dashboardTab = { key: 'dashboard', label: 'Dashboard', icon: 'i-heroicons-squares-2x2' };
     const runsTab = { key: 'runs', label: 'Pipeline Runs', icon: 'i-heroicons-clock' };
     const seqeraPipelinesTab = { key: 'seqeraPipelines', label: 'Seqera Pipelines', icon: 'i-heroicons-command-line' };
     const omicsWorkflowsTab = { key: 'omicsWorkflows', label: 'HealthOmics Workflows', icon: 'i-heroicons-beaker' };
@@ -108,6 +109,7 @@
     const items = [];
 
     if (!props.superuser) {
+      items.push(dashboardTab);
       if (seqeraAvailable || omicsAvailable) items.push(runsTab);
       if (seqeraAvailable) items.push(seqeraPipelinesTab);
       if (omicsAvailable) items.push(omicsWorkflowsTab);
@@ -132,8 +134,38 @@
   });
 
   function setTabIndex() {
-    const tabMatchIndex = tabItems.value.findIndex((tab) => tab.label === props.initialTab);
-    tabIndex.value = tabMatchIndex !== -1 ? tabMatchIndex : 0;
+    const requestedTab = (props.initialTab ?? '').trim().toLowerCase();
+
+    const tabLabelAliases: Record<string, string[]> = {
+      dashboard: ['dashboard'],
+      runs: ['pipeline runs', 'lab runs', 'runs'],
+      seqeraPipelines: ['seqera pipelines', 'seqera workflows'],
+      omicsWorkflows: ['healthomics workflows'],
+      users: ['users', 'lab users'],
+      details: ['settings'],
+    };
+
+    if (requestedTab) {
+      const tabMatchIndex = tabItems.value.findIndex((tab) => {
+        const aliases = tabLabelAliases[tab.key] ?? [tab.label.toLowerCase()];
+        return aliases.includes(requestedTab);
+      });
+
+      if (tabMatchIndex !== -1) {
+        tabIndex.value = tabMatchIndex;
+        return;
+      }
+    }
+
+    if (!props.superuser) {
+      const dashboardIndex = tabItems.value.findIndex((tab) => tab.key === 'dashboard');
+      if (dashboardIndex !== -1) {
+        tabIndex.value = dashboardIndex;
+        return;
+      }
+    }
+
+    tabIndex.value = 0;
   }
 
   function handleTabChange(newIndex: number) {
@@ -661,6 +693,7 @@
   <EGSidebarNav v-if="lab" :items="tabItems" :model-value="tabIndex" @update:model-value="handleTabChange" />
 
   <EGPageHeader
+    v-if="activeTabKey !== 'dashboard'"
     :title="labName"
     :description="pageDescription"
     :back-action="() => (superuser ? $router.push(`/orgs/${orgId || ''}`) : $router.push('/labs'))"
@@ -684,6 +717,11 @@
       class="mt-2"
     />
   </EGPageHeader>
+
+  <!-- Dashboard tab -->
+  <div v-if="activeTabKey === 'dashboard'">
+    <EGDashboard :lab-id="labId" />
+  </div>
 
   <!-- Runs tab -->
   <div v-if="activeTabKey === 'runs'">
