@@ -75,6 +75,34 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         },
       ],
     });
+    workflowDefinitionsBucket.addToResourcePolicy(
+      new PolicyStatement({
+        sid: 'AllowHealthOmicsReadWorkflowDefinitions',
+        principals: [new ServicePrincipal('omics.amazonaws.com')],
+        actions: ['s3:GetObject'],
+        resources: [`${workflowDefinitionsBucket.bucketArn}/*`],
+        effect: Effect.ALLOW,
+        conditions: {
+          StringEquals: {
+            'aws:SourceAccount': this.props.env.account!,
+          },
+        },
+      }),
+    );
+    workflowDefinitionsBucket.addToResourcePolicy(
+      new PolicyStatement({
+        sid: 'AllowHealthOmicsListWorkflowDefinitionsBucket',
+        principals: [new ServicePrincipal('omics.amazonaws.com')],
+        actions: ['s3:ListBucket'],
+        resources: [workflowDefinitionsBucket.bucketArn],
+        effect: Effect.ALLOW,
+        conditions: {
+          StringEquals: {
+            'aws:SourceAccount': this.props.env.account!,
+          },
+        },
+      }),
+    );
     this.workflowDefinitionsBucketArn = workflowDefinitionsBucket.bucketArn;
     this.workflowDefinitionsBucketName = workflowDefinitionsBucket.bucketName;
 
@@ -301,6 +329,18 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: ['*'],
         actions: ['omics:ListWorkflows', 'omics:GetWorkflow', 'omics:ListShares'],
+        effect: Effect.ALLOW,
+      }),
+      // Allow CreateWorkflow to read ZIP definitions from the dedicated workflow upload bucket.
+      // HealthOmics validates and fetches definitionUri objects during workflow creation.
+      new PolicyStatement({
+        resources: [this.workflowDefinitionsBucketArn],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [`${this.workflowDefinitionsBucketArn}/*`],
+        actions: ['s3:GetObject'],
         effect: Effect.ALLOW,
       }),
       // Allow passing the workflow run role to HealthOmics when starting a run

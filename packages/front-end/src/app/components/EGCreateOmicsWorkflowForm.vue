@@ -26,6 +26,10 @@
     { label: 'Upload ZIP', value: 'ZIP' },
     { label: 'GitHub repository', value: 'GITHUB' },
   ];
+  const parameterInputOptions = [
+    { label: 'Upload JSON file', value: 'FILE' },
+    { label: 'Paste JSON text', value: 'TEXT' },
+  ];
 
   const nameSchema = z
     .string()
@@ -61,6 +65,8 @@
     name: string;
     engine: 'NEXTFLOW' | 'WDL' | 'CWL';
     source: 'ZIP' | 'GITHUB';
+    parameterInputType: 'FILE' | 'TEXT';
+    parameterTemplateText: string;
     main: string;
     requestId: string;
     githubRepoUrl: string;
@@ -72,6 +78,8 @@
     name: '',
     engine: 'NEXTFLOW',
     source: 'ZIP',
+    parameterInputType: 'FILE',
+    parameterTemplateText: '',
     main: 'main.nf',
     requestId: uuidv4(),
     githubRepoUrl: '',
@@ -82,9 +90,29 @@
   const canSubmit = ref(false);
   const workflowZipFile = ref<File | null>(null);
   const workflowZipFileError = ref<string | null>(null);
+  const parameterTemplateFile = ref<File | null>(null);
+  const parameterTemplateFileError = ref<string | null>(null);
   const MAX_UPLOAD_SIZE_BYTES = 5 * Math.pow(1024, 3);
 
   const workflowZipFileLabel = computed<string>(() => workflowZipFile.value?.name || 'No file selected');
+  const parameterTemplateFileLabel = computed<string>(() => parameterTemplateFile.value?.name || 'No file selected');
+
+  function parseParameterTemplateText(jsonText: string): Record<string, unknown> {
+    const trimmedJsonText = jsonText.trim();
+    if (!trimmedJsonText) {
+      throw new Error('Workflow parameters JSON is required');
+    }
+    let parsedJson: unknown;
+    try {
+      parsedJson = JSON.parse(trimmedJsonText);
+    } catch (error) {
+      throw new Error('Workflow parameters must be valid JSON');
+    }
+    if (!parsedJson || typeof parsedJson !== 'object' || Array.isArray(parsedJson)) {
+      throw new Error('Workflow parameters JSON must be an object');
+    }
+    return parsedJson as Record<string, unknown>;
+  }
 
   function validate(state: FormState): FormError[] {
     const errors: FormError[] = [];
@@ -107,6 +135,20 @@
       maybeAddFieldValidationErrors(errors, githubRepoUrlSchema, 'githubRepoUrl', state.githubRepoUrl);
       maybeAddFieldValidationErrors(errors, githubRefSchema, 'githubRef', state.githubRef);
     }
+
+    if (state.parameterInputType === 'FILE') {
+      if (!parameterTemplateFile.value) {
+        errors.push({ path: 'parameterTemplateFile', message: 'Workflow parameters JSON file is required' });
+      } else if (!parameterTemplateFile.value.name.toLowerCase().endsWith('.json')) {
+        errors.push({ path: 'parameterTemplateFile', message: 'Workflow parameters file must be a .json file' });
+      }
+    } else {
+      try {
+        parseParameterTemplateText(state.parameterTemplateText);
+      } catch (error: any) {
+        errors.push({ path: 'parameterTemplateText', message: error?.message || 'Invalid workflow parameters JSON' });
+      }
+    }
     canSubmit.value = errors.length === 0;
     return errors;
   }
@@ -117,9 +159,24 @@
     workflowZipFileError.value = null;
   }
 
+  function onParameterTemplateFileChange(event: Event) {
+    const file = (event.target as HTMLInputElement).files?.[0] ?? null;
+    parameterTemplateFile.value = file;
+    parameterTemplateFileError.value = null;
+  }
+
   async function onSubmit() {
     try {
       uiStore.setRequestPending('createOmicsWorkflow');
+      let parameterTemplate: Record<string, unknown> | undefined;
+      if (formState.parameterInputType === 'FILE') {
+        if (!parameterTemplateFile.value) {
+          throw new Error('Workflow parameters JSON file is required');
+        }
+        parameterTemplate = parseParameterTemplateText(await parameterTemplateFile.value.text());
+      } else {
+        parameterTemplate = parseParameterTemplateText(formState.parameterTemplateText);
+      }
       let definitionUri: string | undefined;
       if (formState.source === 'ZIP') {
         if (!workflowZipFile.value) {
@@ -149,6 +206,7 @@
         main: formState.main.trim(),
         requestId: formState.requestId.trim(),
         description: formState.description?.trim() || undefined,
+        parameterTemplate,
         githubRepoUrl: formState.source === 'GITHUB' ? formState.githubRepoUrl.trim() : undefined,
         githubRef: formState.source === 'GITHUB' ? formState.githubRef.trim() : undefined,
       });
@@ -217,6 +275,47 @@
       </EGFormGroup>
 
       <EGFormGroup
+        label="Workflow parameters input"
+        name="parameterInputType"
+        hint="Provide parameter template as JSON"
+        required
+      >
+        <EGSelect v-model="formState.parameterInputType" :options="parameterInputOptions" />
+      </EGFormGroup>
+
+      <EGFormGroup
+        v-if="formState.parameterInputType === 'FILE'"
+        label="Workflow parameters JSON file"
+        name="parameterTemplateFile"
+        hint="Upload a .json file with parameter definitions"
+        required
+      >
+        <div class="flex flex-col gap-2">
+          <input
+            type="file"
+            accept=".json,application/json"
+            class="text-body file:bg-primary block w-full text-sm file:mr-4 file:rounded-md file:border-0 file:px-4 file:py-2 file:text-white hover:file:opacity-90"
+            @change="onParameterTemplateFileChange"
+          />
+          <p class="text-muted text-xs">{{ parameterTemplateFileLabel }}</p>
+          <p v-if="parameterTemplateFileError" class="text-alert-danger text-xs">{{ parameterTemplateFileError }}</p>
+        </div>
+      </EGFormGroup>
+
+      <EGFormGroup
+        v-else
+        label="Workflow parameters JSON"
+        name="parameterTemplateText"
+        hint="Paste a JSON object with parameter definitions"
+        required
+      >
+        <EGTextArea
+          v-model="formState.parameterTemplateText"
+          placeholder='{"parameterName": {"description": "example", "optional": false}}'
+        />
+      </EGFormGroup>
+
+      <EGFormGroup
         label="Main file path"
         name="main"
         :hint="
@@ -227,10 +326,6 @@
         required
       >
         <EGInput v-model="formState.main" placeholder="main.nf" />
-      </EGFormGroup>
-
-      <EGFormGroup label="Request ID" name="requestId" hint="Unique id for idempotency" required>
-        <EGInput v-model="formState.requestId" placeholder="workflow-create-001" />
       </EGFormGroup>
 
       <EGFormGroup label="Description" name="description">

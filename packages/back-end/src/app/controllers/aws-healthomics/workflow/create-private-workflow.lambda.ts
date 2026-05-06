@@ -65,7 +65,7 @@ function sanitizeGitRef(ref: string): string {
 async function uploadWorkflowZipFromGitHub(
   request: CreatePrivateWorkflowRequest,
   laboratory: Laboratory,
-): Promise<{ definitionUri: string; main: string }> {
+): Promise<{ definitionUri: string; main: string; fallbackMain: string }> {
   const githubRepoUrl = request.githubRepoUrl?.trim() ?? '';
   const githubRef = sanitizeGitRef(request.githubRef?.trim() ?? 'main');
   const requestedMain = request.main.trim();
@@ -89,16 +89,40 @@ async function uploadWorkflowZipFromGitHub(
     'User-Agent': 'easy-genomics-omics-workflow',
     'X-GitHub-Api-Version': '2022-11-28',
   };
-  const archiveUrls = [
-    `https://codeload.github.com/${owner}/${repo}/zip/refs/heads/${encodeURIComponent(githubRef)}`,
-    `https://codeload.github.com/${owner}/${repo}/zip/refs/tags/${encodeURIComponent(githubRef)}`,
-  ];
-  let archiveResponse: Response | undefined;
-  for (const archiveUrl of archiveUrls) {
-    const candidate = await fetch(archiveUrl, { headers, redirect: 'follow' });
-    if (candidate.ok) {
-      archiveResponse = candidate;
-      break;
+  const fetchArchiveForRef = async (ref: string): Promise<Response | undefined> => {
+    const archiveUrls = [
+      `https://codeload.github.com/${owner}/${repo}/zip/refs/heads/${encodeURIComponent(ref)}`,
+      `https://codeload.github.com/${owner}/${repo}/zip/refs/tags/${encodeURIComponent(ref)}`,
+    ];
+    for (const archiveUrl of archiveUrls) {
+      const candidate = await fetch(archiveUrl, { headers, redirect: 'follow' });
+      if (candidate.ok) {
+        return candidate;
+      }
+    }
+    return undefined;
+  };
+
+  let resolvedGitRef = githubRef;
+  let archiveResponse = await fetchArchiveForRef(resolvedGitRef);
+  if (!archiveResponse) {
+    const repositoryResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+      headers,
+      redirect: 'follow',
+    });
+    if (repositoryResponse.ok) {
+      const repository = (await repositoryResponse.json()) as { default_branch?: unknown };
+      const defaultBranch =
+        typeof repository.default_branch === 'string' ? sanitizeGitRef(repository.default_branch) : '';
+      if (defaultBranch && defaultBranch !== resolvedGitRef) {
+        archiveResponse = await fetchArchiveForRef(defaultBranch);
+        if (archiveResponse) {
+          console.warn(
+            `create-private-workflow: GitHub ref '${resolvedGitRef}' not found for ${owner}/${repo}, using default branch '${defaultBranch}'`,
+          );
+          resolvedGitRef = defaultBranch;
+        }
+      }
     }
   }
   if (!archiveResponse) {
@@ -115,7 +139,7 @@ async function uploadWorkflowZipFromGitHub(
   }
 
   const requestId = request.requestId?.trim() || randomUUID();
-  const fileName = `${repo}-${githubRef}.zip`;
+  const fileName = `${repo}-${resolvedGitRef}.zip`;
   const key = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/workflow-definitions/${requestId}/${fileName}`;
   await s3Service.putObject({
     Bucket: workflowUploadBucket,
@@ -126,7 +150,8 @@ async function uploadWorkflowZipFromGitHub(
 
   return {
     definitionUri: `s3://${workflowUploadBucket}/${key}`,
-    main: `${repo}-${githubRef.replace(/\//g, '-')}/${requestedMain}`,
+    main: `${repo}-${resolvedGitRef.replace(/\//g, '-')}/${requestedMain}`,
+    fallbackMain: requestedMain,
   };
 }
 
@@ -231,14 +256,16 @@ export const handler: Handler = async (
 
     let definitionUri = request.definitionUri;
     let main = request.main;
+    let fallbackMain: string | undefined;
     if (request.githubRepoUrl) {
       const uploadedFromGitHub = await uploadWorkflowZipFromGitHub(request, laboratory);
       definitionUri = uploadedFromGitHub.definitionUri;
       main = uploadedFromGitHub.main;
+      fallbackMain = uploadedFromGitHub.fallbackMain;
     }
 
     const { githubRepoUrl, githubRef, ...workflowRequest } = request;
-    const response = await omicsService.createWorkflow(<CreateWorkflowCommandInput>{
+    const workflowInput: CreateWorkflowCommandInput = {
       ...workflowRequest,
       definitionUri,
       main,
@@ -253,7 +280,27 @@ export const handler: Handler = async (
         Application: 'easy-genomics',
         Platform: 'AWS HealthOmics',
       },
-    });
+    };
+
+    let response;
+    try {
+      response = await omicsService.createWorkflow(workflowInput);
+    } catch (error: any) {
+      const canRetryWithFallbackMain =
+        githubRepoUrl && typeof fallbackMain === 'string' && fallbackMain.trim().length > 0 && fallbackMain !== main;
+      if (!canRetryWithFallbackMain) {
+        throw error;
+      }
+
+      console.warn(
+        `create-private-workflow: createWorkflow failed for GitHub prefixed main='${main}', retrying with '${fallbackMain}'`,
+        error,
+      );
+      response = await omicsService.createWorkflow({
+        ...workflowInput,
+        main: fallbackMain,
+      });
+    }
 
     return buildResponse(200, JSON.stringify(response), event);
   } catch (err: any) {
