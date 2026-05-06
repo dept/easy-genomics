@@ -141,13 +141,30 @@ jobs:
           role-duration-seconds: 3600
           aws-region: ${{ secrets.AWS_REGION }}
           audience: sts.amazonaws.com
-      - name: Derive Easy Genomics API URL (optional)
+      - name: Derive API URLs from stack outputs
         run: |-
           set -euo pipefail
-          STACK_NAME="${ENV_TYPE}-${ENV_NAME}-easy-genomics-api-stack"
+          MAIN_STACK_NAME="${ENV_TYPE}-${ENV_NAME}-main-back-end-stack"
+          EASY_STACK_NAME="${ENV_TYPE}-${ENV_NAME}-easy-genomics-api-stack"
+
+          BASE_URL="$(aws cloudformation describe-stacks \
+            --region "$AWS_REGION" \
+            --stack-name "$MAIN_STACK_NAME" \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayRestApiUrl`].OutputValue' \
+            --output text)"
+
+          if [ -z "${BASE_URL:-}" ] || [ "${BASE_URL:-}" = "None" ]; then
+            echo "Unable to derive AWS_API_GATEWAY_URL from stack output ApiGatewayRestApiUrl in $MAIN_STACK_NAME" >&2
+            exit 1
+          fi
+
+          BASE_URL="${BASE_URL%/}"
+          echo "AWS_API_GATEWAY_URL=$BASE_URL" >> "$GITHUB_ENV"
+          echo "Derived AWS_API_GATEWAY_URL=$BASE_URL"
+
           EG_URL="$(aws cloudformation describe-stacks \
             --region "$AWS_REGION" \
-            --stack-name "$STACK_NAME" \
+            --stack-name "$EASY_STACK_NAME" \
             --query 'Stacks[0].Outputs[?OutputKey==`EasyGenomicsApiUrl`].OutputValue' \
             --output text 2>/dev/null || true)"
 
@@ -156,7 +173,7 @@ jobs:
             echo "AWS_EASY_GENOMICS_API_URL=$EG_URL" >> "$GITHUB_ENV"
             echo "Derived AWS_EASY_GENOMICS_API_URL=$EG_URL"
           else
-            echo "Easy Genomics API stack output not found; leaving AWS_EASY_GENOMICS_API_URL unset."
+            echo "Easy Genomics API output not found in $EASY_STACK_NAME; leaving AWS_EASY_GENOMICS_API_URL unset."
           fi
       - name: Run CI/CD Build & Deploy Front-End
         run: pnpm cicd-build-deploy-front-end
