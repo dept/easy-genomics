@@ -11,6 +11,11 @@
     keyToTagIds: Record<string, string[]>;
     /** Batch tag id per file key (optional until parent loads assignments). */
     keyToBatchTagId?: Record<string, string | undefined>;
+    /**
+     * Workflow tag ids per file key (optional until parent loads assignments). Used to drive
+     * the per-file Analyzed / Not yet analyzed status without an extra round-trip.
+     */
+    keyToWorkflowTagIds?: Record<string, string[]>;
     batchTags?: LaboratoryDataTag[];
     tags: LaboratoryDataTag[];
     selectedKeys: string[];
@@ -77,9 +82,15 @@
     return `${parts.join('/')}/`;
   }
 
-  /** Placeholder until workflow run state is wired per file. */
-  function fileAnalysisStatus(_key: string): 'Not yet analyzed' | 'Analyzed' {
-    return 'Not yet analyzed';
+  /**
+   * "Analyzed" iff the parent has recorded at least one workflow tag association for this
+   * file (via the data tagging system's per-run workflow tag). The mapping is sparse — files
+   * whose key is missing from the prop are treated as not analyzed, which matches the
+   * pre-existing UI default.
+   */
+  function fileAnalysisStatus(key: string): 'Not yet analyzed' | 'Analyzed' {
+    const ids = props.keyToWorkflowTagIds?.[key];
+    return ids && ids.length > 0 ? 'Analyzed' : 'Not yet analyzed';
   }
 
   /** No file objects returned for this listing (under lab prefix). */

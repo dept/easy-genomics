@@ -53,6 +53,7 @@ describe('LaboratoryDataTaggingService.applyTagsToFiles', () => {
   let mockPutItem: jest.Mock;
   let mockDeleteItem: jest.Mock;
   let mockQueryItems: jest.Mock;
+  let mockUpdateItem: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -61,10 +62,12 @@ describe('LaboratoryDataTaggingService.applyTagsToFiles', () => {
     mockPutItem = jest.fn().mockResolvedValue({});
     mockDeleteItem = jest.fn().mockResolvedValue({});
     mockQueryItems = jest.fn().mockResolvedValue({ Items: [] });
+    mockUpdateItem = jest.fn().mockResolvedValue({});
     (svc as unknown as { getItem: typeof mockGetItem }).getItem = mockGetItem;
     (svc as unknown as { putItem: typeof mockPutItem }).putItem = mockPutItem;
     (svc as unknown as { deleteItem: typeof mockDeleteItem }).deleteItem = mockDeleteItem;
     (svc as unknown as { queryItems: typeof mockQueryItems }).queryItems = mockQueryItems;
+    (svc as unknown as { updateItem: typeof mockUpdateItem }).updateItem = mockUpdateItem;
   });
 
   it('does not create duplicate MAP rows when re-applying the same tag to a file', async () => {

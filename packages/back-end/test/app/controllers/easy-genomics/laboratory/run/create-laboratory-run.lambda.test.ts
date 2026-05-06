@@ -3,6 +3,7 @@ import { handler } from '../../../../../../src/app/controllers/easy-genomics/lab
 
 jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-run-service');
 jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-service');
+jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-data-tagging-service');
 jest.mock('../../../../../../src/app/services/sns-service');
 jest.mock('../../../../../../src/app/utils/auth-utils');
 

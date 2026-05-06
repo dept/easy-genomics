@@ -959,6 +959,23 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: ['dynamodb:Query'],
         effect: Effect.ALLOW,
       }),
+      // Data tagging table: best-effort association of input files with the workflow tag.
+      // create-laboratory-run reads/writes TAG/FILE/MAP rows via LaboratoryDataTaggingService.
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-data-tagging-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-data-tagging-table/index/*`,
+        ],
+        actions: [
+          'dynamodb:GetItem',
+          'dynamodb:PutItem',
+          'dynamodb:UpdateItem',
+          'dynamodb:DeleteItem',
+          'dynamodb:Query',
+          'dynamodb:BatchGetItem',
+        ],
+        effect: Effect.ALLOW,
+      }),
       new PolicyStatement({
         resources: [`${this.sns.snsTopics.get('laboratory-run-update-topic')?.topicArn || ''}`],
         actions: ['sns:Publish'],

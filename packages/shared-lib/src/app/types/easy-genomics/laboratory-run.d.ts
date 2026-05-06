@@ -43,6 +43,17 @@ export interface LaboratoryRun extends BaseAttributes {
   Owner: string; // User Email for display purposes
   WorkflowName?: string; // Seqera Pipeline Name or AWS HealthOmics Workflow Name
   WorkflowVersionName?: string;
+  /**
+   * Platform-side workflow identifier (HealthOmics workflowId or Seqera pipelineId).
+   * Used by the data tagging system to associate input files with a stable workflow identity.
+   */
+  WorkflowExternalId?: string;
+  /**
+   * S3 object keys (within the laboratory bucket) that were used as inputs for this run.
+   * Used by the data tagging system to record file -> workflow associations and (in a future
+   * ticket) to render per-file run history.
+   */
+  InputFileKeys?: string[];
   ExternalRunId?: string;
   InputS3Url?: string;
   OutputS3Url?: string;

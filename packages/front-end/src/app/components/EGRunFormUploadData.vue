@@ -12,7 +12,7 @@
     UploadedFileInfo,
     UploadedFilePairInfo,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/upload/s3-file-upload-sample-sheet';
-  import { validateSampleSheetFile } from '@FE/utils/sample-sheet-utils';
+  import { extractS3KeysFromCsv, validateSampleSheetFile } from '@FE/utils/sample-sheet-utils';
   import { useToastStore } from '@FE/stores';
   import { useNetwork } from '@vueuse/core';
   import { RunType } from '@easy-genomics/shared-lib/src/app/types/base-entity';
@@ -533,10 +533,17 @@
       // save to wip run
       const { S3Url, Bucket, Path } = sampleSheetResponse.SampleSheetInfo;
 
+      // Track every uploaded input file key so we can record file -> workflow associations
+      // when this run is launched. R1/R2 may be undefined for single-end pairs.
+      const inputFileKeys: string[] = uploadedFilePairs
+        .flatMap((pair) => [pair.R1?.Key, pair.R2?.Key])
+        .filter((k): k is string => typeof k === 'string' && k.length > 0);
+
       wipRunUpdateFunction.value(props.wipRunTempId, {
         sampleSheetS3Url: S3Url,
         s3Bucket: Bucket,
         s3Path: Path,
+        inputFileKeys,
       });
       wipRunUpdateParamsFunction.value(props.wipRunTempId, {
         input: S3Url,
@@ -899,10 +906,23 @@
       const s3Uri = `s3://${fileInfo.Bucket}/${fileInfo.Key}`;
       const s3Path = fileInfo.Key.substring(0, fileInfo.Key.lastIndexOf('/'));
 
+      // Best-effort: parse the CSV client-side to find any s3:// references that point at
+      // this lab's bucket. Used to associate the inputs with a workflow tag on launch.
+      // Failure here is non-fatal — empty inputFileKeys just means the data tagging system
+      // won't know about these inputs (the run still launches normally).
+      let inputFileKeys: string[] = [];
+      try {
+        const csvText = await file.text();
+        inputFileKeys = extractS3KeysFromCsv(csvText, fileInfo.Bucket);
+      } catch (parseErr) {
+        console.warn('Could not parse custom sample sheet for input file keys:', parseErr);
+      }
+
       wipRunUpdateFunction.value(props.wipRunTempId, {
         sampleSheetS3Url: s3Uri,
         s3Bucket: fileInfo.Bucket,
         s3Path,
+        inputFileKeys,
       });
       wipRunUpdateParamsFunction.value(props.wipRunTempId, {
         input: s3Uri,
