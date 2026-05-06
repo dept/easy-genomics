@@ -4,6 +4,7 @@ import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import {
   FileTagAssignment,
   LaboratoryDataTag,
+  LaboratoryDataTagKind,
   ListFilesByTagResponse,
   ListLaboratoryDataTagsResponse,
   S3TaggedObjectRef,
@@ -69,10 +70,12 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
 
     const tags: LaboratoryDataTag[] = (response.Items || []).map((item) => {
       const row = unmarshall(item) as Record<string, unknown>;
+      const kind: LaboratoryDataTagKind = row.Kind === 'batch' ? 'batch' : 'standard';
       return {
         TagId: row.TagId as string,
         Name: row.Name as string,
         ColorHex: row.ColorHex as string,
+        ...(kind === 'batch' ? { Kind: 'batch' as const } : {}),
         FileCount: Number(row.FileCount ?? 0),
         CreatedAt: row.CreatedAt as string | undefined,
         CreatedBy: row.CreatedBy as string | undefined,
@@ -89,6 +92,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     userId: string,
     name: string,
     colorHex: string,
+    kind: LaboratoryDataTagKind = 'standard',
   ): Promise<LaboratoryDataTag> {
     const laboratoryId = laboratory.LaboratoryId;
     const existing = await this.listTags(laboratoryId);
@@ -105,6 +109,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       TagId: tagId,
       Name: name.trim(),
       ColorHex: colorHex,
+      ...(kind === 'batch' ? { Kind: 'batch' as const } : {}),
       FileCount: 0,
       CreatedAt: now,
       CreatedBy: userId,
@@ -126,6 +131,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       TagId: tagId,
       Name: name.trim(),
       ColorHex: colorHex,
+      ...(kind === 'batch' ? { Kind: 'batch' as const } : {}),
       FileCount: 0,
       CreatedAt: now,
       CreatedBy: userId,
@@ -175,6 +181,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
           TagId: tagId,
           Name: updated.Name,
           ColorHex: updated.ColorHex,
+          ...(existingRow.Kind === 'batch' ? { Kind: 'batch' as const } : {}),
           FileCount: updated.FileCount,
           CreatedAt: existingRow.CreatedAt,
           CreatedBy: existingRow.CreatedBy,
@@ -268,6 +275,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
 
   public async listFileTags(laboratoryId: string, bucket: string, keys: string[]): Promise<FileTagAssignment[]> {
     const out: FileTagAssignment[] = [];
+    const batchTagIds = await this.getBatchTagIdSet(laboratoryId);
 
     for (let i = 0; i < keys.length; i += 100) {
       const batchKeys = keys.slice(i, i + 100);
@@ -294,7 +302,17 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       for (let j = 0; j < batchKeys.length; j++) {
         const key = batchKeys[j];
         const sk = dynamoKeys[j].Sk;
-        out.push({ Key: key, TagIds: bySk.get(sk) || [] });
+        const rawIds = bySk.get(sk) || [];
+        const standard: string[] = [];
+        let batchTagId: string | undefined;
+        for (const id of rawIds) {
+          if (batchTagIds.has(id)) {
+            batchTagId = id;
+          } else {
+            standard.push(id);
+          }
+        }
+        out.push({ Key: key, TagIds: standard, ...(batchTagId ? { BatchTagId: batchTagId } : {}) });
       }
     }
 
@@ -346,6 +364,12 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     const add = addTagIds || [];
     const remove = removeTagIds || [];
 
+    const batchTagIds = await this.getBatchTagIdSet(laboratoryId);
+    const batchAdds = add.filter((id) => batchTagIds.has(id));
+    if (batchAdds.length > 1) {
+      throw new Error('Cannot add more than one batch tag at a time');
+    }
+
     for (const tagId of add) {
       const t = await this.getTagRow(laboratoryId, tagId);
       if (!t) throw new Error(`Unknown tag: ${tagId}`);
@@ -365,6 +389,16 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         if (tagIds.delete(rid)) {
           await this.deleteMapIfExists(laboratoryId, rid, ref);
           await this.adjustTagFileCount(laboratoryId, rid, -1);
+        }
+      }
+
+      if (batchAdds.length === 1) {
+        for (const bid of [...tagIds]) {
+          if (batchTagIds.has(bid)) {
+            tagIds.delete(bid);
+            await this.deleteMapIfExists(laboratoryId, bid, ref);
+            await this.adjustTagFileCount(laboratoryId, bid, -1);
+          }
         }
       }
 
@@ -402,6 +436,87 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         });
       }
     }
+  }
+
+  /**
+   * Sets batch assignment for files: at most one batch per file. Does not modify standard tags.
+   */
+  public async setBatchForFiles(
+    laboratory: Laboratory,
+    userId: string,
+    bucket: string,
+    keys: string[],
+    mode: { type: 'clear' } | { type: 'existing'; batchTagId: string } | { type: 'new'; name: string },
+  ): Promise<void> {
+    const laboratoryId = laboratory.LaboratoryId;
+    this.assertBucketMatchesLab(laboratory, bucket);
+
+    let targetBatchId: string | undefined;
+    if (mode.type === 'new') {
+      const created = await this.createTag(laboratory, userId, mode.name, '#5B4FD4', 'batch');
+      targetBatchId = created.TagId;
+    } else if (mode.type === 'existing') {
+      const row = await this.getTagRow(laboratoryId, mode.batchTagId);
+      if (!row) throw new Error(`Unknown batch: ${mode.batchTagId}`);
+      if ((row.Kind ?? 'standard') !== 'batch') throw new Error('Tag is not a batch');
+      targetBatchId = mode.batchTagId;
+    }
+
+    const batchTagIds = await this.getBatchTagIdSet(laboratoryId);
+
+    for (const key of keys) {
+      this.assertKeyUnderLabPrefix(laboratory, key);
+      const ref = encodeS3ObjectRef(bucket, key);
+      const existing = await this.getFileRow(laboratoryId, ref);
+      const tagIds = new Set<string>(existing?.TagIds || []);
+
+      for (const bid of [...tagIds]) {
+        if (batchTagIds.has(bid)) {
+          tagIds.delete(bid);
+          await this.deleteMapIfExists(laboratoryId, bid, ref);
+          await this.adjustTagFileCount(laboratoryId, bid, -1);
+        }
+      }
+
+      if (targetBatchId) {
+        if (!tagIds.has(targetBatchId)) {
+          tagIds.add(targetBatchId);
+          await this.putMapRow(laboratoryId, targetBatchId, ref, bucket, key);
+          await this.adjustTagFileCount(laboratoryId, targetBatchId, 1);
+        }
+      }
+
+      const now = new Date().toISOString();
+      if (tagIds.size === 0) {
+        if (existing) {
+          await this.deleteItem({
+            TableName: TABLE_NAME,
+            Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
+          });
+        }
+      } else {
+        await this.putItem({
+          TableName: TABLE_NAME,
+          Item: marshall(
+            {
+              LaboratoryId: laboratoryId,
+              Sk: skFile(ref),
+              S3Bucket: bucket,
+              ObjectKey: key,
+              TagIds: [...tagIds],
+              ModifiedAt: now,
+              ModifiedBy: userId,
+            },
+            { removeUndefinedValues: true },
+          ),
+        });
+      }
+    }
+  }
+
+  private async getBatchTagIdSet(laboratoryId: string): Promise<Set<string>> {
+    const { Tags } = await this.listTags(laboratoryId);
+    return new Set(Tags.filter((t) => (t.Kind ?? 'standard') === 'batch').map((t) => t.TagId));
   }
 
   private async putMapRow(
@@ -450,6 +565,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
           TagId: row.TagId,
           Name: row.Name,
           ColorHex: row.ColorHex,
+          ...(row.Kind === 'batch' ? { Kind: 'batch' as const } : {}),
           FileCount: next,
           CreatedAt: row.CreatedAt,
           CreatedBy: row.CreatedBy,
@@ -472,6 +588,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       TagId: row.TagId as string,
       Name: row.Name as string,
       ColorHex: row.ColorHex as string,
+      ...(row.Kind === 'batch' ? { Kind: 'batch' as const } : {}),
       FileCount: Number(row.FileCount ?? 0),
       CreatedAt: row.CreatedAt as string | undefined,
       CreatedBy: row.CreatedBy as string | undefined,

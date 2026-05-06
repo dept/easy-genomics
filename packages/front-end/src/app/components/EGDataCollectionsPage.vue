@@ -17,11 +17,15 @@
 
   const tags = ref<LaboratoryDataTag[]>([]);
   const keyToTagIds = ref<Record<string, string[]>>({});
+  /** Batch assignment per object key (tag ids with Kind batch are tracked separately from TagIds). */
+  const keyToBatchTagId = ref<Record<string, string | undefined>>({});
   const files = ref<{ Key: string; Size?: number; LastModified?: string }[]>([]);
   const listingTruncated = ref(false);
   const selectedKeys = ref<string[]>([]);
   const filterTagId = ref<string | null>(null);
   const search = ref('');
+
+  const KEYS_CHUNK = 100;
 
   /** Bottom bulk panel: closed | add | remove */
   const bulkPanelMode = ref<'closed' | 'add' | 'remove'>('closed');
@@ -46,6 +50,27 @@
   function tagById(id: string): LaboratoryDataTag | undefined {
     return tags.value.find((t) => t.TagId === id);
   }
+
+  const standardTags = computed(() => tags.value.filter((t) => (t.Kind ?? 'standard') !== 'batch'));
+
+  const batchTags = computed(() => tags.value.filter((t) => (t.Kind ?? 'standard') === 'batch'));
+
+  function batchAssignmentLabelForKey(key: string): string {
+    const bid = keyToBatchTagId.value[key];
+    if (!bid) return 'Unbatched';
+    return tagById(bid)?.Name ?? bid;
+  }
+
+  /** Distinct batch names for the current selection (Change batch modal). */
+  const changeBatchCurrentlyInLine = computed(() => {
+    const sel = selectedKeys.value;
+    if (!sel.length) return '—';
+    const names = new Set<string>();
+    for (const key of sel) {
+      names.add(batchAssignmentLabelForKey(key));
+    }
+    return [...names].sort((a, b) => a.localeCompare(b)).join(', ');
+  });
 
   /** Tags present on the current selection, with count of selected files that have each tag. */
   const tagsOnSelection = computed(() => {
@@ -95,17 +120,23 @@
       files.value = (res.Contents || []).filter((c) => !c.Key.endsWith('/'));
       const keys = files.value.map((f) => f.Key);
       const map: Record<string, string[]> = {};
+      const batchMap: Record<string, string | undefined> = {};
       if (keys.length) {
-        const tr = await $api.dataCollections.requestListFileTags({
-          LaboratoryId: props.labId,
-          S3Bucket: lab.value.S3Bucket,
-          Keys: keys,
-        });
-        for (const f of tr.Files) {
-          map[f.Key] = f.TagIds;
+        for (let i = 0; i < keys.length; i += KEYS_CHUNK) {
+          const chunk = keys.slice(i, i + KEYS_CHUNK);
+          const tr = await $api.dataCollections.requestListFileTags({
+            LaboratoryId: props.labId,
+            S3Bucket: lab.value.S3Bucket,
+            Keys: chunk,
+          });
+          for (const f of tr.Files) {
+            map[f.Key] = f.TagIds;
+            batchMap[f.Key] = f.BatchTagId;
+          }
         }
       }
       keyToTagIds.value = map;
+      keyToBatchTagId.value = batchMap;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       toast.error(`Failed to load files: ${msg}`);
@@ -186,8 +217,6 @@
     else s.add(tagId);
     bulkRemoveTagIds.value = [...s];
   }
-
-  const KEYS_CHUNK = 100;
 
   async function addTagsToFilesInChunks(keys: string[], addTagIds: string[], removeTagIds: string[]): Promise<void> {
     if (!lab.value?.S3Bucket) return;
@@ -311,6 +340,94 @@
     const keys: string[] = JSON.parse(raw) as string[];
     void applyTagToKeys(tagId, keys);
   }
+
+  const showChangeBatchModal = ref(false);
+  const changeBatchSelectedBatchId = ref<string | undefined>(undefined);
+  const changeBatchNewName = ref('');
+
+  watch(changeBatchNewName, (v) => {
+    if (v.trim()) changeBatchSelectedBatchId.value = undefined;
+  });
+  watch(changeBatchSelectedBatchId, (v) => {
+    if (v) changeBatchNewName.value = '';
+  });
+
+  function openChangeBatchModal(): void {
+    changeBatchSelectedBatchId.value = undefined;
+    changeBatchNewName.value = '';
+    showChangeBatchModal.value = true;
+  }
+
+  function closeChangeBatchModal(): void {
+    showChangeBatchModal.value = false;
+  }
+
+  function clearExistingBatchSelection(): void {
+    changeBatchSelectedBatchId.value = undefined;
+  }
+
+  async function assignBatchInChunks(
+    keys: string[],
+    body: { ClearBatch?: boolean; BatchTagId?: string; NewBatchName?: string },
+  ): Promise<void> {
+    if (!lab.value?.S3Bucket) return;
+    const bucket = lab.value.S3Bucket;
+    for (let i = 0; i < keys.length; i += KEYS_CHUNK) {
+      const chunk = keys.slice(i, i + KEYS_CHUNK);
+      await $api.dataCollections.assignBatch({
+        LaboratoryId: props.labId,
+        S3Bucket: bucket,
+        Keys: chunk,
+        ...body,
+      });
+    }
+  }
+
+  async function applyChangeBatch(): Promise<void> {
+    if (!lab.value?.S3Bucket || !selectedKeys.value.length) return;
+    const keys = [...selectedKeys.value];
+    const nn = changeBatchNewName.value.trim();
+    uiStore.setRequestPending('dataCollectionsMutate');
+    try {
+      if (nn) {
+        await assignBatchInChunks(keys, { NewBatchName: nn });
+      } else if (changeBatchSelectedBatchId.value) {
+        await assignBatchInChunks(keys, { BatchTagId: changeBatchSelectedBatchId.value });
+      } else {
+        toast.warning('Choose an existing batch or enter a new batch name.');
+        return;
+      }
+      await loadTags();
+      await loadListing();
+      await nextTick();
+      toast.success('Batch updated');
+      closeChangeBatchModal();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`Batch update failed: ${msg}`);
+    } finally {
+      uiStore.setRequestComplete('dataCollectionsMutate');
+    }
+  }
+
+  async function clearBatchFromModal(): Promise<void> {
+    if (!lab.value?.S3Bucket || !selectedKeys.value.length) return;
+    const keys = [...selectedKeys.value];
+    uiStore.setRequestPending('dataCollectionsMutate');
+    try {
+      await assignBatchInChunks(keys, { ClearBatch: true });
+      await loadTags();
+      await loadListing();
+      await nextTick();
+      toast.success('Removed from batch');
+      closeChangeBatchModal();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`Batch update failed: ${msg}`);
+    } finally {
+      uiStore.setRequestComplete('dataCollectionsMutate');
+    }
+  }
 </script>
 
 <template>
@@ -341,8 +458,8 @@
           >
             <span>Untagged</span>
           </button>
-          <div
-            v-for="t in tags"
+          <button
+            v-for="t in standardTags"
             :key="t.TagId"
             class="hover:bg-primary-muted flex w-full cursor-pointer items-center justify-between rounded-lg px-2 py-2 text-left text-sm"
             :class="{ 'bg-primary-muted font-medium': filterTagId === t.TagId }"
@@ -355,7 +472,7 @@
               {{ t.Name }}
             </span>
             <span class="text-muted text-xs">{{ t.FileCount }}</span>
-          </div>
+          </button>
         </div>
       </div>
 
@@ -364,7 +481,9 @@
         :lab-root="labRoot"
         :visible-files="visibleFiles"
         :key-to-tag-ids="keyToTagIds"
-        :tags="tags"
+        :key-to-batch-tag-id="keyToBatchTagId"
+        :batch-tags="batchTags"
+        :tags="standardTags"
         :selected-keys="selectedKeys"
         :loading="loading"
         :search="search"
@@ -383,13 +502,14 @@
       <div class="flex flex-wrap items-center gap-2 px-4 py-2">
         <span v-if="hasSelection" class="text-muted text-xs">{{ selectedKeys.length }} file(s) selected</span>
         <span v-else class="text-muted text-xs">Select files in the grid to add or remove tags in bulk.</span>
-        <div class="ml-auto flex flex-wrap items-center gap-2">
+        <div v-if="hasSelection" class="ml-auto flex flex-wrap items-center gap-2">
           <UIcon v-if="bulkPanelBusy" name="i-heroicons-arrow-path" class="text-muted h-5 w-5 shrink-0 animate-spin" />
-          <UButton size="sm" variant="soft" :disabled="!hasSelection || bulkPanelBusy" @click="openAddBulkPanel">
-            Add Tags
-          </UButton>
-          <UButton size="sm" variant="outline" :disabled="!hasSelection || bulkPanelBusy" @click="openRemoveBulkPanel">
+          <UButton size="sm" variant="soft" :disabled="bulkPanelBusy" @click="openAddBulkPanel">Add Tags</UButton>
+          <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openRemoveBulkPanel">
             Remove Tags
+          </UButton>
+          <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openChangeBatchModal">
+            Change Batch
           </UButton>
         </div>
       </div>
@@ -434,7 +554,7 @@
             <h3 class="text-muted mb-3 text-xs font-semibold uppercase tracking-wide">Add Tags</h3>
             <ul class="max-h-56 space-y-2 overflow-y-auto pr-1 text-sm">
               <li
-                v-for="t in tags"
+                v-for="t in standardTags"
                 :key="'add-' + t.TagId"
                 class="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 hover:bg-gray-50"
               >
@@ -508,5 +628,94 @@
         </div>
       </div>
     </div>
+
+    <UModal
+      v-model="showChangeBatchModal"
+      :ui="{
+        overlay: {
+          base: 'fixed inset-0 transition-opacity backdrop-blur-[5px]',
+          background: 'bg-gray-800/30',
+        },
+        rounded: 'rounded-3xl',
+        width: 'sm:max-w-lg',
+      }"
+    >
+      <UCard
+        :ui="{
+          base: 'p-8',
+          rounded: 'rounded-3xl',
+          header: { padding: '' },
+        }"
+      >
+        <template #header>
+          <div class="flex flex-col gap-1">
+            <h3 class="text-lg font-semibold text-gray-900">Change batch</h3>
+            <p class="text-muted text-sm">Reassign the selected samples to a different batch.</p>
+          </div>
+        </template>
+
+        <div class="space-y-4">
+          <div class="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
+            <dl class="space-y-2.5 text-sm">
+              <div class="flex items-baseline justify-between gap-4">
+                <dt class="text-muted shrink-0">Samples to move</dt>
+                <dd class="font-medium tabular-nums text-gray-900">{{ selectedKeys.length }}</dd>
+              </div>
+              <div class="flex items-start justify-between gap-4">
+                <dt class="text-muted shrink-0 pt-0.5">Currently in</dt>
+                <dd class="min-w-0 flex-1 break-words text-right font-medium leading-snug text-gray-900">
+                  {{ changeBatchCurrentlyInLine }}
+                </dd>
+              </div>
+            </dl>
+          </div>
+          <div>
+            <div class="mb-1 flex items-center justify-between gap-2">
+              <label class="text-muted block text-xs font-semibold uppercase tracking-wide">Existing batch</label>
+              <button
+                v-if="changeBatchSelectedBatchId"
+                type="button"
+                class="text-primary shrink-0 text-xs font-normal hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="bulkPanelBusy || !!changeBatchNewName.trim()"
+                @click="clearExistingBatchSelection"
+              >
+                Clear selection
+              </button>
+            </div>
+            <USelectMenu
+              v-model="changeBatchSelectedBatchId"
+              :options="batchTags"
+              option-attribute="Name"
+              value-attribute="TagId"
+              placeholder="Select a batch"
+              size="sm"
+              class="w-full"
+              :disabled="bulkPanelBusy || !!changeBatchNewName.trim()"
+            />
+          </div>
+          <div>
+            <label class="text-muted mb-1 block text-xs font-semibold uppercase tracking-wide">
+              Or create new batch
+            </label>
+            <UInput
+              v-model="changeBatchNewName"
+              placeholder="e.g. Nov-2024-FluPanel"
+              size="sm"
+              class="w-full"
+              :disabled="bulkPanelBusy || !!changeBatchSelectedBatchId"
+            />
+            <p class="text-muted mt-1.5 text-xs leading-snug">Leave blank to use the existing batch selected above.</p>
+          </div>
+        </div>
+
+        <div class="mt-8 flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-4">
+          <UButton size="sm" variant="ghost" :disabled="bulkPanelBusy" @click="closeChangeBatchModal">Cancel</UButton>
+          <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="clearBatchFromModal">
+            Remove from batch
+          </UButton>
+          <UButton size="sm" :loading="bulkPanelBusy" @click="applyChangeBatch">Move samples</UButton>
+        </div>
+      </UCard>
+    </UModal>
   </div>
 </template>

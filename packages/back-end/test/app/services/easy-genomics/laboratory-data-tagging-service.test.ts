@@ -52,6 +52,7 @@ describe('LaboratoryDataTaggingService.applyTagsToFiles', () => {
   let mockGetItem: jest.Mock;
   let mockPutItem: jest.Mock;
   let mockDeleteItem: jest.Mock;
+  let mockQueryItems: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -59,9 +60,11 @@ describe('LaboratoryDataTaggingService.applyTagsToFiles', () => {
     mockGetItem = jest.fn();
     mockPutItem = jest.fn().mockResolvedValue({});
     mockDeleteItem = jest.fn().mockResolvedValue({});
+    mockQueryItems = jest.fn().mockResolvedValue({ Items: [] });
     (svc as unknown as { getItem: typeof mockGetItem }).getItem = mockGetItem;
     (svc as unknown as { putItem: typeof mockPutItem }).putItem = mockPutItem;
     (svc as unknown as { deleteItem: typeof mockDeleteItem }).deleteItem = mockDeleteItem;
+    (svc as unknown as { queryItems: typeof mockQueryItems }).queryItems = mockQueryItems;
   });
 
   it('does not create duplicate MAP rows when re-applying the same tag to a file', async () => {
@@ -157,5 +160,71 @@ describe('LaboratoryDataTaggingService.applyTagsToFiles', () => {
     expect(filePuts.length).toBeGreaterThanOrEqual(1);
     const fileRow = unmarshall(filePuts[0][0].Item) as { TagIds: string[] };
     expect(fileRow.TagIds).toContain(tagId);
+  });
+
+  it('rejects adding more than one batch tag in a single request', async () => {
+    const lab = labFixture();
+    const bucket = lab.S3Bucket!;
+    const key = 'org-1/lab-1/a.txt';
+    const b1 = 'batch-1';
+    const b2 = 'batch-2';
+
+    mockQueryItems.mockResolvedValue({
+      Items: [
+        marshall({
+          LaboratoryId: lab.LaboratoryId,
+          Sk: `TAG#${b1}`,
+          TagId: b1,
+          Name: 'B1',
+          ColorHex: '#111111',
+          Kind: 'batch',
+          FileCount: 0,
+        }),
+        marshall({
+          LaboratoryId: lab.LaboratoryId,
+          Sk: `TAG#${b2}`,
+          TagId: b2,
+          Name: 'B2',
+          ColorHex: '#222222',
+          Kind: 'batch',
+          FileCount: 0,
+        }),
+      ],
+    });
+
+    mockGetItem.mockImplementation(async (input: { Key?: Record<string, AttributeValue> }) => {
+      const k = unmarshall(input.Key as Record<string, AttributeValue>) as { Sk?: string };
+      if (k.Sk === `TAG#${b1}`) {
+        return {
+          Item: marshall({
+            LaboratoryId: lab.LaboratoryId,
+            Sk: k.Sk,
+            TagId: b1,
+            Name: 'B1',
+            ColorHex: '#111111',
+            Kind: 'batch',
+            FileCount: 0,
+          }),
+        };
+      }
+      if (k.Sk === `TAG#${b2}`) {
+        return {
+          Item: marshall({
+            LaboratoryId: lab.LaboratoryId,
+            Sk: k.Sk,
+            TagId: b2,
+            Name: 'B2',
+            ColorHex: '#222222',
+            Kind: 'batch',
+            FileCount: 0,
+          }),
+        };
+      }
+      return {};
+    });
+
+    await expect(svc.applyTagsToFiles(lab, 'user-1', bucket, [key], [b1, b2], [])).rejects.toThrow(
+      'Cannot add more than one batch tag at a time',
+    );
   });
 });

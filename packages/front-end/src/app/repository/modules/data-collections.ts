@@ -84,6 +84,17 @@ class DataCollectionsModule extends HttpFactory {
     await this.call('POST', '/data-collections/add-tags-to-files', body);
   }
 
+  async assignBatch(body: {
+    LaboratoryId: string;
+    S3Bucket: string;
+    Keys: string[];
+    ClearBatch?: boolean;
+    BatchTagId?: string;
+    NewBatchName?: string;
+  }): Promise<void> {
+    await this.call('POST', '/data-collections/edit-batch', body);
+  }
+
   async listFilesByTag(
     laboratoryId: string,
     tagId: string,
