@@ -36,6 +36,7 @@ export async function exportNuxtConfigurationSettings(
   awsRegion: string,
   envName: string,
   envType: string,
+  apiGatewayUrl?: string,
   easyGenomicsApiUrl?: string,
 ) {
   const namePrefix: string = `${envType}-${envName}`;
@@ -45,7 +46,10 @@ export async function exportNuxtConfigurationSettings(
 
   // Ensure the AWS Region for the SDK calls to correctly query the correct region.
   process.env.AWS_REGION = awsRegion;
-  const apiGatewayInfo: ApiGatewayInfo = await getApiGatewayInfo(apiGatewayRestApiName, awsRegion);
+  const normalizedApiGatewayUrl = apiGatewayUrl?.replace(/\/+$/, '');
+  const apiGatewayInfo: ApiGatewayInfo = normalizedApiGatewayUrl
+    ? { RestApiUrl: normalizedApiGatewayUrl }
+    : await getApiGatewayInfo(apiGatewayRestApiName, awsRegion);
   const cognitoIdpInfo: CognitoIdpInfo = await getCognitoIdpInfo(cognitoUserPoolName, cognitoUserPoolClientName);
   const cognitoDomain = await getCognitoDomainInfo(cognitoIdpInfo.UserPoolId || '');
   const clientUrls = await getCognitoClientUrls(cognitoIdpInfo.UserPoolId || '', cognitoIdpInfo.UserPoolClientId || '');
@@ -98,12 +102,13 @@ void (async () => {
       const awsRegion = process.env.AWS_REGION;
       const envName = process.env.ENV_NAME;
       const envType = process.env.ENV_TYPE;
+      const apiGatewayUrl = process.env.AWS_API_GATEWAY_URL;
       const easyGenomicsApiUrl = process.env.AWS_EASY_GENOMICS_API_URL;
       if (!awsRegion || !envName || !envType) {
         throw new Error('Missing required CI/CD env vars: AWS_REGION, ENV_NAME, ENV_TYPE.');
       }
 
-      await exportNuxtConfigurationSettings(awsRegion, envName, envType, easyGenomicsApiUrl);
+      await exportNuxtConfigurationSettings(awsRegion, envName, envType, apiGatewayUrl, easyGenomicsApiUrl);
     } else {
       // @ts-ignore
       const configurations: { [p: string]: ConfigurationSettings }[] = loadConfigurations(
@@ -129,9 +134,10 @@ void (async () => {
 
           const envType: string = configSettings['env-type']; // dev | pre-prod | prod
           const awsRegion: string = configSettings['aws-region'];
+          const apiGatewayUrl: string | undefined = process.env.AWS_API_GATEWAY_URL;
           const easyGenomicsApiUrl: string | undefined = configSettings['aws-easy-genomics-api-url'] ?? undefined;
 
-          await exportNuxtConfigurationSettings(awsRegion, envName, envType, easyGenomicsApiUrl);
+          await exportNuxtConfigurationSettings(awsRegion, envName, envType, apiGatewayUrl, easyGenomicsApiUrl);
         }
       }
     }

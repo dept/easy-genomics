@@ -65,7 +65,7 @@ export class GithubActionsCICDRelease extends Component {
         steps: [
           ...this.bootstrapSteps(),
           ...this.configureAwsCredentials(),
-          this.deriveEasyGenomicsApiUrlStep(),
+          this.deriveApiUrlsStep(),
           {
             name: 'Run CI/CD Build & Deploy Front-End',
             run: 'pnpm cicd-build-deploy-front-end',
@@ -89,7 +89,7 @@ export class GithubActionsCICDRelease extends Component {
         steps: [
           ...this.bootstrapSteps(),
           ...this.configureAwsCredentials(),
-          this.deriveEasyGenomicsApiUrlStep(),
+          this.deriveApiUrlsStep(),
           {
             name: 'Clear Playwright Cache',
             run: 'rm -rf /home/runner/.cache/ms-playwright',
@@ -218,28 +218,48 @@ export class GithubActionsCICDRelease extends Component {
   }
 
   /**
-   * Derive `AWS_EASY_GENOMICS_API_URL` from the Easy Genomics API stack output.
+   * Derive split-stack API URLs from CloudFormation outputs.
    *
-   * Why: we want split-stack deployments (easy-genomics in its own stack) to
-   * automatically wire the front-end to the new API without requiring a new
-   * GitHub Actions secret/variable. In pre-migration environments this stack
-   * may not exist yet; in that case we intentionally leave the variable unset
-   * so the UI falls back to `AWS_API_GATEWAY_URL + /easy-genomics`.
+   * `AWS_API_GATEWAY_URL` must come from the shared "main-back-end" stack
+   * because it owns `/nf-tower` and `/aws-healthomics`.
+   *
+   * `AWS_EASY_GENOMICS_API_URL` comes from the dedicated easy-genomics stack.
+   * This output can be absent in pre-migration environments, in which case we
+   * leave the var unset and the UI falls back to
+   * `${AWS_API_GATEWAY_URL}/easy-genomics`.
    */
-  private deriveEasyGenomicsApiUrlStep(): github.workflows.JobStep {
+  private deriveApiUrlsStep(): github.workflows.JobStep {
     return {
-      name: 'Derive Easy Genomics API URL (optional)',
+      name: 'Derive API URLs from stack outputs',
       // Note: projen's `JobStep` typing doesn't currently expose `shell`, but
       // GitHub Actions supports it and we want bash strict mode semantics.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ...({ shell: 'bash' } as any),
       run: [
         'set -euo pipefail',
-        'STACK_NAME="${ENV_TYPE}-${ENV_NAME}-easy-genomics-api-stack"',
-        // If the stack does not exist (pre-migration) this command fails; treat that as "unset".
+        'MAIN_STACK_NAME="${ENV_TYPE}-${ENV_NAME}-main-back-end-stack"',
+        'EASY_STACK_NAME="${ENV_TYPE}-${ENV_NAME}-easy-genomics-api-stack"',
+        '',
+        // Main back-end stack is required in all environments.
+        'BASE_URL="$(aws cloudformation describe-stacks \\',
+        '  --region "$AWS_REGION" \\',
+        '  --stack-name "$MAIN_STACK_NAME" \\',
+        "  --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayRestApiUrl`].OutputValue' \\",
+        '  --output text)"',
+        '',
+        'if [ -z "${BASE_URL:-}" ] || [ "${BASE_URL:-}" = "None" ]; then',
+        '  echo "Unable to derive AWS_API_GATEWAY_URL from stack output ApiGatewayRestApiUrl in $MAIN_STACK_NAME" >&2',
+        '  exit 1',
+        'fi',
+        '',
+        'BASE_URL="${BASE_URL%/}"',
+        'echo "AWS_API_GATEWAY_URL=$BASE_URL" >> "$GITHUB_ENV"',
+        'echo "Derived AWS_API_GATEWAY_URL=$BASE_URL"',
+        '',
+        // If the easy-genomics stack does not exist yet, treat as optional.
         'EG_URL="$(aws cloudformation describe-stacks \\',
         '  --region "$AWS_REGION" \\',
-        '  --stack-name "$STACK_NAME" \\',
+        '  --stack-name "$EASY_STACK_NAME" \\',
         "  --query 'Stacks[0].Outputs[?OutputKey==`EasyGenomicsApiUrl`].OutputValue' \\",
         '  --output text 2>/dev/null || true)"',
         '',
@@ -248,7 +268,7 @@ export class GithubActionsCICDRelease extends Component {
         '  echo "AWS_EASY_GENOMICS_API_URL=$EG_URL" >> "$GITHUB_ENV"',
         '  echo "Derived AWS_EASY_GENOMICS_API_URL=$EG_URL"',
         'else',
-        '  echo "Easy Genomics API stack output not found; leaving AWS_EASY_GENOMICS_API_URL unset."',
+        '  echo "Easy Genomics API output not found in $EASY_STACK_NAME; leaving AWS_EASY_GENOMICS_API_URL unset."',
         'fi',
       ].join('\n'),
     };
