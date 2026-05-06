@@ -7,8 +7,8 @@
   const uiStore = useUiStore();
   const userStore = useUserStore();
 
-  // check permissions to be on this page
-  if (!userStore.canViewLab(labId)) {
+  // only lab managers and above can create workflows
+  if (!userStore.canEditLabUsers(labId)) {
     $router.push('/labs');
   }
 

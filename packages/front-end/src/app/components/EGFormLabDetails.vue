@@ -693,6 +693,12 @@
         eager-validation
         :required="formMode === LabDetailsFormModeEnum.enum.Create"
       >
+        <div v-if="formMode === LabDetailsFormModeEnum.enum.Edit" class="mb-2 flex items-center gap-2">
+          <UBadge size="sm" class="bg-alert-danger-muted text-alert-danger rounded-xl border-0 ring-0">
+            TOKEN SAVED
+          </UBadge>
+          <p class="text-alert-danger-dark text-xs font-medium">Saving a new value will replace the existing token.</p>
+        </div>
         <EGPasswordInput
           v-if="formMode === LabDetailsFormModeEnum.enum.Create"
           v-model="state.GitHubAccessToken"
