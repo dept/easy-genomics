@@ -156,7 +156,7 @@ describe('process-fetch-workflow-schema.lambda', () => {
       createEvent({
         detail: {
           'changed-tag-keys': ['github-schema-url'],
-          tags: { 'github-schema-url': blobUrl },
+          'tags': { 'github-schema-url': blobUrl },
         },
       }),
       createContext(),
