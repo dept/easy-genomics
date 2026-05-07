@@ -9,6 +9,8 @@ import HttpFactory from '@FE/repository/factory';
 export type CreateOmicsWorkflowRequest = CreateWorkflowCommandInput & {
   githubRepoUrl?: string;
   githubRef?: string;
+  /** GitHub blob or raw URL to the workflow JSON schema file; stored as HealthOmics tag github-schema-url. */
+  githubSchemaUrl?: string;
 };
 
 type ListWorkflowVersionsResponse = {

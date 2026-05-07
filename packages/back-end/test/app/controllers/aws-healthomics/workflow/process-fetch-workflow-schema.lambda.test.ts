@@ -133,10 +133,47 @@ describe('process-fetch-workflow-schema.lambda', () => {
     expect(mockWorkflowSchemaService.prototype.saveSchema).not.toHaveBeenCalled();
   });
 
-  it('skips when workflow has no github-repo-url tag', async () => {
+  it('skips when workflow has neither github-repo-url nor github-schema-url tag', async () => {
     (mockOmicsService.prototype.getWorkflow as jest.Mock).mockResolvedValue({
       id: WORKFLOW_ID,
       tags: {},
+    });
+
+    await handler(createEvent(), createContext(), () => {});
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockWorkflowSchemaService.prototype.saveSchema).not.toHaveBeenCalled();
+  });
+
+  it('fetches schema from github-schema-url tag when repo URL is absent', async () => {
+    const blobUrl = 'https://github.com/nf-core/rnaseq/blob/dev/nextflow_schema.json';
+    (mockOmicsService.prototype.getWorkflow as jest.Mock).mockResolvedValue({
+      id: WORKFLOW_ID,
+      tags: { 'github-schema-url': blobUrl },
+    });
+
+    await handler(
+      createEvent({
+        detail: {
+          'changed-tag-keys': ['github-schema-url'],
+          tags: { 'github-schema-url': blobUrl },
+        },
+      }),
+      createContext(),
+      () => {},
+    );
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.github.com/repos/nf-core/rnaseq/contents/nextflow_schema.json?ref=dev',
+      expect.anything(),
+    );
+    expect(mockWorkflowSchemaService.prototype.saveSchema).toHaveBeenCalled();
+  });
+
+  it('skips when github-schema-url tag is not parseable', async () => {
+    (mockOmicsService.prototype.getWorkflow as jest.Mock).mockResolvedValue({
+      id: WORKFLOW_ID,
+      tags: { 'github-schema-url': 'https://example.com/not-github' },
     });
 
     await handler(createEvent(), createContext(), () => {});

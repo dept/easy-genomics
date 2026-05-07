@@ -10,6 +10,7 @@ import {
 import { CreateWorkflowRequest } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { parseGitHubSchemaFileUrl } from '@BE/services/aws-healthomics/parse-github-schema-url';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import { S3Service } from '@BE/services/s3-service';
@@ -35,11 +36,14 @@ const CREATE_WORKFLOW_ALLOWED_KEYS = new Set([
   'storageType',
   'githubRepoUrl',
   'githubRef',
+  'githubSchemaUrl',
 ]);
 
 type CreatePrivateWorkflowRequest = CreateWorkflowRequest & {
   githubRepoUrl?: string;
   githubRef?: string;
+  /** Optional GitHub blob or raw URL to nextflow_schema.json (or equivalent); stored as workflow tag github-schema-url. */
+  githubSchemaUrl?: string;
 };
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -48,6 +52,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function isValidGitHubRepoUrl(url: string): boolean {
   return /^https:\/\/github\.com\/[^/]+\/[^/]+(?:\.git)?(?:\/)?$/i.test(url.trim());
+}
+
+function isValidGitHubSchemaFileUrl(url: string): boolean {
+  return parseGitHubSchemaFileUrl(url) !== null;
 }
 
 function parseGitHubRepoUrl(url: string): { owner: string; repo: string } {
@@ -173,12 +181,22 @@ function isValidCreateWorkflowRequest(request: unknown): request is CreatePrivat
     storageType,
     githubRepoUrl,
     githubRef,
+    githubSchemaUrl,
   } = request;
 
   if (typeof name !== 'string' || name.trim().length < 1 || name.length > 64) return false;
   if (description !== undefined && (typeof description !== 'string' || description.length > 256)) return false;
   if (engine !== 'WDL' && engine !== 'NEXTFLOW' && engine !== 'CWL') return false;
   if (githubRepoUrl !== undefined && (typeof githubRepoUrl !== 'string' || !isValidGitHubRepoUrl(githubRepoUrl))) {
+    return false;
+  }
+  if (
+    githubSchemaUrl !== undefined &&
+    (typeof githubSchemaUrl !== 'string' ||
+      githubSchemaUrl.trim().length < 1 ||
+      githubSchemaUrl.length > 2048 ||
+      !isValidGitHubSchemaFileUrl(githubSchemaUrl))
+  ) {
     return false;
   }
   if (
@@ -264,7 +282,7 @@ export const handler: Handler = async (
       fallbackMain = uploadedFromGitHub.fallbackMain;
     }
 
-    const { githubRepoUrl, githubRef, ...workflowRequest } = request;
+    const { githubRepoUrl, githubRef, githubSchemaUrl, ...workflowRequest } = request;
     const workflowInput: CreateWorkflowCommandInput = {
       ...workflowRequest,
       definitionUri,
@@ -275,6 +293,7 @@ export const handler: Handler = async (
         WorkflowName: request.name,
         ...(githubRepoUrl && { 'github-repo-url': githubRepoUrl }),
         ...(githubRef && { 'github-ref': githubRef }),
+        ...(githubSchemaUrl?.trim() && { 'github-schema-url': githubSchemaUrl.trim() }),
         ...(userId && { UserId: userId }),
         ...(userEmail && { UserEmail: userEmail }),
         Application: 'easy-genomics',

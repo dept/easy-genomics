@@ -34,6 +34,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
   private readonly githubPatSecretArn: string;
   private readonly githubPatSecretName: string;
   private readonly workflowTagRule: Rule;
+  private readonly workflowSchemaUrlTagRule: Rule;
 
   constructor(scope: Construct, id: string, props: AwsHealthOmicsNestedStackProps) {
     super(scope, id);
@@ -133,17 +134,32 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
     // Note: if aws.tag events prove unreliable for HealthOmics, an alternative is to
     // capture omics:TagResource via CloudTrail → EventBridge using source: ["aws.cloudtrail"]
     // and detail.eventName: ["TagResource"].
+    const workflowArnPrefix = Match.prefix(
+      `arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/`,
+    );
+
     this.workflowTagRule = new Rule(this, `${this.props.namePrefix}-workflow-schema-tag-rule`, {
       ruleName: `${this.props.namePrefix}-workflow-schema-tag-rule`,
       description: 'Triggers schema fetch when github-repo-url tag is set or updated on a HealthOmics workflow',
       eventPattern: {
         source: ['aws.tag'],
         detailType: ['Tag Change on Resource'],
-        // Filter to HealthOmics workflow ARNs only
-        resources: Match.prefix(`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/`),
-        // Fire only when the github-repo-url tag key was part of the change
+        resources: workflowArnPrefix,
         detail: {
           'changed-tag-keys': ['github-repo-url'],
+        },
+      },
+    });
+
+    this.workflowSchemaUrlTagRule = new Rule(this, `${this.props.namePrefix}-workflow-schema-url-tag-rule`, {
+      ruleName: `${this.props.namePrefix}-workflow-schema-url-tag-rule`,
+      description: 'Triggers schema fetch when github-schema-url tag is set or updated on a HealthOmics workflow',
+      eventPattern: {
+        source: ['aws.tag'],
+        detailType: ['Tag Change on Resource'],
+        resources: workflowArnPrefix,
+        detail: {
+          'changed-tag-keys': ['github-schema-url'],
         },
       },
     });
@@ -171,6 +187,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
           callbacks: [
             (fn: IFunction) => {
               this.workflowTagRule.addTarget(new LambdaFunctionTarget(fn));
+              this.workflowSchemaUrlTagRule.addTarget(new LambdaFunctionTarget(fn));
             },
           ],
           environment: {

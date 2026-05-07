@@ -60,6 +60,21 @@
     .trim()
     .min(1, 'GitHub branch or tag is required')
     .max(128, 'GitHub branch or tag must be 128 characters or less');
+  const githubSchemaUrlSchema = z
+    .string()
+    .trim()
+    .max(2048, 'Schema URL must be 2048 characters or less')
+    .optional()
+    .refine(
+      (val) =>
+        !val ||
+        /^https:\/\/github\.com\/[^/]+\/[^/]+\/blob\/[^/]+\/.+/i.test(val) ||
+        /^https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[^/]+\/.+/i.test(val),
+      {
+        message:
+          'Use a GitHub file URL: https://github.com/org/repo/blob/branch/path/to/nextflow_schema.json or raw.githubusercontent.com/…',
+      },
+    );
 
   type FormState = {
     name: string;
@@ -71,6 +86,8 @@
     requestId: string;
     githubRepoUrl: string;
     githubRef: string;
+    /** Optional; triggers caching of schema from this GitHub file URL (blob or raw). */
+    githubSchemaUrl: string;
     description?: string;
   };
 
@@ -84,6 +101,7 @@
     requestId: uuidv4(),
     githubRepoUrl: '',
     githubRef: 'main',
+    githubSchemaUrl: '',
     description: '',
   });
 
@@ -122,6 +140,9 @@
     maybeAddFieldValidationErrors(errors, requestIdSchema, 'requestId', state.requestId);
     if (state.description) {
       maybeAddFieldValidationErrors(errors, descriptionSchema, 'description', state.description);
+    }
+    if (state.githubSchemaUrl?.trim()) {
+      maybeAddFieldValidationErrors(errors, githubSchemaUrlSchema, 'githubSchemaUrl', state.githubSchemaUrl);
     }
     if (state.source === 'ZIP') {
       if (!workflowZipFile.value) {
@@ -209,6 +230,7 @@
         parameterTemplate,
         githubRepoUrl: formState.source === 'GITHUB' ? formState.githubRepoUrl.trim() : undefined,
         githubRef: formState.source === 'GITHUB' ? formState.githubRef.trim() : undefined,
+        githubSchemaUrl: formState.githubSchemaUrl?.trim() || undefined,
       });
       toastStore.success('Workflow created successfully');
       emit('created');
@@ -330,6 +352,17 @@
 
       <EGFormGroup label="Description" name="description">
         <EGInput v-model="formState.description" placeholder="Optional workflow description" />
+      </EGFormGroup>
+
+      <EGFormGroup
+        label="Workflow schema file URL (optional)"
+        name="githubSchemaUrl"
+        hint="GitHub blob or raw URL to nextflow_schema.json (or equivalent). Sets the github-schema-url tag so the schema is fetched automatically."
+      >
+        <EGInput
+          v-model="formState.githubSchemaUrl"
+          placeholder="https://github.com/org/repo/blob/main/nextflow_schema.json"
+        />
       </EGFormGroup>
 
       <div class="flex justify-end gap-3">
