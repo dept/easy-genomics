@@ -35,17 +35,48 @@
    * e.g. User enters 'community-showcase' and the following name is generated,
    * viralrecon-illumina_community-showcase_20240712_5686910e783b4b2
    */
-  const MAX_RUN_NAME_LENGTH = 50;
-  const runNameSchema = z
-    .string()
-    .trim()
-    .min(1, 'Pipeline run name must be at least 1 character')
-    .max(MAX_RUN_NAME_LENGTH, `Pipeline run name must be ${MAX_RUN_NAME_LENGTH} characters or less`);
+  const MAX_RUN_NAME_LENGTH_SEQERA = 50;
+  const MAX_RUN_NAME_LENGTH_AWS_HEALTH_OMICS = 124;
 
-  const formStateSchema = z.object({
-    runName: runNameSchema,
-  });
-  type FormState = z.infer<typeof formStateSchema>;
+  const isAwsHealthOmics = computed<boolean>(() => props.platform === 'AWS HealthOmics');
+
+  const maxRunNameLength = computed<number>(() =>
+    isAwsHealthOmics.value ? MAX_RUN_NAME_LENGTH_AWS_HEALTH_OMICS : MAX_RUN_NAME_LENGTH_SEQERA,
+  );
+
+  const runNameHint = computed<string>(() =>
+    isAwsHealthOmics.value
+      ? 'AWS HealthOmics run names can include symbols and numbers, but cannot start with a space.'
+      : '(Only alphanumeric characters, hyphens, and underscores. First character must be a letter.)',
+  );
+
+  function getRunNameSchema() {
+    if (isAwsHealthOmics.value) {
+      return z
+        .string()
+        .min(1, 'Run name must be at least 1 character')
+        .max(
+          MAX_RUN_NAME_LENGTH_AWS_HEALTH_OMICS,
+          `Run name must be ${MAX_RUN_NAME_LENGTH_AWS_HEALTH_OMICS} characters or less`,
+        )
+        .refine((value) => !value.startsWith(' '), 'Run name cannot start with a space');
+    }
+
+    return z
+      .string()
+      .trim()
+      .min(1, 'Pipeline run name must be at least 1 character')
+      .max(MAX_RUN_NAME_LENGTH_SEQERA, `Pipeline run name must be ${MAX_RUN_NAME_LENGTH_SEQERA} characters or less`);
+  }
+
+  const formStateSchema = computed(() =>
+    z.object({
+      runName: getRunNameSchema(),
+    }),
+  );
+  type FormState = {
+    runName: string;
+  };
 
   const formState = reactive<FormState>({
     runName: '',
@@ -126,7 +157,7 @@
   function validate(currentState: FormState): FormError[] {
     const errors: FormError[] = [];
 
-    maybeAddFieldValidationErrors(errors, runNameSchema, 'runName', currentState.runName);
+    maybeAddFieldValidationErrors(errors, getRunNameSchema(), 'runName', currentState.runName);
 
     canProceed.value = errors.length === 0;
 
@@ -154,8 +185,11 @@
   }
 
   function onRunNameInput(_event: InputEvent) {
-    // satinize name in-place in the text box
-    formState.runName = getSupportedRunName(formState.runName);
+    if (!isAwsHealthOmics.value) {
+      // sanitize Seqera names in-place according to Seqera restrictions
+      formState.runName = getSupportedRunName(formState.runName);
+    }
+
     // write to wipRun
     wipRunUpdateFunction.value(props.wipRunTempId, { runName: formState.runName });
   }
@@ -204,20 +238,14 @@
         />
       </EGFormGroup>
 
-      <EGFormGroup
-        label="Run Name"
-        hint="(Only alphanumeric characters, hyphens, and underscores. First character must be a letter.)"
-        name="runName"
-        eager-validation
-        required
-      >
+      <EGFormGroup label="Run Name" :hint="runNameHint" name="runName" eager-validation required>
         <EGInput
           v-model="formState.runName"
           placeholder="Enter a name to identify this pipeline run"
-          @input.prevent="onRunNameInput"
+          @input="onRunNameInput"
           autofocus
         />
-        <EGCharacterCounter :value="runNameCharCount" :max="MAX_RUN_NAME_LENGTH" />
+        <EGCharacterCounter :value="runNameCharCount" :max="maxRunNameLength" />
       </EGFormGroup>
 
       <EGFormGroup label="Description" name="pipelineDescription">
