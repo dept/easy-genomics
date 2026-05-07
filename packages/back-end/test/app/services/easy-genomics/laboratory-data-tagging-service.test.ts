@@ -231,3 +231,125 @@ describe('LaboratoryDataTaggingService.applyTagsToFiles', () => {
     );
   });
 });
+
+describe('LaboratoryDataTaggingService.listTags', () => {
+  let svc: LaboratoryDataTaggingService;
+  let mockQueryItems: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratoryDataTaggingService();
+    mockQueryItems = jest.fn().mockResolvedValue({ Items: [] });
+    (svc as unknown as { queryItems: typeof mockQueryItems }).queryItems = mockQueryItems;
+  });
+
+  it('infers workflow Kind from Gsi1Sk when Kind, Platform, and Gsi1Pk are missing', async () => {
+    const lab = labFixture();
+    const wfTagId = 'wf111111-1111-4111-8111-111111111111';
+    mockQueryItems.mockResolvedValue({
+      Items: [
+        marshall({
+          LaboratoryId: lab.LaboratoryId,
+          Sk: `TAG#${wfTagId}`,
+          TagId: wfTagId,
+          Name: 'nf-core/rnaseq',
+          ColorHex: '#5B4FD4',
+          FileCount: 3,
+          Gsi1Sk: 'AWS HealthOmics#seed-omics-rnaseq#3.14.0',
+        }),
+      ],
+    });
+
+    const { Tags } = await svc.listTags(lab.LaboratoryId);
+    expect(Tags).toHaveLength(1);
+    expect(Tags[0].Kind).toBe('workflow');
+    expect(Tags[0].Platform).toBe('AWS HealthOmics');
+    expect(Tags[0].WorkflowExternalId).toBe('seed-omics-rnaseq');
+    expect(Tags[0].WorkflowVersionName).toBe('3.14.0');
+  });
+});
+
+describe('LaboratoryDataTaggingService.listFileTags', () => {
+  let svc: LaboratoryDataTaggingService;
+  let mockQueryItems: jest.Mock;
+  let mockBatchGetItem: jest.Mock;
+
+  const tableName = `${process.env.NAME_PREFIX}-laboratory-data-tagging-table`;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratoryDataTaggingService();
+    mockQueryItems = jest.fn().mockResolvedValue({ Items: [] });
+    mockBatchGetItem = jest.fn();
+    (svc as unknown as { queryItems: typeof mockQueryItems }).queryItems = mockQueryItems;
+    (svc as unknown as { batchGetItem: typeof mockBatchGetItem }).batchGetItem = mockBatchGetItem;
+  });
+
+  it('classifies workflow tag ids via BatchGetItem when listTags returns no workflow rows yet', async () => {
+    const lab = labFixture();
+    const bucket = lab.S3Bucket!;
+    const key = 'org-1/lab-1/reads.fq.gz';
+    const wfTagId = 'aaaaaaaa-bbbb-4ccc-dddd-eeeeeeeeeeee';
+    const stdTagId = 'bbbbbbbb-cccc-4ddd-eeee-ffffffffffff';
+    const ref = encodeS3ObjectRef(bucket, key);
+
+    mockQueryItems.mockResolvedValue({ Items: [] });
+
+    mockBatchGetItem.mockImplementation(async (cmd: { RequestItems?: Record<string, { Keys?: unknown[] }> }) => {
+      const keys = (cmd.RequestItems?.[tableName]?.Keys || []) as Record<string, AttributeValue>[];
+      const rows: Record<string, AttributeValue>[] = [];
+      for (const k of keys) {
+        const row = unmarshall(k) as { Sk: string; LaboratoryId: string };
+        if (row.Sk === `FILE#${ref}`) {
+          rows.push(
+            marshall({
+              LaboratoryId: lab.LaboratoryId,
+              Sk: row.Sk,
+              S3Bucket: bucket,
+              ObjectKey: key,
+              TagIds: [wfTagId, stdTagId],
+            }),
+          );
+        } else if (row.Sk === `TAG#${wfTagId}`) {
+          rows.push(
+            marshall({
+              LaboratoryId: lab.LaboratoryId,
+              Sk: row.Sk,
+              TagId: wfTagId,
+              Name: 'nf-core/rnaseq',
+              Kind: 'workflow',
+              Platform: 'AWS HealthOmics',
+              WorkflowExternalId: 'wf-ext',
+              ColorHex: '#5B4FD4',
+              FileCount: 2,
+            }),
+          );
+        } else if (row.Sk === `TAG#${stdTagId}`) {
+          rows.push(
+            marshall({
+              LaboratoryId: lab.LaboratoryId,
+              Sk: row.Sk,
+              TagId: stdTagId,
+              Name: 'My label',
+              ColorHex: '#111111',
+              FileCount: 1,
+            }),
+          );
+        }
+      }
+
+      return {
+        Responses: {
+          [tableName]: rows,
+        },
+      };
+    });
+
+    const assignments = await svc.listFileTags(lab.LaboratoryId, bucket, [key]);
+
+    expect(assignments).toHaveLength(1);
+    expect(assignments[0].TagIds).toEqual([stdTagId]);
+    expect(assignments[0].WorkflowTagIds).toEqual([wfTagId]);
+    expect(mockBatchGetItem).toHaveBeenCalledTimes(2);
+  });
+});

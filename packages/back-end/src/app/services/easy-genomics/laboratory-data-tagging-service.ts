@@ -42,6 +42,39 @@ function workflowGsiPk(laboratoryId: string): string {
   return `${laboratoryId}#WORKFLOW`;
 }
 
+/**
+ * Inverse of {@link workflowGsiSk}. Workflow TAG rows store identity on `Gsi1Sk` as
+ * `{platform}#{externalId}#{version}` so we can recover Kind/Platform when legacy rows
+ * omitted scalar attributes.
+ */
+function parseWorkflowIdentityFromGsiSk(gsk: unknown): {
+  Platform: WorkflowPlatform;
+  WorkflowExternalId: string;
+  WorkflowVersionName: string;
+} | null {
+  if (typeof gsk !== 'string' || !gsk.length) {
+    return null;
+  }
+  const platforms: WorkflowPlatform[] = ['AWS HealthOmics', 'Seqera Cloud'];
+  for (const platform of platforms) {
+    const prefix = `${platform}#`;
+    if (!gsk.startsWith(prefix)) {
+      continue;
+    }
+    const tail = gsk.slice(prefix.length);
+    const i = tail.indexOf('#');
+    if (i === -1) {
+      return { Platform: platform, WorkflowExternalId: tail, WorkflowVersionName: '' };
+    }
+    return {
+      Platform: platform,
+      WorkflowExternalId: tail.slice(0, i),
+      WorkflowVersionName: tail.slice(i + 1),
+    };
+  }
+  return null;
+}
+
 export function encodeS3ObjectRef(bucket: string, key: string): string {
   return Buffer.from(JSON.stringify({ bucket, key }), 'utf8').toString('base64url');
 }
@@ -82,31 +115,77 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
   }
 
   public async listTags(laboratoryId: string): Promise<ListLaboratoryDataTagsResponse> {
-    const response: QueryCommandOutput = await this.queryItems({
-      TableName: TABLE_NAME,
-      KeyConditionExpression: '#pk = :pk AND begins_with(#sk, :tagPrefix)',
-      ExpressionAttributeNames: {
-        '#pk': 'LaboratoryId',
-        '#sk': 'Sk',
-      },
-      ExpressionAttributeValues: {
-        ':pk': { S: laboratoryId },
-        ':tagPrefix': { S: 'TAG#' },
-      },
-    });
+    const tags: LaboratoryDataTag[] = [];
+    let startKey: Record<string, unknown> | undefined;
+    do {
+      const response: QueryCommandOutput = await this.queryItems({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: '#pk = :pk AND begins_with(#sk, :tagPrefix)',
+        ExpressionAttributeNames: {
+          '#pk': 'LaboratoryId',
+          '#sk': 'Sk',
+        },
+        ExpressionAttributeValues: {
+          ':pk': { S: laboratoryId },
+          ':tagPrefix': { S: 'TAG#' },
+        },
+        /** Strongly consistent read so tag metadata matches FILE# rows updated in the same session (e.g. workflow seeding). */
+        ConsistentRead: true,
+        ...(startKey ? { ExclusiveStartKey: startKey as never } : {}),
+      });
 
-    const tags: LaboratoryDataTag[] = (response.Items || []).map((item) =>
-      this.tagRowToModel(unmarshall(item) as Record<string, unknown>),
-    );
+      for (const item of response.Items || []) {
+        tags.push(this.tagRowToModel(unmarshall(item) as Record<string, unknown>));
+      }
+      startKey = response.LastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (startKey);
+
     tags.sort((a, b) => a.Name.localeCompare(b.Name));
     return { Tags: tags };
   }
 
   /** Converts a raw TAG row from DynamoDB into the shared LaboratoryDataTag model. */
   private tagRowToModel(row: Record<string, unknown>): LaboratoryDataTag {
-    const rawKind = typeof row.Kind === 'string' ? (row.Kind as string) : 'standard';
-    const kind: LaboratoryDataTagKind =
-      rawKind === 'batch' ? 'batch' : rawKind === 'workflow' ? 'workflow' : 'standard';
+    /** Set on workflow TAG rows; Kind/Platform scalars may be missing on legacy or partially-projected items. */
+    const gsiSkParsed = parseWorkflowIdentityFromGsiSk(row.Gsi1Sk ?? row.gsi1Sk);
+
+    const rawKindAttr = row.Kind ?? row.kind;
+    const rawKind = typeof rawKindAttr === 'string' ? rawKindAttr : 'standard';
+    let kind: LaboratoryDataTagKind = rawKind === 'batch' ? 'batch' : rawKind === 'workflow' ? 'workflow' : 'standard';
+    /** Workflow rows always carry platform + external id; infer Kind if an older row omitted it. */
+    const hasWorkflowIdentity =
+      typeof row.Platform === 'string' &&
+      row.Platform.length > 0 &&
+      typeof row.WorkflowExternalId === 'string' &&
+      (row.WorkflowExternalId as string).length > 0;
+    if (kind !== 'batch' && hasWorkflowIdentity) {
+      kind = 'workflow';
+    }
+    /** Workflow tags are indexed under Gsi1Pk `{LaboratoryId}#WORKFLOW` — infer Kind when scalars were omitted. */
+    const laboratoryId = row.LaboratoryId as string | undefined;
+    const gsi1Pk = row.Gsi1Pk as string | undefined;
+    const workflowIndexTag =
+      typeof laboratoryId === 'string' &&
+      laboratoryId.length > 0 &&
+      typeof gsi1Pk === 'string' &&
+      gsi1Pk === workflowGsiPk(laboratoryId);
+    /**
+     * Also infer from `Gsi1Sk` alone: some stored rows retain the workflow identity sort key but not Gsi1Pk/Kind
+     * (e.g. partial updates). Pattern matches {@link workflowGsiSk} output only for workflow tags.
+     */
+    if (kind !== 'batch' && (workflowIndexTag || gsiSkParsed)) {
+      kind = 'workflow';
+    }
+
+    let platform = row.Platform as WorkflowPlatform | undefined;
+    let workflowExternalId = row.WorkflowExternalId as string | undefined;
+    let workflowVersionName = row.WorkflowVersionName as string | undefined;
+    if (kind === 'workflow' && (!platform || !workflowExternalId) && gsiSkParsed) {
+      platform = platform ?? gsiSkParsed.Platform;
+      workflowExternalId = workflowExternalId ?? gsiSkParsed.WorkflowExternalId;
+      workflowVersionName = workflowVersionName ?? gsiSkParsed.WorkflowVersionName;
+    }
+
     return {
       TagId: row.TagId as string,
       Name: row.Name as string,
@@ -115,9 +194,9 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       FileCount: Number(row.FileCount ?? 0),
       ...(kind === 'workflow'
         ? {
-            Platform: row.Platform as WorkflowPlatform | undefined,
-            WorkflowExternalId: row.WorkflowExternalId as string | undefined,
-            WorkflowVersionName: row.WorkflowVersionName as string | undefined,
+            Platform: platform,
+            WorkflowExternalId: workflowExternalId,
+            WorkflowVersionName: workflowVersionName,
           }
         : {}),
       CreatedAt: row.CreatedAt as string | undefined,
@@ -189,6 +268,34 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
   }
 
   /**
+   * Returns an existing workflow tag for the identity tuple, or null if none exists.
+   * Does not create a tag (use {@link getOrCreateWorkflowTag} for that).
+   */
+  public async findWorkflowTagByIdentity(
+    laboratoryId: string,
+    args: {
+      platform: WorkflowPlatform;
+      externalId: string;
+      versionName?: string;
+    },
+  ): Promise<LaboratoryDataTag | null> {
+    const gpk = workflowGsiPk(laboratoryId);
+    const gsk = workflowGsiSk(args.platform, args.externalId, args.versionName);
+    const existing: QueryCommandOutput = await this.queryItems({
+      TableName: TABLE_NAME,
+      IndexName: GSI1_NAME,
+      KeyConditionExpression: '#gpk = :gpk AND #gsk = :gsk',
+      ExpressionAttributeNames: { '#gpk': 'Gsi1Pk', '#gsk': 'Gsi1Sk' },
+      ExpressionAttributeValues: { ':gpk': { S: gpk }, ':gsk': { S: gsk } },
+      Limit: 1,
+    });
+    if (!(existing.Items || []).length) {
+      return null;
+    }
+    return this.tagRowToModel(unmarshall(existing.Items![0]) as Record<string, unknown>);
+  }
+
+  /**
    * Workflow tags are auto-created when a run is launched (or backfilled). Each unique
    * (laboratoryId, platform, workflowExternalId, workflowVersionName) tuple gets its own tag,
    * looked up via GSI `Gsi1Pk_Index` so we don't have to scan the partition.
@@ -204,26 +311,17 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     },
   ): Promise<LaboratoryDataTag> {
     const laboratoryId = laboratory.LaboratoryId;
-    const gpk = workflowGsiPk(laboratoryId);
-    const gsk = workflowGsiSk(args.platform, args.externalId, args.versionName);
-
-    const existing: QueryCommandOutput = await this.queryItems({
-      TableName: TABLE_NAME,
-      IndexName: GSI1_NAME,
-      KeyConditionExpression: '#gpk = :gpk AND #gsk = :gsk',
-      ExpressionAttributeNames: { '#gpk': 'Gsi1Pk', '#gsk': 'Gsi1Sk' },
-      ExpressionAttributeValues: { ':gpk': { S: gpk }, ':gsk': { S: gsk } },
-      Limit: 1,
-    });
-
-    if ((existing.Items || []).length > 0) {
-      return this.tagRowToModel(unmarshall(existing.Items![0]) as Record<string, unknown>);
+    const existing = await this.findWorkflowTagByIdentity(laboratoryId, args);
+    if (existing) {
+      return existing;
     }
 
     const tagId = randomUUID();
     const now = new Date().toISOString();
     const trimmedName = args.name.trim() || args.externalId;
     const colorHex = pickWorkflowTagColor(`${args.platform}#${args.externalId}`);
+    const gpk = workflowGsiPk(laboratoryId);
+    const gsk = workflowGsiSk(args.platform, args.externalId, args.versionName);
 
     await this.putItem({
       TableName: TABLE_NAME,
@@ -409,9 +507,53 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     });
   }
 
+  /**
+   * For tag ids present on files but missing from the listTags-derived sets (e.g. eventual
+   * consistency right after workflow tagging), load TAG# rows via BatchGetItem and add ids
+   * to batchTagIds / workflowTagIds so listFileTags partitions correctly.
+   */
+  private async hydrateKindSetsFromTagIds(
+    laboratoryId: string,
+    tagIds: Iterable<string>,
+    batchTagIds: Set<string>,
+    workflowTagIds: Set<string>,
+  ): Promise<void> {
+    const toResolve = [...new Set(tagIds)].filter((id) => !batchTagIds.has(id) && !workflowTagIds.has(id));
+    if (!toResolve.length) return;
+
+    for (let i = 0; i < toResolve.length; i += 100) {
+      const chunk = toResolve.slice(i, i + 100);
+      const res: BatchGetItemCommandOutput = await this.batchGetItem({
+        RequestItems: {
+          [TABLE_NAME]: {
+            Keys: chunk.map((tagId) =>
+              marshall({
+                LaboratoryId: laboratoryId,
+                Sk: skTag(tagId),
+              }),
+            ),
+            /** Strongly consistent so Kind/workflow metadata is visible right after PutItem on TAG# rows. */
+            ConsistentRead: true,
+          },
+        },
+      });
+      for (const item of res.Responses?.[TABLE_NAME] || []) {
+        const tag = this.tagRowToModel(unmarshall(item) as Record<string, unknown>);
+        const isWorkflow = tag.Kind === 'workflow' || !!(tag.Platform && tag.WorkflowExternalId);
+        if (tag.Kind === 'batch') {
+          batchTagIds.add(tag.TagId);
+        } else if (isWorkflow) {
+          workflowTagIds.add(tag.TagId);
+        }
+      }
+    }
+  }
+
   public async listFileTags(laboratoryId: string, bucket: string, keys: string[]): Promise<FileTagAssignment[]> {
     const out: FileTagAssignment[] = [];
     const { batchTagIds, workflowTagIds } = await this.getKindIndexedTagIds(laboratoryId);
+    const batchTagIdsMutable = new Set(batchTagIds);
+    const workflowTagIdsMutable = new Set(workflowTagIds);
 
     for (let i = 0; i < keys.length; i += 100) {
       const batchKeys = keys.slice(i, i + 100);
@@ -424,16 +566,23 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         RequestItems: {
           [TABLE_NAME]: {
             Keys: dynamoKeys.map((k) => marshall(k)),
+            /** Strongly consistent with workflow writes (FILE# + TAG# in the same request path). */
+            ConsistentRead: true,
           },
         },
       });
 
       const items = res.Responses?.[TABLE_NAME] || [];
       const bySk = new Map<string, string[]>();
+      const chunkTagIds = new Set<string>();
       for (const item of items) {
         const row = unmarshall(item) as Record<string, unknown>;
-        bySk.set(row.Sk as string, (row.TagIds as string[]) || []);
+        const ids = (row.TagIds as string[]) || [];
+        bySk.set(row.Sk as string, ids);
+        for (const id of ids) chunkTagIds.add(id);
       }
+
+      await this.hydrateKindSetsFromTagIds(laboratoryId, chunkTagIds, batchTagIdsMutable, workflowTagIdsMutable);
 
       for (let j = 0; j < batchKeys.length; j++) {
         const key = batchKeys[j];
@@ -443,9 +592,9 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         const workflowIds: string[] = [];
         let batchTagId: string | undefined;
         for (const id of rawIds) {
-          if (batchTagIds.has(id)) {
+          if (batchTagIdsMutable.has(id)) {
             batchTagId = id;
-          } else if (workflowTagIds.has(id)) {
+          } else if (workflowTagIdsMutable.has(id)) {
             workflowIds.push(id);
           } else {
             standard.push(id);
@@ -481,7 +630,8 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
 
     const tagRow = await this.getTagRow(laboratoryId, workflowTagId);
     if (!tagRow) throw new Error(`Unknown tag: ${workflowTagId}`);
-    if (tagRow.Kind !== 'workflow') {
+    const isWorkflow = tagRow.Kind === 'workflow' || !!(tagRow.Platform && tagRow.WorkflowExternalId);
+    if (!isWorkflow) {
       throw new Error('applyWorkflowToFiles can only be used with workflow-kind tags');
     }
 
@@ -734,8 +884,11 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     const workflowTagIds = new Set<string>();
     for (const t of Tags) {
       const kind = t.Kind ?? 'standard';
-      if (kind === 'batch') batchTagIds.add(t.TagId);
-      else if (kind === 'workflow') workflowTagIds.add(t.TagId);
+      if (kind === 'batch') {
+        batchTagIds.add(t.TagId);
+      } else if (kind === 'workflow' || !!(t.Platform && t.WorkflowExternalId)) {
+        workflowTagIds.add(t.TagId);
+      }
     }
     return { batchTagIds, workflowTagIds };
   }
@@ -794,6 +947,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     const res = await this.getItem({
       TableName: TABLE_NAME,
       Key: marshall({ LaboratoryId: laboratoryId, Sk: skTag(tagId) }),
+      ConsistentRead: true,
     });
     if (!res.Item) return null;
     return this.tagRowToModel(unmarshall(res.Item) as Record<string, unknown>);
@@ -806,6 +960,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     const res = await this.getItem({
       TableName: TABLE_NAME,
       Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
+      ConsistentRead: true,
     });
     if (!res.Item) return null;
     const row = unmarshall(res.Item) as Record<string, unknown>;

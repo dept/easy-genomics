@@ -13,6 +13,7 @@ import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-geno
 import { SnsProcessingEvent } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { v4 as uuidv4 } from 'uuid';
+import { associateInputsWithWorkflowTag } from '@BE/services/easy-genomics/associate-laboratory-run-workflow-tagging';
 import { LaboratoryDataTaggingService } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
@@ -104,6 +105,7 @@ export const handler: Handler = async (
       laboratory,
       userId: currentUserId,
       request,
+      tagging: dataTaggingService,
     });
 
     if (laboratoryRun.ExternalRunId) {
@@ -127,38 +129,3 @@ export const handler: Handler = async (
     return buildErrorResponse(err, event);
   }
 };
-
-/**
- * Best-effort hook that records the file -> workflow association in the laboratory data
- * tagging table when a run is launched. Skips silently when any of the required pieces
- * are missing (legacy runs, runs without explicit input keys, runs whose keys live outside
- * the lab bucket, etc.) and never throws — tagging failures must not break run creation.
- */
-async function associateInputsWithWorkflowTag(args: {
-  laboratory: Laboratory;
-  userId: string;
-  request: AddLaboratoryRun;
-}): Promise<void> {
-  const { laboratory, userId, request } = args;
-  try {
-    const inputKeys = (request.InputFileKeys || []).filter((k) => typeof k === 'string' && k.length > 0);
-    if (!inputKeys.length) return;
-    if (!request.WorkflowExternalId) return;
-    if (!laboratory.S3Bucket) return;
-
-    const labPrefix = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
-    const labScopedKeys = inputKeys.filter((k) => k.startsWith(labPrefix));
-    if (!labScopedKeys.length) return;
-
-    const tag = await dataTaggingService.getOrCreateWorkflowTag(laboratory, userId, {
-      platform: request.Platform,
-      externalId: request.WorkflowExternalId,
-      versionName: request.WorkflowVersionName,
-      name: request.WorkflowName?.trim() || request.WorkflowExternalId,
-    });
-
-    await dataTaggingService.applyWorkflowToFiles(laboratory, userId, tag.TagId, laboratory.S3Bucket, labScopedKeys);
-  } catch (err) {
-    console.warn('Failed to associate input files with workflow tag (continuing):', err);
-  }
-}

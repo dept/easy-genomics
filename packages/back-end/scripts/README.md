@@ -22,6 +22,38 @@ pnpm run backfill-omics-run-tags:dry-run
 
 **Environment:** `NAME_PREFIX`, `ACCOUNT_ID`, `REGION` (see script header for IAM expectations).
 
+## `seed-workflow-tagging-test-runs.ts`
+
+**Purpose:** Creates twelve synthetic `LaboratoryRun` rows (no Omics or Seqera launch) and applies the same
+workflow→file tagging logic as `create-laboratory-run`, so you can exercise Data Collections workflow filters without
+platform charges.
+
+**When to use:** Local or non-prod environments when you want realistic workflow tag diversity on existing bucket
+objects.
+
+**Usage:**
+
+```bash
+pnpm run seed-workflow-tagging-test-runs -- --laboratoryId <uuid>
+pnpm run seed-workflow-tagging-test-runs -- --laboratoryId <uuid> --reset
+pnpm run seed-workflow-tagging-test-runs:dry-run -- --laboratoryId <uuid>
+pnpm run seed-workflow-tagging-test-runs:dry-run -- --laboratoryId <uuid> --reset
+```
+
+- `--reset` — Deletes laboratory runs created by this script for that lab (matched by `Settings.seededBy` or a `RunName`
+  prefix of `[seed] `), removes each distinct seed workflow tag via `deleteTag` (clears `FILE#` / `MAP#` links), then
+  proceeds with a fresh seed as usual. Combine with `--dry-run` to print what would be removed.
+- `--keys-file path.json` — JSON array of full S3 keys (must start with `OrganizationId/LaboratoryId/`). Use when the
+  bucket is empty under the lab prefix or you want specific files only.
+- `--user-id` / `--owner` — optional overrides for `UserId` (must be a UUID) and `Owner` on each run row.
+
+**Environment:** `NAME_PREFIX`, `REGION`. Optional `SEQERA_PLATFORM_API_BASE_URL` if the lab has no
+`NextFlowTowerApiBaseUrl` but you still want Seqera-style runs to carry a base URL.
+
+**IAM:** DynamoDB `PutItem` / `DeleteItem` on `laboratory-run-table`; DynamoDB read/write (including `DeleteItem` and
+GSI queries) on `laboratory-data-tagging-table` (+ indexes); `s3:ListBucket` (and `ListBucket` on the lab bucket) when
+discovering keys. No Omics or Tower API calls.
+
 ## `recompute-laboratory-run-retention.ts`
 
 **Purpose:** Recomputes DynamoDB TTL-related fields on terminal laboratory runs for **one laboratory**: sets

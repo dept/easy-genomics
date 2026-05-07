@@ -28,7 +28,11 @@ export function loadNuxtSettings() {
 
   // Env var toggle: use local back-end without renaming/editing .env.nuxt.local
   if (LOCAL_BACKEND_VALUES.has(String(process.env.USE_LOCAL_BACKEND ?? '').toLowerCase())) {
-    process.env.AWS_API_GATEWAY_URL = (process.env.LOCAL_API_URL ?? DEFAULT_LOCAL_API_URL).replace(/\/+$/, '');
+    const localBase = (process.env.LOCAL_API_URL ?? DEFAULT_LOCAL_API_URL).replace(/\/+$/, '');
+    process.env.AWS_API_GATEWAY_URL = localBase;
+    // Split-stack deploys set AWS_EASY_GENOMICS_API_URL; HttpFactory prefers it over BASE_API_URL.
+    // Clear it for local so easy-genomics calls use the same local server as everything else.
+    process.env.AWS_EASY_GENOMICS_API_URL = '';
   }
 
   if (

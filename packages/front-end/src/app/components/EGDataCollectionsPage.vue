@@ -75,11 +75,68 @@
     return tags.value.find((t) => t.TagId === id);
   }
 
-  const standardTags = computed(() => tags.value.filter((t) => (t.Kind ?? 'standard') === 'standard'));
+  /** True for workflow tags — Kind may be omitted in some API payloads; platform + external id is definitive. */
+  function isWorkflowLaboratoryTag(t: LaboratoryDataTag | undefined): boolean {
+    if (!t) return false;
+    if (t.Kind === 'workflow') return true;
+    return !!(t.Platform && t.WorkflowExternalId);
+  }
+
+  /**
+   * Workflow tag ids for a file: prefer API `WorkflowTagIds`, else infer from raw `TagIds` using
+   * tag metadata (needed when list-file-tags mis-buckets or tags load after file assignments).
+   */
+  function workflowTagIdsForFileKey(key: string): string[] {
+    const fromApi = keyToWorkflowTagIds.value[key] ?? [];
+    const raw = keyToTagIds.value[key] ?? [];
+    const merged = new Set<string>(fromApi);
+    if (tags.value.length) {
+      for (const tid of raw) {
+        if (isWorkflowLaboratoryTag(tagById(tid))) {
+          merged.add(tid);
+        }
+      }
+    }
+    return [...merged];
+  }
+
+  const keyToWorkflowTagIdsEffective = computed(() => {
+    const m: Record<string, string[]> = {};
+    for (const f of files.value) {
+      m[f.Key] = workflowTagIdsForFileKey(f.Key);
+    }
+    return m;
+  });
+
+  /**
+   * Tag ids that belong in the generic (user) tag pill row. The API splits workflow ids into
+   * `WorkflowTagIds`, but mis-partitioning or missing `Kind` on list-tags must not show workflow
+   * chips in the standard row.
+   */
+  function standardTagIdsForFileKey(key: string): string[] {
+    const wf = new Set(workflowTagIdsForFileKey(key));
+    return (keyToTagIds.value[key] || []).filter((tid: string) => {
+      if (wf.has(tid)) return false;
+      if (isWorkflowLaboratoryTag(tagById(tid))) return false;
+      return true;
+    });
+  }
+
+  const keyToStandardTagIdsForExplorer = computed(() => {
+    const m: Record<string, string[]> = {};
+    for (const f of files.value) {
+      m[f.Key] = standardTagIdsForFileKey(f.Key);
+    }
+    return m;
+  });
+
+  const standardTags = computed(() =>
+    tags.value.filter((t) => (t.Kind ?? 'standard') === 'standard' && !isWorkflowLaboratoryTag(t)),
+  );
 
   const batchTags = computed(() => tags.value.filter((t) => (t.Kind ?? 'standard') === 'batch'));
 
-  const workflowTags = computed(() => tags.value.filter((t) => t.Kind === 'workflow'));
+  const workflowTags = computed(() => tags.value.filter((t) => isWorkflowLaboratoryTag(t)));
 
   /**
    * Group workflow tags by (Platform, WorkflowExternalId) so the user sees one row per
@@ -181,7 +238,7 @@
     if (!sel.length) return [] as { tagId: string; count: number }[];
     const counts = new Map<string, number>();
     for (const key of sel) {
-      for (const tid of keyToTagIds.value[key] || []) {
+      for (const tid of standardTagIdsForFileKey(key)) {
         counts.set(tid, (counts.get(tid) || 0) + 1);
       }
     }
@@ -255,14 +312,11 @@
     () => [props.labId, lab.value?.S3Bucket],
     async () => {
       if (!lab.value?.S3Bucket) return;
+      await loadTags();
       await loadListing();
     },
     { immediate: true },
   );
-
-  onMounted(async () => {
-    await loadTags();
-  });
 
   const visibleFiles = computed(() => {
     let list = files.value;
@@ -273,27 +327,29 @@
       case 'all':
         break;
       case 'untagged':
-        list = list.filter((f) => !keyToTagIds.value[f.Key]?.length);
+        list = list.filter((f) => !standardTagIdsForFileKey(f.Key).length);
         break;
       case 'tag':
-        list = list.filter((f) => (keyToTagIds.value[f.Key] || []).includes(af.tagId));
+        list = list.filter((f) => standardTagIdsForFileKey(f.Key).includes(af.tagId));
         break;
       case 'all-samples':
         // Surface only files that have been touched by any workflow run, mirroring the
         // ticket's "All samples" filter (i.e. anything that's been analysed at least once).
-        list = list.filter((f) => (keyToWorkflowTagIds.value[f.Key] || []).length > 0);
+        list = list.filter((f) => (keyToWorkflowTagIdsEffective.value[f.Key] || []).length > 0);
         break;
       case 'not-analyzed':
-        list = list.filter((f) => !(keyToWorkflowTagIds.value[f.Key] || []).length);
+        list = list.filter((f) => !(keyToWorkflowTagIdsEffective.value[f.Key] || []).length);
         break;
       case 'workflow-template': {
         const tmpl = workflowTemplates.value.find((t) => t.key === af.templateKey);
         const versionTagIds = new Set((tmpl?.versions || []).map((v) => v.tag.TagId));
-        list = list.filter((f) => (keyToWorkflowTagIds.value[f.Key] || []).some((id) => versionTagIds.has(id)));
+        list = list.filter((f) =>
+          (keyToWorkflowTagIdsEffective.value[f.Key] || []).some((id) => versionTagIds.has(id)),
+        );
         break;
       }
       case 'workflow-version':
-        list = list.filter((f) => (keyToWorkflowTagIds.value[f.Key] || []).includes(af.tagId));
+        list = list.filter((f) => (keyToWorkflowTagIdsEffective.value[f.Key] || []).includes(af.tagId));
         break;
     }
     return list;
@@ -698,11 +754,11 @@
         class="min-h-0 min-w-0 flex-1"
         :lab-root="labRoot"
         :visible-files="visibleFiles"
-        :key-to-tag-ids="keyToTagIds"
+        :key-to-tag-ids="keyToStandardTagIdsForExplorer"
         :key-to-batch-tag-id="keyToBatchTagId"
-        :key-to-workflow-tag-ids="keyToWorkflowTagIds"
+        :key-to-workflow-tag-ids="keyToWorkflowTagIdsEffective"
         :batch-tags="batchTags"
-        :tags="standardTags"
+        :tags="tags"
         :selected-keys="selectedKeys"
         :loading="loading"
         :search="search"
