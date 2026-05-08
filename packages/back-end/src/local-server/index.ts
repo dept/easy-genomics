@@ -6,7 +6,7 @@
 import path from 'path';
 import { ACCESS_CONTROL_ALLOW_HEADERS } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import dotenv from 'dotenv';
-import express, { type Request, type Response } from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import { runAuth, attachClaimsToEvent, sendUnauthorizedIfNeeded } from './auth-middleware';
 import { buildApiGatewayEvent } from './event-builder';
 import { invokeHandler } from './lambda-invoker';
@@ -106,10 +106,11 @@ function main(): void {
     });
   }
 
-  app.use((err: Error, _req: Request, res: Response) => {
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    void _next;
     console.error('[local-server] Unhandled error', err);
     res.status(500).json({
-      Error: err.message || 'Internal server error',
+      Error: err instanceof Error ? err.message : 'Internal server error',
       ErrorCode: 'EG-100',
     });
   });

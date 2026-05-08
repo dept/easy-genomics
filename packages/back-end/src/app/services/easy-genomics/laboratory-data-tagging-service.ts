@@ -1,5 +1,9 @@
 import { randomUUID } from 'crypto';
-import { BatchGetItemCommandOutput, QueryCommandOutput } from '@aws-sdk/client-dynamodb';
+import {
+  BatchGetItemCommandOutput,
+  ConditionalCheckFailedException,
+  QueryCommandOutput,
+} from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import {
   FileTagAssignment,
@@ -11,10 +15,30 @@ import {
   WorkflowPlatform,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import { v5 as uuidv5 } from 'uuid';
 import { DynamoDBService } from '../dynamodb-service';
 
 const TABLE_NAME = `${process.env.NAME_PREFIX}-laboratory-data-tagging-table`;
 const GSI1_NAME = 'Gsi1Pk_Index';
+
+/** Namespace UUID for v5 workflow tag ids (stable per lab + platform + workflow identity). */
+const WORKFLOW_TAG_ID_NAMESPACE = 'a3d8f7e2-4c1b-5d6e-9f8a-0b1c2d3e4f5a';
+
+function isConditionalCheckFailed(e: unknown): boolean {
+  return (
+    e instanceof ConditionalCheckFailedException ||
+    (typeof e === 'object' && e !== null && (e as { name?: string }).name === 'ConditionalCheckFailedException')
+  );
+}
+
+function deterministicWorkflowTagId(
+  laboratoryId: string,
+  platform: WorkflowPlatform,
+  externalId: string,
+  versionName: string,
+): string {
+  return uuidv5(`${laboratoryId}\u0000${platform}\u0000${externalId}\u0000${versionName}`, WORKFLOW_TAG_ID_NAMESPACE);
+}
 
 /**
  * Deterministic palette used for auto-assigned workflow tag colors. Mirrors the
@@ -316,39 +340,64 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       return existing;
     }
 
-    const tagId = randomUUID();
+    const versionKey = args.versionName ?? '';
+    const tagId = deterministicWorkflowTagId(laboratoryId, args.platform, args.externalId, versionKey);
+    const existingByPk = await this.getTagRow(laboratoryId, tagId);
+    if (existingByPk) {
+      const isWorkflow =
+        existingByPk.Kind === 'workflow' || !!(existingByPk.Platform && existingByPk.WorkflowExternalId);
+      if (isWorkflow) {
+        return existingByPk;
+      }
+      throw new Error('Workflow tag id collision with an existing non-workflow tag');
+    }
+
     const now = new Date().toISOString();
     const trimmedName = args.name.trim() || args.externalId;
     const colorHex = pickWorkflowTagColor(`${args.platform}#${args.externalId}`);
     const gpk = workflowGsiPk(laboratoryId);
     const gsk = workflowGsiSk(args.platform, args.externalId, args.versionName);
 
-    await this.putItem({
-      TableName: TABLE_NAME,
-      Item: marshall(
-        {
-          LaboratoryId: laboratoryId,
-          Sk: skTag(tagId),
-          TagId: tagId,
-          Name: trimmedName,
-          ColorHex: colorHex,
-          Kind: 'workflow',
-          Platform: args.platform,
-          WorkflowExternalId: args.externalId,
-          WorkflowVersionName: args.versionName ?? '',
-          FileCount: 0,
-          Gsi1Pk: gpk,
-          Gsi1Sk: gsk,
-          CreatedAt: now,
-          CreatedBy: userId,
-          ModifiedAt: now,
-          ModifiedBy: userId,
-        },
-        { removeUndefinedValues: true },
-      ),
-      ConditionExpression: 'attribute_not_exists(#pk) AND attribute_not_exists(#sk)',
-      ExpressionAttributeNames: { '#pk': 'LaboratoryId', '#sk': 'Sk' },
-    });
+    try {
+      await this.putItem({
+        TableName: TABLE_NAME,
+        Item: marshall(
+          {
+            LaboratoryId: laboratoryId,
+            Sk: skTag(tagId),
+            TagId: tagId,
+            Name: trimmedName,
+            ColorHex: colorHex,
+            Kind: 'workflow',
+            Platform: args.platform,
+            WorkflowExternalId: args.externalId,
+            WorkflowVersionName: versionKey,
+            FileCount: 0,
+            Gsi1Pk: gpk,
+            Gsi1Sk: gsk,
+            CreatedAt: now,
+            CreatedBy: userId,
+            ModifiedAt: now,
+            ModifiedBy: userId,
+          },
+          { removeUndefinedValues: true },
+        ),
+        ConditionExpression: 'attribute_not_exists(#pk) AND attribute_not_exists(#sk)',
+        ExpressionAttributeNames: { '#pk': 'LaboratoryId', '#sk': 'Sk' },
+      });
+    } catch (e: unknown) {
+      if (isConditionalCheckFailed(e)) {
+        const won = await this.findWorkflowTagByIdentity(laboratoryId, args);
+        if (won) {
+          return won;
+        }
+        const row = await this.getTagRow(laboratoryId, tagId);
+        if (row) {
+          return row;
+        }
+      }
+      throw e;
+    }
 
     return {
       TagId: tagId,
@@ -357,7 +406,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       Kind: 'workflow',
       Platform: args.platform,
       WorkflowExternalId: args.externalId,
-      WorkflowVersionName: args.versionName ?? '',
+      WorkflowVersionName: versionKey,
       FileCount: 0,
       CreatedAt: now,
       CreatedBy: userId,
@@ -616,6 +665,10 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
    * Idempotently associate a set of input file keys with a workflow tag. The keys must lie under
    * the laboratory prefix; bucket validation is performed by the caller via `assertBucketMatchesLab`.
    * Re-applying the same workflow tag to a file is a no-op (no FileCount drift, no duplicate MAP rows).
+   *
+   * Uses an atomic DynamoDB `UpdateItem` (list_append + NOT contains) so concurrent launches cannot
+   * drop each other's workflow ids on the same FILE# row; MAP rows and FileCount are updated only
+   * when a new MAP link is inserted.
    */
   public async applyWorkflowToFiles(
     laboratory: Laboratory,
@@ -638,32 +691,68 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     for (const key of keys) {
       this.assertKeyUnderLabPrefix(laboratory, key);
       const ref = encodeS3ObjectRef(bucket, key);
-      const existing = await this.getFileRow(laboratoryId, ref);
-      const tagIds = new Set<string>(existing?.TagIds || []);
-
-      if (tagIds.has(workflowTagId)) continue;
-
-      tagIds.add(workflowTagId);
-      await this.putMapRow(laboratoryId, workflowTagId, ref, bucket, key);
-      await this.adjustTagFileCount(laboratoryId, workflowTagId, 1);
-
-      const now = new Date().toISOString();
-      await this.putItem({
-        TableName: TABLE_NAME,
-        Item: marshall(
-          {
-            LaboratoryId: laboratoryId,
-            Sk: skFile(ref),
-            S3Bucket: bucket,
-            ObjectKey: key,
-            TagIds: [...tagIds],
-            ModifiedAt: now,
-            ModifiedBy: userId,
-          },
-          { removeUndefinedValues: true },
-        ),
-      });
+      await this.applyWorkflowToSingleFileKey(laboratoryId, userId, workflowTagId, bucket, key, ref);
     }
+  }
+
+  /**
+   * Atomically appends the workflow tag id to the file row's TagIds list when absent, then
+   * ensures a MAP# row exists (insert-only). Heals a missing MAP row when the file row already
+   * lists the workflow (e.g. partial failure or client retry).
+   */
+  private async applyWorkflowToSingleFileKey(
+    laboratoryId: string,
+    userId: string,
+    workflowTagId: string,
+    bucket: string,
+    key: string,
+    ref: string,
+  ): Promise<void> {
+    const ensureMapAndCount = async (): Promise<void> => {
+      const mapInserted = await this.putMapRowIfAbsent(laboratoryId, workflowTagId, ref, bucket, key);
+      if (mapInserted) {
+        await this.adjustTagFileCount(laboratoryId, workflowTagId, 1);
+      }
+    };
+
+    const existing = await this.getFileRow(laboratoryId, ref);
+    if (existing?.TagIds?.includes(workflowTagId)) {
+      await ensureMapAndCount();
+      return;
+    }
+
+    const now = new Date().toISOString();
+    try {
+      await this.updateItem({
+        TableName: TABLE_NAME,
+        Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
+        UpdateExpression:
+          'SET #tid = list_append(if_not_exists(#tid, :empty), :one), ModifiedBy = :mb, ModifiedAt = :ma, #sb = if_not_exists(#sb, :bucket), #ok = if_not_exists(#ok, :objectKey)',
+        ExpressionAttributeNames: {
+          '#tid': 'TagIds',
+          '#sb': 'S3Bucket',
+          '#ok': 'ObjectKey',
+        },
+        ExpressionAttributeValues: marshall({
+          ':empty': [],
+          ':one': [workflowTagId],
+          ':mb': userId,
+          ':ma': now,
+          ':bucket': bucket,
+          ':objectKey': key,
+          ':wfElem': workflowTagId,
+        }),
+        ConditionExpression: 'attribute_not_exists(#tid) OR NOT contains(#tid, :wfElem)',
+      });
+    } catch (e: unknown) {
+      if (isConditionalCheckFailed(e)) {
+        await ensureMapAndCount();
+        return;
+      }
+      throw e;
+    }
+
+    await ensureMapAndCount();
   }
 
   public async listFilesByTag(
@@ -917,6 +1006,43 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         { removeUndefinedValues: true },
       ),
     });
+  }
+
+  /** Returns true if a new MAP# row was written; false if it already existed. */
+  private async putMapRowIfAbsent(
+    laboratoryId: string,
+    tagId: string,
+    ref: string,
+    bucket: string,
+    key: string,
+  ): Promise<boolean> {
+    const now = new Date().toISOString();
+    try {
+      await this.putItem({
+        TableName: TABLE_NAME,
+        Item: marshall(
+          {
+            LaboratoryId: laboratoryId,
+            Sk: skMap(tagId, ref),
+            Gsi1Pk: gsi1PkForTag(laboratoryId, tagId),
+            Gsi1Sk: ref,
+            S3Bucket: bucket,
+            ObjectKey: key,
+            TagId: tagId,
+            CreatedAt: now,
+          },
+          { removeUndefinedValues: true },
+        ),
+        ConditionExpression: 'attribute_not_exists(#sk)',
+        ExpressionAttributeNames: { '#sk': 'Sk' },
+      });
+      return true;
+    } catch (e: unknown) {
+      if (isConditionalCheckFailed(e)) {
+        return false;
+      }
+      throw e;
+    }
   }
 
   private async deleteMapIfExists(laboratoryId: string, tagId: string, ref: string): Promise<void> {
