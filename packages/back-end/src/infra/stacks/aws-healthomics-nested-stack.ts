@@ -1,4 +1,4 @@
-import { NestedStack } from 'aws-cdk-lib';
+import { NestedStack, RemovalPolicy } from 'aws-cdk-lib';
 import { AttributeType } from 'aws-cdk-lib/aws-dynamodb';
 import { Match, Rule } from 'aws-cdk-lib/aws-events';
 import { LambdaFunction as LambdaFunctionTarget } from 'aws-cdk-lib/aws-events-targets';
@@ -12,6 +12,7 @@ import {
   ArnPrincipal,
 } from 'aws-cdk-lib/aws-iam';
 import { IFunction } from 'aws-cdk-lib/aws-lambda';
+import { BlockPublicAccess, Bucket, BucketEncryption, HttpMethods, ObjectOwnership } from 'aws-cdk-lib/aws-s3';
 import { ISecret, Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
@@ -28,9 +29,12 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
 
   private readonly workflowSchemaTableName: string;
   private readonly workflowSchemaTableArn: string;
+  private readonly workflowDefinitionsBucketArn: string;
+  private readonly workflowDefinitionsBucketName: string;
   private readonly githubPatSecretArn: string;
   private readonly githubPatSecretName: string;
   private readonly workflowTagRule: Rule;
+  private readonly workflowSchemaUrlTagRule: Rule;
 
   constructor(scope: Construct, id: string, props: AwsHealthOmicsNestedStackProps) {
     super(scope, id);
@@ -55,6 +59,53 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       },
     });
     this.workflowSchemaTableArn = workflowSchemaTable.tableArn;
+
+    const workflowDefinitionsBucket = new Bucket(this, `${this.props.namePrefix}-omics-workflow-definitions-bucket`, {
+      objectOwnership: ObjectOwnership.BUCKET_OWNER_ENFORCED,
+      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+      encryption: BucketEncryption.S3_MANAGED,
+      bucketKeyEnabled: true,
+      autoDeleteObjects: this.props.envType !== 'prod',
+      removalPolicy: this.props.envType !== 'prod' ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN,
+      enforceSSL: true,
+      cors: [
+        {
+          allowedMethods: [HttpMethods.PUT, HttpMethods.HEAD],
+          allowedOrigins: ['*'],
+          allowedHeaders: ['*'],
+        },
+      ],
+    });
+    workflowDefinitionsBucket.addToResourcePolicy(
+      new PolicyStatement({
+        sid: 'AllowHealthOmicsReadWorkflowDefinitions',
+        principals: [new ServicePrincipal('omics.amazonaws.com')],
+        actions: ['s3:GetObject'],
+        resources: [`${workflowDefinitionsBucket.bucketArn}/*`],
+        effect: Effect.ALLOW,
+        conditions: {
+          StringEquals: {
+            'aws:SourceAccount': this.props.env.account!,
+          },
+        },
+      }),
+    );
+    workflowDefinitionsBucket.addToResourcePolicy(
+      new PolicyStatement({
+        sid: 'AllowHealthOmicsListWorkflowDefinitionsBucket',
+        principals: [new ServicePrincipal('omics.amazonaws.com')],
+        actions: ['s3:ListBucket'],
+        resources: [workflowDefinitionsBucket.bucketArn],
+        effect: Effect.ALLOW,
+        conditions: {
+          StringEquals: {
+            'aws:SourceAccount': this.props.env.account!,
+          },
+        },
+      }),
+    );
+    this.workflowDefinitionsBucketArn = workflowDefinitionsBucket.bucketArn;
+    this.workflowDefinitionsBucketName = workflowDefinitionsBucket.bucketName;
 
     // --- Secrets Manager: GitHub Fine-Grained PAT ---
     // If github-pat-secret-name is configured (yaml or CI/CD env), import the existing secret.
@@ -83,17 +134,32 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
     // Note: if aws.tag events prove unreliable for HealthOmics, an alternative is to
     // capture omics:TagResource via CloudTrail → EventBridge using source: ["aws.cloudtrail"]
     // and detail.eventName: ["TagResource"].
+    const workflowArnPrefix = Match.prefix(
+      `arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/`,
+    );
+
     this.workflowTagRule = new Rule(this, `${this.props.namePrefix}-workflow-schema-tag-rule`, {
       ruleName: `${this.props.namePrefix}-workflow-schema-tag-rule`,
       description: 'Triggers schema fetch when github-repo-url tag is set or updated on a HealthOmics workflow',
       eventPattern: {
         source: ['aws.tag'],
         detailType: ['Tag Change on Resource'],
-        // Filter to HealthOmics workflow ARNs only
-        resources: Match.prefix(`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/`),
-        // Fire only when the github-repo-url tag key was part of the change
+        resources: workflowArnPrefix,
         detail: {
           'changed-tag-keys': ['github-repo-url'],
+        },
+      },
+    });
+
+    this.workflowSchemaUrlTagRule = new Rule(this, `${this.props.namePrefix}-workflow-schema-url-tag-rule`, {
+      ruleName: `${this.props.namePrefix}-workflow-schema-url-tag-rule`,
+      description: 'Triggers schema fetch when github-schema-url tag is set or updated on a HealthOmics workflow',
+      eventPattern: {
+        source: ['aws.tag'],
+        detailType: ['Tag Change on Resource'],
+        resources: workflowArnPrefix,
+        detail: {
+          'changed-tag-keys': ['github-schema-url'],
         },
       },
     });
@@ -121,6 +187,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
           callbacks: [
             (fn: IFunction) => {
               this.workflowTagRule.addTarget(new LambdaFunctionTarget(fn));
+              this.workflowSchemaUrlTagRule.addTarget(new LambdaFunctionTarget(fn));
             },
           ],
           environment: {
@@ -139,6 +206,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         REGION: this.props.env.region!,
         DOMAIN_NAME: this.props.appDomainName,
         NAME_PREFIX: this.props.namePrefix,
+        OMICS_WORKFLOW_UPLOAD_BUCKET: this.workflowDefinitionsBucketName,
       },
     });
 
@@ -253,7 +321,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       // Allow StartRun and TagResource only when request tags match principal tags for lab and org
       new PolicyStatement({
         resources: ['*'],
-        actions: ['omics:StartRun', 'omics:TagResource'],
+        actions: ['omics:StartRun', 'omics:CreateWorkflow', 'omics:TagResource'],
         effect: Effect.ALLOW,
         conditions: {
           StringEquals: {
@@ -278,6 +346,18 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: ['*'],
         actions: ['omics:ListWorkflows', 'omics:GetWorkflow', 'omics:ListShares'],
+        effect: Effect.ALLOW,
+      }),
+      // Allow CreateWorkflow to read ZIP definitions from the dedicated workflow upload bucket.
+      // HealthOmics validates and fetches definitionUri objects during workflow creation.
+      new PolicyStatement({
+        resources: [this.workflowDefinitionsBucketArn],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [`${this.workflowDefinitionsBucketArn}/*`],
+        actions: ['s3:GetObject'],
         effect: Effect.ALLOW,
       }),
       // Allow passing the workflow run role to HealthOmics when starting a run
@@ -414,6 +494,60 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
     ]);
+    // /aws-healthomics/workflow/create-private-workflow
+    this.iam.addPolicyStatements('/aws-healthomics/workflow/create-private-workflow', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+      }),
+      new PolicyStatement({
+        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
+        actions: ['omics:CreateWorkflow', 'omics:TagResource'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/github-access-token`,
+        ],
+        actions: ['ssm:GetParameter'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [`${this.workflowDefinitionsBucketArn}/*`],
+        actions: ['s3:PutObject'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
+        ],
+        actions: ['sts:AssumeRole', 'sts:TagSession'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+    // /aws-healthomics/workflow/create-workflow-upload-request
+    this.iam.addPolicyStatements('/aws-healthomics/workflow/create-workflow-upload-request', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+      }),
+      new PolicyStatement({
+        resources: [this.workflowDefinitionsBucketArn],
+        actions: ['s3:GetBucketLocation'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [`${this.workflowDefinitionsBucketArn}/*`],
+        actions: ['s3:PutObject'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
     // /aws-healthomics/workflow/list-shared-workflows
     this.iam.addPolicyStatements('/aws-healthomics/workflow/list-shared-workflows', [
       new PolicyStatement({
@@ -473,6 +607,13 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
+        resources: [
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/github-access-token`,
+        ],
+        actions: ['ssm:GetParameter'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
         resources: [this.githubPatSecretArn],
         actions: ['secretsmanager:GetSecretValue'],
         effect: Effect.ALLOW,
@@ -516,6 +657,13 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
         actions: ['omics:GetWorkflow'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/github-access-token`,
+        ],
+        actions: ['ssm:GetParameter'],
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({

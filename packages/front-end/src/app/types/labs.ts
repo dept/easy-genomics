@@ -15,6 +15,7 @@ const LabDescriptionSchema = z.string().trim().max(500, 'Description must be no 
  * for edit mode when the token value may or may not be updated by the user.
  */
 const NextFlowTowerAccessTokenSchema = z.string().trim().min(1, 'Seqera access token is required');
+const GitHubAccessTokenSchema = z.string().trim().min(1, 'GitHub token is required');
 
 const NextFlowTowerWorkspaceIdSchema = z.string().trim().max(128, 'Workspace ID must be no more than 128 characters');
 
@@ -40,6 +41,7 @@ const LabDetailsSchema = z.object({
   RunRetentionMonths: RunRetentionMonthsSchema,
   NextFlowTowerEnabled: z.boolean(),
   NextFlowTowerAccessToken: NextFlowTowerAccessTokenSchema,
+  GitHubAccessToken: GitHubAccessTokenSchema.optional(),
   NextFlowTowerWorkspaceId: NextFlowTowerWorkspaceIdSchema,
   NextFlowTowerApiBaseUrl: NextFlowTowerApiBaseUrlSchema,
   AwsHealthOmicsEnabled: z.boolean(),
@@ -62,6 +64,7 @@ export {
   LabNameSchema,
   NextFlowTowerApiBaseUrlSchema,
   NextFlowTowerAccessTokenSchema,
+  GitHubAccessTokenSchema,
   NextFlowTowerWorkspaceIdSchema,
   RunRetentionMonthsSchema,
   S3BucketSchema,

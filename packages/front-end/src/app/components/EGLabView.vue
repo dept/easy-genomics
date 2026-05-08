@@ -42,6 +42,7 @@
   const seqeraPipelines = computed<SeqeraPipeline[]>(() => seqeraPipelinesStore.pipelinesForLab(props.labId));
   const omicsWorkflows = computed<OmicsWorkflow[]>(() => omicsWorkflowsStore.workflowsForLab(props.labId));
   const canAddUsers = computed<boolean>(() => userStore.canAddLabUsers(props.labId));
+  const canCreateOmicsWorkflows = computed<boolean>(() => userStore.canEditLabUsers(props.labId));
   const showAddUserModule = ref(false);
   const searchOutput = ref('');
   const runToCancel = ref<LaboratoryRun | null>(null);
@@ -709,6 +710,12 @@
     show-org-breadcrumb
     show-lab-breadcrumb
   >
+    <EGButton
+      v-if="!superuser && activeTabKey === 'omicsWorkflows' && canCreateOmicsWorkflows"
+      label="Create Workflow"
+      variant="secondary"
+      @click="$router.push(`/labs/${labId}/create-workflow`)"
+    />
     <EGButton
       v-if="!superuser && activeTabKey === 'users'"
       label="Add Lab Users"

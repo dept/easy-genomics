@@ -31,3 +31,19 @@ export const CreateRunRequestSchema = z
     workflowVersionName: z.string().min(1).max(64).optional(),
   })
   .strict();
+
+export const CreateWorkflowRequestSchema = z
+  .object({
+    name: z.string().trim().min(1).max(64),
+    engine: z.enum(['WDL', 'NEXTFLOW', 'CWL']),
+    definitionUri: z.string().trim().min(1).max(2048),
+    main: z.string().trim().min(1).max(2048),
+    requestId: z.string().trim().min(1).max(127),
+    description: z.string().max(256).optional(),
+    parameterTemplate: z
+      .record(z.object({ description: z.string().optional(), optional: z.boolean().optional() }))
+      .optional(),
+    storageCapacity: z.number().int().positive().max(100000).optional(),
+    storageType: z.enum(['STATIC', 'DYNAMIC']).optional(),
+  })
+  .strict();

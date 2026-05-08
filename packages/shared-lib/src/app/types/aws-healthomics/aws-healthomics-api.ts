@@ -1,4 +1,6 @@
 import {
+  CreateWorkflowRequest as AwsCreateWorkflowRequest,
+  CreateWorkflowResponse as AwsCreateWorkflowResponse,
   GetRunResponse,
   GetWorkflowResponse,
   ListWorkflowsResponse,
@@ -10,6 +12,10 @@ import {
 export type CreateRun = StartRunResponse;
 
 export type CreateRunRequest = StartRunRequest;
+
+export type CreateWorkflow = AwsCreateWorkflowResponse;
+
+export type CreateWorkflowRequest = AwsCreateWorkflowRequest;
 
 export type ListWorkflows = ListWorkflowsResponse;
 

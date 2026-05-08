@@ -46,11 +46,20 @@ export const handler: Handler = async (
       .catch(() => {
         return false;
       });
+    const hasGitHubAccessToken: boolean = await ssmService
+      .getParameter({
+        Name: `/easy-genomics/organization/${existing.OrganizationId}/laboratory/${existing.LaboratoryId}/github-access-token`,
+      })
+      .then((value: GetParameterCommandOutput) => !!value.Parameter)
+      .catch(() => {
+        return false;
+      });
 
     // Return Laboratory details with boolean indicator instead of actual NextFlowTowerAccessToken
     const response: ReadLaboratory = {
       ...existing,
       HasNextFlowTowerAccessToken: hasNextFlowAccessToken,
+      HasGitHubAccessToken: hasGitHubAccessToken,
     };
     return buildResponse(200, JSON.stringify(response), event);
   } catch (err: any) {
