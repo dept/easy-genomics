@@ -30,22 +30,25 @@
   const selectedKeys = ref<string[]>([]);
 
   /**
-   * The active filter in the left rail. "All samples" in the UI maps to `all` (no filter).
-   * Tag, untagged, not-analyzed, workflow-template, and workflow-version are mutually exclusive.
+   * Scope rail filter: at most one of all | not-yet-analyzed | workflow template | workflow version.
+   * Tags section (untagged + multiple standard tags) applies on top with OR semantics among selected tags.
    */
-  type ActiveFilter =
+  type ScopeFilter =
     | { kind: 'all' }
-    | { kind: 'untagged' }
-    | { kind: 'tag'; tagId: string }
     | { kind: 'not-analyzed' }
     | { kind: 'workflow-template'; templateKey: string }
     | { kind: 'workflow-version'; tagId: string };
-  const activeFilter = ref<ActiveFilter>({ kind: 'all' });
+
+  const scopeFilter = ref<ScopeFilter>({ kind: 'all' });
+  /** Tags section: untagged is mutually exclusive with selecting specific standard tags. */
+  const tagsFilterUntagged = ref(false);
+  /** Multiple standard tags combine with OR (file matches if it has any selected tag). */
+  const tagsFilterTagIds = ref<string[]>([]);
   /** Per-template open/close state for the workflows left-rail accordion. */
   const expandedWorkflowTemplates = ref<Record<string, boolean>>({});
   /** Whether the long-list "Show more" toggle is open for the workflow templates. */
   const showAllWorkflowTemplates = ref(false);
-  /** Left-rail Tags / Workflows blocks start expanded. */
+  /** Left-rail Workflows / Tags blocks start expanded. */
   const tagsSectionExpanded = ref(true);
   const workflowsSectionExpanded = ref(true);
   const search = ref('');
@@ -186,7 +189,7 @@
 
   /**
    * Soft cap for the workflows left-rail before the "Show more" toggle kicks in. Picked to
-   * roughly match the room available next to the Tags section without scrolling.
+   * roughly limit workflow rows before the Tags section in the same rail without excessive scrolling.
    */
   const WORKFLOW_TEMPLATE_COLLAPSED_LIMIT = 6;
   const visibleWorkflowTemplates = computed(() =>
@@ -195,18 +198,85 @@
       : workflowTemplates.value.slice(0, WORKFLOW_TEMPLATE_COLLAPSED_LIMIT),
   );
 
-  function isFilterActive(target: ActiveFilter): boolean {
-    const a = activeFilter.value;
-    if (a.kind !== target.kind) return false;
-    if (a.kind === 'tag' && target.kind === 'tag') return a.tagId === target.tagId;
-    if (a.kind === 'workflow-template' && target.kind === 'workflow-template')
-      return a.templateKey === target.templateKey;
-    if (a.kind === 'workflow-version' && target.kind === 'workflow-version') return a.tagId === target.tagId;
-    return true;
+  /** True only when no scope filter and no Tags-section filters — matches fully unfiltered listing (aside from search). */
+  function isScopeAllActive(): boolean {
+    if (scopeFilter.value.kind !== 'all') return false;
+    if (tagsFilterUntagged.value) return false;
+    return tagsFilterTagIds.value.length === 0;
   }
 
-  function setFilter(next: ActiveFilter): void {
-    activeFilter.value = next;
+  function isNotAnalyzedScopeActive(): boolean {
+    return scopeFilter.value.kind === 'not-analyzed';
+  }
+
+  function isWorkflowTemplateScopeActive(templateKey: string): boolean {
+    const s = scopeFilter.value;
+    return s.kind === 'workflow-template' && s.templateKey === templateKey;
+  }
+
+  function isWorkflowVersionScopeActive(tagId: string): boolean {
+    const s = scopeFilter.value;
+    return s.kind === 'workflow-version' && s.tagId === tagId;
+  }
+
+  function isUntaggedTagFilterActive(): boolean {
+    return tagsFilterUntagged.value;
+  }
+
+  function isStandardTagFilterActive(tagId: string): boolean {
+    return tagsFilterTagIds.value.includes(tagId);
+  }
+
+  function onAllSamplesScopeClick(): void {
+    if (scopeFilter.value.kind === 'all') {
+      tagsFilterUntagged.value = false;
+      tagsFilterTagIds.value = [];
+      return;
+    }
+    scopeFilter.value = { kind: 'all' };
+  }
+
+  function onNotYetAnalyzedScopeClick(): void {
+    if (scopeFilter.value.kind === 'not-analyzed') {
+      scopeFilter.value = { kind: 'all' };
+      return;
+    }
+    scopeFilter.value = { kind: 'not-analyzed' };
+  }
+
+  function onWorkflowTemplateScopeClick(templateKey: string): void {
+    if (scopeFilter.value.kind === 'workflow-template' && scopeFilter.value.templateKey === templateKey) {
+      scopeFilter.value = { kind: 'all' };
+      return;
+    }
+    scopeFilter.value = { kind: 'workflow-template', templateKey };
+  }
+
+  function onWorkflowVersionScopeClick(tagId: string): void {
+    if (scopeFilter.value.kind === 'workflow-version' && scopeFilter.value.tagId === tagId) {
+      scopeFilter.value = { kind: 'all' };
+      return;
+    }
+    scopeFilter.value = { kind: 'workflow-version', tagId };
+  }
+
+  function onUntaggedTagFilterClick(): void {
+    if (tagsFilterUntagged.value) {
+      tagsFilterUntagged.value = false;
+      return;
+    }
+    tagsFilterUntagged.value = true;
+    tagsFilterTagIds.value = [];
+  }
+
+  function onStandardTagFilterClick(tagId: string): void {
+    const idx = tagsFilterTagIds.value.indexOf(tagId);
+    if (idx >= 0) {
+      tagsFilterTagIds.value = tagsFilterTagIds.value.filter((id: string) => id !== tagId);
+      return;
+    }
+    tagsFilterUntagged.value = false;
+    tagsFilterTagIds.value = [...tagsFilterTagIds.value, tagId];
   }
 
   function toggleWorkflowTemplate(templateKey: string): void {
@@ -329,21 +399,15 @@
 
   const visibleFiles = computed(() => {
     let list = filesMatchingSearch.value;
-    const af = activeFilter.value;
-    switch (af.kind) {
+    const sf = scopeFilter.value;
+    switch (sf.kind) {
       case 'all':
-        break;
-      case 'untagged':
-        list = list.filter((f) => !standardTagIdsForFileKey(f.Key).length);
-        break;
-      case 'tag':
-        list = list.filter((f) => standardTagIdsForFileKey(f.Key).includes(af.tagId));
         break;
       case 'not-analyzed':
         list = list.filter((f) => !(keyToWorkflowTagIdsEffective.value[f.Key] || []).length);
         break;
       case 'workflow-template': {
-        const tmpl = workflowTemplates.value.find((t) => t.key === af.templateKey);
+        const tmpl = workflowTemplates.value.find((t) => t.key === sf.templateKey);
         const versionTagIds = new Set((tmpl?.versions || []).map((v) => v.tag.TagId));
         list = list.filter((f) =>
           (keyToWorkflowTagIdsEffective.value[f.Key] || []).some((id) => versionTagIds.has(id)),
@@ -351,8 +415,14 @@
         break;
       }
       case 'workflow-version':
-        list = list.filter((f) => (keyToWorkflowTagIdsEffective.value[f.Key] || []).includes(af.tagId));
+        list = list.filter((f) => (keyToWorkflowTagIdsEffective.value[f.Key] || []).includes(sf.tagId));
         break;
+    }
+    if (tagsFilterUntagged.value) {
+      list = list.filter((f) => !standardTagIdsForFileKey(f.Key).length);
+    } else if (tagsFilterTagIds.value.length > 0) {
+      const selected = new Set(tagsFilterTagIds.value);
+      list = list.filter((f) => standardTagIdsForFileKey(f.Key).some((tid: string) => selected.has(tid)));
     }
     return list;
   });
@@ -379,6 +449,79 @@
     return out;
   });
 
+  /** Explorer dismiss chips — ids must stay in sync with `clearExplorerFilter`. */
+  const CHIP_SCOPE_NOT_ANALYZED = 'chip-scope-not-analyzed';
+  const CHIP_TAG_UNTAGGED = 'chip-tag-untagged';
+
+  function chipIdWorkflowTemplate(templateKey: string): string {
+    return `chip-wft:${templateKey}`;
+  }
+
+  function chipIdWorkflowVersion(tagId: string): string {
+    return `chip-wfv:${tagId}`;
+  }
+
+  function chipIdStandardTag(tagId: string): string {
+    return `chip-tag:${tagId}`;
+  }
+
+  const explorerFilterChips = computed((): { chipId: string; label: string }[] => {
+    const chips: { chipId: string; label: string }[] = [];
+    const sf = scopeFilter.value;
+    if (sf.kind === 'not-analyzed') {
+      chips.push({ chipId: CHIP_SCOPE_NOT_ANALYZED, label: 'Not yet analyzed' });
+    } else if (sf.kind === 'workflow-template') {
+      const tmpl = workflowTemplates.value.find((t) => t.key === sf.templateKey);
+      chips.push({
+        chipId: chipIdWorkflowTemplate(sf.templateKey),
+        label: tmpl?.name ?? sf.templateKey,
+      });
+    } else if (sf.kind === 'workflow-version') {
+      const tag = tagById(sf.tagId);
+      const versionLabel = tag?.WorkflowVersionName?.trim() ? tag.WorkflowVersionName.trim() : 'default';
+      chips.push({
+        chipId: chipIdWorkflowVersion(sf.tagId),
+        label: tag ? `${tag.Name} (${versionLabel})` : sf.tagId,
+      });
+    }
+    if (tagsFilterUntagged.value) {
+      chips.push({ chipId: CHIP_TAG_UNTAGGED, label: 'Untagged' });
+    }
+    for (const tid of tagsFilterTagIds.value) {
+      chips.push({ chipId: chipIdStandardTag(tid), label: tagById(tid)?.Name ?? tid });
+    }
+    return chips;
+  });
+
+  function clearExplorerFilter(chipId: string): void {
+    if (chipId === CHIP_SCOPE_NOT_ANALYZED) {
+      if (scopeFilter.value.kind === 'not-analyzed') scopeFilter.value = { kind: 'all' };
+      return;
+    }
+    if (chipId.startsWith('chip-wft:')) {
+      const templateKey = chipId.slice('chip-wft:'.length);
+      if (scopeFilter.value.kind === 'workflow-template' && scopeFilter.value.templateKey === templateKey) {
+        scopeFilter.value = { kind: 'all' };
+      }
+      return;
+    }
+    if (chipId.startsWith('chip-wfv:')) {
+      const wfTagId = chipId.slice('chip-wfv:'.length);
+      if (scopeFilter.value.kind === 'workflow-version' && scopeFilter.value.tagId === wfTagId) {
+        scopeFilter.value = { kind: 'all' };
+      }
+      return;
+    }
+    if (chipId === CHIP_TAG_UNTAGGED) {
+      tagsFilterUntagged.value = false;
+      return;
+    }
+    if (chipId.startsWith('chip-tag:')) {
+      const tid = chipId.slice('chip-tag:'.length);
+      tagsFilterTagIds.value = tagsFilterTagIds.value.filter((id: string) => id !== tid);
+    }
+  }
+
   function toggleKey(key: string): void {
     const s = new Set(selectedKeys.value);
     if (s.has(key)) s.delete(key);
@@ -403,14 +546,24 @@
     resetBulkPanelDraft();
   }
 
+  const bulkPanelContentEl = ref<HTMLElement | null>(null);
+
+  function scrollBulkPanelIntoView(): void {
+    nextTick(() => {
+      bulkPanelContentEl.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+
   function openAddBulkPanel(): void {
     bulkPanelMode.value = 'add';
     resetBulkPanelDraft();
+    scrollBulkPanelIntoView();
   }
 
   function openRemoveBulkPanel(): void {
     bulkPanelMode.value = 'remove';
     resetBulkPanelDraft();
+    scrollBulkPanelIntoView();
   }
 
   function toggleBulkAddTag(tagId: string): void {
@@ -444,27 +597,52 @@
 
   const presetColors = ['#5B4FD4', '#85B7EB', '#F09595', '#97C459', '#ED93B1', '#EF9F27', '#B4B2A9'];
 
-  async function createTagInline(): Promise<void> {
-    if (!inlineNewTagName.value.trim()) return;
+  /** Shared create-tag API call + reload (used by bulk tray and left-rail create card). */
+  async function createStandardTag(name: string, colorHex: string): Promise<{ TagId: string } | null> {
+    const trimmed = name.trim();
+    if (!trimmed) return null;
     uiStore.setRequestPending('dataCollectionsMutate');
     try {
       const created = await $api.dataCollections.createTag({
         LaboratoryId: props.labId,
-        Name: inlineNewTagName.value.trim(),
-        ColorHex: inlineNewTagColor.value,
+        Name: trimmed,
+        ColorHex: colorHex,
       });
       await loadTags();
-      bulkAddTagIds.value = [...new Set([...bulkAddTagIds.value, created.TagId])];
-      showInlineCreateTag.value = false;
-      inlineNewTagName.value = '';
-      inlineNewTagColor.value = '#5B4FD4';
       toast.success('Tag created');
+      return created;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       toast.error(`Create tag failed: ${msg}`);
+      return null;
     } finally {
       uiStore.setRequestComplete('dataCollectionsMutate');
     }
+  }
+
+  async function createTagInline(): Promise<void> {
+    const created = await createStandardTag(inlineNewTagName.value, inlineNewTagColor.value);
+    if (!created) return;
+    bulkAddTagIds.value = [...new Set([...bulkAddTagIds.value, created.TagId])];
+    showInlineCreateTag.value = false;
+    inlineNewTagName.value = '';
+    inlineNewTagColor.value = '#5B4FD4';
+  }
+
+  const showLeftRailCreateTag = ref(false);
+  const leftRailNewTagName = ref('');
+  const leftRailNewTagColor = ref('#5B4FD4');
+
+  function cancelLeftRailCreateTag(): void {
+    showLeftRailCreateTag.value = false;
+    leftRailNewTagName.value = '';
+    leftRailNewTagColor.value = '#5B4FD4';
+  }
+
+  async function createTagLeftRail(): Promise<void> {
+    const created = await createStandardTag(leftRailNewTagName.value, leftRailNewTagColor.value);
+    if (!created) return;
+    cancelLeftRailCreateTag();
   }
 
   async function applyBulkChanges(): Promise<void> {
@@ -653,8 +831,8 @@
           <button
             type="button"
             class="hover:bg-primary-muted flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
-            :class="{ 'bg-primary-muted font-medium': isFilterActive({ kind: 'all' }) }"
-            @click="setFilter({ kind: 'all' })"
+            :class="{ 'bg-primary-muted font-medium': isScopeAllActive() }"
+            @click="onAllSamplesScopeClick"
           >
             <span>All samples</span>
             <UBadge
@@ -667,8 +845,8 @@
           <button
             type="button"
             class="hover:bg-primary-muted flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
-            :class="{ 'bg-primary-muted font-medium': isFilterActive({ kind: 'not-analyzed' }) }"
-            @click="setFilter({ kind: 'not-analyzed' })"
+            :class="{ 'bg-primary-muted font-medium': isNotAnalyzedScopeActive() }"
+            @click="onNotYetAnalyzedScopeClick"
           >
             <span>Not yet analyzed</span>
             <UBadge
@@ -681,52 +859,6 @@
         </div>
 
         <div class="border-border-muted border-b p-2">
-          <button
-            type="button"
-            class="text-muted hover:bg-primary-muted mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs font-medium uppercase tracking-wide"
-            :aria-expanded="tagsSectionExpanded"
-            @click="tagsSectionExpanded = !tagsSectionExpanded"
-          >
-            <UIcon
-              :name="tagsSectionExpanded ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
-              class="h-4 w-4 shrink-0"
-              aria-hidden="true"
-            />
-            <span>Tags</span>
-          </button>
-          <div v-show="tagsSectionExpanded">
-            <button
-              type="button"
-              class="hover:bg-primary-muted flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm"
-              :class="{ 'bg-primary-muted font-medium': isFilterActive({ kind: 'untagged' }) }"
-              @click="setFilter({ kind: 'untagged' })"
-            >
-              <span>Untagged</span>
-            </button>
-            <button
-              v-for="t in standardTags"
-              :key="t.TagId"
-              class="hover:bg-primary-muted flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
-              :class="{ 'bg-primary-muted font-medium': isFilterActive({ kind: 'tag', tagId: t.TagId }) }"
-              @click="setFilter({ kind: 'tag', tagId: t.TagId })"
-              @dragover.prevent="onCardDragOverTag"
-              @drop="onTagRowDrop($event, t.TagId)"
-            >
-              <span class="flex min-w-0 items-center gap-2">
-                <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: t.ColorHex }" />
-                <span class="truncate">{{ t.Name }}</span>
-              </span>
-              <UBadge
-                size="xs"
-                class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif tabular-nums ring-0"
-              >
-                {{ standardTagIdToChipCount[t.TagId] ?? 0 }}
-              </UBadge>
-            </button>
-          </div>
-        </div>
-
-        <div class="p-2">
           <button
             type="button"
             class="text-muted hover:bg-primary-muted mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs font-medium uppercase tracking-wide"
@@ -749,7 +881,7 @@
               <div
                 class="hover:bg-primary-muted flex w-full cursor-pointer items-center gap-1 rounded-lg pr-2 text-left text-sm"
                 :class="{
-                  'bg-primary-muted font-medium': isFilterActive({ kind: 'workflow-template', templateKey: tmpl.key }),
+                  'bg-primary-muted font-medium': isWorkflowTemplateScopeActive(tmpl.key),
                 }"
               >
                 <button
@@ -770,7 +902,7 @@
                 <button
                   type="button"
                   class="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 text-left"
-                  @click="setFilter({ kind: 'workflow-template', templateKey: tmpl.key })"
+                  @click="onWorkflowTemplateScopeClick(tmpl.key)"
                 >
                   <span class="flex min-w-0 items-center gap-2">
                     <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: tmpl.color }" />
@@ -787,9 +919,9 @@
                   type="button"
                   class="hover:bg-primary-muted flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs"
                   :class="{
-                    'bg-primary-muted font-medium': isFilterActive({ kind: 'workflow-version', tagId: v.tag.TagId }),
+                    'bg-primary-muted font-medium': isWorkflowVersionScopeActive(v.tag.TagId),
                   }"
-                  @click="setFilter({ kind: 'workflow-version', tagId: v.tag.TagId })"
+                  @click="onWorkflowVersionScopeClick(v.tag.TagId)"
                 >
                   <span class="text-muted truncate">{{ v.label }}</span>
                   <span class="text-muted shrink-0 tabular-nums">{{ v.tag.FileCount }}</span>
@@ -812,6 +944,98 @@
             </button>
           </div>
         </div>
+
+        <div class="p-2">
+          <button
+            type="button"
+            class="text-muted hover:bg-primary-muted mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs font-medium uppercase tracking-wide"
+            :aria-expanded="tagsSectionExpanded"
+            @click="tagsSectionExpanded = !tagsSectionExpanded"
+          >
+            <UIcon
+              :name="tagsSectionExpanded ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
+              class="h-4 w-4 shrink-0"
+              aria-hidden="true"
+            />
+            <span>Tags</span>
+          </button>
+          <div v-show="tagsSectionExpanded">
+            <button
+              type="button"
+              class="hover:bg-primary-muted flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm"
+              :class="{ 'bg-primary-muted font-medium': isUntaggedTagFilterActive() }"
+              @click="onUntaggedTagFilterClick"
+            >
+              <span>Untagged</span>
+            </button>
+            <button
+              v-for="t in standardTags"
+              :key="t.TagId"
+              class="hover:bg-primary-muted flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
+              :class="{ 'bg-primary-muted font-medium': isStandardTagFilterActive(t.TagId) }"
+              @click="onStandardTagFilterClick(t.TagId)"
+              @dragover.prevent="onCardDragOverTag"
+              @drop="onTagRowDrop($event, t.TagId)"
+            >
+              <span class="flex min-w-0 items-center gap-2">
+                <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: t.ColorHex }" />
+                <span class="truncate">{{ t.Name }}</span>
+              </span>
+              <UBadge
+                size="xs"
+                class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif tabular-nums ring-0"
+              >
+                {{ standardTagIdToChipCount[t.TagId] ?? 0 }}
+              </UBadge>
+            </button>
+
+            <div class="border-border-muted mt-2 border-t pt-2">
+              <button
+                v-if="!showLeftRailCreateTag"
+                type="button"
+                class="text-primary hover:text-primary-dark px-2 py-1.5 text-left text-xs font-medium hover:underline"
+                @click="showLeftRailCreateTag = true"
+              >
+                + New Tag
+              </button>
+              <div v-else class="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+                <div class="text-muted mb-2 text-xs font-semibold uppercase tracking-wide">Create Tag</div>
+                <div class="space-y-2">
+                  <div>
+                    <label class="text-muted mb-0.5 block text-xs font-medium">Tag name</label>
+                    <UInput v-model="leftRailNewTagName" placeholder="Tag name" size="sm" />
+                  </div>
+                  <div>
+                    <label class="text-muted mb-0.5 block text-xs font-medium">Tag color</label>
+                    <div class="flex flex-wrap gap-1">
+                      <button
+                        v-for="c in presetColors"
+                        :key="'left-rail-preset-' + c"
+                        type="button"
+                        class="h-7 w-7 rounded border-2"
+                        :class="leftRailNewTagColor === c ? 'border-primary' : 'border-transparent'"
+                        :style="{ background: c }"
+                        @click="leftRailNewTagColor = c"
+                      />
+                    </div>
+                    <UInput v-model="leftRailNewTagColor" placeholder="#RRGGBB" size="sm" class="mt-1.5" />
+                  </div>
+                  <div class="flex gap-2 pt-1">
+                    <UButton size="xs" variant="ghost" @click="cancelLeftRailCreateTag">Cancel</UButton>
+                    <UButton
+                      size="xs"
+                      :disabled="!leftRailNewTagName.trim()"
+                      :loading="loading"
+                      @click="createTagLeftRail"
+                    >
+                      Create
+                    </UButton>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <EGDataCollectionsExplorer
@@ -828,11 +1052,13 @@
         :search="search"
         :listing-file-count="files.length"
         :listing-truncated="listingTruncated"
+        :filter-chips="explorerFilterChips"
         @update:search="search = $event"
         @update:selected-keys="selectedKeys = $event"
         @toggle-key="toggleKey"
         @select-all-displayed="selectAllDisplayed"
         @clear-selection="selectedKeys = []"
+        @clear-filter="clearExplorerFilter($event)"
         @remove-tag-from-file="removeTagFromFile($event.key, $event.tagId)"
       />
     </div>
@@ -853,7 +1079,11 @@
         </div>
       </div>
 
-      <div v-if="bulkPanelOpen" class="border-border-muted relative border-t bg-white px-4 pb-4 pt-3">
+      <div
+        v-if="bulkPanelOpen"
+        ref="bulkPanelContentEl"
+        class="border-border-muted relative border-t bg-white px-4 pb-4 pt-3"
+      >
         <div
           v-if="bulkPanelBusy"
           class="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-[1px]"

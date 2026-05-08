@@ -25,6 +25,8 @@
     listingFileCount: number;
     /** Recursive listing stopped at MaxTotalKeys; more objects exist in S3. */
     listingTruncated?: boolean;
+    /** Active filter chips (scope + tags); each chip can be dismissed independently in the explorer header. */
+    filterChips?: { chipId: string; label: string }[];
   }>();
 
   const emit = defineEmits<{
@@ -33,8 +35,11 @@
     toggleKey: [key: string];
     selectAllDisplayed: [];
     clearSelection: [];
+    clearFilter: [chipId: string];
     removeTagFromFile: [payload: { key: string; tagId: string }];
   }>();
+
+  const filterChipsResolved = computed(() => props.filterChips ?? []);
 
   /** Cards grid vs tabular explorer layout. */
   const explorerView = ref<'cards' | 'table'>('cards');
@@ -98,6 +103,8 @@
   const allFilesHiddenByFilters = computed(
     () => !props.loading && props.listingFileCount > 0 && props.visibleFiles.length === 0,
   );
+
+  const visibleSampleNoun = computed(() => (props.visibleFiles.length === 1 ? 'sample' : 'samples'));
 
   const batchTagsResolved = computed(() => props.batchTags ?? []);
 
@@ -331,6 +338,29 @@
           @click="explorerView = 'table'"
         />
       </div>
+    </div>
+    <div class="border-border-muted flex flex-wrap items-center gap-2 border-b bg-gray-50 px-4 py-2">
+      <span class="text-xs font-semibold leading-snug text-gray-900">
+        {{ visibleFiles.length }} {{ visibleSampleNoun }}
+      </span>
+      <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+        <div
+          v-for="chip in filterChipsResolved"
+          :key="chip.chipId"
+          class="bg-primary-muted text-primary-dark inline-flex max-w-full items-center gap-0.5 rounded-full border border-transparent py-0.5 pl-2 pr-0.5 text-xs font-medium"
+        >
+          <span class="min-w-0 max-w-[min(14rem,100%)] truncate">{{ chip.label }}</span>
+          <UButton
+            size="xs"
+            square
+            variant="ghost"
+            icon="i-heroicons-x-mark"
+            class="text-primary-dark shrink-0 rounded-full"
+            :aria-label="`Clear filter: ${chip.label}`"
+            @click="emit('clearFilter', chip.chipId)"
+          />
+        </div>
+      </div>
       <div class="ml-auto flex shrink-0">
         <UButton v-if="selectedKeys.length" size="xs" variant="ghost" @click="emit('clearSelection')">
           Deselect all ({{ selectedKeys.length }})
@@ -554,8 +584,7 @@
         <p class="font-medium text-gray-900">No files found under this lab’s prefix in this bucket</p>
       </div>
       <div v-else-if="allFilesHiddenByFilters" class="text-muted py-8 text-center text-sm">
-        No files match your current search or tag filter. Clear the search box or choose "All samples" or "Untagged" in
-        the tag list.
+        No files match your current search or filters. Clear the search box or adjust filters in the left panel.
       </div>
       <div
         class="border-primary bg-primary/10 pointer-events-none fixed z-[9999] rounded border-2"
