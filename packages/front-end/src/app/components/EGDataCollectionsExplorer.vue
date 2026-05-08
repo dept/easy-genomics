@@ -103,6 +103,42 @@
 
   const keyToBatchResolved = computed(() => props.keyToBatchTagId ?? {});
 
+  type BatchSectionHeaderParts = {
+    /** Batch display name (tag name); for unbatched rows this is `Unbatched`. */
+    titleBold: string;
+    sampleCount: number;
+    sampleNoun: string;
+    notYetAnalyzed: number;
+    analyzed: number;
+  };
+
+  const BATCH_HEADER_DOT_NOT_ANALYZED = '#EF9F27';
+  const BATCH_HEADER_DOT_ANALYZED = '#2DB48F';
+
+  function batchSectionHeaderParts(sec: {
+    batchId: string | null;
+    title: string;
+    files: readonly { Key: string }[];
+  }): BatchSectionHeaderParts {
+    const n = sec.files.length;
+    const sampleNoun = n === 1 ? 'sample' : 'samples';
+    const titleBold = sec.title;
+    let notYetAnalyzed = 0;
+    let analyzed = 0;
+    for (const f of sec.files) {
+      const ids = props.keyToWorkflowTagIds?.[f.Key];
+      if (ids && ids.length > 0) analyzed += 1;
+      else notYetAnalyzed += 1;
+    }
+    return {
+      titleBold,
+      sampleCount: n,
+      sampleNoun,
+      notYetAnalyzed,
+      analyzed,
+    };
+  }
+
   /** Group visible files by batch for section headers (single scroll, not nested folders). */
   const fileSections = computed(() => {
     type Row = (typeof props.visibleFiles)[number];
@@ -133,7 +169,10 @@
         files,
       });
     }
-    return sections;
+    return sections.map((sec) => ({
+      ...sec,
+      headerParts: batchSectionHeaderParts(sec),
+    }));
   });
 
   function batchDisplayName(key: string): string {
@@ -141,19 +180,6 @@
     if (!bid) return '—';
     const tag = batchTagsResolved.value.find((b: LaboratoryDataTag) => b.TagId === bid);
     return tag?.Name ?? bid;
-  }
-
-  function batchSectionHeading(sec: {
-    batchId: string | null;
-    title: string;
-    files: readonly { Key: string }[];
-  }): string {
-    const n = sec.files.length;
-    const samples = n === 1 ? 'sample' : 'samples';
-    if (sec.batchId === null) {
-      return `Unbatched · ${n} ${samples}`;
-    }
-    return `Batch ${sec.title} · ${n} ${samples}`;
   }
 
   function batchSectionFullySelected(sec: { files: readonly { Key: string }[] }): boolean {
@@ -205,9 +231,8 @@
     scrollEl.value?.querySelectorAll('[data-file-card]').forEach((el) => {
       const r = (el as HTMLElement).getBoundingClientRect();
       const hit = r.left < lr.right && r.right > lr.left && r.top < lr.bottom && r.bottom > lr.top;
-      (el as HTMLElement).classList.toggle('ring-2', hit);
-      (el as HTMLElement).classList.toggle('ring-primary', hit);
-      (el as HTMLElement).classList.toggle('bg-primary-muted', hit);
+      /** Lasso-only class — never strip Vue-bound `ring-*` on selected cards (Vue may not re-patch if props unchanged). */
+      (el as HTMLElement).classList.toggle('eg-data-collections-lasso-hit', hit);
     });
   }
 
@@ -218,11 +243,11 @@
     const added: string[] = [];
     scrollEl.value?.querySelectorAll('[data-file-card]').forEach((el) => {
       const h = el as HTMLElement;
-      if (h.classList.contains('ring-primary')) {
+      if (h.classList.contains('eg-data-collections-lasso-hit')) {
         const id = h.dataset.key;
         if (id) added.push(id);
       }
-      h.classList.remove('ring-2', 'ring-primary', 'bg-primary-muted');
+      h.classList.remove('eg-data-collections-lasso-hit');
     });
     if (added.length) {
       const s = new Set(props.selectedKeys);
@@ -327,19 +352,44 @@
       listing limit.
     </div>
 
-    <div ref="scrollEl" class="relative flex-1 overflow-auto p-4" @mousedown="onScrollHostMouseDown">
+    <div ref="scrollEl" class="relative flex-1 overflow-auto p-2" @mousedown="onScrollHostMouseDown">
       <div v-if="explorerView === 'cards'" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <template v-for="(sec, secIdx) in fileSections" :key="sec.batchId ?? 'unbatched'">
           <div
             class="border-border-muted col-span-full flex items-start justify-between gap-3 border-b pb-2"
             :class="secIdx === 0 ? 'mt-0' : 'mt-6'"
           >
-            <h3 class="text-muted min-w-0 flex-1 text-xs font-normal leading-snug tracking-wide">
-              {{ batchSectionHeading(sec) }}
+            <h3 class="text-muted min-w-0 flex-1 whitespace-normal text-xs font-normal leading-snug tracking-wide">
+              <span class="inline-flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span class="inline-flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+                  <span class="font-semibold text-gray-900">
+                    <template v-if="sec.batchId !== null">Batch {{ sec.headerParts.titleBold }}</template>
+                    <template v-else>{{ sec.headerParts.titleBold }}</template>
+                  </span>
+                  <span>{{ sec.headerParts.sampleCount }} {{ sec.headerParts.sampleNoun }}</span>
+                </span>
+                <span class="inline-flex items-center gap-1.5">
+                  <span
+                    class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                    :style="{ backgroundColor: BATCH_HEADER_DOT_NOT_ANALYZED }"
+                    aria-hidden="true"
+                  />
+                  <span>{{ sec.headerParts.notYetAnalyzed }} not yet analyzed</span>
+                </span>
+                <span class="inline-flex items-center gap-1.5">
+                  <span
+                    class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                    :style="{ backgroundColor: BATCH_HEADER_DOT_ANALYZED }"
+                    aria-hidden="true"
+                  />
+                  <span>{{ sec.headerParts.analyzed }} analyzed</span>
+                </span>
+              </span>
             </h3>
             <button
               type="button"
               class="text-primary shrink-0 text-xs font-normal hover:underline"
+              @mousedown.stop
               @click.stop="toggleBatchSection(sec)"
             >
               {{ batchSectionFullySelected(sec) ? 'Deselect batch' : 'Select batch' }}
@@ -352,7 +402,7 @@
             :data-key="f.Key"
             draggable="true"
             class="border-border-muted relative cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition"
-            :class="{ 'ring-primary ring-2': selectedKeys.includes(f.Key) }"
+            :class="{ 'bg-primary-muted ring-primary ring-2': selectedKeys.includes(f.Key) }"
             @click="emit('toggleKey', f.Key)"
             @dragstart="onCardDragStart($event, f.Key)"
             @dragover="onCardDragOver"
@@ -403,13 +453,40 @@
             <template v-for="sec in fileSections" :key="sec.batchId ?? 'unbatched'">
               <tr class="bg-gray-50/95">
                 <td colspan="6" class="border-border-muted border-b px-3 py-2.5" scope="colgroup">
-                  <div class="flex items-center justify-between gap-4">
-                    <span class="text-muted min-w-0 flex-1 truncate text-xs font-normal leading-snug tracking-wide">
-                      {{ batchSectionHeading(sec) }}
+                  <div class="flex w-full min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-2">
+                    <span
+                      class="text-muted min-w-0 flex-1 whitespace-normal text-xs font-normal leading-snug tracking-wide"
+                    >
+                      <span class="inline-flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                        <span class="inline-flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+                          <span class="font-semibold text-gray-900">
+                            <template v-if="sec.batchId !== null">Batch {{ sec.headerParts.titleBold }}</template>
+                            <template v-else>{{ sec.headerParts.titleBold }}</template>
+                          </span>
+                          <span>{{ sec.headerParts.sampleCount }} {{ sec.headerParts.sampleNoun }}</span>
+                        </span>
+                        <span class="inline-flex items-center gap-1.5">
+                          <span
+                            class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                            :style="{ backgroundColor: BATCH_HEADER_DOT_NOT_ANALYZED }"
+                            aria-hidden="true"
+                          />
+                          <span>{{ sec.headerParts.notYetAnalyzed }} not yet analyzed</span>
+                        </span>
+                        <span class="inline-flex items-center gap-1.5">
+                          <span
+                            class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                            :style="{ backgroundColor: BATCH_HEADER_DOT_ANALYZED }"
+                            aria-hidden="true"
+                          />
+                          <span>{{ sec.headerParts.analyzed }} analyzed</span>
+                        </span>
+                      </span>
                     </span>
                     <button
                       type="button"
-                      class="text-primary shrink-0 text-xs font-normal hover:underline"
+                      class="text-primary ml-auto shrink-0 self-start whitespace-nowrap text-xs font-normal hover:underline"
+                      @mousedown.stop
                       @click.stop="toggleBatchSection(sec)"
                     >
                       {{ batchSectionFullySelected(sec) ? 'Deselect batch' : 'Select batch' }}
@@ -425,7 +502,7 @@
                 draggable="true"
                 class="border-border-muted cursor-pointer border-b transition last:border-b-0"
                 :class="{
-                  'bg-primary-muted/50': selectedKeys.includes(f.Key),
+                  'bg-primary-muted ring-primary ring-2 ring-inset': selectedKeys.includes(f.Key),
                   'hover:bg-gray-50/80': !selectedKeys.includes(f.Key),
                 }"
                 @click="emit('toggleKey', f.Key)"
@@ -477,7 +554,7 @@
         <p class="font-medium text-gray-900">No files found under this lab’s prefix in this bucket</p>
       </div>
       <div v-else-if="allFilesHiddenByFilters" class="text-muted py-8 text-center text-sm">
-        No files match your current search or tag filter. Clear the search box or choose "All files" or "Untagged" in
+        No files match your current search or tag filter. Clear the search box or choose "All samples" or "Untagged" in
         the tag list.
       </div>
       <div
@@ -487,3 +564,11 @@
     </div>
   </div>
 </template>
+
+<style scoped>
+  /** Lasso drag highlight only — selection rings come from Vue `:class` on `[data-file-card]`. */
+  [data-file-card].eg-data-collections-lasso-hit {
+    box-shadow: 0 0 0 2px #5524e0;
+    background-color: #eee9fc;
+  }
+</style>

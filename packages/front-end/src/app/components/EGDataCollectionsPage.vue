@@ -30,15 +30,13 @@
   const selectedKeys = ref<string[]>([]);
 
   /**
-   * The active filter in the left rail. Tag, untagged, workflow-template, workflow-version,
-   * and the workflow-meta filters (all-samples / not-analyzed) are mutually exclusive — so a
-   * single discriminated union keeps state-handling tight.
+   * The active filter in the left rail. "All samples" in the UI maps to `all` (no filter).
+   * Tag, untagged, not-analyzed, workflow-template, and workflow-version are mutually exclusive.
    */
   type ActiveFilter =
     | { kind: 'all' }
     | { kind: 'untagged' }
     | { kind: 'tag'; tagId: string }
-    | { kind: 'all-samples' }
     | { kind: 'not-analyzed' }
     | { kind: 'workflow-template'; templateKey: string }
     | { kind: 'workflow-version'; tagId: string };
@@ -47,6 +45,9 @@
   const expandedWorkflowTemplates = ref<Record<string, boolean>>({});
   /** Whether the long-list "Show more" toggle is open for the workflow templates. */
   const showAllWorkflowTemplates = ref(false);
+  /** Left-rail Tags / Workflows blocks start expanded. */
+  const tagsSectionExpanded = ref(true);
+  const workflowsSectionExpanded = ref(true);
   const search = ref('');
 
   const KEYS_CHUNK = 100;
@@ -318,10 +319,16 @@
     { immediate: true },
   );
 
-  const visibleFiles = computed(() => {
+  /** Same first step as `visibleFiles` — used for sidebar chips so counts follow search. */
+  const filesMatchingSearch = computed(() => {
     let list = files.value;
     const q = search.value.trim().toLowerCase();
     if (q) list = list.filter((f) => f.Key.toLowerCase().includes(q));
+    return list;
+  });
+
+  const visibleFiles = computed(() => {
+    let list = filesMatchingSearch.value;
     const af = activeFilter.value;
     switch (af.kind) {
       case 'all':
@@ -331,11 +338,6 @@
         break;
       case 'tag':
         list = list.filter((f) => standardTagIdsForFileKey(f.Key).includes(af.tagId));
-        break;
-      case 'all-samples':
-        // Surface only files that have been touched by any workflow run, mirroring the
-        // ticket's "All samples" filter (i.e. anything that's been analysed at least once).
-        list = list.filter((f) => (keyToWorkflowTagIdsEffective.value[f.Key] || []).length > 0);
         break;
       case 'not-analyzed':
         list = list.filter((f) => !(keyToWorkflowTagIdsEffective.value[f.Key] || []).length);
@@ -353,6 +355,28 @@
         break;
     }
     return list;
+  });
+
+  /** Count for "All samples" chip — all loaded files matching search (same universe as no filter). */
+  const allSamplesChipCount = computed(() => filesMatchingSearch.value.length);
+
+  const notAnalyzedChipCount = computed(
+    () => filesMatchingSearch.value.filter((f) => !(keyToWorkflowTagIdsEffective.value[f.Key] || []).length).length,
+  );
+
+  /** Per standard-tag file counts among `filesMatchingSearch` (matches `case 'tag'` in `visibleFiles`). */
+  const standardTagIdToChipCount = computed((): Record<string, number> => {
+    const tagIds = new Set<string>(standardTags.value.map((t: LaboratoryDataTag) => t.TagId));
+    const counts = new Map<string, number>();
+    for (const id of tagIds) counts.set(id, 0);
+    for (const f of filesMatchingSearch.value) {
+      for (const tid of standardTagIdsForFileKey(f.Key)) {
+        if (tagIds.has(tid)) counts.set(tid, (counts.get(tid) ?? 0) + 1);
+      }
+    }
+    const out: Record<string, number> = {};
+    for (const [k, v] of counts) out[k] = v;
+    return out;
   });
 
   function toggleKey(key: string): void {
@@ -625,128 +649,168 @@
   >
     <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <div class="border-border-muted flex w-[280px] shrink-0 flex-col overflow-y-auto border-r bg-gray-50">
-        <div class="border-border-muted border-b p-4">
-          <div class="text-muted mb-2 text-xs font-medium uppercase tracking-wide">Tags</div>
+        <div class="border-border-muted border-b p-2">
           <button
             type="button"
-            class="hover:bg-primary-muted flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm"
+            class="hover:bg-primary-muted flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
             :class="{ 'bg-primary-muted font-medium': isFilterActive({ kind: 'all' }) }"
             @click="setFilter({ kind: 'all' })"
           >
-            <span>All files</span>
-          </button>
-          <button
-            type="button"
-            class="hover:bg-primary-muted flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm"
-            :class="{ 'bg-primary-muted font-medium': isFilterActive({ kind: 'untagged' }) }"
-            @click="setFilter({ kind: 'untagged' })"
-          >
-            <span>Untagged</span>
-          </button>
-          <button
-            v-for="t in standardTags"
-            :key="t.TagId"
-            class="hover:bg-primary-muted flex w-full cursor-pointer items-center justify-between rounded-lg px-2 py-2 text-left text-sm"
-            :class="{ 'bg-primary-muted font-medium': isFilterActive({ kind: 'tag', tagId: t.TagId }) }"
-            @click="setFilter({ kind: 'tag', tagId: t.TagId })"
-            @dragover.prevent="onCardDragOverTag"
-            @drop="onTagRowDrop($event, t.TagId)"
-          >
-            <span class="flex items-center gap-2">
-              <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: t.ColorHex }" />
-              {{ t.Name }}
-            </span>
-            <span class="text-muted text-xs">{{ t.FileCount }}</span>
-          </button>
-        </div>
-
-        <div class="p-4">
-          <div class="text-muted mb-2 text-xs font-medium uppercase tracking-wide">Workflows</div>
-
-          <button
-            type="button"
-            class="hover:bg-primary-muted flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm"
-            :class="{ 'bg-primary-muted font-medium': isFilterActive({ kind: 'all-samples' }) }"
-            @click="setFilter({ kind: 'all-samples' })"
-          >
             <span>All samples</span>
+            <UBadge
+              size="xs"
+              class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif tabular-nums ring-0"
+            >
+              {{ allSamplesChipCount }}
+            </UBadge>
           </button>
           <button
             type="button"
-            class="hover:bg-primary-muted flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm"
+            class="hover:bg-primary-muted flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
             :class="{ 'bg-primary-muted font-medium': isFilterActive({ kind: 'not-analyzed' }) }"
             @click="setFilter({ kind: 'not-analyzed' })"
           >
             <span>Not yet analyzed</span>
-          </button>
-
-          <p v-if="!workflowTemplates.length" class="text-muted mt-2 px-2 text-xs italic">
-            No workflows have been run on these files yet.
-          </p>
-
-          <div v-for="tmpl in visibleWorkflowTemplates" :key="tmpl.key" class="mt-1">
-            <div
-              class="hover:bg-primary-muted flex w-full cursor-pointer items-center gap-1 rounded-lg pr-2 text-left text-sm"
-              :class="{
-                'bg-primary-muted font-medium': isFilterActive({ kind: 'workflow-template', templateKey: tmpl.key }),
-              }"
+            <UBadge
+              size="xs"
+              class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif tabular-nums ring-0"
             >
-              <button
-                v-if="tmpl.versions.length > 1"
-                type="button"
-                class="text-muted hover:text-primary flex h-7 w-7 shrink-0 items-center justify-center rounded"
-                :aria-label="expandedWorkflowTemplates[tmpl.key] ? 'Collapse versions' : 'Expand versions'"
-                @click.stop="toggleWorkflowTemplate(tmpl.key)"
-              >
-                <UIcon
-                  :name="expandedWorkflowTemplates[tmpl.key] ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
-                  class="h-4 w-4"
-                />
-              </button>
-              <span v-else class="block h-7 w-7 shrink-0" />
-              <button
-                type="button"
-                class="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 text-left"
-                @click="setFilter({ kind: 'workflow-template', templateKey: tmpl.key })"
-              >
-                <span class="flex min-w-0 items-center gap-2">
-                  <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: tmpl.color }" />
-                  <span class="truncate">{{ tmpl.name }}</span>
-                </span>
-                <span class="text-muted shrink-0 text-xs">{{ tmpl.fileCount }}</span>
-              </button>
-            </div>
-
-            <div v-if="expandedWorkflowTemplates[tmpl.key] && tmpl.versions.length > 1" class="ml-7 mt-0.5">
-              <button
-                v-for="v in tmpl.versions"
-                :key="v.tag.TagId"
-                type="button"
-                class="hover:bg-primary-muted flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs"
-                :class="{
-                  'bg-primary-muted font-medium': isFilterActive({ kind: 'workflow-version', tagId: v.tag.TagId }),
-                }"
-                @click="setFilter({ kind: 'workflow-version', tagId: v.tag.TagId })"
-              >
-                <span class="text-muted truncate">{{ v.label }}</span>
-                <span class="text-muted shrink-0 tabular-nums">{{ v.tag.FileCount }}</span>
-              </button>
-            </div>
-          </div>
-
-          <button
-            v-if="workflowTemplates.length > visibleWorkflowTemplates.length || showAllWorkflowTemplates"
-            v-show="workflowTemplates.length > 6"
-            type="button"
-            class="text-primary mt-2 px-2 text-xs font-medium hover:underline"
-            @click="showAllWorkflowTemplates = !showAllWorkflowTemplates"
-          >
-            {{
-              showAllWorkflowTemplates
-                ? 'Show fewer'
-                : `Show ${workflowTemplates.length - visibleWorkflowTemplates.length} more`
-            }}
+              {{ notAnalyzedChipCount }}
+            </UBadge>
           </button>
+        </div>
+
+        <div class="border-border-muted border-b p-2">
+          <button
+            type="button"
+            class="text-muted hover:bg-primary-muted mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs font-medium uppercase tracking-wide"
+            :aria-expanded="tagsSectionExpanded"
+            @click="tagsSectionExpanded = !tagsSectionExpanded"
+          >
+            <UIcon
+              :name="tagsSectionExpanded ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
+              class="h-4 w-4 shrink-0"
+              aria-hidden="true"
+            />
+            <span>Tags</span>
+          </button>
+          <div v-show="tagsSectionExpanded">
+            <button
+              type="button"
+              class="hover:bg-primary-muted flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm"
+              :class="{ 'bg-primary-muted font-medium': isFilterActive({ kind: 'untagged' }) }"
+              @click="setFilter({ kind: 'untagged' })"
+            >
+              <span>Untagged</span>
+            </button>
+            <button
+              v-for="t in standardTags"
+              :key="t.TagId"
+              class="hover:bg-primary-muted flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
+              :class="{ 'bg-primary-muted font-medium': isFilterActive({ kind: 'tag', tagId: t.TagId }) }"
+              @click="setFilter({ kind: 'tag', tagId: t.TagId })"
+              @dragover.prevent="onCardDragOverTag"
+              @drop="onTagRowDrop($event, t.TagId)"
+            >
+              <span class="flex min-w-0 items-center gap-2">
+                <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: t.ColorHex }" />
+                <span class="truncate">{{ t.Name }}</span>
+              </span>
+              <UBadge
+                size="xs"
+                class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif tabular-nums ring-0"
+              >
+                {{ standardTagIdToChipCount[t.TagId] ?? 0 }}
+              </UBadge>
+            </button>
+          </div>
+        </div>
+
+        <div class="p-2">
+          <button
+            type="button"
+            class="text-muted hover:bg-primary-muted mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs font-medium uppercase tracking-wide"
+            :aria-expanded="workflowsSectionExpanded"
+            @click="workflowsSectionExpanded = !workflowsSectionExpanded"
+          >
+            <UIcon
+              :name="workflowsSectionExpanded ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
+              class="h-4 w-4 shrink-0"
+              aria-hidden="true"
+            />
+            <span>Workflows</span>
+          </button>
+          <div v-show="workflowsSectionExpanded">
+            <p v-if="!workflowTemplates.length" class="text-muted mt-2 px-2 text-xs italic">
+              No workflows have been run on these files yet.
+            </p>
+
+            <div v-for="tmpl in visibleWorkflowTemplates" :key="tmpl.key" class="mt-1">
+              <div
+                class="hover:bg-primary-muted flex w-full cursor-pointer items-center gap-1 rounded-lg pr-2 text-left text-sm"
+                :class="{
+                  'bg-primary-muted font-medium': isFilterActive({ kind: 'workflow-template', templateKey: tmpl.key }),
+                }"
+              >
+                <button
+                  v-if="tmpl.versions.length > 1"
+                  type="button"
+                  class="text-muted hover:text-primary flex h-7 w-7 shrink-0 items-center justify-center rounded"
+                  :aria-label="expandedWorkflowTemplates[tmpl.key] ? 'Collapse versions' : 'Expand versions'"
+                  @click.stop="toggleWorkflowTemplate(tmpl.key)"
+                >
+                  <UIcon
+                    :name="
+                      expandedWorkflowTemplates[tmpl.key] ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'
+                    "
+                    class="h-4 w-4"
+                  />
+                </button>
+                <span v-else class="block h-7 w-7 shrink-0" />
+                <button
+                  type="button"
+                  class="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 text-left"
+                  @click="setFilter({ kind: 'workflow-template', templateKey: tmpl.key })"
+                >
+                  <span class="flex min-w-0 items-center gap-2">
+                    <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: tmpl.color }" />
+                    <span class="truncate">{{ tmpl.name }}</span>
+                  </span>
+                  <span class="text-muted shrink-0 text-xs">{{ tmpl.fileCount }}</span>
+                </button>
+              </div>
+
+              <div v-if="expandedWorkflowTemplates[tmpl.key] && tmpl.versions.length > 1" class="ml-7 mt-0.5">
+                <button
+                  v-for="v in tmpl.versions"
+                  :key="v.tag.TagId"
+                  type="button"
+                  class="hover:bg-primary-muted flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs"
+                  :class="{
+                    'bg-primary-muted font-medium': isFilterActive({ kind: 'workflow-version', tagId: v.tag.TagId }),
+                  }"
+                  @click="setFilter({ kind: 'workflow-version', tagId: v.tag.TagId })"
+                >
+                  <span class="text-muted truncate">{{ v.label }}</span>
+                  <span class="text-muted shrink-0 tabular-nums">{{ v.tag.FileCount }}</span>
+                </button>
+              </div>
+            </div>
+
+            <button
+              v-if="workflowTemplates.length > visibleWorkflowTemplates.length || showAllWorkflowTemplates"
+              v-show="workflowTemplates.length > 6"
+              type="button"
+              class="text-primary mt-2 px-2 text-xs font-medium hover:underline"
+              @click="showAllWorkflowTemplates = !showAllWorkflowTemplates"
+            >
+              {{
+                showAllWorkflowTemplates
+                  ? 'Show fewer'
+                  : `Show ${workflowTemplates.length - visibleWorkflowTemplates.length} more`
+              }}
+            </button>
+          </div>
         </div>
       </div>
 
