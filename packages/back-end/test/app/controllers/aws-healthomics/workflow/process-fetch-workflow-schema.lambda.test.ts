@@ -3,6 +3,7 @@ global.fetch = mockFetch;
 
 jest.mock('../../../../../src/app/services/omics-service');
 jest.mock('../../../../../src/app/services/secrets-manager-service');
+jest.mock('../../../../../src/app/services/ssm-service');
 jest.mock('../../../../../src/app/services/aws-healthomics/workflow-schema-service');
 
 import { Context } from 'aws-lambda';
@@ -10,12 +11,14 @@ import { handler } from '../../../../../src/app/controllers/aws-healthomics/work
 import { WorkflowSchemaService } from '../../../../../src/app/services/aws-healthomics/workflow-schema-service';
 import { OmicsService } from '../../../../../src/app/services/omics-service';
 import { SecretsManagerService } from '../../../../../src/app/services/secrets-manager-service';
+import { SsmService } from '../../../../../src/app/services/ssm-service';
 
 describe('process-fetch-workflow-schema.lambda', () => {
   const WORKFLOW_ID = '1234567';
   const WORKFLOW_ARN = `arn:aws:omics:us-east-1:123456789012:workflow/${WORKFLOW_ID}`;
   const GITHUB_REPO_URL = 'https://github.com/nf-core/rnaseq';
   const GITHUB_PAT = 'ghp_test_pat_token';
+  const LAB_GITHUB_PAT = 'ghp_lab_specific_token';
   const SECRET_NAME = 'github-pat-secret';
 
   const schemaContent = {
@@ -34,6 +37,7 @@ describe('process-fetch-workflow-schema.lambda', () => {
 
   let mockOmicsService: jest.MockedClass<typeof OmicsService>;
   let mockSecretsManagerService: jest.MockedClass<typeof SecretsManagerService>;
+  let mockSsmService: jest.MockedClass<typeof SsmService>;
   let mockWorkflowSchemaService: jest.MockedClass<typeof WorkflowSchemaService>;
 
   const createEvent = (overrides: Record<string, any> = {}) => ({
@@ -72,6 +76,7 @@ describe('process-fetch-workflow-schema.lambda', () => {
 
     mockOmicsService = OmicsService as jest.MockedClass<typeof OmicsService>;
     mockSecretsManagerService = SecretsManagerService as jest.MockedClass<typeof SecretsManagerService>;
+    mockSsmService = SsmService as jest.MockedClass<typeof SsmService>;
     mockWorkflowSchemaService = WorkflowSchemaService as jest.MockedClass<typeof WorkflowSchemaService>;
 
     mockOmicsService.prototype.getWorkflow = jest.fn().mockResolvedValue({
@@ -81,6 +86,9 @@ describe('process-fetch-workflow-schema.lambda', () => {
 
     mockSecretsManagerService.prototype.getSecretValue = jest.fn().mockResolvedValue({
       SecretString: GITHUB_PAT,
+    });
+    mockSsmService.prototype.getParameter = jest.fn().mockResolvedValue({
+      Parameter: undefined,
     });
 
     mockWorkflowSchemaService.prototype.saveSchema = jest.fn().mockResolvedValue({});
@@ -122,6 +130,68 @@ describe('process-fetch-workflow-schema.lambda', () => {
         WorkflowId: WORKFLOW_ID,
         Version: '1',
         Schema: schemaContent,
+      }),
+    );
+  });
+
+  it('uses lab GitHub token first when available', async () => {
+    (mockOmicsService.prototype.getWorkflow as jest.Mock).mockResolvedValue({
+      id: WORKFLOW_ID,
+      tags: {
+        'github-repo-url': GITHUB_REPO_URL,
+        'OrganizationId': 'org-1',
+        'LaboratoryId': 'lab-1',
+      },
+    });
+    (mockSsmService.prototype.getParameter as jest.Mock).mockResolvedValue({
+      Parameter: { Value: LAB_GITHUB_PAT },
+    });
+
+    await handler(createEvent(), createContext(), () => {});
+
+    expect(mockSsmService.prototype.getParameter).toHaveBeenCalledWith({
+      Name: '/easy-genomics/organization/org-1/laboratory/lab-1/github-access-token',
+      WithDecryption: true,
+    });
+    expect(mockSecretsManagerService.prototype.getSecretValue).not.toHaveBeenCalled();
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.github.com/repos/nf-core/rnaseq/contents/nextflow_schema.json',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: `Bearer ${LAB_GITHUB_PAT}`,
+        }),
+      }),
+    );
+  });
+
+  it('falls back to project secret when lab token parameter is missing', async () => {
+    (mockOmicsService.prototype.getWorkflow as jest.Mock).mockResolvedValue({
+      id: WORKFLOW_ID,
+      tags: {
+        'github-repo-url': GITHUB_REPO_URL,
+        'OrganizationId': 'org-1',
+        'LaboratoryId': 'lab-1',
+      },
+    });
+    (mockSsmService.prototype.getParameter as jest.Mock).mockRejectedValue({
+      name: 'ParameterNotFound',
+    });
+
+    await handler(createEvent(), createContext(), () => {});
+
+    expect(mockSsmService.prototype.getParameter).toHaveBeenCalledWith({
+      Name: '/easy-genomics/organization/org-1/laboratory/lab-1/github-access-token',
+      WithDecryption: true,
+    });
+    expect(mockSecretsManagerService.prototype.getSecretValue).toHaveBeenCalledWith({
+      SecretId: SECRET_NAME,
+    });
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.github.com/repos/nf-core/rnaseq/contents/nextflow_schema.json',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: `Bearer ${GITHUB_PAT}`,
+        }),
       }),
     );
   });

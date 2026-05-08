@@ -5,9 +5,11 @@ import { GITHUB_SCHEMA_URL_TAG, parseGitHubSchemaFileUrl } from '@BE/services/aw
 import { WorkflowSchemaService } from '@BE/services/aws-healthomics/workflow-schema-service';
 import { OmicsService } from '@BE/services/omics-service';
 import { SecretsManagerService } from '@BE/services/secrets-manager-service';
+import { SsmService } from '@BE/services/ssm-service';
 
 const omicsService = new OmicsService();
 const secretsManagerService = new SecretsManagerService();
+const ssmService = new SsmService();
 const workflowSchemaService = new WorkflowSchemaService();
 
 const SCHEMA_FILE_PATH = 'nextflow_schema.json';
@@ -46,6 +48,51 @@ function workflowIdFromArn(arn: string): string {
   const id = parts[parts.length - 1];
   if (!id) throw new Error(`Cannot extract workflow ID from ARN: ${arn}`);
   return id;
+}
+
+async function resolveGitHubToken(workflowTags?: Record<string, string>): Promise<string> {
+  const organizationId = workflowTags?.OrganizationId?.trim();
+  const laboratoryId = workflowTags?.LaboratoryId?.trim();
+  if (organizationId && laboratoryId) {
+    const tokenParameterName = `/easy-genomics/organization/${organizationId}/laboratory/${laboratoryId}/github-access-token`;
+    try {
+      const parameter = await ssmService.getParameter({
+        Name: tokenParameterName,
+        WithDecryption: true,
+      });
+      const laboratoryGitHubToken = parameter.Parameter?.Value?.trim();
+      if (laboratoryGitHubToken) {
+        return laboratoryGitHubToken;
+      }
+      console.warn(
+        `[process-fetch-workflow-schema] Empty lab GitHub token at ${tokenParameterName}, falling back to project secret`,
+      );
+    } catch (error: any) {
+      if (error?.name !== 'ParameterNotFound') {
+        throw error;
+      }
+      console.info(
+        `[process-fetch-workflow-schema] Lab GitHub token not found at ${tokenParameterName}, falling back to project secret`,
+      );
+    }
+  } else {
+    console.info(
+      '[process-fetch-workflow-schema] Missing OrganizationId/LaboratoryId workflow tags, falling back to project secret',
+    );
+  }
+
+  const secretName = process.env.GITHUB_PAT_SECRET_NAME;
+  if (!secretName) {
+    throw new Error('GITHUB_PAT_SECRET_NAME environment variable is not set');
+  }
+
+  const secretResponse = await secretsManagerService.getSecretValue({ SecretId: secretName });
+  const githubToken = secretResponse.SecretString?.trim();
+  if (!githubToken) {
+    throw new Error('GitHub PAT secret has no value — set the secret in Secrets Manager after deploy');
+  }
+
+  return githubToken;
 }
 
 /**
@@ -106,17 +153,7 @@ export const handler: Handler = async (event: EventBridgeTagChangeEvent): Promis
       return;
     }
 
-    // Retrieve GitHub PAT from Secrets Manager
-    const secretName = process.env.GITHUB_PAT_SECRET_NAME;
-    if (!secretName) {
-      throw new Error('GITHUB_PAT_SECRET_NAME environment variable is not set');
-    }
-
-    const secretResponse = await secretsManagerService.getSecretValue({ SecretId: secretName });
-    const githubToken = secretResponse.SecretString;
-    if (!githubToken) {
-      throw new Error('GitHub PAT secret has no value — set the secret in Secrets Manager after deploy');
-    }
+    const githubToken = await resolveGitHubToken(workflow.tags);
 
     console.info(`[process-fetch-workflow-schema] Fetching ${filePath} from ${owner}/${repo}`);
 

@@ -607,6 +607,13 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
+        resources: [
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/github-access-token`,
+        ],
+        actions: ['ssm:GetParameter'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
         resources: [this.githubPatSecretArn],
         actions: ['secretsmanager:GetSecretValue'],
         effect: Effect.ALLOW,
@@ -650,6 +657,13 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
         actions: ['omics:GetWorkflow'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/github-access-token`,
+        ],
+        actions: ['ssm:GetParameter'],
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
