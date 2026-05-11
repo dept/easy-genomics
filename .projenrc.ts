@@ -410,6 +410,8 @@ backEndApp.addScripts({
   ['invoke-process-handler']: 'tsx src/local-server/invoke-process-handler.ts',
   ['backfill-omics-run-tags']: 'tsx scripts/backfill-omics-run-tags.ts',
   ['backfill-omics-run-tags:dry-run']: 'tsx scripts/backfill-omics-run-tags.ts --dry-run',
+  ['seed-workflow-tagging-test-runs']: 'tsx scripts/seed-workflow-tagging-test-runs.ts',
+  ['seed-workflow-tagging-test-runs:dry-run']: 'tsx scripts/seed-workflow-tagging-test-runs.ts --dry-run',
 });
 
 if (backEndApp.eslint) {

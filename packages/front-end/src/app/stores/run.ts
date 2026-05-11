@@ -21,6 +21,13 @@ export interface WipRun {
   s3Bucket?: string;
   s3Path?: string;
   files?: FilePair[];
+  /**
+   * S3 object keys (within the laboratory bucket) for the inputs of this run. Populated
+   * either from the EG upload manifest or by best-effort parsing of a user-supplied
+   * sample sheet CSV. Forwarded to create-laboratory-run so the data tagging system can
+   * associate the files with the workflow that processed them.
+   */
+  inputFileKeys?: string[];
   paramsRequired: string[];
 }
 

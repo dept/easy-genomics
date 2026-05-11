@@ -13,6 +13,8 @@ import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-geno
 import { SnsProcessingEvent } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { v4 as uuidv4 } from 'uuid';
+import { associateInputsWithWorkflowTag } from '@BE/services/easy-genomics/associate-laboratory-run-workflow-tagging';
+import { LaboratoryDataTaggingService } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { SnsService } from '@BE/services/sns-service';
@@ -30,6 +32,7 @@ import {
 
 const laboratoryRunService = new LaboratoryRunService();
 const laboratoryService = new LaboratoryService();
+const dataTaggingService = new LaboratoryDataTaggingService();
 const snsService = new SnsService();
 
 export const handler: Handler = async (
@@ -83,6 +86,8 @@ export const handler: Handler = async (
       Owner: currentUserEmail,
       WorkflowName: request.WorkflowName,
       WorkflowVersionName: request.WorkflowVersionName,
+      WorkflowExternalId: request.WorkflowExternalId,
+      InputFileKeys: request.InputFileKeys,
       ExternalRunId: request.ExternalRunId,
       InputS3Url: request.InputS3Url,
       OutputS3Url: request.OutputS3Url,
@@ -92,6 +97,15 @@ export const handler: Handler = async (
       CreatedBy: currentUserId,
       ...(isTerminalAtCreate ? { TerminalAt: createdAt.toISOString() } : {}),
       ...(laboratorioRunExpiresAt !== undefined ? { ExpiresAt: laboratorioRunExpiresAt } : {}),
+    });
+
+    // Best-effort: associate input files with a workflow tag so the data tagging page can
+    // show "files used by workflow X". Failures here must NEVER block run creation.
+    await associateInputsWithWorkflowTag({
+      laboratory,
+      userId: currentUserId,
+      request,
+      tagging: dataTaggingService,
     });
 
     if (laboratoryRun.ExternalRunId) {

@@ -57,3 +57,25 @@ export async function validateSampleSheetFile(file: File | null | undefined): Pr
 
   return { valid: true };
 }
+
+/**
+ * Best-effort extraction of S3 object keys from an arbitrary sample sheet CSV. Picks up any
+ * `s3://<bucket>/<key>` reference that points at the supplied bucket; bucket-mismatched and
+ * non-S3 cells are ignored. Used to associate user-supplied sample sheets with workflow tags
+ * on the data tagging page. The match is intentionally permissive (does not assume specific
+ * column names) since EG-generated and user-supplied CSV formats vary.
+ */
+export function extractS3KeysFromCsv(csv: string, bucket: string): string[] {
+  if (!csv || !bucket) return [];
+  const pattern = /s3:\/\/([^/\s",]+)\/([^\s",]+)/gi;
+  const keys = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(csv)) !== null) {
+    const refBucket = match[1];
+    const refKey = match[2];
+    if (refBucket === bucket && refKey) {
+      keys.add(refKey);
+    }
+  }
+  return [...keys];
+}
