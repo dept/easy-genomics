@@ -134,6 +134,10 @@
       "type": "runtime"
     },
     {
+      "name": "@iconify-json/lucide",
+      "type": "runtime"
+    },
+    {
       "name": "@nuxt/ui",
       "version": "2.18.4",
       "type": "runtime"

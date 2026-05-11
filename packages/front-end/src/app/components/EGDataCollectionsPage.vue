@@ -1,6 +1,9 @@
 <script setup lang="ts">
   import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-  import type { LaboratoryDataTag } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
+  import type {
+    LaboratoryDataTag,
+    LaboratoryRunUsageSummary,
+  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
   import { useLabsStore, useToastStore, useUiStore } from '@FE/stores';
 
   const props = defineProps<{
@@ -25,6 +28,12 @@
    * filter section can drive visibility.
    */
   const keyToWorkflowTagIds = ref<Record<string, string[]>>({});
+  /**
+   * Per-file laboratory run usage history, sorted newest first by `RunCreatedAt` (see
+   * `listFileTags` on the back end). Drives the per-file Analysis History tooltip and the
+   * orange/green/indigo status dot. Empty array means the file has never been used in a run.
+   */
+  const keyToRunUsages = ref<Record<string, LaboratoryRunUsageSummary[]>>({});
   const files = ref<{ Key: string; Size?: number; LastModified?: string }[]>([]);
   const listingTruncated = ref(false);
   const selectedKeys = ref<string[]>([]);
@@ -347,12 +356,13 @@
         Recursive: true,
         MaxTotalKeys: 25_000,
       });
-      listingTruncated.value = !!res.ListingTruncated;
-      files.value = (res.Contents || []).filter((c) => !c.Key.endsWith('/'));
-      const keys = files.value.map((f) => f.Key);
+      const nextTruncated = !!res.ListingTruncated;
+      const nextFiles = (res.Contents || []).filter((c) => !c.Key.endsWith('/'));
+      const keys = nextFiles.map((f) => f.Key);
       const map: Record<string, string[]> = {};
       const batchMap: Record<string, string | undefined> = {};
       const workflowMap: Record<string, string[]> = {};
+      const runUsagesMap: Record<string, LaboratoryRunUsageSummary[]> = {};
       if (keys.length) {
         for (let i = 0; i < keys.length; i += KEYS_CHUNK) {
           const chunk = keys.slice(i, i + KEYS_CHUNK);
@@ -365,12 +375,16 @@
             map[f.Key] = f.TagIds;
             batchMap[f.Key] = f.BatchTagId;
             workflowMap[f.Key] = f.WorkflowTagIds ?? [];
+            runUsagesMap[f.Key] = f.LaboratoryRunUsages ?? [];
           }
         }
       }
+      listingTruncated.value = nextTruncated;
+      files.value = nextFiles;
       keyToTagIds.value = map;
       keyToBatchTagId.value = batchMap;
       keyToWorkflowTagIds.value = workflowMap;
+      keyToRunUsages.value = runUsagesMap;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       toast.error(`Failed to load files: ${msg}`);
@@ -397,6 +411,11 @@
     return list;
   });
 
+  /** Number of laboratory runs that have used the given file as input. */
+  function runCountForFileKey(key: string): number {
+    return keyToRunUsages.value[key]?.length ?? 0;
+  }
+
   const visibleFiles = computed(() => {
     let list = filesMatchingSearch.value;
     const sf = scopeFilter.value;
@@ -404,7 +423,8 @@
       case 'all':
         break;
       case 'not-analyzed':
-        list = list.filter((f) => !(keyToWorkflowTagIdsEffective.value[f.Key] || []).length);
+        // Run-history-based: a file is "not yet analyzed" iff it has zero recorded run usages.
+        list = list.filter((f) => runCountForFileKey(f.Key) === 0);
         break;
       case 'workflow-template': {
         const tmpl = workflowTemplates.value.find((t) => t.key === sf.templateKey);
@@ -431,7 +451,7 @@
   const allSamplesChipCount = computed(() => filesMatchingSearch.value.length);
 
   const notAnalyzedChipCount = computed(
-    () => filesMatchingSearch.value.filter((f) => !(keyToWorkflowTagIdsEffective.value[f.Key] || []).length).length,
+    () => filesMatchingSearch.value.filter((f) => runCountForFileKey(f.Key) === 0).length,
   );
 
   /** Per standard-tag file counts among `filesMatchingSearch` (matches `case 'tag'` in `visibleFiles`). */
@@ -531,6 +551,17 @@
 
   function selectAllDisplayed(): void {
     selectedKeys.value = visibleFiles.value.map((f) => f.Key);
+  }
+
+  /**
+   * Replace the current selection with the input file keys recorded for a given run, restricted
+   * to keys that are present in the loaded listing. Keys not currently visible (e.g. deleted from
+   * S3 since the run, or outside this listing's page) are silently dropped so we never select
+   * ghost rows.
+   */
+  function selectFilesForRun(payload: { runId: string; inputFileKeys: string[] }): void {
+    const loadedKeys = new Set(files.value.map((f) => f.Key));
+    selectedKeys.value = payload.inputFileKeys.filter((k) => loadedKeys.has(k));
   }
 
   function resetBulkPanelDraft(): void {
@@ -1040,11 +1071,13 @@
 
       <EGDataCollectionsExplorer
         class="min-h-0 min-w-0 flex-1"
+        :lab-id="props.labId"
         :lab-root="labRoot"
         :visible-files="visibleFiles"
         :key-to-tag-ids="keyToStandardTagIdsForExplorer"
         :key-to-batch-tag-id="keyToBatchTagId"
         :key-to-workflow-tag-ids="keyToWorkflowTagIdsEffective"
+        :key-to-run-usages="keyToRunUsages"
         :batch-tags="batchTags"
         :tags="tags"
         :selected-keys="selectedKeys"
@@ -1060,6 +1093,7 @@
         @clear-selection="selectedKeys = []"
         @clear-filter="clearExplorerFilter($event)"
         @remove-tag-from-file="removeTagFromFile($event.key, $event.tagId)"
+        @select-run-files="selectFilesForRun($event)"
       />
     </div>
 

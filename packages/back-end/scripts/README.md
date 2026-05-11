@@ -22,6 +22,31 @@ pnpm run backfill-omics-run-tags:dry-run
 
 **Environment:** `NAME_PREFIX`, `ACCOUNT_ID`, `REGION` (see script header for IAM expectations).
 
+## `backfill-laboratory-run-usages.ts`
+
+**Purpose:** Populates the per-file `LaboratoryRunUsages` map on `FILE#` rows of the laboratory data tagging table from
+the existing `LaboratoryRun` records, so the Data Collections "Analysis History" tooltip shows runs that pre-date the
+file-history feature. Each run with non-empty `InputFileKeys` produces one idempotent entry per (RunId, file).
+
+**When to use:** Once after deploying the file-history feature to a prior environment, or any time you suspect history
+was lost (e.g. legacy data import).
+
+**Usage:**
+
+```bash
+pnpm run backfill-laboratory-run-usages
+pnpm run backfill-laboratory-run-usages:dry-run
+pnpm run backfill-laboratory-run-usages -- --lab <laboratoryId>
+```
+
+- `--dry-run` — log what would be recorded without writing to DynamoDB.
+- `--lab <laboratoryId>` — limit the backfill to a single laboratory.
+
+**Environment:** `NAME_PREFIX`, `REGION`.
+
+**IAM:** DynamoDB `Scan` on `laboratory-run-table`; DynamoDB `GetItem` on `laboratory-table`; DynamoDB `UpdateItem` on
+`laboratory-data-tagging-table`.
+
 ## `seed-workflow-tagging-test-runs.ts`
 
 **Purpose:** Creates twelve synthetic `LaboratoryRun` rows (no Omics or Seqera launch) and applies the same

@@ -3,9 +3,14 @@
    * File grid, folder shortcuts, lasso selection, and drag/drop targets for tagging.
    * Parent (EGDataCollectionsPage) owns data fetching and tag sidebar.
    */
-  import type { LaboratoryDataTag } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
+  import type {
+    LaboratoryDataTag,
+    LaboratoryRunUsageSummary,
+  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
 
   const props = defineProps<{
+    /** Used to deep-link from the analysis history tooltip to a laboratory run detail page. */
+    labId: string;
     labRoot: string;
     visibleFiles: { Key: string; Size?: number; LastModified?: string }[];
     keyToTagIds: Record<string, string[]>;
@@ -16,6 +21,11 @@
      * the per-file Analyzed / Not yet analyzed status without an extra round-trip.
      */
     keyToWorkflowTagIds?: Record<string, string[]>;
+    /**
+     * Per-file laboratory run usage history (sorted newest first). Drives the status pill
+     * (Not yet analyzed / Analyzed / Analyzed Nx) and the analysis history tooltip.
+     */
+    keyToRunUsages?: Record<string, LaboratoryRunUsageSummary[]>;
     batchTags?: LaboratoryDataTag[];
     tags: LaboratoryDataTag[];
     selectedKeys: string[];
@@ -37,6 +47,8 @@
     clearSelection: [];
     clearFilter: [chipId: string];
     removeTagFromFile: [payload: { key: string; tagId: string }];
+    /** Tooltip emits this when the user clicks the check button on a run row. */
+    selectRunFiles: [payload: { runId: string; inputFileKeys: string[] }];
   }>();
 
   const filterChipsResolved = computed(() => props.filterChips ?? []);
@@ -57,6 +69,17 @@
   let ly0 = 0;
   let dragTagId: string | null = null;
   let dragSourceKey: string | null = null;
+
+  /** While a file’s analysis popover is open, that card/row is stacked above siblings so other files’ dots do not show through the panel. */
+  const analysisPopoverOpenKey = ref<string | null>(null);
+
+  function onAnalysisPopoverOpen(fileKey: string, open: boolean): void {
+    if (open) {
+      analysisPopoverOpenKey.value = fileKey;
+    } else if (analysisPopoverOpenKey.value === fileKey) {
+      analysisPopoverOpenKey.value = null;
+    }
+  }
 
   function tagById(id: string): LaboratoryDataTag | undefined {
     return props.tags.find((t: LaboratoryDataTag) => t.TagId === id);
@@ -87,15 +110,28 @@
     return `${parts.join('/')}/`;
   }
 
+  /** Number of laboratory runs that have used the given file as input. */
+  function runCountForFileKey(key: string): number {
+    return props.keyToRunUsages?.[key]?.length ?? 0;
+  }
+
+  function runUsagesForFileKey(key: string): LaboratoryRunUsageSummary[] {
+    return props.keyToRunUsages?.[key] ?? [];
+  }
+
   /**
-   * "Analyzed" iff the parent has recorded at least one workflow tag association for this
-   * file (via the data tagging system's per-run workflow tag). The mapping is sparse — files
-   * whose key is missing from the prop are treated as not analyzed, which matches the
-   * pre-existing UI default.
+   * Standard tag names (excludes batch + workflow tags) for the analysis history tooltip
+   * subtitle. The parent already filters its `keyToTagIds` prop down to standard tags only, so
+   * this just resolves ids to display names while preserving order.
    */
-  function fileAnalysisStatus(key: string): 'Not yet analyzed' | 'Analyzed' {
-    const ids = props.keyToWorkflowTagIds?.[key];
-    return ids && ids.length > 0 ? 'Analyzed' : 'Not yet analyzed';
+  /** Standard tag ids for this file (parent passes standard tags only). */
+  function standardTagIdsForFileKey(key: string): string[] {
+    return props.keyToTagIds[key] ?? [];
+  }
+
+  function standardTagNamesForFileKey(key: string): string[] {
+    const ids: string[] = standardTagIdsForFileKey(key);
+    return ids.map((id: string) => tagById(id)?.Name ?? id).filter((n: string) => !!n);
   }
 
   /** No file objects returned for this listing (under lab prefix). */
@@ -133,8 +169,7 @@
     let notYetAnalyzed = 0;
     let analyzed = 0;
     for (const f of sec.files) {
-      const ids = props.keyToWorkflowTagIds?.[f.Key];
-      if (ids && ids.length > 0) analyzed += 1;
+      if (runCountForFileKey(f.Key) > 0) analyzed += 1;
       else notYetAnalyzed += 1;
     }
     return {
@@ -383,6 +418,15 @@
     </div>
 
     <div ref="scrollEl" class="relative flex-1 overflow-auto p-2" @mousedown="onScrollHostMouseDown">
+      <div
+        v-if="loading"
+        class="absolute inset-0 z-20 flex min-h-[14rem] flex-col items-center justify-center gap-3 bg-white/90 p-6 backdrop-blur-[1px]"
+        aria-busy="true"
+        aria-label="Loading samples and tag data"
+      >
+        <UIcon name="i-heroicons-arrow-path" class="text-primary h-10 w-10 shrink-0 animate-spin" />
+        <p class="text-muted max-w-sm text-center text-sm">Loading samples and tag data…</p>
+      </div>
       <div v-if="explorerView === 'cards'" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <template v-for="(sec, secIdx) in fileSections" :key="sec.batchId ?? 'unbatched'">
           <div
@@ -432,7 +476,10 @@
             :data-key="f.Key"
             draggable="true"
             class="border-border-muted relative cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition"
-            :class="{ 'bg-primary-muted ring-primary ring-2': selectedKeys.includes(f.Key) }"
+            :class="{
+              'bg-primary-muted ring-primary ring-2': selectedKeys.includes(f.Key),
+              'z-[80]': analysisPopoverOpenKey === f.Key,
+            }"
             @click="emit('toggleKey', f.Key)"
             @dragstart="onCardDragStart($event, f.Key)"
             @dragover="onCardDragOver"
@@ -442,26 +489,42 @@
             <div class="absolute right-2 top-2" @mousedown.stop @click.stop>
               <UCheckbox :model-value="selectedKeys.includes(f.Key)" @update:model-value="emit('toggleKey', f.Key)" />
             </div>
-            <div class="pr-8 text-sm font-medium leading-snug">{{ fileName(f.Key) }}</div>
+            <div class="absolute left-0 top-0 z-[1]" @mousedown.stop @click.stop>
+              <EGFileAnalysisHistoryTooltip
+                :lab-id="labId"
+                :file-key="f.Key"
+                :file-name="fileName(f.Key)"
+                :batch-name="batchDisplayName(f.Key) === '—' ? undefined : batchDisplayName(f.Key)"
+                :standard-tag-names="standardTagNamesForFileKey(f.Key)"
+                :run-usages="runUsagesForFileKey(f.Key)"
+                variant="card"
+                @select-run-files="emit('selectRunFiles', $event)"
+                @update:open="onAnalysisPopoverOpen(f.Key, $event)"
+              />
+            </div>
+            <div class="mt-7 pr-8 text-sm font-medium leading-snug">{{ fileName(f.Key) }}</div>
             <div v-if="folderPathUnderLab(f.Key)" class="text-muted mt-0.5 truncate text-[11px]">
               {{ folderPathUnderLab(f.Key) }}
             </div>
             <div class="text-muted mt-1 text-xs">{{ f.Size != null ? `${f.Size} bytes` : '' }}</div>
-            <div class="mt-2 flex flex-wrap gap-1">
-              <span
-                v-for="tid in keyToTagIds[f.Key] || []"
-                :key="tid"
-                class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                draggable="true"
-                :style="{
-                  background: tagById(tid)?.ColorHex || '#e2e2e8',
-                  color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
-                }"
-                @dragstart="onPillDragStart($event, tid, f.Key)"
-                @click.stop
-              >
-                {{ tagById(tid)?.Name || tid }}
-              </span>
+            <div class="mt-2 flex min-h-[1.25rem] flex-wrap gap-1">
+              <template v-if="standardTagIdsForFileKey(f.Key).length">
+                <span
+                  v-for="tid in standardTagIdsForFileKey(f.Key)"
+                  :key="tid"
+                  class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+                  draggable="true"
+                  :style="{
+                    background: tagById(tid)?.ColorHex || '#e2e2e8',
+                    color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
+                  }"
+                  @dragstart="onPillDragStart($event, tid, f.Key)"
+                  @click.stop
+                >
+                  {{ tagById(tid)?.Name || tid }}
+                </span>
+              </template>
+              <span v-else class="text-muted text-[10px] italic">No tags</span>
             </div>
           </div>
         </template>
@@ -534,6 +597,7 @@
                 :class="{
                   'bg-primary-muted ring-primary ring-2 ring-inset': selectedKeys.includes(f.Key),
                   'hover:bg-gray-50/80': !selectedKeys.includes(f.Key),
+                  'relative z-[80]': analysisPopoverOpenKey === f.Key,
                 }"
                 @click="emit('toggleKey', f.Key)"
                 @dragstart="onCardDragStart($event, f.Key)"
@@ -554,23 +618,40 @@
                   </div>
                 </td>
                 <td class="text-muted px-3 py-2 align-middle">{{ batchDisplayName(f.Key) }}</td>
-                <td class="px-3 py-2 align-middle text-gray-800">{{ fileAnalysisStatus(f.Key) }}</td>
                 <td class="px-3 py-2 align-middle">
-                  <div class="flex flex-wrap gap-1">
-                    <span
-                      v-for="tid in keyToTagIds[f.Key] || []"
-                      :key="tid"
-                      class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                      draggable="true"
-                      :style="{
-                        background: tagById(tid)?.ColorHex || '#e2e2e8',
-                        color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
-                      }"
-                      @dragstart="onPillDragStart($event, tid, f.Key)"
-                      @click.stop
-                    >
-                      {{ tagById(tid)?.Name || tid }}
-                    </span>
+                  <span class="inline-flex w-fit max-w-full align-middle" @mousedown.stop @click.stop>
+                    <EGFileAnalysisHistoryTooltip
+                      :lab-id="labId"
+                      :file-key="f.Key"
+                      :file-name="fileName(f.Key)"
+                      :batch-name="batchDisplayName(f.Key) === '—' ? undefined : batchDisplayName(f.Key)"
+                      :standard-tag-names="standardTagNamesForFileKey(f.Key)"
+                      :run-usages="runUsagesForFileKey(f.Key)"
+                      variant="table"
+                      @select-run-files="emit('selectRunFiles', $event)"
+                      @update:open="onAnalysisPopoverOpen(f.Key, $event)"
+                    />
+                  </span>
+                </td>
+                <td class="px-3 py-2 align-middle">
+                  <div class="flex min-h-[1.25rem] flex-wrap gap-1">
+                    <template v-if="standardTagIdsForFileKey(f.Key).length">
+                      <span
+                        v-for="tid in standardTagIdsForFileKey(f.Key)"
+                        :key="tid"
+                        class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+                        draggable="true"
+                        :style="{
+                          background: tagById(tid)?.ColorHex || '#e2e2e8',
+                          color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
+                        }"
+                        @dragstart="onPillDragStart($event, tid, f.Key)"
+                        @click.stop
+                      >
+                        {{ tagById(tid)?.Name || tid }}
+                      </span>
+                    </template>
+                    <span v-else class="text-muted text-[10px] italic">No tags</span>
                   </div>
                 </td>
                 <td class="text-muted px-3 py-2 align-middle">—</td>
