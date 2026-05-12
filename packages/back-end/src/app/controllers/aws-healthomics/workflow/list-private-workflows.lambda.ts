@@ -4,21 +4,24 @@ import {
   LaboratoryNotFoundError,
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
- MissingAWSHealthOmicsAccessError,
+  MissingAWSHealthOmicsAccessError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
+import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
 import { OmicsService } from '@BE/services/omics-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
+import { isWorkflowAccessAllowed } from '@BE/utils/laboratory-workflow-access-utils';
 import { AwsHealthOmicsQueryParameters, getAwsHealthOmicsApiQueryParameters } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
 const omicsService = new OmicsService();
+const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
 
 /**
  * This GET /aws-healthomics/workflow/list-private-workflows?laboratoryId={LaboratoryId}
@@ -70,7 +73,13 @@ export const handler: Handler = async (
       ...queryParameters,
       status: undefined, // Explicitly exclude status filter for Workflows
     });
-    return buildResponse(200, JSON.stringify(response), event);
+
+    const accessRows = await laboratoryWorkflowAccessService.listByLaboratoryId(laboratoryId);
+    const items = (response.items ?? []).filter(
+      (w) => w.id != null && isWorkflowAccessAllowed(laboratory, accessRows, 'HEALTH_OMICS', String(w.id)),
+    );
+
+    return buildResponse(200, JSON.stringify({ ...response, items }), event);
   } catch (err: any) {
     console.error(err);
     return buildErrorResponse(err, event);

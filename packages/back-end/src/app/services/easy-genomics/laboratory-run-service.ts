@@ -24,8 +24,8 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
     const logRequestMessage = `Add LaboratoryRun LaboratoryId=${laboratoryRun.LaboratoryId}, RunId=${laboratoryRun.RunId} request`;
     console.info(logRequestMessage);
 
-    // Data validation safety check
-    if (!LaboratoryRunSchema.safeParse(laboratoryRun).success) throw new Error('Invalid request');
+    const parsed = LaboratoryRunSchema.safeParse(laboratoryRun);
+    if (!parsed.success) throw new Error('Invalid request');
 
     const response: PutItemCommandOutput = await this.putItem({
       TableName: this.LABORATORY_RUN_TABLE_NAME,
@@ -34,11 +34,11 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
         '#LaboratoryId': 'LaboratoryId',
         '#RunId': 'RunId',
       },
-      Item: marshall(laboratoryRun, { removeUndefinedValues: true }),
+      Item: marshall(parsed.data, { removeUndefinedValues: true }),
     });
 
     if (response.$metadata.httpStatusCode === 200) {
-      return laboratoryRun;
+      return parsed.data as LaboratoryRun;
     } else {
       throw new Error(`${logRequestMessage} unsuccessful: HTTP Status Code=${response.$metadata.httpStatusCode}`);
     }
@@ -154,8 +154,9 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
     const logRequestMessage = `Update LaboratoryRun LaboratoryId=${laboratoryRun.LaboratoryId}, RunId=${laboratoryRun.RunId} request`;
     console.info(logRequestMessage);
 
-    // Data validation safety check
-    if (!LaboratoryRunSchema.safeParse(laboratoryRun).success) throw new Error('Invalid request');
+    const parsed = LaboratoryRunSchema.safeParse(laboratoryRun);
+    if (!parsed.success) throw new Error('Invalid request');
+    const normalized = parsed.data;
 
     const updateExclusions: string[] = [
       'LaboratoryId',
@@ -172,11 +173,11 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
     ];
 
     const expressionAttributeNames: { [p: string]: string } = this.getExpressionAttributeNamesDefinition(
-      laboratoryRun,
+      normalized,
       updateExclusions,
     );
     const expressionAttributeValues: { [p: string]: any } = this.getExpressionAttributeValuesDefinition(
-      laboratoryRun,
+      normalized,
       updateExclusions,
     );
     const updateExpression: string = this.getUpdateExpression(expressionAttributeNames, expressionAttributeValues);
@@ -184,8 +185,8 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
     const response: UpdateItemCommandOutput = await this.updateItem({
       TableName: this.LABORATORY_RUN_TABLE_NAME,
       Key: {
-        LaboratoryId: { S: laboratoryRun.LaboratoryId },
-        RunId: { S: laboratoryRun.RunId },
+        LaboratoryId: { S: normalized.LaboratoryId },
+        RunId: { S: normalized.RunId },
       },
       ExpressionAttributeNames: expressionAttributeNames,
       ExpressionAttributeValues: expressionAttributeValues,

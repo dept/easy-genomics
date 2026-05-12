@@ -1,5 +1,36 @@
 import { z } from 'zod';
 
+/**
+ * DynamoDB may store a JS string[] as a List (L), but if a client ever sent an indexed
+ * object `{ "0": "a", "1": "b" }` it was marshalled as a Map (M) and reads back as a
+ * plain object. Coerce those shapes back to string[] for API validation and writes.
+ */
+export function coerceLaboratoryRunInputFileKeys(value: unknown): string[] | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    const arr = value.filter((k): k is string => typeof k === 'string' && k.length > 0);
+    return arr.length ? arr : undefined;
+  }
+  if (typeof value === 'object') {
+    const o = value as Record<string, unknown>;
+    const numericKeys = Object.keys(o).filter((k) => /^\d+$/.test(k));
+    if (numericKeys.length > 0) {
+      const arr = numericKeys
+        .sort((a, b) => Number(a) - Number(b))
+        .map((k) => o[k])
+        .filter((v): v is string => typeof v === 'string' && v.length > 0);
+      return arr.length ? arr : undefined;
+    }
+    const arr = Object.values(o).filter((v): v is string => typeof v === 'string' && v.length > 0);
+    return arr.length ? arr : undefined;
+  }
+  return undefined;
+}
+
+const inputFileKeysSchema = z.preprocess(coerceLaboratoryRunInputFileKeys, z.array(z.string()).optional());
+
 const literalSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 type Literal = z.infer<typeof literalSchema>;
 type Json = Literal | { [key: string]: Json } | Json[];
@@ -31,7 +62,7 @@ export const LaboratoryRunSchema = z
      * legacy runs and runs whose input keys could not be determined will not
      * have this field.
      */
-    InputFileKeys: z.array(z.string()).optional(),
+    InputFileKeys: inputFileKeysSchema,
     ExternalRunId: z.string().optional(),
     InputS3Url: z.string().optional(),
     OutputS3Url: z.string().optional(),
@@ -74,7 +105,7 @@ export const ReadLaboratoryRunSchema = z
     WorkflowName: z.string().optional(), // Seqera Pipeline Name or AWS HealthOmics Workflow Name
     WorkflowVersionName: z.string().optional(),
     WorkflowExternalId: z.string().optional(),
-    InputFileKeys: z.array(z.string()).optional(),
+    InputFileKeys: inputFileKeysSchema,
     ExternalRunId: z.string().optional(),
     InputS3Url: z.string().optional(),
     OutputS3Url: z.string().optional(),
@@ -104,7 +135,7 @@ export const AddLaboratoryRunSchema = z
     /** HealthOmics workflowId or Seqera pipelineId; used to associate inputs with the workflow tag. */
     WorkflowExternalId: z.string().optional(),
     /** S3 object keys (within the laboratory bucket) used as inputs for this run. */
-    InputFileKeys: z.array(z.string()).optional(),
+    InputFileKeys: inputFileKeysSchema,
     ExternalRunId: z.string().optional(),
     InputS3Url: z.string().optional(),
     OutputS3Url: z.string().optional(),

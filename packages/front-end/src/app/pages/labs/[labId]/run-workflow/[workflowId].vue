@@ -51,6 +51,9 @@
 
   const wipOmicsRun = computed<WipRun | null>(() => runStore.wipOmicsRuns[omicsRunTempId.value] || null);
 
+  /** True when the current user has saved default parameters for this workflow in their profile. */
+  const hasSavedWorkflowDefaults = ref(false);
+
   const workflow = computed<ReadWorkflow | null>(() => omicsWorkflowsStore.workflows[workflowId] || null);
 
   const schema = computed<Record<string, WorkflowParameter> | null>(() => workflow.value?.parameterTemplate ?? null);
@@ -157,9 +160,21 @@
       transactionId: omicsRunTempId.value,
       paramsRequired: paramsRequired,
     });
-    // unlike seqera runs, omics runs don't have default values for parameters
-    runStore.updateWipOmicsRunParams(omicsRunTempId.value, {});
 
+    let savedParamDefaults: Record<string, unknown> = {};
+    hasSavedWorkflowDefaults.value = false;
+    try {
+      const user = await $api.users.getUser();
+      const raw = user.OmicsWorkflowDefaultParams?.[workflowId];
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        savedParamDefaults = { ...(raw as Record<string, unknown>) };
+        hasSavedWorkflowDefaults.value = Object.keys(savedParamDefaults).length > 0;
+      }
+    } catch {
+      // Saved defaults are optional; the run form still works without them.
+    }
+
+    runStore.updateWipOmicsRunParams(omicsRunTempId.value, savedParamDefaults);
     uiStore.setRequestComplete('loadOmicsWorkflow');
   }
 
@@ -334,6 +349,7 @@
               :lab-id="labId"
               :workflow-id="workflowId"
               :omics-run-temp-id="omicsRunTempId"
+              :has-saved-defaults="hasSavedWorkflowDefaults"
               @next-step="() => nextStep('review')"
               @previous-step="() => previousStep()"
             />

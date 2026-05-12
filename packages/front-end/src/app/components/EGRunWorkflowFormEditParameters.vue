@@ -2,15 +2,19 @@
   import { ButtonSizeEnum } from '@FE/types/buttons';
   import { useToastStore } from '@FE/stores';
 
-  const props = defineProps<{
-    schema: object;
-    params: object;
-    labId: string;
-    workflowId: string;
-    omicsRunTempId: string;
-    nfSchema?: object | null;
-    hasSavedDefaults: boolean;
-  }>();
+  const props = withDefaults(
+    defineProps<{
+      schema: object;
+      params: object;
+      labId: string;
+      workflowId: string;
+      omicsRunTempId: string;
+      nfSchema?: object | null;
+      /** When true, the user already has saved defaults for this workflow (checkbox starts on to avoid accidental clear). */
+      hasSavedDefaults?: boolean;
+    }>(),
+    { hasSavedDefaults: false, nfSchema: null },
+  );
 
   const emit = defineEmits(['next-step', 'previous-step', 'step-validated', 'defaults-cleared']);
 
@@ -122,7 +126,7 @@
     },
   });
 
-  const shouldSaveAsDefaults = ref(props.hasSavedDefaults);
+  const shouldSaveAsDefaults = ref(!!props.hasSavedDefaults);
   let paramsReady = false;
   const fieldErrors = reactive<Record<string, string>>({});
 

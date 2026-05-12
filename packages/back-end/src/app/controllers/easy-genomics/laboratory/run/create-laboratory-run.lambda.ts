@@ -43,11 +43,12 @@ export const handler: Handler = async (
     const currentUserId = event.requestContext.authorizer.claims['cognito:username'];
     const currentUserEmail = event.requestContext.authorizer.claims.email;
     // Post Request Body
-    const request: AddLaboratoryRun = event.isBase64Encoded ? JSON.parse(atob(event.body!)) : JSON.parse(event.body!);
-    // Data validation safety check
-    if (!AddLaboratoryRunSchema.safeParse(request).success) {
+    const body: unknown = event.isBase64Encoded ? JSON.parse(atob(event.body!)) : JSON.parse(event.body!);
+    const parsedBody = AddLaboratoryRunSchema.safeParse(body);
+    if (!parsedBody.success) {
       throw new InvalidRequestError();
     }
+    const request: AddLaboratoryRun = parsedBody.data;
 
     // Validate Laboratory exists before creating Laboratory Run
     const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(request.LaboratoryId);
