@@ -300,6 +300,7 @@
       return true;
     } catch (error) {
       console.error('Failed to clear workflow defaults', error);
+      useToastStore().error('Unable to clear defaults. Please try again.');
       return false;
     }
   }

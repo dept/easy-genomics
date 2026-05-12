@@ -504,7 +504,10 @@
       const uploadManifest = await getUploadFilesManifest(filesNotUploaded.value);
       addUploadUrls(uploadManifest);
     } catch (error: any) {
-      applyErrorToFiles(filesNotUploaded.value, error.message);
+      applyErrorToFiles(filesNotUploaded.value, 'Upload could not start — please try again.');
+      toastStore.error(
+        'Unable to start upload — could not generate upload URLs. Check lab S3 configuration or try again.',
+      );
       return;
     }
 
@@ -668,7 +671,7 @@
         uploadFile(fileDetails)
           .then(() => null)
           .catch((error) => ({
-            fileName: fileDetails.fileName,
+            fileName: fileDetails.name,
             error: error.message,
           })),
       );
@@ -734,6 +737,7 @@
         if (!online) {
           // Immediately abort the upload and show error
           fileDetails.error = 'Network connection lost. Upload aborted.';
+          toastStore.error('Network connection lost — upload paused. Reconnect and retry.');
           controller.abort();
           unwatch();
         }
@@ -870,7 +874,10 @@
   async function uploadCustomSampleSheet(file: File) {
     const { valid, error } = await validateSampleSheetFile(file);
     sampleSheetValidationError.value = error ?? null;
-    if (!valid) return;
+    if (!valid) {
+      toastStore.error('Sample sheet validation failed — check the required format.');
+      return;
+    }
 
     if (!wipRun.value.transactionId) {
       toastStore.error('Run is not initialised yet. Please try again.');

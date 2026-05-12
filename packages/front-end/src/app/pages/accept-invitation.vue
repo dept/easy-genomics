@@ -60,6 +60,8 @@
       }
     } catch (error) {
       console.error('Error processing token; error:', error);
+      useToastStore().error('Invalid or expired invitation link.');
+      navigateTo('/signin');
     }
   }
 

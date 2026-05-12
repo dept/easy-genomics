@@ -1,6 +1,8 @@
 <script setup lang="ts">
   import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
   import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+  import { WorkflowProgressResponse } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
+  import { RunTask } from '@aws-sdk/client-omics';
   import { useLabsStore, useRunStore, useUiStore } from '@FE/stores';
 
   const $route = useRoute();
@@ -69,6 +71,11 @@
     $router.push('/labs');
   }
 
+  // Task-level progress for FAILED/RUNNING Seqera runs
+  const seqeraProgress = ref<WorkflowProgressResponse | null>(null);
+  // Task-level data for FAILED Omics runs
+  const omicsFailedTasks = ref<RunTask[]>([]);
+
   onBeforeMount(async () => {
     await fetchLabRuns();
   });
@@ -77,8 +84,31 @@
     uiStore.setRequestPending('loadLabRuns');
     try {
       await runStore.loadLabRunsForLab(labId);
+      await fetchTaskProgress();
     } finally {
       uiStore.setRequestComplete('loadLabRuns');
+    }
+  }
+
+  async function fetchTaskProgress() {
+    const run = runStore.labRuns[labRunId];
+    if (!run?.ExternalRunId) return;
+
+    if (run.Platform === 'Seqera Cloud' && ['FAILED', 'RUNNING'].includes(run.Status)) {
+      try {
+        seqeraProgress.value = await $api.seqeraRuns.getWorkflowProgress(labId, run.ExternalRunId);
+      } catch (error) {
+        console.error('Failed to fetch Seqera workflow progress:', error);
+      }
+    }
+
+    if (run.Platform === 'AWS HealthOmics' && run.Status === 'FAILED') {
+      try {
+        const omicsRun = await $api.omicsRuns.get(labId, run.ExternalRunId);
+        omicsFailedTasks.value = (omicsRun.tasks ?? []).filter((t: RunTask) => t.status === 'FAILED');
+      } catch (error) {
+        console.error('Failed to fetch Omics run task details:', error);
+      }
     }
   }
 
@@ -248,6 +278,53 @@
               </dd>
             </div>
           </dl>
+        </section>
+
+        <!-- Seqera task-level progress for FAILED or RUNNING runs -->
+        <section
+          v-if="labRun?.Platform === 'Seqera Cloud' && seqeraProgress?.progress"
+          class="stroke-light flex flex-col rounded-none rounded-b-2xl border border-solid bg-white p-6 max-md:px-5"
+        >
+          <h3 class="mb-4 text-sm font-medium text-black">Task Breakdown</h3>
+          <div class="mb-4 flex gap-6 text-sm">
+            <span class="text-green-700">
+              Succeeded: {{ seqeraProgress.progress.workflowProgress?.succeedCountFmt ?? '0' }}
+            </span>
+            <span class="text-red-700">
+              Failed: {{ seqeraProgress.progress.workflowProgress?.failedCountFmt ?? '0' }}
+            </span>
+            <span class="text-muted">
+              Running: {{ seqeraProgress.progress.workflowProgress?.runningCountFmt ?? '0' }}
+            </span>
+          </div>
+          <div v-if="seqeraProgress.progress.processesProgress?.length" class="space-y-2">
+            <div
+              v-for="proc in seqeraProgress.progress.processesProgress?.filter((p) => p.failed > 0)"
+              :key="proc.process"
+              class="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm"
+            >
+              <p class="font-medium text-red-800">{{ proc.process }}</p>
+              <p class="text-red-600">{{ proc.failed }} task(s) failed</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Omics task-level failures for FAILED runs -->
+        <section
+          v-if="labRun?.Platform === 'AWS HealthOmics' && omicsFailedTasks.length"
+          class="stroke-light flex flex-col rounded-none rounded-b-2xl border border-solid bg-white p-6 max-md:px-5"
+        >
+          <h3 class="mb-4 text-sm font-medium text-black">Failed Tasks</h3>
+          <div class="space-y-2">
+            <div
+              v-for="task in omicsFailedTasks"
+              :key="task.taskId"
+              class="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm"
+            >
+              <p class="font-medium text-red-800">Task {{ task.taskId }} — {{ task.name }}</p>
+              <p v-if="task.statusMessage" class="text-red-600">{{ task.statusMessage }}</p>
+            </div>
+          </div>
         </section>
       </div>
 

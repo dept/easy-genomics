@@ -203,7 +203,7 @@ class LabsModule extends HttpFactory {
     try {
       RemoveLaboratoryUserSchema.parse(input);
     } catch (error) {
-      throw new Error(`Validation failed: ${error}`);
+      throw new Error('Invalid request data. Please check your input and try again.');
     }
 
     const res = await this.call<DeletedResponse>('POST', '/laboratory/user/remove-laboratory-user', {

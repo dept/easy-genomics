@@ -18,8 +18,8 @@
   const seqeraPipelineStore = useSeqeraPipelinesStore();
   const labsStore = useLabsStore();
 
-  const labName = labsStore.labs[props.labId].Name;
-  const labNextFlowTowerApiBaseUrl = labsStore.labs[props.labId].NextFlowTowerApiBaseUrl;
+  const labName = labsStore.labs[props.labId]?.Name ?? '';
+  const labNextFlowTowerApiBaseUrl = labsStore.labs[props.labId]?.NextFlowTowerApiBaseUrl ?? '';
   const isLaunchingRun = ref(false);
   const emit = defineEmits(['submit-launch-request', 'submit-launch-request-error', 'has-launched', 'previous-tab']);
 
@@ -46,14 +46,26 @@
 
   async function launchRun() {
     emit('submit-launch-request');
+    isLaunchingRun.value = true;
+
+    // Tracked separately so the createLabRun catch can reference it even after
+    // the external run has already been submitted successfully.
+    let externalRunId: string | undefined;
 
     try {
-      isLaunchingRun.value = true;
       if (props.pipelineId === undefined) {
         throw new Error('pipeline id not found in wip run config');
       }
 
-      const launchDetails = await $api.seqeraPipelines.readPipelineLaunchDetails(props.pipelineId, props.labId);
+      let launchDetails;
+      try {
+        launchDetails = await $api.seqeraPipelines.readPipelineLaunchDetails(props.pipelineId, props.labId);
+      } catch (error) {
+        console.error('Error fetching pipeline launch details:', error);
+        useToastStore().error('Unable to load launch configuration. Check lab Seqera settings and try again.');
+        emit('submit-launch-request-error');
+        return;
+      }
 
       const workDir: string = `s3://${wipSeqeraRun.value?.s3Bucket}/${wipSeqeraRun.value?.s3Path}/work`;
       const launchRequest: CreateWorkflowLaunchRequest = {
@@ -68,14 +80,16 @@
         },
       };
 
-      const res = await $api.seqeraRuns.createPipelineRun(props.labId, props.pipelineId, launchRequest);
-
-      if (!res) {
-        throw new Error('Failed to create pipeline run. Response is empty.');
-      }
-
-      if (!res.workflowId) {
-        throw new Error('Workflow ID is missing in the response');
+      let res;
+      try {
+        res = await $api.seqeraRuns.createPipelineRun(props.labId, props.pipelineId, launchRequest);
+        if (!res?.workflowId) throw new Error('Workflow ID is missing in the response');
+        externalRunId = res.workflowId;
+      } catch (error) {
+        console.error('Error submitting run to Seqera:', error);
+        useToastStore().error('Failed to submit run to Seqera. Please try again.');
+        emit('submit-launch-request-error');
+        return;
       }
 
       try {
@@ -87,7 +101,7 @@
           'PlatformApiBaseUrl': labNextFlowTowerApiBaseUrl,
           'Status': 'SUBMITTED',
           'WorkflowName': pipeline.value?.name,
-          'ExternalRunId': res.workflowId,
+          'ExternalRunId': externalRunId,
           'InputS3Url': props.params.input.substring(0, props.params.input.lastIndexOf('/')),
           'OutputS3Url': props.params.outdir,
           'SampleSheetS3Url': props.params.input,
@@ -95,15 +109,19 @@
         };
         await $api.labs.createLabRun(labRunRequest);
       } catch (error) {
-        console.error('Error launching workflow:', error);
-        throw error;
+        console.error('Error recording lab run after successful Seqera submission:', error);
+        useToastStore().error(
+          `Your run was submitted but could not be recorded. Contact support with run ID: ${externalRunId}.`,
+        );
+        emit('submit-launch-request-error');
+        return;
       }
 
       delete runStore.wipSeqeraRuns[props.seqeraRunTempId];
       emit('has-launched');
     } catch (error) {
-      useToastStore().error('Error launching run: ' + error);
-      console.error('Error launching workflow:', error);
+      console.error('Unexpected error launching run:', error);
+      useToastStore().error('An unexpected error occurred while launching the run. Please try again.');
       emit('submit-launch-request-error');
     } finally {
       isLaunchingRun.value = false;
