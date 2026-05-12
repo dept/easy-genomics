@@ -1,9 +1,14 @@
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { Handler } from 'aws-lambda';
 import { PreTokenGenerationTriggerEvent } from 'aws-lambda/trigger/cognito-user-pool-trigger/pre-token-generation';
+import { LaboratoryUserService } from '../../services/easy-genomics/laboratory-user-service';
+import { OrganizationUserService } from '../../services/easy-genomics/organization-user-service';
 import { UserService } from '../../services/easy-genomics/user-service';
+import { buildOrganizationAccessFromMemberships } from '../../utils/organization-access-builder';
 
 const userService = new UserService();
+const organizationUserService = new OrganizationUserService();
+const laboratoryUserService = new LaboratoryUserService();
 
 /**
  * This auth lambda function is triggered by the Cognito Pre-Token Generation Event:
@@ -23,6 +28,12 @@ export const handler: Handler = async (
 
   const user: User | undefined = (await userService.queryByEmail(event.request.userAttributes.email)).shift();
   if (user) {
+    const [organizationUsers, laboratoryUsers] = await Promise.all([
+      organizationUserService.queryByUserId(user.UserId),
+      laboratoryUserService.queryByUserId(user.UserId),
+    ]);
+    const organizationAccess = buildOrganizationAccessFromMemberships(organizationUsers, laboratoryUsers);
+
     event.response = {
       claimsOverrideDetails: {
         claimsToAddOrOverride: {
@@ -33,7 +44,7 @@ export const handler: Handler = async (
           ['Status']: user.Status,
           ['DefaultOrganization']: user.DefaultOrganization || '', // User last accessed Organization
           ['DefaultLaboratory']: user.DefaultLaboratory || '', // User last accessed Laboratory
-          ['OrganizationAccess']: JSON.stringify(user.OrganizationAccess),
+          ['OrganizationAccess']: JSON.stringify(organizationAccess),
           ['SampleIdSplitPattern']: user.SampleIdSplitPattern || '',
         },
       },

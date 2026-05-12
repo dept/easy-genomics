@@ -412,6 +412,15 @@ backEndApp.addScripts({
   ['backfill-omics-run-tags:dry-run']: 'tsx scripts/backfill-omics-run-tags.ts --dry-run',
   ['seed-workflow-tagging-test-runs']: 'tsx scripts/seed-workflow-tagging-test-runs.ts',
   ['seed-workflow-tagging-test-runs:dry-run']: 'tsx scripts/seed-workflow-tagging-test-runs.ts --dry-run',
+  // One-off migration to remove the legacy `OrganizationAccess` map from
+  // user-table after org/lab membership tables become the single source of
+  // truth. Verifies each user against organization-user-table and
+  // laboratory-user-table before removing; see
+  // `scripts/README-remove-user-organization-access.md`.
+  ['migrate:remove-user-organization-access']: 'tsx scripts/remove-user-organization-access.ts',
+  ['migrate:remove-user-organization-access:dry-run']: 'tsx scripts/remove-user-organization-access.ts --dry-run',
+  ['migrate:remove-user-organization-access:verify-only']:
+    'tsx scripts/remove-user-organization-access.ts --verify-only',
 });
 
 if (backEndApp.eslint) {

@@ -1,12 +1,16 @@
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
+import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
 import { OrganizationUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization-user';
 import { OrganizationUserDetails } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization-user-details';
 import { OrganizationAccess, User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { LaboratoryUserService } from '@BE/services/easy-genomics/laboratory-user-service';
 import { OrganizationUserService } from '@BE/services/easy-genomics/organization-user-service';
 import { UserService } from '@BE/services/easy-genomics/user-service';
+import { buildOrganizationAccessFromMemberships } from '@BE/utils/organization-access-builder';
 
 const organizationUserService = new OrganizationUserService();
+const laboratoryUserService = new LaboratoryUserService();
 const userService = new UserService();
 
 export const handler: Handler = async (
@@ -28,20 +32,30 @@ export const handler: Handler = async (
     const userIds: string[] = [...new Set(organizationUsers.map((orgUser) => orgUser.UserId))];
     const users: User[] = await userService.listUsers(userIds);
 
+    let laboratoryUsersForQuery: LaboratoryUser[] = [];
+    if (organizationId) {
+      laboratoryUsersForQuery = await laboratoryUserService.queryByOrganizationId(organizationId);
+    } else if (userId) {
+      laboratoryUsersForQuery = await laboratoryUserService.queryByUserId(userId);
+    }
+
     const response: OrganizationUserDetails[] = organizationUsers
       .map((orgUser) => {
-        const user: User | undefined = users.find((u) => u.UserId === orgUser.UserId); // Use find instead of filter and shift
+        const user: User | undefined = users.find((u) => u.UserId === orgUser.UserId);
         if (user) {
-          const organizationAccess: OrganizationAccess | undefined =
-            user.OrganizationAccess && organizationId
-              ? { [organizationId]: user.OrganizationAccess[organizationId] }
-              : user.OrganizationAccess;
+          const orgUsersForRow = organizationUsers.filter((ou) => ou.UserId === orgUser.UserId);
+          const labUsersForRow = laboratoryUsersForQuery.filter((lu) => lu.UserId === orgUser.UserId);
+          const fullAccess = buildOrganizationAccessFromMemberships(orgUsersForRow, labUsersForRow);
+          const organizationAccess: OrganizationAccess | undefined = organizationId
+            ? fullAccess[organizationId]
+              ? { [organizationId]: fullAccess[organizationId]! }
+              : undefined
+            : fullAccess;
 
           return {
             UserId: user.UserId,
             UserEmail: user.Email,
             UserStatus: user.Status,
-            Title: user.Title,
             PreferredName: user.PreferredName,
             FirstName: user.FirstName,
             LastName: user.LastName,

@@ -38,13 +38,6 @@ export const orgAdminUser: User = {
   LastName: 'Admin',
   Status: 'Active',
   DefaultOrganization: organizationId,
-  OrganizationAccess: {
-    [organizationId]: {
-      Status: 'Active',
-      OrganizationAdmin: true,
-      LaboratoryAccess: {},
-    },
-  },
   CreatedAt: new Date().toISOString(),
 };
 
@@ -64,19 +57,6 @@ export const labManagerUser: User = {
   LastName: 'Manager',
   Status: 'Active',
   DefaultOrganization: organizationId,
-  OrganizationAccess: {
-    [organizationId]: {
-      Status: 'Active',
-      OrganizationAdmin: false,
-      LaboratoryAccess: {
-        [laboratoryId]: {
-          Status: 'Active',
-          LabManager: true,
-          LabTechnician: false,
-        },
-      },
-    },
-  },
   CreatedAt: new Date().toISOString(),
 };
 
@@ -106,19 +86,6 @@ export const labTechnicianUser: User = {
   LastName: 'Technician',
   Status: 'Active',
   DefaultOrganization: organizationId,
-  OrganizationAccess: {
-    [organizationId]: {
-      Status: 'Active',
-      OrganizationAdmin: false,
-      LaboratoryAccess: {
-        [laboratoryId]: {
-          Status: 'Active',
-          LabManager: false,
-          LabTechnician: true,
-        },
-      },
-    },
-  },
   CreatedAt: new Date().toISOString(),
 };
 

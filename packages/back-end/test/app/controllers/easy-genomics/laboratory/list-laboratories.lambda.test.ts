@@ -3,26 +3,21 @@ import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { handler } from '../../../../../src/app/controllers/easy-genomics/laboratory/list-laboratories.lambda';
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
-jest.mock('../../../../../src/app/services/easy-genomics/user-service');
 jest.mock('../../../../../src/app/utils/auth-utils');
 
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
-import { UserService } from '../../../../../src/app/services/easy-genomics/user-service';
 import {
   getLaboratoryAccessLaboratoryIds,
   validateOrganizationAccess,
   validateOrganizationAdminAccess,
   validateSystemAdminAccess,
-  verifyCurrentOrganizationAccess,
 } from '../../../../../src/app/utils/auth-utils';
 
 describe('list-laboratories.lambda', () => {
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
-  let mockUserService: jest.MockedClass<typeof UserService>;
   let mockValidateOrgAccess: jest.MockedFunction<typeof validateOrganizationAccess>;
   let mockValidateOrgAdmin: jest.MockedFunction<typeof validateOrganizationAdminAccess>;
   let mockValidateSystemAdmin: jest.MockedFunction<typeof validateSystemAdminAccess>;
-  let mockVerifyCurrentOrgAccess: jest.MockedFunction<typeof verifyCurrentOrganizationAccess>;
   let mockGetLabAccessIds: jest.MockedFunction<typeof getLaboratoryAccessLaboratoryIds>;
 
   const createEvent = (
@@ -72,21 +67,17 @@ describe('list-laboratories.lambda', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockLabService = LaboratoryService as jest.MockedClass<typeof LaboratoryService>;
-    mockUserService = UserService as jest.MockedClass<typeof UserService>;
     mockValidateOrgAccess = validateOrganizationAccess as any;
     mockValidateOrgAdmin = validateOrganizationAdminAccess as any;
     mockValidateSystemAdmin = validateSystemAdminAccess as any;
-    mockVerifyCurrentOrgAccess = verifyCurrentOrganizationAccess as any;
     mockGetLabAccessIds = getLaboratoryAccessLaboratoryIds as any;
 
     mockValidateSystemAdmin.mockReturnValue(false);
     mockValidateOrgAdmin.mockReturnValue(false);
     mockValidateOrgAccess.mockReturnValue(true);
-    mockVerifyCurrentOrgAccess.mockReturnValue(true);
     mockGetLabAccessIds.mockReturnValue(['lab-1']);
 
     mockLabService.prototype.queryByOrganizationId = jest.fn();
-    mockUserService.prototype.queryByEmail = jest.fn();
   });
 
   it('returns 400 when organizationId query parameter is missing', async () => {
@@ -112,11 +103,9 @@ describe('list-laboratories.lambda', () => {
   it('filters laboratories by user access when not admin', async () => {
     mockValidateSystemAdmin.mockReturnValue(false);
     mockValidateOrgAdmin.mockReturnValue(false);
+    mockValidateOrgAccess.mockReturnValue(true);
     mockGetLabAccessIds.mockReturnValue(['lab-1', 'lab-3']);
 
-    (mockUserService.prototype.queryByEmail as jest.Mock).mockResolvedValue([
-      { UserId: 'user-1', Email: 'user@example.com' },
-    ]);
     (mockLabService.prototype.queryByOrganizationId as jest.Mock).mockResolvedValue([
       { OrganizationId: 'org-1', LaboratoryId: 'lab-1' },
       { OrganizationId: 'org-1', LaboratoryId: 'lab-2' },
@@ -138,9 +127,6 @@ describe('list-laboratories.lambda', () => {
     mockValidateOrgAccess.mockReturnValue(true);
     mockGetLabAccessIds.mockReturnValue([]);
 
-    (mockUserService.prototype.queryByEmail as jest.Mock).mockResolvedValue([
-      { UserId: 'user-1', Email: 'user@example.com' },
-    ]);
     (mockLabService.prototype.queryByOrganizationId as jest.Mock).mockResolvedValue([
       { OrganizationId: 'org-1', LaboratoryId: 'lab-1' },
       { OrganizationId: 'org-1', LaboratoryId: 'lab-2' },
@@ -177,10 +163,6 @@ describe('list-laboratories.lambda', () => {
     mockValidateSystemAdmin.mockReturnValue(false);
     mockValidateOrgAccess.mockReturnValue(false);
     mockValidateOrgAdmin.mockReturnValue(false);
-
-    (mockUserService.prototype.queryByEmail as jest.Mock).mockResolvedValue([
-      { UserId: 'user-1', Email: 'user@example.com' },
-    ]);
 
     const result = await handler(createEvent('org-1'), createContext(), () => {});
 

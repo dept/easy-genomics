@@ -124,10 +124,17 @@ export default function useUser() {
         return;
       }
 
-      // retrieve and set current org id and org access
-      const parsedOrgAccess = JSON.parse(decodedToken.OrganizationAccess);
+      const rawOrgAccess = decodedToken.OrganizationAccess;
+      let parsedOrgAccess: OrganizationAccess = {};
+      if (typeof rawOrgAccess === 'string' && rawOrgAccess.length > 0) {
+        try {
+          parsedOrgAccess = JSON.parse(rawOrgAccess) as OrganizationAccess;
+        } catch {
+          parsedOrgAccess = {};
+        }
+      }
 
-      userStore.currentUserPermissions.orgPermissions = parsedOrgAccess as OrganizationAccess;
+      userStore.currentUserPermissions.orgPermissions = parsedOrgAccess;
 
       // set default org, or if no value use first org
       userStore.currentOrg.OrganizationId = decodedToken.DefaultOrganization

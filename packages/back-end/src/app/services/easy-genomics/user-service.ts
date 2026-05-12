@@ -7,10 +7,19 @@ import {
   TransactWriteItemsCommandOutput,
 } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
-import { UserSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user';
+import { UserPersistedSchema, type UserPersisted } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user';
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
+
+/** Drops OrganizationAccess and validates attributes stored on user-table. */
+export function toPersistedUser(user: User): UserPersisted {
+  const rest = { ...user };
+  delete rest.OrganizationAccess;
+  const parsed = UserPersistedSchema.safeParse(rest);
+  if (!parsed.success) throw new Error('Invalid request');
+  return parsed.data;
+}
 
 export class UserService extends DynamoDBService implements Service<User> {
   readonly USER_TABLE_NAME: string = `${process.env.NAME_PREFIX}-user-table`;
@@ -20,11 +29,9 @@ export class UserService extends DynamoDBService implements Service<User> {
     super();
   }
 
-  /** Validates and returns a canonical user shape (unknown keys removed — see UserSchema in shared-lib). */
-  private validatedUserForWrite(user: User): User {
-    const parsed = UserSchema.safeParse(user);
-    if (!parsed.success) throw new Error('Invalid request');
-    return parsed.data;
+  /** Validates persisted user-table attributes (OrganizationAccess is never stored). */
+  private validatedUserForWrite(user: User): UserPersisted {
+    return toPersistedUser(user);
   }
 
   async add(user: User): Promise<User> {

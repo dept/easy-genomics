@@ -3,7 +3,11 @@ import { PreTokenGenerationTriggerEvent } from 'aws-lambda/trigger/cognito-user-
 import { handler } from '../../../../src/app/controllers/auth/process-pre-token-generation.lambda';
 
 jest.mock('../../../../src/app/services/easy-genomics/user-service');
+jest.mock('../../../../src/app/services/easy-genomics/organization-user-service');
+jest.mock('../../../../src/app/services/easy-genomics/laboratory-user-service');
 
+import { LaboratoryUserService } from '../../../../src/app/services/easy-genomics/laboratory-user-service';
+import { OrganizationUserService } from '../../../../src/app/services/easy-genomics/organization-user-service';
 import { UserService } from '../../../../src/app/services/easy-genomics/user-service';
 
 const SYSTEM_ADMIN_EMAIL = 'sysadmin@example.com';
@@ -44,6 +48,8 @@ const baseUser: User = {
 
 describe('process-pre-token-generation Lambda', () => {
   let mockQueryByEmail: jest.Mock;
+  let mockOrgUsersByUserId: jest.Mock;
+  let mockLabUsersByUserId: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -52,6 +58,14 @@ describe('process-pre-token-generation Lambda', () => {
     const MockUserService = UserService as jest.MockedClass<typeof UserService>;
     mockQueryByEmail = jest.fn();
     MockUserService.prototype.queryByEmail = mockQueryByEmail;
+
+    const MockOrgUserService = OrganizationUserService as jest.MockedClass<typeof OrganizationUserService>;
+    mockOrgUsersByUserId = jest.fn().mockResolvedValue([]);
+    MockOrgUserService.prototype.queryByUserId = mockOrgUsersByUserId;
+
+    const MockLabUserService = LaboratoryUserService as jest.MockedClass<typeof LaboratoryUserService>;
+    mockLabUsersByUserId = jest.fn().mockResolvedValue([]);
+    MockLabUserService.prototype.queryByUserId = mockLabUsersByUserId;
   });
 
   describe('System Admin bypass', () => {
@@ -97,12 +111,18 @@ describe('process-pre-token-generation Lambda', () => {
         LastName: 'Doe',
         DefaultOrganization: 'org-123',
         DefaultLaboratory: 'lab-456',
-        OrganizationAccess: {
-          'org-123': { Status: 'Active', OrganizationAdmin: true },
-        },
         SampleIdSplitPattern: '_S',
       };
       mockQueryByEmail.mockResolvedValue([user]);
+      mockOrgUsersByUserId.mockResolvedValue([
+        {
+          OrganizationId: 'org-123',
+          UserId: 'test-user-id',
+          Status: 'Active',
+          OrganizationAdmin: true,
+        },
+      ]);
+      mockLabUsersByUserId.mockResolvedValue([]);
 
       const event = createMockEvent(user.Email);
       const result = await handler(event, {} as any, () => {});
@@ -116,7 +136,15 @@ describe('process-pre-token-generation Lambda', () => {
       expect(claims!.Status).toBe('Active');
       expect(claims!.DefaultOrganization).toBe('org-123');
       expect(claims!.DefaultLaboratory).toBe('lab-456');
-      expect(claims!.OrganizationAccess).toBe(JSON.stringify(user.OrganizationAccess));
+      expect(claims!.OrganizationAccess).toBe(
+        JSON.stringify({
+          'org-123': {
+            Status: 'Active',
+            OrganizationAdmin: true,
+            LaboratoryAccess: {},
+          },
+        }),
+      );
       expect(claims!.SampleIdSplitPattern).toBe('_S');
     });
 
@@ -165,31 +193,52 @@ describe('process-pre-token-generation Lambda', () => {
   });
 
   describe('OrganizationAccess claim', () => {
-    it('should JSON-stringify OrganizationAccess when present', async () => {
-      const orgAccess = {
-        'org-abc': {
-          Status: 'Active' as const,
-          LaboratoryAccess: { 'lab-xyz': { Status: 'Active' as const } },
+    it('should JSON-stringify OrganizationAccess built from membership tables', async () => {
+      mockQueryByEmail.mockResolvedValue([baseUser]);
+      mockOrgUsersByUserId.mockResolvedValue([
+        {
+          OrganizationId: 'org-abc',
+          UserId: 'test-user-id',
+          Status: 'Active',
+          OrganizationAdmin: false,
         },
-      };
-      mockQueryByEmail.mockResolvedValue([{ ...baseUser, OrganizationAccess: orgAccess }]);
+      ]);
+      mockLabUsersByUserId.mockResolvedValue([
+        {
+          LaboratoryId: 'lab-xyz',
+          UserId: 'test-user-id',
+          OrganizationId: 'org-abc',
+          Status: 'Active',
+          LabManager: false,
+          LabTechnician: true,
+        },
+      ]);
 
       const result = await handler(createMockEvent(baseUser.Email), {} as any, () => {});
 
       expect(result.response.claimsOverrideDetails?.claimsToAddOrOverride?.OrganizationAccess).toBe(
-        JSON.stringify(orgAccess),
+        JSON.stringify({
+          'org-abc': {
+            Status: 'Active',
+            OrganizationAdmin: false,
+            LaboratoryAccess: {
+              'lab-xyz': {
+                Status: 'Active',
+                LabManager: false,
+                LabTechnician: true,
+              },
+            },
+          },
+        }),
       );
     });
 
-    it('should emit "undefined" string when OrganizationAccess is not set', async () => {
+    it('should emit "{}" when the user has no organization or laboratory memberships', async () => {
       mockQueryByEmail.mockResolvedValue([{ ...baseUser }]);
 
       const result = await handler(createMockEvent(baseUser.Email), {} as any, () => {});
 
-      // JSON.stringify(undefined) === undefined; the claim value is the string "undefined"
-      expect(result.response.claimsOverrideDetails?.claimsToAddOrOverride?.OrganizationAccess).toBe(
-        JSON.stringify(undefined),
-      );
+      expect(result.response.claimsOverrideDetails?.claimsToAddOrOverride?.OrganizationAccess).toBe('{}');
     });
   });
 });
