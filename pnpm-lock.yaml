@@ -297,6 +297,9 @@ importers:
       '@iconify-json/logos':
         specifier: 1.2.10
         version: 1.2.10
+      '@iconify-json/lucide':
+        specifier: ^1.2.2
+        version: 1.2.106
       '@nuxt/ui':
         specifier: 2.18.4
         version: 2.18.4(axios@1.8.4)(change-case@4.1.2)(jwt-decode@4.0.0)(magicast@0.3.5)(qrcode@1.5.0)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3))(vite@6.2.5(@types/node@20.17.30)(jiti@2.4.2)(sass@1.86.3)(terser@5.39.0)(tsx@4.21.0)(yaml@2.7.1))(vue@3.5.13(typescript@5.8.3))
@@ -3320,6 +3323,9 @@ packages:
 
   '@iconify-json/logos@1.2.10':
     resolution: {integrity: sha512-qxaXKJ6fu8jzTMPQdHtNxlfx6tBQ0jXRbHZIYy5Ilh8Lx9US9FsAdzZWUR8MXV8PnWTKGDFO4ZZee9VwerCyMA==}
+
+  '@iconify-json/lucide@1.2.106':
+    resolution: {integrity: sha512-5nuejHR29A0iQjvLZRRPtuMyj1DA9pzcDMuHD4vmhG7GgLen8haMKiZcZ1IpKVZDwR8wxfcbCv9MsoWHBBAa+g==}
 
   '@iconify/collections@1.0.536':
     resolution: {integrity: sha512-ih/SpVV6+U/4YU0lasSOwqh8+EJn8UPA09tJmH4pH6jIkqbH1aq+U70NaK/DFDmYJlzGERJjDWmUcQWEbLob/A==}
@@ -16254,6 +16260,10 @@ snapshots:
       '@iconify/types': 2.0.0
 
   '@iconify-json/logos@1.2.10':
+    dependencies:
+      '@iconify/types': 2.0.0
+
+  '@iconify-json/lucide@1.2.106':
     dependencies:
       '@iconify/types': 2.0.0
 

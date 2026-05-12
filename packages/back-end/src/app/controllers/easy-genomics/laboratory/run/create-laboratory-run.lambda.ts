@@ -99,12 +99,13 @@ export const handler: Handler = async (
       ...(laboratorioRunExpiresAt !== undefined ? { ExpiresAt: laboratorioRunExpiresAt } : {}),
     });
 
-    // Best-effort: associate input files with a workflow tag so the data tagging page can
-    // show "files used by workflow X". Failures here must NEVER block run creation.
+    // Best-effort: associate input files with a workflow tag and record this run's usage
+    // history per file so the data tagging page can show "files used by workflow X" and
+    // per-file analysis history. Failures here must NEVER block run creation.
     await associateInputsWithWorkflowTag({
       laboratory,
       userId: currentUserId,
-      request,
+      run: laboratoryRun,
       tagging: dataTaggingService,
     });
 

@@ -478,6 +478,7 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@aws-sdk/util-format-url',
     '@easy-genomics/shared-lib@workspace:*',
     '@iconify-json/heroicons',
+    '@iconify-json/lucide',
     '@iconify-json/logos@1.2.10',
     '@nuxt/ui@2.18.4', // Lock to version 2.18.4 due to input text bug
     '@pinia/nuxt',

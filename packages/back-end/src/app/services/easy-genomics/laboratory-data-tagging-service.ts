@@ -9,6 +9,7 @@ import {
   FileTagAssignment,
   LaboratoryDataTag,
   LaboratoryDataTagKind,
+  LaboratoryRunUsageSummary,
   ListFilesByTagResponse,
   ListLaboratoryDataTagsResponse,
   S3TaggedObjectRef,
@@ -527,7 +528,10 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       const fileRow = await this.getFileRow(laboratoryId, ref);
       if (!fileRow) continue;
       const nextIds = (fileRow.TagIds || []).filter((id) => id !== tagId);
-      if (nextIds.length === 0) {
+      const hasUsages = !!fileRow.LaboratoryRunUsages && Object.keys(fileRow.LaboratoryRunUsages).length > 0;
+      // Preserve the FILE# row whenever per-run usage history is recorded against it; otherwise
+      // deleting it would lose the analysis history surfaced in the data collections UI.
+      if (nextIds.length === 0 && !hasUsages) {
         await this.deleteItem({
           TableName: TABLE_NAME,
           Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
@@ -542,6 +546,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
               S3Bucket: fileRow.S3Bucket,
               ObjectKey: fileRow.ObjectKey,
               TagIds: nextIds,
+              ...(hasUsages ? { LaboratoryRunUsages: fileRow.LaboratoryRunUsages } : {}),
               ModifiedAt: new Date().toISOString(),
             },
             { removeUndefinedValues: true },
@@ -623,12 +628,17 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
 
       const items = res.Responses?.[TABLE_NAME] || [];
       const bySk = new Map<string, string[]>();
+      const usagesBySk = new Map<string, Record<string, LaboratoryRunUsageSummary>>();
       const chunkTagIds = new Set<string>();
       for (const item of items) {
         const row = unmarshall(item) as Record<string, unknown>;
         const ids = (row.TagIds as string[]) || [];
         bySk.set(row.Sk as string, ids);
         for (const id of ids) chunkTagIds.add(id);
+        const usages = row.LaboratoryRunUsages as Record<string, LaboratoryRunUsageSummary> | undefined;
+        if (usages && Object.keys(usages).length > 0) {
+          usagesBySk.set(row.Sk as string, usages);
+        }
       }
 
       await this.hydrateKindSetsFromTagIds(laboratoryId, chunkTagIds, batchTagIdsMutable, workflowTagIdsMutable);
@@ -649,11 +659,16 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
             standard.push(id);
           }
         }
+        const usagesMap = usagesBySk.get(sk);
+        const usageList = usagesMap
+          ? Object.values(usagesMap).sort((a, b) => (b.RunCreatedAt || '').localeCompare(a.RunCreatedAt || ''))
+          : undefined;
         out.push({
           Key: key,
           TagIds: standard,
           WorkflowTagIds: workflowIds,
           ...(batchTagId ? { BatchTagId: batchTagId } : {}),
+          ...(usageList && usageList.length ? { LaboratoryRunUsages: usageList } : {}),
         });
       }
     }
@@ -755,6 +770,147 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     await ensureMapAndCount();
   }
 
+  /**
+   * Idempotently records a laboratory run's usage of a set of input file keys. Each (file, RunId)
+   * pair becomes an entry under the FILE# row's `LaboratoryRunUsages` map so the data collections
+   * UI can render a per-file analysis history regardless of whether the run participated in
+   * workflow tagging (i.e. `WorkflowExternalId` may be missing). Re-invoking with the same RunId
+   * is a no-op for already-recorded entries.
+   *
+   * The FILE# row may not exist yet (e.g. a run with no workflow tag) — the UpdateItem also seeds
+   * S3Bucket / ObjectKey when they're absent so the row carries enough metadata to be discovered
+   * later by `listFileTags`.
+   */
+  public async recordLaboratoryRunInputUsage(
+    laboratory: Laboratory,
+    userId: string,
+    bucket: string,
+    keys: string[],
+    summary: LaboratoryRunUsageSummary,
+  ): Promise<void> {
+    if (!keys.length) return;
+    const laboratoryId = laboratory.LaboratoryId;
+    this.assertBucketMatchesLab(laboratory, bucket);
+
+    const now = new Date().toISOString();
+    for (const key of keys) {
+      this.assertKeyUnderLabPrefix(laboratory, key);
+      const ref = encodeS3ObjectRef(bucket, key);
+
+      // Step 1: ensure the FILE# row exists with a map at `LaboratoryRunUsages`. UpdateItem with
+      // a SET on a nested path requires the parent map to exist, so we initialise it here first.
+      // S3Bucket / ObjectKey are seeded only when absent so this never clobbers data from other
+      // write paths (e.g. workflow tagging or user tag assignments).
+      await this.updateItem({
+        TableName: TABLE_NAME,
+        Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
+        UpdateExpression:
+          'SET #lru = if_not_exists(#lru, :emptyMap), #sb = if_not_exists(#sb, :bucket), #ok = if_not_exists(#ok, :objectKey)',
+        ExpressionAttributeNames: {
+          '#lru': 'LaboratoryRunUsages',
+          '#sb': 'S3Bucket',
+          '#ok': 'ObjectKey',
+        },
+        ExpressionAttributeValues: marshall({
+          ':emptyMap': {},
+          ':bucket': bucket,
+          ':objectKey': key,
+        }),
+      });
+
+      // Step 2: insert this run's usage entry only when the RunId is not already present, making
+      // repeat invocations (retries, backfill) idempotent without overwriting an earlier summary.
+      try {
+        await this.updateItem({
+          TableName: TABLE_NAME,
+          Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
+          UpdateExpression: 'SET #lru.#rid = :summary, ModifiedBy = :mb, ModifiedAt = :ma',
+          ExpressionAttributeNames: {
+            '#lru': 'LaboratoryRunUsages',
+            '#rid': summary.RunId,
+          },
+          ExpressionAttributeValues: marshall(
+            {
+              ':summary': summary,
+              ':mb': userId,
+              ':ma': now,
+            },
+            { removeUndefinedValues: true },
+          ),
+          ConditionExpression: 'attribute_not_exists(#lru.#rid)',
+        });
+      } catch (e: unknown) {
+        if (isConditionalCheckFailed(e)) {
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
+
+  /**
+   * Removes the given `RunId` entries from each file's `LaboratoryRunUsages` map. Used by
+   * maintenance flows (seed reset, run deletion) that need to undo run history without
+   * touching unrelated tags. If a FILE# row ends up with no tags **and** no usages after the
+   * removal, the row itself is deleted to keep the table clean.
+   *
+   * `runIdToInputKeys` is the run's recorded input keys (or any superset) so we know which
+   * `FILE#` rows could possibly carry an entry for the given `RunId`; the per-file update
+   * gracefully no-ops when the row or entry is already gone (e.g. concurrent cleanups).
+   */
+  public async removeLaboratoryRunUsageForRunIds(
+    laboratory: Laboratory,
+    bucket: string,
+    runIdToInputKeys: Record<string, string[]>,
+  ): Promise<void> {
+    const laboratoryId = laboratory.LaboratoryId;
+    this.assertBucketMatchesLab(laboratory, bucket);
+
+    for (const [runId, rawKeys] of Object.entries(runIdToInputKeys)) {
+      const keys = (rawKeys || []).filter((k): k is string => typeof k === 'string' && k.length > 0);
+      for (const key of keys) {
+        // Silently ignore keys outside this lab — defensive, but reachable if a seed script writes
+        // mixed lab keys onto a run record.
+        if (!key.startsWith(`${laboratory.OrganizationId}/${laboratoryId}/`)) continue;
+        const ref = encodeS3ObjectRef(bucket, key);
+
+        try {
+          await this.updateItem({
+            TableName: TABLE_NAME,
+            Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
+            UpdateExpression: 'REMOVE #lru.#rid',
+            ExpressionAttributeNames: {
+              '#lru': 'LaboratoryRunUsages',
+              '#rid': runId,
+            },
+            // Only act on FILE# rows that actually carry this RunId. Avoids creating empty maps
+            // on unrelated files, and keeps the operation idempotent under retries.
+            ConditionExpression: 'attribute_exists(#lru) AND attribute_exists(#lru.#rid)',
+          });
+        } catch (e: unknown) {
+          if (isConditionalCheckFailed(e)) {
+            continue;
+          }
+          throw e;
+        }
+
+        // Re-read the row to decide whether it can be deleted entirely. The row may have other
+        // tags, batch assignments, or remaining run usages — only delete when both TagIds and
+        // LaboratoryRunUsages are empty.
+        const after = await this.getFileRow(laboratoryId, ref);
+        if (!after) continue;
+        const hasTags = (after.TagIds || []).length > 0;
+        const hasUsages = !!after.LaboratoryRunUsages && Object.keys(after.LaboratoryRunUsages).length > 0;
+        if (!hasTags && !hasUsages) {
+          await this.deleteItem({
+            TableName: TABLE_NAME,
+            Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
+          });
+        }
+      }
+    }
+  }
+
   public async listFilesByTag(
     laboratoryId: string,
     tagId: string,
@@ -853,11 +1009,30 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       }
 
       const now = new Date().toISOString();
+      const hasUsages = !!existing?.LaboratoryRunUsages && Object.keys(existing.LaboratoryRunUsages).length > 0;
       if (tagIds.size === 0) {
-        if (existing) {
+        if (existing && !hasUsages) {
           await this.deleteItem({
             TableName: TABLE_NAME,
             Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
+          });
+        } else if (existing && hasUsages) {
+          // Preserve run history even when all tags are removed from this file.
+          await this.putItem({
+            TableName: TABLE_NAME,
+            Item: marshall(
+              {
+                LaboratoryId: laboratoryId,
+                Sk: skFile(ref),
+                S3Bucket: bucket,
+                ObjectKey: key,
+                TagIds: [],
+                LaboratoryRunUsages: existing.LaboratoryRunUsages,
+                ModifiedAt: now,
+                ModifiedBy: userId,
+              },
+              { removeUndefinedValues: true },
+            ),
           });
         }
       } else {
@@ -870,6 +1045,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
               S3Bucket: bucket,
               ObjectKey: key,
               TagIds: [...tagIds],
+              ...(hasUsages ? { LaboratoryRunUsages: existing!.LaboratoryRunUsages } : {}),
               ModifiedAt: now,
               ModifiedBy: userId,
             },
@@ -929,11 +1105,29 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       }
 
       const now = new Date().toISOString();
+      const hasUsages = !!existing?.LaboratoryRunUsages && Object.keys(existing.LaboratoryRunUsages).length > 0;
       if (tagIds.size === 0) {
-        if (existing) {
+        if (existing && !hasUsages) {
           await this.deleteItem({
             TableName: TABLE_NAME,
             Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
+          });
+        } else if (existing && hasUsages) {
+          await this.putItem({
+            TableName: TABLE_NAME,
+            Item: marshall(
+              {
+                LaboratoryId: laboratoryId,
+                Sk: skFile(ref),
+                S3Bucket: bucket,
+                ObjectKey: key,
+                TagIds: [],
+                LaboratoryRunUsages: existing.LaboratoryRunUsages,
+                ModifiedAt: now,
+                ModifiedBy: userId,
+              },
+              { removeUndefinedValues: true },
+            ),
           });
         }
       } else {
@@ -946,6 +1140,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
               S3Bucket: bucket,
               ObjectKey: key,
               TagIds: [...tagIds],
+              ...(hasUsages ? { LaboratoryRunUsages: existing!.LaboratoryRunUsages } : {}),
               ModifiedAt: now,
               ModifiedBy: userId,
             },
@@ -1082,7 +1277,12 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
   private async getFileRow(
     laboratoryId: string,
     ref: string,
-  ): Promise<{ TagIds: string[]; S3Bucket: string; ObjectKey: string } | null> {
+  ): Promise<{
+    TagIds: string[];
+    S3Bucket: string;
+    ObjectKey: string;
+    LaboratoryRunUsages?: Record<string, LaboratoryRunUsageSummary>;
+  } | null> {
     const res = await this.getItem({
       TableName: TABLE_NAME,
       Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
@@ -1094,6 +1294,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       TagIds: (row.TagIds as string[]) || [],
       S3Bucket: row.S3Bucket as string,
       ObjectKey: row.ObjectKey as string,
+      LaboratoryRunUsages: (row.LaboratoryRunUsages as Record<string, LaboratoryRunUsageSummary>) || undefined,
     };
   }
 }

@@ -252,9 +252,19 @@ async function deleteExistingSeedData(args: {
     });
   }
 
+  // Build the {runId -> InputFileKeys} map for run-usage cleanup. Runs without recorded keys
+  // contribute an empty array — `removeLaboratoryRunUsageForRunIds` then no-ops for that run.
+  const runIdToInputKeys: Record<string, string[]> = {};
+  let runsWithUsage = 0;
+  for (const run of seedRuns) {
+    const keys = (run.InputFileKeys || []).filter((k): k is string => typeof k === 'string' && k.length > 0);
+    runIdToInputKeys[run.RunId] = keys;
+    if (keys.length > 0) runsWithUsage++;
+  }
+
   if (dryRun) {
     console.log(
-      `[dry-run] Would delete ${seedRuns.length} seed laboratory run(s) and remove up to ${identities.length} workflow tag(s) (by identity).`,
+      `[dry-run] Would delete ${seedRuns.length} seed laboratory run(s), remove up to ${identities.length} workflow tag(s) (by identity), and clear LaboratoryRunUsages entries for ${runsWithUsage} run(s).`,
     );
     for (const run of seedRuns) {
       console.log(`  [dry-run] run ${run.RunId} — ${run.RunName}`);
@@ -270,13 +280,21 @@ async function deleteExistingSeedData(args: {
     }
   }
 
+  // Clear the per-file analysis history this seed populated before we delete the run rows.
+  // Done after `deleteTag` (which can preserve FILE rows when usages remain) so that empty
+  // FILE rows get cleaned up here once both tags and usages are gone.
+  if (runsWithUsage > 0 && laboratory.S3Bucket) {
+    console.log(`Removing LaboratoryRunUsages entries for ${runsWithUsage} seed run(s)…`);
+    await tagging.removeLaboratoryRunUsageForRunIds(laboratory, laboratory.S3Bucket, runIdToInputKeys);
+  }
+
   for (const run of seedRuns) {
     console.log(`Deleting laboratory run ${run.RunId} — ${run.RunName}`);
     await runService.delete(run);
   }
 
   console.log(
-    `Reset complete: removed ${seedRuns.length} seed run(s); processed ${identities.length} distinct workflow identity cleanup(es).`,
+    `Reset complete: removed ${seedRuns.length} seed run(s); processed ${identities.length} distinct workflow identity cleanup(es); cleared run-usage history for ${runsWithUsage} run(s).`,
   );
 }
 
@@ -407,7 +425,7 @@ async function main(): Promise<void> {
     await associateInputsWithWorkflowTag({
       laboratory,
       userId,
-      request: addPayload,
+      run: laboratoryRun,
       tagging,
     });
     console.log(`Created run ${runId} (${fx.workflowName}) → tagged ${inputKeys.length} file(s)`);
