@@ -18,6 +18,20 @@ export const LaboratoryRunSchema = z
     Owner: z.string(),
     WorkflowName: z.string().optional(),
     WorkflowVersionName: z.string().optional(),
+    /**
+     * Platform-side workflow identifier (HealthOmics workflowId or Seqera pipelineId).
+     * Persisted at run-creation time so the data tagging system can associate inputs
+     * with a stable workflow identity.
+     */
+    WorkflowExternalId: z.string().optional(),
+    /**
+     * S3 object keys (within the laboratory bucket) that were used as inputs
+     * for this run. Populated at run-creation time and consumed by the data
+     * tagging system to record file -> workflow associations. Optional because
+     * legacy runs and runs whose input keys could not be determined will not
+     * have this field.
+     */
+    InputFileKeys: z.array(z.string()).optional(),
     ExternalRunId: z.string().optional(),
     InputS3Url: z.string().optional(),
     OutputS3Url: z.string().optional(),
@@ -59,6 +73,8 @@ export const ReadLaboratoryRunSchema = z
     Owner: z.string(), // User Email for display purposes
     WorkflowName: z.string().optional(), // Seqera Pipeline Name or AWS HealthOmics Workflow Name
     WorkflowVersionName: z.string().optional(),
+    WorkflowExternalId: z.string().optional(),
+    InputFileKeys: z.array(z.string()).optional(),
     ExternalRunId: z.string().optional(),
     InputS3Url: z.string().optional(),
     OutputS3Url: z.string().optional(),
@@ -85,6 +101,10 @@ export const AddLaboratoryRunSchema = z
     Status: z.string(),
     WorkflowName: z.string().optional(), // Seqera Pipeline Name or AWS HealthOmics Workflow Name
     WorkflowVersionName: z.string().optional(),
+    /** HealthOmics workflowId or Seqera pipelineId; used to associate inputs with the workflow tag. */
+    WorkflowExternalId: z.string().optional(),
+    /** S3 object keys (within the laboratory bucket) used as inputs for this run. */
+    InputFileKeys: z.array(z.string()).optional(),
     ExternalRunId: z.string().optional(),
     InputS3Url: z.string().optional(),
     OutputS3Url: z.string().optional(),

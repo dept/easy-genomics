@@ -106,11 +106,11 @@ function main(): void {
     });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    void _next;
     console.error('[local-server] Unhandled error', err);
     res.status(500).json({
-      Error: err.message || 'Internal server error',
+      Error: err instanceof Error ? err.message : 'Internal server error',
       ErrorCode: 'EG-100',
     });
   });

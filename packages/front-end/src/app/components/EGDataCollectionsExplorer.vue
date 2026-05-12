@@ -3,14 +3,29 @@
    * File grid, folder shortcuts, lasso selection, and drag/drop targets for tagging.
    * Parent (EGDataCollectionsPage) owns data fetching and tag sidebar.
    */
-  import type { LaboratoryDataTag } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
+  import type {
+    LaboratoryDataTag,
+    LaboratoryRunUsageSummary,
+  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
 
   const props = defineProps<{
+    /** Used to deep-link from the analysis history tooltip to a laboratory run detail page. */
+    labId: string;
     labRoot: string;
     visibleFiles: { Key: string; Size?: number; LastModified?: string }[];
     keyToTagIds: Record<string, string[]>;
     /** Batch tag id per file key (optional until parent loads assignments). */
     keyToBatchTagId?: Record<string, string | undefined>;
+    /**
+     * Workflow tag ids per file key (optional until parent loads assignments). Used to drive
+     * the per-file Analyzed / Not yet analyzed status without an extra round-trip.
+     */
+    keyToWorkflowTagIds?: Record<string, string[]>;
+    /**
+     * Per-file laboratory run usage history (sorted newest first). Drives the status pill
+     * (Not yet analyzed / Analyzed / Analyzed Nx) and the analysis history tooltip.
+     */
+    keyToRunUsages?: Record<string, LaboratoryRunUsageSummary[]>;
     batchTags?: LaboratoryDataTag[];
     tags: LaboratoryDataTag[];
     selectedKeys: string[];
@@ -20,6 +35,8 @@
     listingFileCount: number;
     /** Recursive listing stopped at MaxTotalKeys; more objects exist in S3. */
     listingTruncated?: boolean;
+    /** Active filter chips (scope + tags); each chip can be dismissed independently in the explorer header. */
+    filterChips?: { chipId: string; label: string }[];
   }>();
 
   const emit = defineEmits<{
@@ -28,8 +45,13 @@
     toggleKey: [key: string];
     selectAllDisplayed: [];
     clearSelection: [];
+    clearFilter: [chipId: string];
     removeTagFromFile: [payload: { key: string; tagId: string }];
+    /** Tooltip emits this when the user clicks the check button on a run row. */
+    selectRunFiles: [payload: { runId: string; inputFileKeys: string[] }];
   }>();
+
+  const filterChipsResolved = computed(() => props.filterChips ?? []);
 
   /** Cards grid vs tabular explorer layout. */
   const explorerView = ref<'cards' | 'table'>('cards');
@@ -47,6 +69,17 @@
   let ly0 = 0;
   let dragTagId: string | null = null;
   let dragSourceKey: string | null = null;
+
+  /** While a file’s analysis popover is open, that card/row is stacked above siblings so other files’ dots do not show through the panel. */
+  const analysisPopoverOpenKey = ref<string | null>(null);
+
+  function onAnalysisPopoverOpen(fileKey: string, open: boolean): void {
+    if (open) {
+      analysisPopoverOpenKey.value = fileKey;
+    } else if (analysisPopoverOpenKey.value === fileKey) {
+      analysisPopoverOpenKey.value = null;
+    }
+  }
 
   function tagById(id: string): LaboratoryDataTag | undefined {
     return props.tags.find((t: LaboratoryDataTag) => t.TagId === id);
@@ -77,9 +110,28 @@
     return `${parts.join('/')}/`;
   }
 
-  /** Placeholder until workflow run state is wired per file. */
-  function fileAnalysisStatus(_key: string): 'Not yet analyzed' | 'Analyzed' {
-    return 'Not yet analyzed';
+  /** Number of laboratory runs that have used the given file as input. */
+  function runCountForFileKey(key: string): number {
+    return props.keyToRunUsages?.[key]?.length ?? 0;
+  }
+
+  function runUsagesForFileKey(key: string): LaboratoryRunUsageSummary[] {
+    return props.keyToRunUsages?.[key] ?? [];
+  }
+
+  /**
+   * Standard tag names (excludes batch + workflow tags) for the analysis history tooltip
+   * subtitle. The parent already filters its `keyToTagIds` prop down to standard tags only, so
+   * this just resolves ids to display names while preserving order.
+   */
+  /** Standard tag ids for this file (parent passes standard tags only). */
+  function standardTagIdsForFileKey(key: string): string[] {
+    return props.keyToTagIds[key] ?? [];
+  }
+
+  function standardTagNamesForFileKey(key: string): string[] {
+    const ids: string[] = standardTagIdsForFileKey(key);
+    return ids.map((id: string) => tagById(id)?.Name ?? id).filter((n: string) => !!n);
   }
 
   /** No file objects returned for this listing (under lab prefix). */
@@ -88,9 +140,46 @@
     () => !props.loading && props.listingFileCount > 0 && props.visibleFiles.length === 0,
   );
 
+  const visibleSampleNoun = computed(() => (props.visibleFiles.length === 1 ? 'sample' : 'samples'));
+
   const batchTagsResolved = computed(() => props.batchTags ?? []);
 
   const keyToBatchResolved = computed(() => props.keyToBatchTagId ?? {});
+
+  type BatchSectionHeaderParts = {
+    /** Batch display name (tag name); for unbatched rows this is `Unbatched`. */
+    titleBold: string;
+    sampleCount: number;
+    sampleNoun: string;
+    notYetAnalyzed: number;
+    analyzed: number;
+  };
+
+  const BATCH_HEADER_DOT_NOT_ANALYZED = '#EF9F27';
+  const BATCH_HEADER_DOT_ANALYZED = '#2DB48F';
+
+  function batchSectionHeaderParts(sec: {
+    batchId: string | null;
+    title: string;
+    files: readonly { Key: string }[];
+  }): BatchSectionHeaderParts {
+    const n = sec.files.length;
+    const sampleNoun = n === 1 ? 'sample' : 'samples';
+    const titleBold = sec.title;
+    let notYetAnalyzed = 0;
+    let analyzed = 0;
+    for (const f of sec.files) {
+      if (runCountForFileKey(f.Key) > 0) analyzed += 1;
+      else notYetAnalyzed += 1;
+    }
+    return {
+      titleBold,
+      sampleCount: n,
+      sampleNoun,
+      notYetAnalyzed,
+      analyzed,
+    };
+  }
 
   /** Group visible files by batch for section headers (single scroll, not nested folders). */
   const fileSections = computed(() => {
@@ -122,7 +211,10 @@
         files,
       });
     }
-    return sections;
+    return sections.map((sec) => ({
+      ...sec,
+      headerParts: batchSectionHeaderParts(sec),
+    }));
   });
 
   function batchDisplayName(key: string): string {
@@ -130,19 +222,6 @@
     if (!bid) return '—';
     const tag = batchTagsResolved.value.find((b: LaboratoryDataTag) => b.TagId === bid);
     return tag?.Name ?? bid;
-  }
-
-  function batchSectionHeading(sec: {
-    batchId: string | null;
-    title: string;
-    files: readonly { Key: string }[];
-  }): string {
-    const n = sec.files.length;
-    const samples = n === 1 ? 'sample' : 'samples';
-    if (sec.batchId === null) {
-      return `Unbatched · ${n} ${samples}`;
-    }
-    return `Batch ${sec.title} · ${n} ${samples}`;
   }
 
   function batchSectionFullySelected(sec: { files: readonly { Key: string }[] }): boolean {
@@ -194,9 +273,8 @@
     scrollEl.value?.querySelectorAll('[data-file-card]').forEach((el) => {
       const r = (el as HTMLElement).getBoundingClientRect();
       const hit = r.left < lr.right && r.right > lr.left && r.top < lr.bottom && r.bottom > lr.top;
-      (el as HTMLElement).classList.toggle('ring-2', hit);
-      (el as HTMLElement).classList.toggle('ring-primary', hit);
-      (el as HTMLElement).classList.toggle('bg-primary-muted', hit);
+      /** Lasso-only class — never strip Vue-bound `ring-*` on selected cards (Vue may not re-patch if props unchanged). */
+      (el as HTMLElement).classList.toggle('eg-data-collections-lasso-hit', hit);
     });
   }
 
@@ -207,11 +285,11 @@
     const added: string[] = [];
     scrollEl.value?.querySelectorAll('[data-file-card]').forEach((el) => {
       const h = el as HTMLElement;
-      if (h.classList.contains('ring-primary')) {
+      if (h.classList.contains('eg-data-collections-lasso-hit')) {
         const id = h.dataset.key;
         if (id) added.push(id);
       }
-      h.classList.remove('ring-2', 'ring-primary', 'bg-primary-muted');
+      h.classList.remove('eg-data-collections-lasso-hit');
     });
     if (added.length) {
       const s = new Set(props.selectedKeys);
@@ -295,6 +373,29 @@
           @click="explorerView = 'table'"
         />
       </div>
+    </div>
+    <div class="border-border-muted flex flex-wrap items-center gap-2 border-b bg-gray-50 px-4 py-2">
+      <span class="text-xs font-semibold leading-snug text-gray-900">
+        {{ visibleFiles.length }} {{ visibleSampleNoun }}
+      </span>
+      <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+        <div
+          v-for="chip in filterChipsResolved"
+          :key="chip.chipId"
+          class="bg-primary-muted text-primary-dark inline-flex max-w-full items-center gap-0.5 rounded-full border border-transparent py-0.5 pl-2 pr-0.5 text-xs font-medium"
+        >
+          <span class="min-w-0 max-w-[min(14rem,100%)] truncate">{{ chip.label }}</span>
+          <UButton
+            size="xs"
+            square
+            variant="ghost"
+            icon="i-heroicons-x-mark"
+            class="text-primary-dark shrink-0 rounded-full"
+            :aria-label="`Clear filter: ${chip.label}`"
+            @click="emit('clearFilter', chip.chipId)"
+          />
+        </div>
+      </div>
       <div class="ml-auto flex shrink-0">
         <UButton v-if="selectedKeys.length" size="xs" variant="ghost" @click="emit('clearSelection')">
           Deselect all ({{ selectedKeys.length }})
@@ -316,19 +417,53 @@
       listing limit.
     </div>
 
-    <div ref="scrollEl" class="relative flex-1 overflow-auto p-4" @mousedown="onScrollHostMouseDown">
+    <div ref="scrollEl" class="relative flex-1 overflow-auto p-2" @mousedown="onScrollHostMouseDown">
+      <div
+        v-if="loading"
+        class="absolute inset-0 z-20 flex min-h-[14rem] flex-col items-center justify-center gap-3 bg-white/90 p-6 backdrop-blur-[1px]"
+        aria-busy="true"
+        aria-label="Loading samples and tag data"
+      >
+        <UIcon name="i-heroicons-arrow-path" class="text-primary h-10 w-10 shrink-0 animate-spin" />
+        <p class="text-muted max-w-sm text-center text-sm">Loading samples and tag data…</p>
+      </div>
       <div v-if="explorerView === 'cards'" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <template v-for="(sec, secIdx) in fileSections" :key="sec.batchId ?? 'unbatched'">
           <div
             class="border-border-muted col-span-full flex items-start justify-between gap-3 border-b pb-2"
             :class="secIdx === 0 ? 'mt-0' : 'mt-6'"
           >
-            <h3 class="text-muted min-w-0 flex-1 text-xs font-normal leading-snug tracking-wide">
-              {{ batchSectionHeading(sec) }}
+            <h3 class="text-muted min-w-0 flex-1 whitespace-normal text-xs font-normal leading-snug tracking-wide">
+              <span class="inline-flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span class="inline-flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+                  <span class="font-semibold text-gray-900">
+                    <template v-if="sec.batchId !== null">Batch {{ sec.headerParts.titleBold }}</template>
+                    <template v-else>{{ sec.headerParts.titleBold }}</template>
+                  </span>
+                  <span>{{ sec.headerParts.sampleCount }} {{ sec.headerParts.sampleNoun }}</span>
+                </span>
+                <span class="inline-flex items-center gap-1.5">
+                  <span
+                    class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                    :style="{ backgroundColor: BATCH_HEADER_DOT_NOT_ANALYZED }"
+                    aria-hidden="true"
+                  />
+                  <span>{{ sec.headerParts.notYetAnalyzed }} not yet analyzed</span>
+                </span>
+                <span class="inline-flex items-center gap-1.5">
+                  <span
+                    class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                    :style="{ backgroundColor: BATCH_HEADER_DOT_ANALYZED }"
+                    aria-hidden="true"
+                  />
+                  <span>{{ sec.headerParts.analyzed }} analyzed</span>
+                </span>
+              </span>
             </h3>
             <button
               type="button"
               class="text-primary shrink-0 text-xs font-normal hover:underline"
+              @mousedown.stop
               @click.stop="toggleBatchSection(sec)"
             >
               {{ batchSectionFullySelected(sec) ? 'Deselect batch' : 'Select batch' }}
@@ -341,7 +476,10 @@
             :data-key="f.Key"
             draggable="true"
             class="border-border-muted relative cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition"
-            :class="{ 'ring-primary ring-2': selectedKeys.includes(f.Key) }"
+            :class="{
+              'bg-primary-muted ring-primary ring-2': selectedKeys.includes(f.Key),
+              'z-[80]': analysisPopoverOpenKey === f.Key,
+            }"
             @click="emit('toggleKey', f.Key)"
             @dragstart="onCardDragStart($event, f.Key)"
             @dragover="onCardDragOver"
@@ -351,26 +489,42 @@
             <div class="absolute right-2 top-2" @mousedown.stop @click.stop>
               <UCheckbox :model-value="selectedKeys.includes(f.Key)" @update:model-value="emit('toggleKey', f.Key)" />
             </div>
-            <div class="pr-8 text-sm font-medium leading-snug">{{ fileName(f.Key) }}</div>
+            <div class="absolute left-0 top-0 z-[1]" @mousedown.stop @click.stop>
+              <EGFileAnalysisHistoryTooltip
+                :lab-id="labId"
+                :file-key="f.Key"
+                :file-name="fileName(f.Key)"
+                :batch-name="batchDisplayName(f.Key) === '—' ? undefined : batchDisplayName(f.Key)"
+                :standard-tag-names="standardTagNamesForFileKey(f.Key)"
+                :run-usages="runUsagesForFileKey(f.Key)"
+                variant="card"
+                @select-run-files="emit('selectRunFiles', $event)"
+                @update:open="onAnalysisPopoverOpen(f.Key, $event)"
+              />
+            </div>
+            <div class="mt-7 pr-8 text-sm font-medium leading-snug">{{ fileName(f.Key) }}</div>
             <div v-if="folderPathUnderLab(f.Key)" class="text-muted mt-0.5 truncate text-[11px]">
               {{ folderPathUnderLab(f.Key) }}
             </div>
             <div class="text-muted mt-1 text-xs">{{ f.Size != null ? `${f.Size} bytes` : '' }}</div>
-            <div class="mt-2 flex flex-wrap gap-1">
-              <span
-                v-for="tid in keyToTagIds[f.Key] || []"
-                :key="tid"
-                class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                draggable="true"
-                :style="{
-                  background: tagById(tid)?.ColorHex || '#e2e2e8',
-                  color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
-                }"
-                @dragstart="onPillDragStart($event, tid, f.Key)"
-                @click.stop
-              >
-                {{ tagById(tid)?.Name || tid }}
-              </span>
+            <div class="mt-2 flex min-h-[1.25rem] flex-wrap gap-1">
+              <template v-if="standardTagIdsForFileKey(f.Key).length">
+                <span
+                  v-for="tid in standardTagIdsForFileKey(f.Key)"
+                  :key="tid"
+                  class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+                  draggable="true"
+                  :style="{
+                    background: tagById(tid)?.ColorHex || '#e2e2e8',
+                    color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
+                  }"
+                  @dragstart="onPillDragStart($event, tid, f.Key)"
+                  @click.stop
+                >
+                  {{ tagById(tid)?.Name || tid }}
+                </span>
+              </template>
+              <span v-else class="text-muted text-[10px] italic">No tags</span>
             </div>
           </div>
         </template>
@@ -392,13 +546,40 @@
             <template v-for="sec in fileSections" :key="sec.batchId ?? 'unbatched'">
               <tr class="bg-gray-50/95">
                 <td colspan="6" class="border-border-muted border-b px-3 py-2.5" scope="colgroup">
-                  <div class="flex items-center justify-between gap-4">
-                    <span class="text-muted min-w-0 flex-1 truncate text-xs font-normal leading-snug tracking-wide">
-                      {{ batchSectionHeading(sec) }}
+                  <div class="flex w-full min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-2">
+                    <span
+                      class="text-muted min-w-0 flex-1 whitespace-normal text-xs font-normal leading-snug tracking-wide"
+                    >
+                      <span class="inline-flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                        <span class="inline-flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+                          <span class="font-semibold text-gray-900">
+                            <template v-if="sec.batchId !== null">Batch {{ sec.headerParts.titleBold }}</template>
+                            <template v-else>{{ sec.headerParts.titleBold }}</template>
+                          </span>
+                          <span>{{ sec.headerParts.sampleCount }} {{ sec.headerParts.sampleNoun }}</span>
+                        </span>
+                        <span class="inline-flex items-center gap-1.5">
+                          <span
+                            class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                            :style="{ backgroundColor: BATCH_HEADER_DOT_NOT_ANALYZED }"
+                            aria-hidden="true"
+                          />
+                          <span>{{ sec.headerParts.notYetAnalyzed }} not yet analyzed</span>
+                        </span>
+                        <span class="inline-flex items-center gap-1.5">
+                          <span
+                            class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                            :style="{ backgroundColor: BATCH_HEADER_DOT_ANALYZED }"
+                            aria-hidden="true"
+                          />
+                          <span>{{ sec.headerParts.analyzed }} analyzed</span>
+                        </span>
+                      </span>
                     </span>
                     <button
                       type="button"
-                      class="text-primary shrink-0 text-xs font-normal hover:underline"
+                      class="text-primary ml-auto shrink-0 self-start whitespace-nowrap text-xs font-normal hover:underline"
+                      @mousedown.stop
                       @click.stop="toggleBatchSection(sec)"
                     >
                       {{ batchSectionFullySelected(sec) ? 'Deselect batch' : 'Select batch' }}
@@ -414,8 +595,9 @@
                 draggable="true"
                 class="border-border-muted cursor-pointer border-b transition last:border-b-0"
                 :class="{
-                  'bg-primary-muted/50': selectedKeys.includes(f.Key),
+                  'bg-primary-muted ring-primary ring-2 ring-inset': selectedKeys.includes(f.Key),
                   'hover:bg-gray-50/80': !selectedKeys.includes(f.Key),
+                  'relative z-[80]': analysisPopoverOpenKey === f.Key,
                 }"
                 @click="emit('toggleKey', f.Key)"
                 @dragstart="onCardDragStart($event, f.Key)"
@@ -436,23 +618,40 @@
                   </div>
                 </td>
                 <td class="text-muted px-3 py-2 align-middle">{{ batchDisplayName(f.Key) }}</td>
-                <td class="px-3 py-2 align-middle text-gray-800">{{ fileAnalysisStatus(f.Key) }}</td>
                 <td class="px-3 py-2 align-middle">
-                  <div class="flex flex-wrap gap-1">
-                    <span
-                      v-for="tid in keyToTagIds[f.Key] || []"
-                      :key="tid"
-                      class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                      draggable="true"
-                      :style="{
-                        background: tagById(tid)?.ColorHex || '#e2e2e8',
-                        color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
-                      }"
-                      @dragstart="onPillDragStart($event, tid, f.Key)"
-                      @click.stop
-                    >
-                      {{ tagById(tid)?.Name || tid }}
-                    </span>
+                  <span class="inline-flex w-fit max-w-full align-middle" @mousedown.stop @click.stop>
+                    <EGFileAnalysisHistoryTooltip
+                      :lab-id="labId"
+                      :file-key="f.Key"
+                      :file-name="fileName(f.Key)"
+                      :batch-name="batchDisplayName(f.Key) === '—' ? undefined : batchDisplayName(f.Key)"
+                      :standard-tag-names="standardTagNamesForFileKey(f.Key)"
+                      :run-usages="runUsagesForFileKey(f.Key)"
+                      variant="table"
+                      @select-run-files="emit('selectRunFiles', $event)"
+                      @update:open="onAnalysisPopoverOpen(f.Key, $event)"
+                    />
+                  </span>
+                </td>
+                <td class="px-3 py-2 align-middle">
+                  <div class="flex min-h-[1.25rem] flex-wrap gap-1">
+                    <template v-if="standardTagIdsForFileKey(f.Key).length">
+                      <span
+                        v-for="tid in standardTagIdsForFileKey(f.Key)"
+                        :key="tid"
+                        class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+                        draggable="true"
+                        :style="{
+                          background: tagById(tid)?.ColorHex || '#e2e2e8',
+                          color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
+                        }"
+                        @dragstart="onPillDragStart($event, tid, f.Key)"
+                        @click.stop
+                      >
+                        {{ tagById(tid)?.Name || tid }}
+                      </span>
+                    </template>
+                    <span v-else class="text-muted text-[10px] italic">No tags</span>
                   </div>
                 </td>
                 <td class="text-muted px-3 py-2 align-middle">—</td>
@@ -466,8 +665,7 @@
         <p class="font-medium text-gray-900">No files found under this lab’s prefix in this bucket</p>
       </div>
       <div v-else-if="allFilesHiddenByFilters" class="text-muted py-8 text-center text-sm">
-        No files match your current search or tag filter. Clear the search box or choose "All files" or "Untagged" in
-        the tag list.
+        No files match your current search or filters. Clear the search box or adjust filters in the left panel.
       </div>
       <div
         class="border-primary bg-primary/10 pointer-events-none fixed z-[9999] rounded border-2"
@@ -476,3 +674,11 @@
     </div>
   </div>
 </template>
+
+<style scoped>
+  /** Lasso drag highlight only — selection rings come from Vue `:class` on `[data-file-card]`. */
+  [data-file-card].eg-data-collections-lasso-hit {
+    box-shadow: 0 0 0 2px #5524e0;
+    background-color: #eee9fc;
+  }
+</style>

@@ -21,6 +21,7 @@
   const { $api } = useNuxtApp();
 
   const runStore = useRunStore();
+  const wipOmicsRun = computed(() => runStore.wipOmicsRuns[props.omicsRunTempId]);
 
   const labName = useLabsStore().labs[props.labId]?.Name ?? '';
   const isLaunchingRun = ref(false);
@@ -72,6 +73,7 @@
       }
 
       try {
+        const inputFileKeys = wipOmicsRun.value?.inputFileKeys ?? [];
         const labRunRequest = {
           'LaboratoryId': props.labId,
           'RunId': props.transactionId,
@@ -80,7 +82,9 @@
           'Status': 'SUBMITTED',
           'WorkflowName': props.workflowName,
           ...(props.workflowVersionName ? { WorkflowVersionName: props.workflowVersionName } : {}),
-          'ExternalRunId': externalRunId,
+          'WorkflowExternalId': props.workflowId,
+          ...(inputFileKeys.length ? { InputFileKeys: inputFileKeys } : {}),
+          'ExternalRunId': startOmicsRes.id,
           'InputS3Url': props.params.input.substring(0, props.params.input.lastIndexOf('/')),
           'OutputS3Url': props.params.outdir,
           'SampleSheetS3Url': props.params.input,

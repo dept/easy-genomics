@@ -93,6 +93,7 @@
       }
 
       try {
+        const inputFileKeys = wipSeqeraRun.value?.inputFileKeys ?? [];
         const labRunRequest = {
           'LaboratoryId': props.labId,
           'RunId': wipSeqeraRun.value?.transactionId,
@@ -101,7 +102,9 @@
           'PlatformApiBaseUrl': labNextFlowTowerApiBaseUrl,
           'Status': 'SUBMITTED',
           'WorkflowName': pipeline.value?.name,
-          'ExternalRunId': externalRunId,
+          'WorkflowExternalId': props.pipelineId,
+          ...(inputFileKeys.length ? { InputFileKeys: inputFileKeys } : {}),
+          'ExternalRunId': res.workflowId,
           'InputS3Url': props.params.input.substring(0, props.params.input.lastIndexOf('/')),
           'OutputS3Url': props.params.outdir,
           'SampleSheetS3Url': props.params.input,

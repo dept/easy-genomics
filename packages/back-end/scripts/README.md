@@ -22,6 +22,63 @@ pnpm run backfill-omics-run-tags:dry-run
 
 **Environment:** `NAME_PREFIX`, `ACCOUNT_ID`, `REGION` (see script header for IAM expectations).
 
+## `backfill-laboratory-run-usages.ts`
+
+**Purpose:** Populates the per-file `LaboratoryRunUsages` map on `FILE#` rows of the laboratory data tagging table from
+the existing `LaboratoryRun` records, so the Data Collections "Analysis History" tooltip shows runs that pre-date the
+file-history feature. Each run with non-empty `InputFileKeys` produces one idempotent entry per (RunId, file).
+
+**When to use:** Once after deploying the file-history feature to a prior environment, or any time you suspect history
+was lost (e.g. legacy data import).
+
+**Usage:**
+
+```bash
+pnpm run backfill-laboratory-run-usages
+pnpm run backfill-laboratory-run-usages:dry-run
+pnpm run backfill-laboratory-run-usages -- --lab <laboratoryId>
+```
+
+- `--dry-run` — log what would be recorded without writing to DynamoDB.
+- `--lab <laboratoryId>` — limit the backfill to a single laboratory.
+
+**Environment:** `NAME_PREFIX`, `REGION`.
+
+**IAM:** DynamoDB `Scan` on `laboratory-run-table`; DynamoDB `GetItem` on `laboratory-table`; DynamoDB `UpdateItem` on
+`laboratory-data-tagging-table`.
+
+## `seed-workflow-tagging-test-runs.ts`
+
+**Purpose:** Creates twelve synthetic `LaboratoryRun` rows (no Omics or Seqera launch) and applies the same
+workflow→file tagging logic as `create-laboratory-run`, so you can exercise Data Collections workflow filters without
+platform charges.
+
+**When to use:** Local or non-prod environments when you want realistic workflow tag diversity on existing bucket
+objects.
+
+**Usage:**
+
+```bash
+pnpm run seed-workflow-tagging-test-runs -- --laboratoryId <uuid>
+pnpm run seed-workflow-tagging-test-runs -- --laboratoryId <uuid> --reset
+pnpm run seed-workflow-tagging-test-runs:dry-run -- --laboratoryId <uuid>
+pnpm run seed-workflow-tagging-test-runs:dry-run -- --laboratoryId <uuid> --reset
+```
+
+- `--reset` — Deletes laboratory runs created by this script for that lab (matched by `Settings.seededBy` or a `RunName`
+  prefix of `[seed] `), removes each distinct seed workflow tag via `deleteTag` (clears `FILE#` / `MAP#` links), then
+  proceeds with a fresh seed as usual. Combine with `--dry-run` to print what would be removed.
+- `--keys-file path.json` — JSON array of full S3 keys (must start with `OrganizationId/LaboratoryId/`). Use when the
+  bucket is empty under the lab prefix or you want specific files only.
+- `--user-id` / `--owner` — optional overrides for `UserId` (must be a UUID) and `Owner` on each run row.
+
+**Environment:** `NAME_PREFIX`, `REGION`. Optional `SEQERA_PLATFORM_API_BASE_URL` if the lab has no
+`NextFlowTowerApiBaseUrl` but you still want Seqera-style runs to carry a base URL.
+
+**IAM:** DynamoDB `PutItem` / `DeleteItem` on `laboratory-run-table`; DynamoDB read/write (including `DeleteItem` and
+GSI queries) on `laboratory-data-tagging-table` (+ indexes); `s3:ListBucket` (and `ListBucket` on the lab bucket) when
+discovering keys. No Omics or Tower API calls.
+
 ## `recompute-laboratory-run-retention.ts`
 
 **Purpose:** Recomputes DynamoDB TTL-related fields on terminal laboratory runs for **one laboratory**: sets

@@ -13,6 +13,46 @@ import { LaboratoryRunNotFoundError } from '@easy-genomics/shared-lib/src/app/ut
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
 
+/**
+ * `InputFileKeys` is stored as a DynamoDB List (L) of strings in normal writes, which unmarshalls to
+ * `string[]`. Older or out-of-band data may use a String Set (SS → `Set` at read time) or a Map (M
+ * → plain object). `JSON.stringify` turns a `Set` into `{}`, which breaks clients that expect an
+ * array. Coerce every read path to `string[]` before the item is returned or serialized.
+ */
+function coerceInputFileKeys(value: unknown): string[] | undefined {
+  if (value == null) return undefined;
+  if (Array.isArray(value)) {
+    return value.filter((k): k is string => typeof k === 'string');
+  }
+  if (value instanceof Set) {
+    return [...value].filter((k): k is string => typeof k === 'string');
+  }
+  if (typeof value === 'object') {
+    const o = value as Record<string, unknown>;
+    const keys = Object.keys(o);
+    if (keys.length === 0) return undefined;
+    if (keys.every((k) => /^\d+$/.test(k))) {
+      return keys
+        .sort((a, b) => Number(a) - Number(b))
+        .map((k) => o[k])
+        .filter((v): v is string => typeof v === 'string');
+    }
+    return Object.values(o).filter((v): v is string => typeof v === 'string');
+  }
+  return undefined;
+}
+
+function withCoercedInputFileKeys(run: LaboratoryRun): LaboratoryRun {
+  const next = coerceInputFileKeys(run.InputFileKeys);
+  if (next === undefined && run.InputFileKeys === undefined) return run;
+  if (next === undefined) {
+    const rest = { ...run };
+    delete rest.InputFileKeys;
+    return rest as LaboratoryRun;
+  }
+  return { ...run, InputFileKeys: next };
+}
+
 export class LaboratoryRunService extends DynamoDBService implements Service<LaboratoryRun> {
   readonly LABORATORY_RUN_TABLE_NAME: string = `${process.env.NAME_PREFIX}-laboratory-run-table`;
 
@@ -58,7 +98,7 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
 
     if (response.$metadata.httpStatusCode === 200) {
       if (response.Item) {
-        return <LaboratoryRun>unmarshall(response.Item);
+        return withCoercedInputFileKeys(<LaboratoryRun>unmarshall(response.Item));
       } else {
         throw new LaboratoryRunNotFoundError(runId, laboratoryId);
       }
@@ -85,7 +125,7 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
 
     if (response.$metadata.httpStatusCode === 200) {
       if (response.Items) {
-        return response.Items.map((item) => <LaboratoryRun>unmarshall(item));
+        return response.Items.map((item) => withCoercedInputFileKeys(<LaboratoryRun>unmarshall(item)));
       } else {
         throw new Error(`${logRequestMessage} unsuccessful: Resource not found`);
       }
@@ -108,7 +148,7 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
       });
       if (response.Items) {
         for (const item of response.Items) {
-          results.push(unmarshall(item) as LaboratoryRun);
+          results.push(withCoercedInputFileKeys(unmarshall(item) as LaboratoryRun));
         }
       }
       lastKey = response.LastEvaluatedKey as Record<string, any> | undefined;
@@ -136,7 +176,7 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
     if (response.$metadata.httpStatusCode === 200) {
       if (response.Items) {
         if (response.Items.length === 1) {
-          return <LaboratoryRun>unmarshall(response.Items.shift()!);
+          return withCoercedInputFileKeys(<LaboratoryRun>unmarshall(response.Items.shift()!));
         } else if (response.Items.length === 0) {
           throw new LaboratoryRunNotFoundError(runId);
         } else {
@@ -195,7 +235,7 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
 
     if (response.$metadata.httpStatusCode === 200) {
       if (response.Attributes) {
-        return <LaboratoryRun>unmarshall(response.Attributes);
+        return withCoercedInputFileKeys(<LaboratoryRun>unmarshall(response.Attributes));
       } else {
         throw new Error(`${logRequestMessage} unsuccessful: Returned unexpected response`);
       }
