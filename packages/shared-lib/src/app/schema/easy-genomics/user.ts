@@ -43,6 +43,10 @@ export const UserSchema = z.object({
   ModifiedBy: z.string().optional(),
 });
 
+/** Attributes persisted in user-table. Org/lab membership lives in organization-user-table / laboratory-user-table. */
+export const UserPersistedSchema = UserSchema.omit({ OrganizationAccess: true });
+export type UserPersisted = z.infer<typeof UserPersistedSchema>;
+
 export const CreateUserSchema = z
   .object({
     Email: z.string(),

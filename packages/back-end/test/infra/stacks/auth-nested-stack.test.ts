@@ -107,4 +107,30 @@ describe('AuthNestedStack environment wiring', () => {
       ]),
     );
   });
+
+  it('adds DynamoDB Query IAM for pre-token generation on user, organization-user, and laboratory-user tables', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new AuthNestedStack(parentStack, 'auth-test-stack', createProps());
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/auth/process-pre-token-generation',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: ['dynamodb:Query'],
+          resources: expect.arrayContaining([
+            'arn:aws:dynamodb:us-west-2:123456789012:table/easy-genomics-user-table',
+            'arn:aws:dynamodb:us-west-2:123456789012:table/easy-genomics-user-table/index/*',
+            'arn:aws:dynamodb:us-west-2:123456789012:table/easy-genomics-organization-user-table',
+            'arn:aws:dynamodb:us-west-2:123456789012:table/easy-genomics-organization-user-table/index/*',
+            'arn:aws:dynamodb:us-west-2:123456789012:table/easy-genomics-laboratory-user-table',
+            'arn:aws:dynamodb:us-west-2:123456789012:table/easy-genomics-laboratory-user-table/index/*',
+          ]),
+        }),
+      ]),
+    );
+  });
 });

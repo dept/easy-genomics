@@ -1,10 +1,8 @@
-import { isDeepStrictEqual } from 'util';
 import {
   LaboratoryAccess,
   LaboratoryAccessDetails,
   OrganizationAccess,
   OrganizationAccessDetails,
-  User,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { APIGatewayProxyWithCognitoAuthorizerEvent } from 'aws-lambda';
 import { APIGatewayProxyEvent } from 'aws-lambda/trigger/api-gateway-proxy';
@@ -223,43 +221,6 @@ export function validateOrganizationAccess(
     }
 
     return true;
-  } catch (error) {
-    console.error(error);
-    return false;
-  }
-}
-
-/**
- * Helper function to check if a logged in users JWT OrganizationAccess matches
- * their user's OrganizationAccess
- * @param event
- * @param user
- */
-export function verifyCurrentOrganizationAccess(event: APIGatewayProxyEvent, user: User): Boolean {
-  try {
-    const authOrgAccessJson: string | undefined = event.requestContext.authorizer?.claims?.OrganizationAccess;
-    const userOrgAccess: OrganizationAccess | undefined = user.OrganizationAccess;
-    const userOrgAccessJson: string = JSON.stringify(userOrgAccess);
-
-    // Neither has org access, want to avoid any situations that lock new users out
-    if ((!authOrgAccessJson || authOrgAccessJson === '{}') && (!userOrgAccess || userOrgAccessJson === '{}')) {
-      return true;
-    }
-
-    // Quick check if JSON string matches
-    if (authOrgAccessJson === userOrgAccessJson) {
-      return true;
-    }
-
-    // Deep check if org access matches
-    if (authOrgAccessJson) {
-      const authOrgAccess = JSON.parse(authOrgAccessJson);
-      if (isDeepStrictEqual(authOrgAccess, userOrgAccess)) {
-        return true;
-      }
-    }
-
-    return false;
   } catch (error) {
     console.error(error);
     return false;

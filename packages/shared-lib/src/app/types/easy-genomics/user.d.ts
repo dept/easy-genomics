@@ -16,7 +16,6 @@
  *   LastName?: <string>,
  *   Status: 'Active' | 'Inactive' | 'Invited',
  *   DefaultOrganization?: <string>, // User chosen Default Organization
- *   OrganizationAccess?: <OrganizationAccess>,
  *   CreatedAt?: <string>,
  *   CreatedBy?: <string>,
  *   ModifiedAt?: <string>,
@@ -34,6 +33,7 @@ export interface User extends BaseAttributes {
   Status: UserStatus;
   DefaultOrganization?: string; // User last accessed Organization
   DefaultLaboratory?: string; // User last accessed Laboratory
+  /** Present on JWT claims and composed API views; omitted from user-table items. */
   OrganizationAccess?: OrganizationAccess;
   SampleIdSplitPattern?: string; // User preference for splitting sample IDs from filenames
   OmicsWorkflowDefaultParams?: Record<string, Record<string, unknown>>; // workflowId -> parameters

@@ -1,26 +1,20 @@
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
-  ExpiredOrganizationAccessError,
   NoLabratoriesFoundError,
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
-  UserNotFoundError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { UserService } from '@BE/services/easy-genomics/user-service';
 import {
   getLaboratoryAccessLaboratoryIds,
   validateOrganizationAccess,
   validateOrganizationAdminAccess,
   validateSystemAdminAccess,
-  verifyCurrentOrganizationAccess,
 } from '@BE/utils/auth-utils';
 
 const laboratoryService = new LaboratoryService();
-const userService = new UserService();
 
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -35,23 +29,8 @@ export const handler: Handler = async (
     const isOrgAdmin: boolean = !!validateOrganizationAdminAccess(event, organizationId);
     const isAdmin: boolean = isSystemAdmin || isOrgAdmin;
 
-    if (!isSystemAdmin) {
-      // For regular users only
-      const userEmail = event.requestContext.authorizer.claims.email;
-      const user: User | undefined = (await userService.queryByEmail(userEmail)).shift();
-
-      if (!user) {
-        throw new UserNotFoundError();
-      }
-
-      // Check if users org access is current, if not let the FE know
-      if (!verifyCurrentOrganizationAccess(event, user)) {
-        throw new ExpiredOrganizationAccessError();
-      }
-    }
-
-    // System admins, active org members, or org admins (who may create labs before org Status is Active) may list
-    if (!(isSystemAdmin || validateOrganizationAccess(event, organizationId) || isOrgAdmin)) {
+    // SystemAdmin, OrganizationAdmin, or active Organization membership
+    if (!(isSystemAdmin || isOrgAdmin || validateOrganizationAccess(event, organizationId))) {
       throw new UnauthorizedAccessError();
     }
 

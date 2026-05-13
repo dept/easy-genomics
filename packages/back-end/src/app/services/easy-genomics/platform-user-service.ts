@@ -1,15 +1,11 @@
 import { marshall } from '@aws-sdk/util-dynamodb';
-import { OrgUserStatus } from '@easy-genomics/shared-lib/src/app/types/base-entity';
 import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
 import { OrganizationUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization-user';
-import {
-  LaboratoryAccess,
-  LaboratoryAccessDetails,
-  OrganizationAccess,
-  OrganizationAccessDetails,
-  User,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
+import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { DynamoDBService } from '../dynamodb-service';
+import { LaboratoryUserService } from './laboratory-user-service';
+import { OrganizationUserService } from './organization-user-service';
+import { toPersistedUser } from './user-service';
 
 export class PlatformUserService extends DynamoDBService {
   readonly LABORATORY_USER_TABLE_NAME: string = `${process.env.NAME_PREFIX}-laboratory-user-table`;
@@ -17,39 +13,25 @@ export class PlatformUserService extends DynamoDBService {
   readonly UNIQUE_REFERENCE_TABLE_NAME: string = `${process.env.NAME_PREFIX}-unique-reference-table`;
   readonly ORGANIZATION_USER_TABLE_NAME: string = `${process.env.NAME_PREFIX}-organization-user-table`;
 
+  private readonly organizationUserService = new OrganizationUserService();
+  private readonly laboratoryUserService = new LaboratoryUserService();
+
   public constructor() {
     super();
   }
 
   /**
-   * This function creates a DynamoDB transaction to:
-   *  - add a new User record and set their new Organization as their Default Organization
-   *  - add an Unique-Reference record to reserve the new User's email as taken
-   *  - add an Organization-User access mapping record for the new User to access the Organization
-   *
-   * This function is dependent on the caller to supply the User's details updated OrganizationAccess details for
-   * writing the User record.
-   *
-   * If any part of the transaction fails, the whole transaction will be rejected in order to avoid data inconsistency.
-   *
-   * @param newUser
-   * @param organizationUser
+   * Creates a new User, email reservation, and organization-user mapping. User items do not
+   * store OrganizationAccess; membership is only in organization-user-table.
    */
   async addNewUserToOrganization(newUser: User, organizationUser: OrganizationUser): Promise<Boolean> {
     const logRequestMessage = `Add New User To Organization UserId=${organizationUser.UserId} OrganizationId=${organizationUser.OrganizationId} request`;
     console.info(logRequestMessage);
 
-    const user: User = {
+    const user = toPersistedUser({
       ...newUser,
       DefaultOrganization: organizationUser.OrganizationId,
-      OrganizationAccess: {
-        [organizationUser.OrganizationId]: {
-          Status: organizationUser.Status,
-          LaboratoryAccess: {},
-          OrganizationAdmin: false,
-        },
-      },
-    };
+    });
 
     const response = await this.transactWriteItems({
       TransactItems: [
@@ -60,7 +42,7 @@ export class PlatformUserService extends DynamoDBService {
             ExpressionAttributeNames: {
               '#UserId': 'UserId',
             },
-            Item: marshall(user),
+            Item: marshall(user, { removeUndefinedValues: true }),
           },
         },
         {
@@ -99,67 +81,59 @@ export class PlatformUserService extends DynamoDBService {
   }
 
   /**
-   * This function creates a DynamoDB transaction to:
-   *  - update the existing User to add OrganizationAccess meta-data simplify and improve data retrieval
-   *  - add an Organization-User access mapping record for the existing User to access the Organization
-   *  - set the DefaultOrganization if the current User's DefaultOrganization is not defined yet / empty
-   *
-   * This function is dependent on the caller to supply the User's details updated OrganizationAccess details for
-   * writing the User record.
-   *
-   * If any part of the transaction fails, the whole transaction will be rejected in order to avoid
-   * data inconsistency.
-   *
-   * @param existingUser
-   * @param organizationUser
+   * Adds an existing user to an organization. Updates user-table only when setting
+   * DefaultOrganization for the first time; otherwise only writes organization-user-table.
    */
   async addExistingUserToOrganization(existingUser: User, organizationUser: OrganizationUser): Promise<Boolean> {
     const logRequestMessage = `Add Existing User To Organization UserId=${organizationUser.UserId} OrganizationId=${organizationUser.OrganizationId} request`;
     console.info(logRequestMessage);
 
-    const defaultOrganization: string | undefined =
-      !existingUser.DefaultOrganization || existingUser.DefaultOrganization === ''
-        ? organizationUser.OrganizationId
-        : existingUser.DefaultOrganization;
+    const shouldSetDefaultOrg = !existingUser.DefaultOrganization || existingUser.DefaultOrganization === '';
+    const defaultOrganization: string | undefined = shouldSetDefaultOrg
+      ? organizationUser.OrganizationId
+      : existingUser.DefaultOrganization;
 
-    // Retrieve the User's OrganizationAccess metadata to update
-    const user: User = {
-      ...existingUser,
-      DefaultOrganization: defaultOrganization,
-      OrganizationAccess: <OrganizationAccess>{
-        ...existingUser.OrganizationAccess,
-        [organizationUser.OrganizationId]: <OrganizationAccessDetails>{
-          Status: organizationUser.Status,
-          OrganizationAdmin: organizationUser.OrganizationAdmin,
-          LaboratoryAccess: <LaboratoryAccess>{},
+    const orgUserPut = {
+      Put: {
+        TableName: this.ORGANIZATION_USER_TABLE_NAME,
+        ConditionExpression: 'attribute_not_exists(#OrganizationId) AND attribute_not_exists(#UserId)',
+        ExpressionAttributeNames: {
+          '#OrganizationId': 'OrganizationId',
+          '#UserId': 'UserId',
         },
+        Item: marshall(organizationUser),
       },
     };
+
+    if (!shouldSetDefaultOrg) {
+      const response = await this.transactWriteItems({
+        TransactItems: [orgUserPut],
+      });
+      if (response.$metadata.httpStatusCode === 200) {
+        return true;
+      } else {
+        throw new Error(`${logRequestMessage} unsuccessful: HTTP Status Code=${response.$metadata.httpStatusCode}`);
+      }
+    }
+
+    const user = toPersistedUser({
+      ...existingUser,
+      DefaultOrganization: defaultOrganization,
+    });
 
     const response = await this.transactWriteItems({
       TransactItems: [
         {
-          // Using PutItem request to update the existing User record for marshalling convenience instead of UpdateItem
           Put: {
             TableName: this.USER_TABLE_NAME,
             ConditionExpression: 'attribute_exists(#UserId)',
             ExpressionAttributeNames: {
               '#UserId': 'UserId',
             },
-            Item: marshall(user),
+            Item: marshall(user, { removeUndefinedValues: true }),
           },
         },
-        {
-          Put: {
-            TableName: this.ORGANIZATION_USER_TABLE_NAME,
-            ConditionExpression: 'attribute_not_exists(#OrganizationId) AND attribute_not_exists(#UserId)',
-            ExpressionAttributeNames: {
-              '#OrganizationId': 'OrganizationId',
-              '#UserId': 'UserId',
-            },
-            Item: marshall(organizationUser),
-          },
-        },
+        orgUserPut,
       ],
     });
 
@@ -170,81 +144,51 @@ export class PlatformUserService extends DynamoDBService {
     }
   }
 
-  /**
-   * This function creates a DynamoDB transaction to:
-   *  - update the existing User to remove the OrganizationAccess meta-data to remove the tracking for the Organization
-   *  - remove the User's DefaultOrganization if it is the same Organization, and replace with the next available Organization
-   *  - delete the Organization-User access mapping record for the existing User to remove access to the Organization
-   *  - delete the existing Laboratory-User access mappings records associated with the removed Organization access
-   *
-   * If any part of the transaction fails, the whole transaction will be rejected in order to avoid
-   * data inconsistency.
-   *
-   * @param existingUser
-   * @param organizationUser
-   */
   async removeExistingUserFromOrganization(existingUser: User, organizationUser: OrganizationUser): Promise<Boolean> {
     const logRequestMessage = `Remove Existing User From Organization UserId=${organizationUser.UserId} OrganizationId=${organizationUser.OrganizationId} request`;
     console.info(logRequestMessage);
 
-    // Retrieve the User's OrganizationAccess metadata to update
-    const organizationAccess: OrganizationAccess | undefined = existingUser.OrganizationAccess;
-    // Retrieve the current Organization's OrganizationAccessDetails for use in the update
-    const organizationAccessDetails: OrganizationAccessDetails | undefined =
-      organizationAccess && organizationAccess[organizationUser.OrganizationId]
-        ? organizationAccess[organizationUser.OrganizationId]
-        : undefined;
-    // Retrieve the current Organization's LaboratoryAccess details for use in the update
-    const laboratoryAccess: LaboratoryAccess | undefined = organizationAccessDetails
-      ? organizationAccessDetails.LaboratoryAccess
-      : undefined;
+    const organizationUsersBefore = await this.organizationUserService.queryByUserId(existingUser.UserId);
+    const remainingOrgUsers = organizationUsersBefore.filter(
+      (ou) => ou.OrganizationId !== organizationUser.OrganizationId,
+    );
 
-    if (organizationAccess) {
-      delete organizationAccess[organizationUser.OrganizationId];
-    }
-
-    // Replace User's existing DefaultOrganization if it is the same Organization access being removed
-    const defaultOrganization: string | undefined =
+    const defaultOrganization =
       existingUser.DefaultOrganization === organizationUser.OrganizationId
-        ? Object.keys(organizationAccess ?? {})
-            .filter((organizationId) => organizationId !== organizationUser.OrganizationId)
-            .shift()
+        ? remainingOrgUsers[0]?.OrganizationId
         : existingUser.DefaultOrganization;
 
-    const user = {
+    const laboratoryUsersInOrg = (await this.laboratoryUserService.queryByUserId(existingUser.UserId)).filter(
+      (lu) => lu.OrganizationId === organizationUser.OrganizationId,
+    );
+
+    const laboratoryUserDeletions = laboratoryUsersInOrg.map((lu) => {
+      return {
+        Delete: {
+          TableName: this.LABORATORY_USER_TABLE_NAME,
+          Key: {
+            LaboratoryId: { S: lu.LaboratoryId },
+            UserId: { S: lu.UserId },
+          },
+        },
+      };
+    });
+
+    const userToWrite = toPersistedUser({
       ...existingUser,
       DefaultOrganization: defaultOrganization,
-      OrganizationAccess: <OrganizationAccess>{
-        ...organizationAccess,
-      },
-    };
-
-    // Generate array of Delete transaction items to remove the User's associated LaboratoryUser mappings
-    const laboratoryUserDeletions = laboratoryAccess
-      ? Object.keys(laboratoryAccess).map((laboratoryId) => {
-          return {
-            Delete: {
-              TableName: this.LABORATORY_USER_TABLE_NAME,
-              Key: {
-                LaboratoryId: { S: laboratoryId },
-                UserId: { S: user.UserId },
-              },
-            },
-          };
-        })
-      : [];
+    });
 
     const response = await this.transactWriteItems({
       TransactItems: [
         {
-          // Using PutItem request to update the existing User record for marshalling convenience instead of UpdateItem
           Put: {
             TableName: this.USER_TABLE_NAME,
             ConditionExpression: 'attribute_exists(#UserId)',
             ExpressionAttributeNames: {
               '#UserId': 'UserId',
             },
-            Item: marshall(user, { removeUndefinedValues: true }),
+            Item: marshall(userToWrite, { removeUndefinedValues: true }),
           },
         },
         {
@@ -267,59 +211,16 @@ export class PlatformUserService extends DynamoDBService {
     }
   }
 
-  /**
-   * This function creates a DynamoDB transaction to:
-   *  - update the existing User to update the OrganizationAccess meta-data Status to 'Active' or 'Inactive'
-   *  - update the Organization-User access mapping record Status to 'Active' or 'Inactive'
-   *
-   * This function is dependent on the caller to supply the User's details updated OrganizationAccess details for
-   * writing the User record.
-   *
-   * If any part of the transaction fails, the whole transaction will be rejected in order to avoid
-   * data inconsistency.
-   *
-   * @param existingUser
-   * @param organizationUser
-   */
-  async editExistingUserAccessToOrganization(existingUser: User, organizationUser: OrganizationUser): Promise<Boolean> {
+  async editExistingUserAccessToOrganization(
+    _existingUser: User,
+    organizationUser: OrganizationUser,
+  ): Promise<Boolean> {
     const logRequestMessage = `Edit Existing User To Organization UserId=${organizationUser.UserId} OrganizationId=${organizationUser.OrganizationId} request`;
     console.info(logRequestMessage);
-
-    // Retrieve the User's OrganizationAccess metadata to update
-    const organizationAccess: OrganizationAccess | undefined = existingUser.OrganizationAccess;
-    // Retrieve the current Organization's OrganizationAccessDetails for use in the update
-    const organizationAccessDetails: OrganizationAccessDetails | undefined =
-      organizationAccess && organizationAccess[organizationUser.OrganizationId]
-        ? organizationAccess[organizationUser.OrganizationId]
-        : undefined;
-
-    const user: User = {
-      ...existingUser,
-      OrganizationAccess: <OrganizationAccess>{
-        ...organizationAccess,
-        [organizationUser.OrganizationId]: <OrganizationAccessDetails>{
-          ...organizationAccessDetails,
-          Status: organizationUser.Status,
-          OrganizationAdmin: organizationUser.OrganizationAdmin,
-        },
-      },
-    };
 
     const response = await this.transactWriteItems({
       TransactItems: [
         {
-          // Using PutItem request to update the existing User record for marshalling convenience instead of UpdateItem
-          Put: {
-            TableName: this.USER_TABLE_NAME,
-            ConditionExpression: 'attribute_exists(#UserId)',
-            ExpressionAttributeNames: {
-              '#UserId': 'UserId',
-            },
-            Item: marshall(user),
-          },
-        },
-        {
-          // Using PutItem request to update the existing OrganizationUser record for marshalling convenience instead of UpdateItem
           Put: {
             TableName: this.ORGANIZATION_USER_TABLE_NAME,
             ConditionExpression: 'attribute_exists(#OrganizationId) AND attribute_exists(#UserId)',
@@ -340,20 +241,6 @@ export class PlatformUserService extends DynamoDBService {
     }
   }
 
-  /**
-   * This function creates a DynamoDB transaction to:
-   *  - update the existing User to update multiple OrganizationAccess meta-data Status to 'Active' or 'Inactive'
-   *  - update the multiple Organization-User access mapping records Status to 'Active' or 'Inactive'
-   *
-   * This function is dependent on the caller to supply the User's details updated OrganizationAccess details for
-   * writing the User record.
-   *
-   * If any part of the transaction fails, the whole transaction will be rejected in order to avoid
-   * data inconsistency.
-   *
-   * @param existingUser
-   * @param organizationUsers
-   */
   async editExistingUserAccessToOrganizations(
     existingUser: User,
     organizationUsers: OrganizationUser[],
@@ -361,37 +248,22 @@ export class PlatformUserService extends DynamoDBService {
     const logRequestMessage = `Edit Existing User To Organization UserId=${existingUser.UserId} Organizations=[${organizationUsers.map((_: OrganizationUser) => _.OrganizationId).join(', ')}] request`;
     console.info(logRequestMessage);
 
-    // Retrieve the User's OrganizationAccess metadata to update
-    const existingUserOrganizationAccess: OrganizationAccess | undefined = existingUser.OrganizationAccess;
-    const updatedUserOrganizationAccess: OrganizationAccess = existingUserOrganizationAccess
-      ? this.updateUserOrganizationAccess(existingUserOrganizationAccess, organizationUsers)
-      : {};
-
-    const user: User = {
-      ...existingUser,
-      OrganizationAccess: {
-        ...existingUserOrganizationAccess,
-        ...updatedUserOrganizationAccess,
-      },
-    };
+    const user = toPersistedUser(existingUser);
 
     const response = await this.transactWriteItems({
       TransactItems: [
         {
-          // Using PutItem request to update the existing User record for marshalling convenience instead of UpdateItem
           Put: {
             TableName: this.USER_TABLE_NAME,
             ConditionExpression: 'attribute_exists(#UserId)',
             ExpressionAttributeNames: {
               '#UserId': 'UserId',
             },
-            Item: marshall(user),
+            Item: marshall(user, { removeUndefinedValues: true }),
           },
         },
-        // Perform all OrganizationUser updates in one transaction
         ...organizationUsers.map((orgUser: OrganizationUser) => {
           return {
-            // Using PutItem request to update the existing OrganizationUser record for marshalling convenience instead of UpdateItem
             Put: {
               TableName: this.ORGANIZATION_USER_TABLE_NAME,
               ConditionExpression: 'attribute_exists(#OrganizationId) AND attribute_exists(#UserId)',
@@ -413,94 +285,12 @@ export class PlatformUserService extends DynamoDBService {
     }
   }
 
-  /**
-   * Private function to help generate updated User OrganizationAccess metadata for multiple Organization activations/deactivations.
-   * @param existingUserOrganizationAccess
-   * @param organizationUsers
-   * @private
-   */
-  private updateUserOrganizationAccess(
-    existingUserOrganizationAccess: OrganizationAccess,
-    organizationUsers: OrganizationUser[],
-  ): OrganizationAccess {
-    // Identify list of OrganizationIds matching OrganizationUsers array to approve for updating
-    const organizationIds: string[] = organizationUsers.map((ou: OrganizationUser) => ou.OrganizationId);
-
-    // Return updated User OrganizationAccess metadata with approved OrganizationAccess activations/deactivations
-    return <OrganizationAccess>Object.entries(existingUserOrganizationAccess)
-      .filter((x: [string, OrganizationAccessDetails]) => organizationIds.includes(x[0]))
-      .reduce((obj: OrganizationAccess, item: [string, OrganizationAccessDetails]) => {
-        const orgId: string = item[0];
-        const orgAccessDetails: OrganizationAccessDetails = item[1];
-
-        const status: OrgUserStatus =
-          organizationUsers.find((_: OrganizationUser) => _.OrganizationId === orgId)?.Status ||
-          orgAccessDetails.Status;
-        return (obj[orgId] = { ...orgAccessDetails, Status: status }), obj;
-      }, {});
-  }
-
-  /**
-   * This function creates a DynamoDB transaction to:
-   *  - update the existing User to update the OrganizationAccess meta-data LaboratoryIds list by adding the LaboratoryId
-   *  - add a Laboratory-User access mapping record for the existing User to access the Laboratory
-   *
-   * This function is dependent on the caller to supply the User's details updated OrganizationAccess details for
-   * writing the User record.
-   *
-   * If any part of the transaction fails, the whole transaction will be rejected in order to avoid
-   * data inconsistency.
-   *
-   * @param existingUser
-   * @param laboratoryUser
-   */
-  async addExistingUserToLaboratory(existingUser: User, laboratoryUser: LaboratoryUser): Promise<Boolean> {
+  async addExistingUserToLaboratory(_existingUser: User, laboratoryUser: LaboratoryUser): Promise<Boolean> {
     const logRequestMessage = `Add Existing User To Laboratory UserId=${laboratoryUser.UserId} LaboratoryId=${laboratoryUser.LaboratoryId} request`;
     console.info(logRequestMessage);
 
-    // Retrieve the User's OrganizationAccess metadata to update
-    const organizationAccess: OrganizationAccess | undefined = existingUser.OrganizationAccess;
-    // Retrieve the current Organization's OrganizationAccessDetails for use in the update
-    const organizationAccessDetails: OrganizationAccessDetails | undefined =
-      organizationAccess && organizationAccess[laboratoryUser.OrganizationId]
-        ? organizationAccess[laboratoryUser.OrganizationId]
-        : undefined;
-    // Retrieve the current Organization's LaboratoryAccess details for use in the update
-    const laboratoryAccess: LaboratoryAccess | undefined = organizationAccessDetails
-      ? organizationAccessDetails.LaboratoryAccess
-      : undefined;
-
-    const user: User = {
-      ...existingUser,
-      OrganizationAccess: <OrganizationAccess>{
-        ...organizationAccess,
-        [laboratoryUser.OrganizationId]: <OrganizationAccessDetails>{
-          ...organizationAccessDetails,
-          LaboratoryAccess: <LaboratoryAccess>{
-            ...laboratoryAccess,
-            [laboratoryUser.LaboratoryId]: <LaboratoryAccessDetails>{
-              Status: laboratoryUser.Status,
-              LabManager: laboratoryUser.LabManager,
-              LabTechnician: laboratoryUser.LabTechnician,
-            },
-          },
-        },
-      },
-    };
-
     const response = await this.transactWriteItems({
       TransactItems: [
-        {
-          // Using PutItem request to update the existing User record for marshalling convenience instead of UpdateItem
-          Put: {
-            TableName: this.USER_TABLE_NAME,
-            ConditionExpression: 'attribute_exists(#UserId)',
-            ExpressionAttributeNames: {
-              '#UserId': 'UserId',
-            },
-            Item: marshall(user),
-          },
-        },
         {
           Put: {
             TableName: this.LABORATORY_USER_TABLE_NAME,
@@ -522,66 +312,12 @@ export class PlatformUserService extends DynamoDBService {
     }
   }
 
-  /**
-   * This function creates a DynamoDB transaction to:
-   *  - update the existing User to update the OrganizationAccess meta-data LaboratoryIds list by removing the LaboratoryId
-   *  - remove the Laboratory-User access mapping record for the existing User to remove access to the Laboratory
-   *
-   * This function is dependent on the caller to supply the User's details updated OrganizationAccess details for
-   * writing the User record.
-   *
-   * If any part of the transaction fails, the whole transaction will be rejected in order to avoid
-   * data inconsistency.
-   *
-   * @param existingUser
-   * @param laboratoryUser
-   */
-  async removeExistingUserFromLaboratory(existingUser: User, laboratoryUser: LaboratoryUser): Promise<Boolean> {
+  async removeExistingUserFromLaboratory(_existingUser: User, laboratoryUser: LaboratoryUser): Promise<Boolean> {
     const logRequestMessage = `Remove Existing User From Laboratory UserId=${laboratoryUser.UserId} LaboratoryId=${laboratoryUser.LaboratoryId} request`;
     console.info(logRequestMessage);
 
-    // Retrieve the User's OrganizationAccess metadata to update
-    const organizationAccess: OrganizationAccess | undefined = existingUser.OrganizationAccess;
-    // Retrieve the current Organization's OrganizationAccessDetails for use in the update
-    const organizationAccessDetails: OrganizationAccessDetails | undefined =
-      organizationAccess && organizationAccess[laboratoryUser.OrganizationId]
-        ? organizationAccess[laboratoryUser.OrganizationId]
-        : undefined;
-
-    // Retrieve the current Organization's LaboratoryAccess details for use in the update
-    const laboratoryAccess: LaboratoryAccess | undefined = organizationAccessDetails
-      ? organizationAccessDetails.LaboratoryAccess
-      : undefined;
-    if (laboratoryAccess) {
-      delete laboratoryAccess[laboratoryUser.LaboratoryId];
-    }
-
-    const user = {
-      ...existingUser,
-      OrganizationAccess: <OrganizationAccess>{
-        ...organizationAccess,
-        [laboratoryUser.OrganizationId]: <OrganizationAccessDetails>{
-          ...organizationAccessDetails,
-          LaboratoryAccess: <LaboratoryAccess>{
-            ...laboratoryAccess,
-          },
-        },
-      },
-    };
-
     const response = await this.transactWriteItems({
       TransactItems: [
-        {
-          // Using PutItem request to update the existing User record for marshalling convenience instead of UpdateItem
-          Put: {
-            TableName: this.USER_TABLE_NAME,
-            ConditionExpression: 'attribute_exists(#UserId)',
-            ExpressionAttributeNames: {
-              '#UserId': 'UserId',
-            },
-            Item: marshall(user),
-          },
-        },
         {
           Delete: {
             TableName: this.LABORATORY_USER_TABLE_NAME,
@@ -601,81 +337,13 @@ export class PlatformUserService extends DynamoDBService {
     }
   }
 
-  /**
-   * This function creates a DynamoDB transaction to:
-   *  - update the existing User to update the LaboratoryAccess meta-data Status to 'Active' or 'Inactive'
-   *  - update the Laboratory-User access mapping record Status to 'Active' or 'Inactive'
-   *
-   * This function is dependent on the caller to supply the User's details updated OrganizationAccess details for
-   * writing the User record.
-   *
-   * If any part of the transaction fails, the whole transaction will be rejected in order to avoid
-   * data inconsistency.
-   *
-   * @param existingUser
-   * @param LaboratoryUser
-   */
-  async editExistingUserAccessToLaboratory(existingUser: User, laboratoryUser: LaboratoryUser): Promise<Boolean> {
-    const logRequestMessage = `Edit Existing User To Laboratory UserId=${laboratoryUser.UserId} OrganizationId=${laboratoryUser.LaboratoryId} request`;
+  async editExistingUserAccessToLaboratory(_existingUser: User, laboratoryUser: LaboratoryUser): Promise<Boolean> {
+    const logRequestMessage = `Edit Existing User To Laboratory UserId=${laboratoryUser.UserId} LaboratoryId=${laboratoryUser.LaboratoryId} request`;
     console.info(logRequestMessage);
-
-    // Retrieve the User's OrganizationAccess metadata to update
-    const organizationAccess: OrganizationAccess | undefined = existingUser.OrganizationAccess;
-
-    // Find the Laboratory's parent Organization's OrganizationAccessDetails for use in the update
-    const found: [string, OrganizationAccessDetails] | undefined = Object.entries(organizationAccess ?? {})
-      /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
-      .filter(([_orgId, orgAccessDetails]: [string, OrganizationAccessDetails]) => {
-        return orgAccessDetails.LaboratoryAccess
-          ? Object.keys(orgAccessDetails.LaboratoryAccess).includes(laboratoryUser.LaboratoryId)
-          : false;
-      })
-      .shift();
-    if (!found) {
-      throw new Error(
-        `${logRequestMessage} unsuccessful: Laboratory's parent Organization not found in user OrganizationAccess`,
-      );
-    }
-    const [organizationId, organizationAccessDetails] = found;
-
-    // Retrieve the current Organization's LaboratoryAccess details for use in the update
-    const laboratoryAccess: LaboratoryAccess | undefined = organizationAccessDetails
-      ? organizationAccessDetails.LaboratoryAccess
-      : undefined;
-
-    const user: User = {
-      ...existingUser,
-      OrganizationAccess: <OrganizationAccess>{
-        ...organizationAccess,
-        [organizationId]: <OrganizationAccessDetails>{
-          ...organizationAccessDetails,
-          LaboratoryAccess: <LaboratoryAccess>{
-            ...laboratoryAccess,
-            [laboratoryUser.LaboratoryId]: <LaboratoryAccessDetails>{
-              Status: laboratoryUser.Status,
-              LabManager: laboratoryUser.LabManager,
-              LabTechnician: laboratoryUser.LabTechnician,
-            },
-          },
-        },
-      },
-    };
 
     const response = await this.transactWriteItems({
       TransactItems: [
         {
-          // Using PutItem request to update the existing User record for marshalling convenience instead of UpdateItem
-          Put: {
-            TableName: this.USER_TABLE_NAME,
-            ConditionExpression: 'attribute_exists(#UserId)',
-            ExpressionAttributeNames: {
-              '#UserId': 'UserId',
-            },
-            Item: marshall(user),
-          },
-        },
-        {
-          // Using PutItem request to update the existing LaboratoryUser record for marshalling convenience instead of UpdateItem
           Put: {
             TableName: this.LABORATORY_USER_TABLE_NAME,
             ConditionExpression: 'attribute_exists(#LaboratoryId) AND attribute_exists(#UserId)',
