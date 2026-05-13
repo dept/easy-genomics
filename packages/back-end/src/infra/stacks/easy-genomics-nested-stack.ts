@@ -1,7 +1,11 @@
 import { Duration, NestedStack } from 'aws-cdk-lib';
+import { Schedule, Rule } from 'aws-cdk-lib/aws-events';
+import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
 import { Effect, PolicyStatement, StarPrincipal } from 'aws-cdk-lib/aws-iam';
-import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
+import { StartingPosition } from 'aws-cdk-lib/aws-lambda';
+import { DynamoEventSource, SqsDlq, SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import { Topic } from 'aws-cdk-lib/aws-sns';
+import { Queue } from 'aws-cdk-lib/aws-sqs';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 import { IamConstruct, IamConstructProps } from '../constructs/iam-construct';
@@ -35,6 +39,12 @@ export class EasyGenomicsNestedStack extends NestedStack {
   ses: SesConstruct;
   sns: SnsConstruct;
   sqs: SqsConstruct;
+  /**
+   * DLQ for the laboratory-run DynamoDB Stream subscriber. Held as a class field so
+   * `setupIamPolicies` can grant `sqs:SendMessage` on it; the queue itself is wired into the
+   * Lambda's event source via `lambdaFunctionsResources` below.
+   */
+  laboratoryRunStreamDlq!: Queue;
 
   constructor(scope: Construct, id: string, props: EasyGenomicsNestedStackProps) {
     super(scope, id);
@@ -106,12 +116,30 @@ export class EasyGenomicsNestedStack extends NestedStack {
     this.iam = new IamConstruct(this, `${this.props.constructNamespace}-iam`, {
       ...(<IamConstructProps>props), // Typecast to IamConstructProps
     });
-    this.setupIamPolicies();
 
     // DynamoDB tables are created by the parent `EasyGenomicsApiStack` and
     // injected via `props.dynamoDBTables`. See class JSDoc for the rationale
     // (this layout is required for `cdk import` to be able to adopt the
     // tables during the documented split-stack migration).
+
+    // Dedicated dead-letter queue for the laboratory-run DynamoDB Stream subscriber. The stream
+    // subscriber drives bookkeeping for the TTL -> S3 deletion cascade; poison records here
+    // can't be retried from the stream itself (stream records age out), so we route failures
+    // here for manual inspection rather than blocking the stream.
+    this.laboratoryRunStreamDlq = new Queue(this, `${this.props.namePrefix}-laboratory-run-stream-dlq`, {
+      queueName: `${this.props.namePrefix}-laboratory-run-stream-dlq`,
+      retentionPeriod: Duration.days(14),
+      enforceSSL: true,
+    });
+
+    const laboratoryRunTable = this.props.dynamoDBTables.get(`${this.props.namePrefix}-laboratory-run-table`);
+    if (!laboratoryRunTable) {
+      throw new Error(
+        `EasyGenomicsNestedStack: missing required injected table "${this.props.namePrefix}-laboratory-run-table".`,
+      );
+    }
+
+    this.setupIamPolicies();
 
     this.lambda = new LambdaConstruct(this, `${this.props.constructNamespace}`, {
       ...this.props,
@@ -250,6 +278,23 @@ export class EasyGenomicsNestedStack extends NestedStack {
             SNS_LABORATORY_RUN_UPDATE_TOPIC: this.sns.snsTopics.get('laboratory-run-update-topic')?.topicArn || '',
           },
         },
+        // DynamoDB Stream subscriber on the laboratory-run table. Handles REMOVE events
+        // (TTL or manual delete) and updates the data tagging table so the scheduled
+        // cleanup Lambda can later GC orphaned S3 files (see plan: "Permanent tag and
+        // S3 expiry"). Stream view is OLD_IMAGE (configured on the table).
+        '/easy-genomics/laboratory/run/process-laboratory-run-stream': {
+          events: [
+            new DynamoEventSource(laboratoryRunTable, {
+              startingPosition: StartingPosition.TRIM_HORIZON,
+              batchSize: 100,
+              maxBatchingWindow: Duration.seconds(5),
+              retryAttempts: 3,
+              bisectBatchOnError: true,
+              onFailure: new SqsDlq(this.laboratoryRunStreamDlq),
+              reportBatchItemFailures: true,
+            }),
+          ],
+        },
         '/easy-genomics/laboratory/run/request-laboratory-run-status-check': {
           environment: {
             SNS_LABORATORY_RUN_UPDATE_TOPIC: this.sns.snsTopics.get('laboratory-run-update-topic')?.topicArn || '',
@@ -271,6 +316,28 @@ export class EasyGenomicsNestedStack extends NestedStack {
           events: [new SqsEventSource(this.sqs.sqsQueues.get('folder-download-queue')!, { batchSize: 1 })],
           timeoutSeconds: 900,
           memorySizeMb: 3008,
+        },
+        // Scheduled (daily) S3 deletion sweep that completes the run-retention cascade. Walks
+        // every lab's FILE# rows, deletes the underlying S3 object + tagging-table rows for
+        // files whose last referencing run has TTL'd out, and skips anything tagged Permanent.
+        // `DRY_RUN=true` is the safe initial-deploy setting; flip it to "false" once the
+        // CloudWatch metrics show the expected counts.
+        '/easy-genomics/data-collections/process-expired-laboratory-data': {
+          timeoutSeconds: 900,
+          memorySizeMb: 1024,
+          environment: {
+            DRY_RUN: 'true',
+          },
+          callbacks: [
+            (lambdaFunction) => {
+              new Rule(this, `${this.props.namePrefix}-expired-laboratory-data-schedule`, {
+                ruleName: `${this.props.namePrefix}-expired-laboratory-data-schedule`,
+                schedule: Schedule.cron({ minute: '0', hour: '4' }),
+                description: 'Daily sweep that deletes S3 objects whose last referencing run has expired.',
+                targets: [new LambdaFunction(lambdaFunction)],
+              });
+            },
+          ],
         },
       },
       environment: {
@@ -1040,6 +1107,17 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
     ]);
 
+    // Data tagging table ARNs reused by run-side lambdas that propagate `ExpiresAt` into
+    // `LaboratoryRunUsages` entries. Re-declared inline because the canonical declaration of
+    // `laboratoryDataTaggingTableArn` lives further down in this method body for proximity to
+    // the data-collections route policies.
+    const laboratoryDataTaggingTableArnForRunLambdas = `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-data-tagging-table`;
+    const dataTaggingUsagePropagationStatement = new PolicyStatement({
+      resources: [laboratoryDataTaggingTableArnForRunLambdas],
+      actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
+      effect: Effect.ALLOW,
+    });
+
     // /easy-genomics/laboratory/run/request-apply-run-retention-policy
     this.iam.addPolicyStatements('/easy-genomics/laboratory/run/request-apply-run-retention-policy', [
       new PolicyStatement({
@@ -1058,6 +1136,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: ['dynamodb:Query'],
         effect: Effect.ALLOW,
       }),
+      dataTaggingUsagePropagationStatement,
     ]);
 
     // /easy-genomics/laboratory/run/update-laboratory-run
@@ -1071,10 +1150,19 @@ export class EasyGenomicsNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
         resources: [`${this.sns.snsTopics.get('laboratory-run-update-topic')?.topicArn || ''}`],
         actions: ['sns:Publish'],
         effect: Effect.ALLOW,
       }),
+      dataTaggingUsagePropagationStatement,
     ]);
 
     // /easy-genomics/laboratory/run/process-update-laboratory-run
@@ -1117,6 +1205,44 @@ export class EasyGenomicsNestedStack extends NestedStack {
           `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
         ],
         actions: ['sts:AssumeRole', 'sts:TagSession'],
+        effect: Effect.ALLOW,
+      }),
+      dataTaggingUsagePropagationStatement,
+    ]);
+
+    // /easy-genomics/laboratory/run/process-laboratory-run-stream
+    // DynamoDB Stream subscriber: reads OLD images (no DDB Query/Get needed beyond stream
+    // permissions), looks up the parent Laboratory record, and patches LaboratoryRunUsages
+    // entries on the data-tagging table. DLQ + SendMessage cover the onFailure routing.
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/run/process-laboratory-run-stream', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/stream/*`,
+        ],
+        actions: [
+          'dynamodb:DescribeStream',
+          'dynamodb:GetRecords',
+          'dynamodb:GetShardIterator',
+          'dynamodb:ListStreams',
+        ],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [laboratoryDataTaggingTableArnForRunLambdas],
+        actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [this.laboratoryRunStreamDlq.queueArn],
+        actions: ['sqs:SendMessage'],
         effect: Effect.ALLOW,
       }),
     ]);
@@ -1602,7 +1728,9 @@ export class EasyGenomicsNestedStack extends NestedStack {
       ...laboratoryReadForDataCollections,
       new PolicyStatement({
         resources: laboratoryDataTaggingDynamoResources,
-        actions: ['dynamodb:Query'],
+        // GetItem + PutItem cover the lazy-create of the lab's singleton permanent TAG# row on
+        // first listTags call (see `ensurePermanentTag` in `laboratory-data-tagging-service`).
+        actions: ['dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:PutItem'],
       }),
     ]);
 
@@ -1675,6 +1803,31 @@ export class EasyGenomicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: ['arn:aws:s3:::*'],
         actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/data-collections/process-expired-laboratory-data
+    // Daily scheduled S3 retention sweep. Needs to scan all laboratories, read+mutate the
+    // tagging table for every lab, and call s3:DeleteObject on the underlying objects.
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/process-expired-laboratory-data', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Scan', 'dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+      new PolicyStatement({
+        // Wildcard bucket because labs are provisioned with arbitrary bucket names per
+        // organization; tightening this requires knowing every lab bucket at deploy time.
+        resources: ['arn:aws:s3:::*/*'],
+        actions: ['s3:DeleteObject'],
         effect: Effect.ALLOW,
       }),
     ]);
