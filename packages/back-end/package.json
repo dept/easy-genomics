@@ -1,28 +1,34 @@
 {
   "name": "@easy-genomics/back-end",
   "scripts": {
-    "build": "pnpm dlx projen compile && pnpm dlx projen test && pnpm dlx projen build",
-    "bundle": "pnpm dlx projen bundle",
-    "compile": "pnpm dlx projen compile",
-    "default": "pnpm dlx projen default",
-    "deploy": "pnpm cdk bootstrap && pnpm dlx projen deploy",
-    "destroy": "pnpm dlx projen destroy",
-    "diff": "pnpm dlx projen diff",
-    "eslint": "pnpm dlx projen eslint",
-    "package": "pnpm dlx projen package",
-    "post-compile": "pnpm dlx projen post-compile",
-    "post-upgrade": "pnpm dlx projen post-upgrade",
-    "pre-compile": "pnpm dlx projen pre-compile",
-    "synth": "pnpm dlx projen synth",
-    "synth:silent": "pnpm dlx projen synth:silent",
-    "test": "pnpm dlx projen test",
-    "test:watch": "pnpm dlx projen test:watch",
-    "upgrade": "pnpm dlx projen upgrade",
-    "watch": "pnpm dlx projen watch",
-    "projen": "pnpm dlx projen",
-    "cdk-audit": "export CDK_AUDIT=true && pnpm dlx projen build",
+    "build": "pnpm exec projen compile && pnpm exec projen test && pnpm exec projen build",
+    "bundle": "pnpm exec projen bundle",
+    "compile": "pnpm exec projen compile",
+    "default": "pnpm exec projen default",
+    "deploy": "pnpm cdk bootstrap && pnpm exec projen deploy",
+    "destroy": "pnpm exec projen destroy",
+    "diff": "pnpm exec projen diff",
+    "eslint": "pnpm exec projen eslint",
+    "package": "pnpm exec projen package",
+    "post-compile": "pnpm exec projen post-compile",
+    "post-upgrade": "pnpm exec projen post-upgrade",
+    "pre-compile": "pnpm exec projen pre-compile",
+    "synth": "pnpm exec projen synth",
+    "synth:silent": "pnpm exec projen synth:silent",
+    "test": "pnpm exec projen test",
+    "test:watch": "pnpm exec projen test:watch",
+    "upgrade": "pnpm exec projen upgrade",
+    "watch": "pnpm exec projen watch",
+    "projen": "pnpm exec projen",
+    "cdk-audit": "export CDK_AUDIT=true && pnpm exec projen build",
     "build-and-deploy": "pnpm -w run build-back-end && pnpm run deploy --require-approval any-change",
-    "lint": "eslint 'src/**/*.{js,ts}' --fix"
+    "lint": "eslint 'src/**/*.{js,ts}' --fix",
+    "local-server": "tsx src/local-server/index.ts",
+    "local-server:watch": "tsx watch src/local-server/index.ts",
+    "invoke-process-handler": "tsx src/local-server/invoke-process-handler.ts",
+    "backfill-omics-run-tags": "tsx scripts/backfill-omics-run-tags.ts",
+    "backfill-omics-run-tags:dry-run": "tsx scripts/backfill-omics-run-tags.ts --dry-run",
+    "recompute-laboratory-run-retention": "tsx scripts/recompute-laboratory-run-retention.ts --laboratoryId $LAB_ID --retentionMonths $RETENTION_MONTHS"
   },
   "author": {
     "name": "DEPT Agency",
@@ -30,7 +36,9 @@
   },
   "devDependencies": {
     "@aws-sdk/types": "^3.731.0",
+    "@types/archiver": "^7.0.0",
     "@types/aws-lambda": "^8.10.149",
+    "@types/express": "^4.17.21",
     "@types/jest": "^29.5.14",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^20.17.30",
@@ -38,17 +46,20 @@
     "@typescript-eslint/eslint-plugin": "^7",
     "@typescript-eslint/parser": "^7",
     "aws-cdk": "^2.176.0",
+    "aws-jwt-verify": "^4.0.1",
     "aws-sdk-client-mock": "^3.1.0",
     "esbuild": "^0.24.2",
     "eslint": "^8",
     "eslint-import-resolver-typescript": "^3.10.0",
     "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-prettier": "^5.2.6",
+    "express": "^4.21.0",
     "jest": "^29.7.0",
     "jest-junit": "^15",
     "prettier": "^3.5.3",
     "ts-jest": "^29.3.1",
     "ts-node": "^10.9.2",
+    "tsx": "^4.19.0",
     "typescript": "^5.8.3"
   },
   "dependencies": {
@@ -57,8 +68,9 @@
     "@aws-crypto/encrypt-node": "^4.2.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.782.0",
     "@aws-sdk/client-dynamodb": "^3.786.0",
-    "@aws-sdk/client-omics": "^3.782.0",
+    "@aws-sdk/client-omics": "^3.1019.0",
     "@aws-sdk/client-s3": "^3.782.0",
+    "@aws-sdk/client-secrets-manager": "^3.1020.0",
     "@aws-sdk/client-ses": "^3.782.0",
     "@aws-sdk/client-sns": "^3.782.0",
     "@aws-sdk/client-sqs": "^3.782.0",
@@ -66,10 +78,12 @@
     "@aws-sdk/client-sso-oidc": "^3.782.0",
     "@aws-sdk/client-sts": "^3.782.0",
     "@aws-sdk/lib-dynamodb": "^3.786.0",
+    "@aws-sdk/lib-storage": "^3.786.0",
     "@aws-sdk/s3-request-presigner": "^3.782.0",
     "@aws-sdk/types": "^3.775.0",
     "@aws-sdk/util-dynamodb": "^3.786.0",
     "@easy-genomics/shared-lib": "workspace:*",
+    "archiver": "^7.0.1",
     "aws-cdk-lib": "^2.176.0",
     "aws-lambda": "^1.0.7",
     "base64-js": "^1.5.1",
@@ -86,6 +100,15 @@
   "version": "0.0.0",
   "jest": {
     "coverageProvider": "v8",
+    "moduleNameMapper": {
+      "^@BE/(.*)$": "<rootDir>/src/app/$1",
+      "^@SharedLib/(.*)$": "<rootDir>/../shared-lib/src/app/$1",
+      "^@FE/(.*)$": "<rootDir>/../front-end/src/app/$1"
+    },
+    "collectCoverageFrom": [
+      "<rootDir>/src/app/**/*.ts",
+      "!<rootDir>/src/app/**/*.d.ts"
+    ],
     "testMatch": [
       "<rootDir>/@(src|test)/**/*(*.)@(spec|test).ts?(x)",
       "<rootDir>/@(src|test)/**/__tests__/**/*.ts?(x)"
@@ -127,5 +150,5 @@
       ]
     }
   },
-  "//": "~~ Generated by projen. To modify, edit .projenrc.js and run \"pnpm dlx projen\"."
+  "//": "~~ Generated by projen. To modify, edit .projenrc.js and run \"pnpm exec projen\"."
 }

@@ -9,6 +9,8 @@ export interface SesConstructProps extends StackProps {
   appDomainName: string;
   awsHostedZoneId?: string;
   emailSender: string;
+  envType: string;
+  envName: string;
 }
 
 /**
@@ -16,10 +18,12 @@ export interface SesConstructProps extends StackProps {
  */
 export class SesConstruct extends Construct {
   readonly props: SesConstructProps;
+  readonly templateNamePrefix: string;
 
   constructor(scope: Construct, id: string, props: SesConstructProps) {
     super(scope, id);
     this.props = props;
+    this.templateNamePrefix = props.envType !== 'prod' ? `${props.envName}-${props.envType}-` : '';
 
     if (!this.props.awsHostedZoneId) {
       console.log('Skipping SES configuration - AWS HostedZoneId not configured');
@@ -45,7 +49,7 @@ export class SesConstruct extends Construct {
   private setupNewUserInvitationEmailTemplate() {
     const newUserInvitationEmailTemplate: CfnTemplate = new CfnTemplate(this, 'NewUserInvitationEmailTemplate', {
       template: {
-        templateName: 'NewUserInvitationEmailTemplate',
+        templateName: `${this.templateNamePrefix}NewUserInvitationEmailTemplate`,
         subjectPart: "You've been invited to Easy Genomics",
         htmlPart: `
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
@@ -178,7 +182,7 @@ export class SesConstruct extends Construct {
   private setupExistingUserCourtesyEmailTemplate() {
     const invitationEmailTemplate: CfnTemplate = new CfnTemplate(this, 'ExistingUserCourtesyEmailTemplate', {
       template: {
-        templateName: 'ExistingUserCourtesyEmailTemplate',
+        templateName: `${this.templateNamePrefix}ExistingUserCourtesyEmailTemplate`,
         subjectPart: "You've been added to an Easy Genomics Organization",
         htmlPart: `
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
@@ -290,7 +294,7 @@ export class SesConstruct extends Construct {
   private setupUserForgotPasswordEmailTemplate() {
     const forgotPasswordEmailTemplate: CfnTemplate = new CfnTemplate(this, 'UserForgotPasswordEmailTemplate', {
       template: {
-        templateName: 'UserForgotPasswordEmailTemplate',
+        templateName: `${this.templateNamePrefix}UserForgotPasswordEmailTemplate`,
         subjectPart: 'Reset Your Easy Genomics Password',
         htmlPart: `
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">

@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import path from 'path';
-import { AssociativeArray, HttpRequest } from '@easy-genomics/shared-lib/src/app/utils/common';
+import { AssociativeArray, HttpRequest } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { toPascalCase } from '@easy-genomics/shared-lib/src/app/utils/string-utils';
 import { aws_lambda, aws_lambda_nodejs, Duration } from 'aws-cdk-lib';
 import { CognitoUserPoolsAuthorizer, JsonSchema, LambdaIntegration, Resource } from 'aws-cdk-lib/aws-apigateway';
@@ -34,6 +34,8 @@ interface LambdaFunctionsResources {
     [key: string]: string;
   };
   methodOptions?: MethodOptions;
+  timeoutSeconds?: number;
+  memorySizeMb?: number;
 }
 
 // List of allowed "CRUD" Lambda Function operations with respective REST API command mapping
@@ -112,17 +114,20 @@ export class LambdaConstruct extends Construct {
     const commonProcessEnv = this.props.environment || undefined;
     const lambdaProcessEnv = this.props.lambdaFunctionsResources[lambdaApiEndpoint]?.environment || undefined;
     const lambdaMethodOptions = this.props.lambdaFunctionsResources[lambdaApiEndpoint]?.methodOptions || undefined;
+    const lambdaTimeoutSeconds = this.props.lambdaFunctionsResources[lambdaApiEndpoint]?.timeoutSeconds || 30;
+    const lambdaMemorySizeMb = this.props.lambdaFunctionsResources[lambdaApiEndpoint]?.memorySizeMb || 1024;
 
     const lambdaHandler: IFunction = new aws_lambda_nodejs.NodejsFunction(this, `${lambdaId}`, {
       runtime: Runtime.NODEJS_20_X,
-      timeout: Duration.seconds(30),
-      memorySize: 1024,
+      timeout: Duration.seconds(lambdaTimeoutSeconds),
+      memorySize: lambdaMemorySizeMb,
       functionName: `${this.props.lambdaFunctionsNamespace}-${lambdaName}`.slice(0, 64),
       entry: `${lambdaFunction.path}`,
       handler: 'handler',
       tracing: aws_lambda.Tracing.ACTIVE,
       bundling: {
         loader: { '.hbs': 'text' },
+        externalModules: ['@aws-sdk/*'],
       },
       logRetention: RetentionDays.ONE_DAY,
       logRetentionRetryOptions: {

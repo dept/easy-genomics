@@ -26,6 +26,7 @@ export const handler: Handler = async (
     event.response = {
       claimsOverrideDetails: {
         claimsToAddOrOverride: {
+          ['UserId']: user.UserId,
           ['PreferredName']: user.PreferredName || '',
           ['FirstName']: user.FirstName || '',
           ['LastName']: user.LastName || '',
@@ -33,6 +34,7 @@ export const handler: Handler = async (
           ['DefaultOrganization']: user.DefaultOrganization || '', // User last accessed Organization
           ['DefaultLaboratory']: user.DefaultLaboratory || '', // User last accessed Laboratory
           ['OrganizationAccess']: JSON.stringify(user.OrganizationAccess),
+          ['SampleIdSplitPattern']: user.SampleIdSplitPattern || '',
         },
       },
     };

@@ -130,6 +130,15 @@ class UsersModule extends HttpFactory {
       FirstName?: string;
       PreferredName?: string;
       LastName?: string;
+      SampleIdSplitPattern?: string;
+      OmicsWorkflowDefaultParams?: Record<string, Record<string, unknown>>;
+      FavouriteWorkflows?: Array<{
+        WorkflowId: string;
+        WorkflowName: string;
+        Description?: string;
+        Platform: 'Seqera Cloud' | 'AWS HealthOmics';
+        LaboratoryId: string;
+      }>;
     },
   ) {
     const parseResult = UpdateUserSchema.safeParse(data);
@@ -142,6 +151,16 @@ class UsersModule extends HttpFactory {
 
     if (!res) {
       throw new Error('Error updating user details');
+    }
+
+    return res;
+  }
+
+  async getUser(): Promise<User> {
+    const res = await this.call<User>('GET', '/user/list-user-self');
+
+    if (!res) {
+      throw new Error('Error retrieving user details');
     }
 
     return res;

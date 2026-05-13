@@ -1,13 +1,13 @@
-import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   ExpiredOrganizationAccessError,
   NoLabratoriesFoundError,
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
   UserNotFoundError,
-} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { UserService } from '@BE/services/easy-genomics/user-service';
@@ -31,8 +31,8 @@ export const handler: Handler = async (
     const organizationId: string | undefined = event.queryStringParameters?.organizationId;
     if (!organizationId) throw new RequiredIdNotFoundError();
 
-    const isSystemAdmin: boolean = validateSystemAdminAccess(event);
-    const isOrgAdmin: boolean = validateOrganizationAdminAccess(event, organizationId);
+    const isSystemAdmin: boolean = !!validateSystemAdminAccess(event);
+    const isOrgAdmin: boolean = !!validateOrganizationAdminAccess(event, organizationId);
     const isAdmin: boolean = isSystemAdmin || isOrgAdmin;
 
     if (!isSystemAdmin) {

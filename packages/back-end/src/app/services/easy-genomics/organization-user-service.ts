@@ -6,13 +6,13 @@ import {
   UpdateItemCommandOutput,
 } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
+import { OrganizationUserNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { OrganizationUserSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/organization-user';
 import { OrganizationUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization-user';
-import { OrganizationUserNotFoundError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
 
-export class OrganizationUserService extends DynamoDBService implements Service {
+export class OrganizationUserService extends DynamoDBService implements Service<OrganizationUser> {
   readonly ORGANIZATION_USER_TABLE_NAME: string = `${process.env.NAME_PREFIX}-organization-user-table`;
 
   public constructor() {

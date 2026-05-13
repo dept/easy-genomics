@@ -17,6 +17,11 @@ let envName: string | undefined;
 let envType: string | undefined;
 let appDomainName: string | undefined;
 let awsHostedZoneId: string | undefined;
+let googleClientId: string | undefined;
+let googleClientSecret: string | undefined;
+let cognitoDomainPrefix: string | undefined;
+let callbackUrls: string | undefined;
+let logoutUrls: string | undefined;
 
 let jwtSecretKey: string | undefined;
 let sysAdminEmail: string | undefined;
@@ -28,6 +33,7 @@ let labManagerPassword: string | undefined;
 let labTechnicianEmail: string | undefined;
 let labTechnicianPassword: string | undefined;
 let seqeraApiBaseUrl: string;
+let githubPatSecretName: string | undefined;
 let vpcPeering: VpcPeering | undefined;
 
 if (process.env.CI_CD === 'true') {
@@ -40,6 +46,11 @@ if (process.env.CI_CD === 'true') {
   envType = process.env.ENV_TYPE;
   appDomainName = process.env.APP_DOMAIN_NAME;
   awsHostedZoneId = process.env.AWS_HOSTED_ZONE_ID;
+  googleClientId = process.env.GOOGLE_CLIENT_ID;
+  googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  cognitoDomainPrefix = process.env.COGNITO_DOMAIN_PREFIX;
+  callbackUrls = process.env.CALLBACK_URLS;
+  logoutUrls = process.env.LOGOUT_URLS;
 
   jwtSecretKey = process.env.JWT_SECRET_KEY;
   // System Admin
@@ -56,6 +67,7 @@ if (process.env.CI_CD === 'true') {
   labTechnicianPassword = process.env.LAB_TECHNICIAN_PASSWORD;
 
   seqeraApiBaseUrl = process.env.SEQERA_API_BASE_URL || SEQERA_API_BASE_URL;
+  githubPatSecretName = process.env.GITHUB_PAT_SECRET_NAME;
 
   if (
     process.env.EXTERNAL_VPC_ID &&
@@ -148,6 +160,11 @@ if (process.env.CI_CD === 'true') {
   envType = configSettings['env-type']; // dev | pre-prod | prod
   appDomainName = configSettings['app-domain-name'];
   awsHostedZoneId = configSettings['aws-hosted-zone-id'];
+  googleClientId = configSettings['google-client-id'];
+  googleClientSecret = configSettings['google-client-secret'];
+  cognitoDomainPrefix = configSettings['cognito-domain-prefix'];
+  callbackUrls = configSettings['callback-urls'];
+  logoutUrls = configSettings['logout-urls'];
 
   // Back-End configuration settings
   jwtSecretKey = configSettings['back-end']['jwt-secret-key'];
@@ -165,6 +182,7 @@ if (process.env.CI_CD === 'true') {
   labTechnicianPassword = configSettings['back-end']['lab-technician-password'];
 
   seqeraApiBaseUrl = configSettings['back-end']['seqera-api-base-url'] || SEQERA_API_BASE_URL;
+  githubPatSecretName = configSettings['back-end']['github-pat-secret-name'] || undefined;
 
   const vpcPeeringSettings = configSettings['back-end']['vpc-peering'];
   if (vpcPeeringSettings) {
@@ -286,7 +304,13 @@ new BackEndStack(app, `${namePrefix}-main-back-end-stack`, {
   sysAdminPassword: sysAdminPassword,
   testUsers: testUsers,
   seqeraApiBaseUrl: seqeraApiBaseUrl.replace(/\/+$/, ''), // Remove trailing slashes
+  githubPatSecretName: githubPatSecretName || undefined,
   vpcPeering: vpcPeering,
+  googleClientId,
+  googleClientSecret,
+  cognitoDomainPrefix,
+  callbackUrls,
+  logoutUrls,
 });
 
 if (process.env.CDK_AUDIT === 'true') {

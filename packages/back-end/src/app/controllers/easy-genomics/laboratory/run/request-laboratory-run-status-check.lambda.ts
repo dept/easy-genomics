@@ -1,11 +1,11 @@
-import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
-import { SnsProcessingEvent } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   InvalidRequestError,
   LaboratoryNotFoundError,
   UnauthorizedAccessError,
-} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
+import { SnsProcessingEvent } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
@@ -59,14 +59,22 @@ export const handler: Handler = async (
       throw new InvalidRequestError('No runIds provided');
     }
 
-    // For each runId, fetch and process if not terminal
+    // For each runId, fetch and process if:
+    //  - the run is not yet in a terminal state (normal status refresh), OR
+    //  - the run is terminal but missing `RunDurationSeconds` (one-time backfill of
+    //    legacy rows created before runtime capture existed). This keeps the dashboard
+    //    "Avg Run time" metric accurate for historical data without a separate endpoint.
     const runsToProcess: LaboratoryRun[] = [];
     for (const runId of runIds) {
       try {
         const run = await laboratoryRunService.queryByRunId(runId);
-        if (run.LaboratoryId !== laboratoryId || TERMINAL_STATUSES.includes(run.Status)) {
-          continue;
-        }
+        if (run.LaboratoryId !== laboratoryId) continue;
+
+        const isTerminal = TERMINAL_STATUSES.includes(run.Status);
+        const needsDurationBackfill = isTerminal && run.RunDurationSeconds == null;
+
+        if (isTerminal && !needsDurationBackfill) continue;
+
         runsToProcess.push(run);
       } catch (e) {
         // Optionally log missing runs, but skip

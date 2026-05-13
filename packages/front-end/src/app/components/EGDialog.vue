@@ -63,7 +63,7 @@
             </div>
           </div>
           <div v-if="secondaryMessage">
-            <EGText tag="p" class="mb-6">{{ secondaryMessage }}</EGText>
+            <EGText tag="p" class="mb-6 whitespace-pre-line">{{ secondaryMessage }}</EGText>
           </div>
           <div class="flex justify-end gap-4">
             <div v-if="cancelLabel">

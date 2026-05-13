@@ -17,10 +17,16 @@
       noResultsMsg?: string;
       canSelect?: boolean;
       rowClasses?: (row: any) => string;
+      /**
+       * Name + Description columns share remaining width; Run and Favourite (last two) stay narrow.
+       * Use when columns are [Name, Description, run, favourite] in that order.
+       */
+      narrowRunAndFavouriteColumns?: boolean;
     }>(),
     {
       showPagination: true,
       noResultsMsg: 'No results found',
+      narrowRunAndFavouriteColumns: false,
     },
   );
 
@@ -43,12 +49,13 @@
   });
   const start = computed(() => (page.value - 1) * rowsPerPage.value);
   const totalRows = computed(() => props.tableData.length || 0);
+  const totalPages = computed(() => Math.ceil(totalRows.value / rowsPerPage.value));
 
   watch(
     page,
     (newPage) => {
       if (newPage < 1) page.value = 1;
-      else if (newPage > rowsPerPage.value) page.value = rowsPerPage.value;
+      else if (totalPages.value > 0 && newPage > totalPages.value) page.value = totalPages.value;
     },
     { immediate: true, flush: 'sync' },
   );
@@ -64,7 +71,11 @@
 </script>
 
 <template>
-  <UCard class="rounded-2xl border-none shadow-none" :ui="{ body: 'p-0' }">
+  <UCard
+    class="rounded-2xl border-none shadow-none"
+    :class="{ 'eg-table--narrow-run-favourite': narrowRunAndFavouriteColumns }"
+    :ui="{ body: 'p-0' }"
+  >
     <UTable
       :ui="{
         tr: {
@@ -168,6 +179,80 @@
       width: 50px;
       padding-right: 40px;
       text-align: right;
+    }
+  }
+
+  /*
+   * Name + Description flexible; Run + Favourite narrow and centered.
+   * Do NOT use display:flex on th/td — it breaks table layout and stacks columns.
+   */
+  .eg-table--narrow-run-favourite :deep(table) {
+    table-layout: fixed;
+    width: 100%;
+
+    thead tr th:first-child {
+      width: 34%;
+      min-width: 0;
+      padding-left: 40px;
+      text-align: left;
+    }
+
+    thead tr th:nth-child(2) {
+      width: auto;
+      min-width: 0;
+      text-align: left;
+    }
+
+    thead tr th:nth-child(3),
+    thead tr th:nth-child(4),
+    tbody tr td:nth-child(3),
+    tbody tr td:nth-child(4) {
+      text-align: center !important;
+      vertical-align: middle;
+      padding-top: 0.875rem;
+      padding-bottom: 0.875rem;
+      padding-left: 0.75rem;
+      padding-right: 0.75rem;
+      box-sizing: border-box;
+    }
+
+    thead tr th:nth-child(3),
+    tbody tr td:nth-child(3) {
+      width: 5.5rem;
+    }
+
+    thead tr th:nth-child(4),
+    tbody tr td:nth-child(4) {
+      width: 9.5rem;
+      white-space: nowrap;
+    }
+
+    thead tr th:nth-child(3) button,
+    thead tr th:nth-child(4) button {
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    tbody tr td:nth-child(1) {
+      width: 34%;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    tbody tr td:nth-child(2) {
+      width: auto;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    /* Icon buttons in body: block + auto margins centers under the header text */
+    tbody tr td:nth-child(3) button,
+    tbody tr td:nth-child(4) button {
+      display: inline-flex;
+      margin-left: auto;
+      margin-right: auto;
     }
   }
 </style>

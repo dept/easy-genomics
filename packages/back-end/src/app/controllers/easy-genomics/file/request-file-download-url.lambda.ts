@@ -61,14 +61,22 @@ export const handler: Handler = async (
     const s3Bucket: string = s3Url.hostname;
     const s3Key: string = s3Url.pathname.replace(/^\/*/, ''); // Remove leading forward slashes
 
+    // Security check: ensure the requested S3 object key belongs to the specified laboratory.
+    // The key path is expected to contain the LaboratoryId as one of its path segments.
+    const keyPathSegments = s3Key.split('/').filter(Boolean);
+    if (!keyPathSegments.includes(laboratoryId)) {
+      console.error(`Requested S3 object key '${s3Key}' does not belong to laboratory '${laboratoryId}'.`);
+      throw new UnauthorizedAccessError();
+    }
+
     // Check the S3 Bucket exists in the same AWS Region before creating Pre-Signed S3 Download URL
     const s3BucketLocation = await s3Service.getBucketLocation({ Bucket: s3Bucket });
     // S3 Buckets in 'us-east-1' returns a LocationConstrain of null
     const locationConstraint: BucketLocationConstraint | undefined = s3BucketLocation.LocationConstraint;
 
     if (
-      (process.env.REGION === 'us-east-1' && locationConstraint && locationConstraint !== 'us-east-1') ||
-      (process.env.REGION !== 'us-east-1' && locationConstraint && locationConstraint !== process.env.REGION)
+      (process.env.REGION === 'us-east-1' && locationConstraint && String(locationConstraint) !== 'us-east-1') ||
+      (process.env.REGION !== 'us-east-1' && locationConstraint && String(locationConstraint) !== process.env.REGION)
     ) {
       console.error(
         `Requested S3 Bucket '${s3Bucket}' file download belongs in a different AWS Region from ${process.env.REGION}`,

@@ -91,7 +91,8 @@ export class VpcConstruct extends Construct {
       }
     }
 
-    new CfnOutput(this, 'VpcId', { key: 'VpcId', value: this.vpc.vpcId, exportName: 'VpcId' });
-    new CfnOutput(this, 'VpcArn', { key: 'VpcArn', value: this.vpc.vpcArn, exportName: 'VpcArn' });
+    const exportPrefix = this.props.envType === 'prod' ? '' : `${this.props.envType}-${this.props.envName}-`;
+    new CfnOutput(this, 'VpcId', { key: 'VpcId', value: this.vpc.vpcId, exportName: `${exportPrefix}VpcId` });
+    new CfnOutput(this, 'VpcArn', { key: 'VpcArn', value: this.vpc.vpcArn, exportName: `${exportPrefix}VpcArn` });
   }
 }

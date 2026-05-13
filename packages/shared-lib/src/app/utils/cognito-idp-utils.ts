@@ -8,6 +8,8 @@ import {
   ListUserPoolClientsCommandOutput,
   UserPoolDescriptionType,
   UserPoolClientDescription,
+  DescribeUserPoolCommand,
+  DescribeUserPoolClientCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { CognitoIdpInfo } from '../types/cognito-idp-info';
 
@@ -89,4 +91,41 @@ async function listCognitoIdpUserPoolClients(userPoolId: string | undefined): Pr
   } else {
     return userPoolClients;
   }
+}
+
+/**
+ * Public utility to query Cognito for the configured domain.
+ */
+export async function getCognitoDomainInfo(userPoolId: string): Promise<string | undefined> {
+  const describeUserPoolCommand = new DescribeUserPoolCommand({
+    UserPoolId: userPoolId,
+  });
+
+  const response = await cognitoIdpClient.send(describeUserPoolCommand);
+  return response.UserPool?.Domain;
+}
+
+/**
+ * Public utility to query Cognito for callback/logout urls configured for a client.
+ */
+export async function getCognitoClientUrls(
+  userPoolId: string,
+  userPoolClientId: string,
+): Promise<{ callbackUrls: string; logoutUrls: string }> {
+  const describeClientCommand = new DescribeUserPoolClientCommand({
+    UserPoolId: userPoolId,
+    ClientId: userPoolClientId,
+  });
+
+  const response = await cognitoIdpClient.send(describeClientCommand);
+  const client = response.UserPoolClient;
+
+  if (!client) {
+    throw new Error(`Unable to retrieve Cognito client: ${userPoolClientId}`);
+  }
+
+  return {
+    callbackUrls: (client.CallbackURLs || []).join(','),
+    logoutUrls: (client.LogoutURLs || []).join(','),
+  };
 }

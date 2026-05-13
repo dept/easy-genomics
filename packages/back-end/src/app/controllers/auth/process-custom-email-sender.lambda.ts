@@ -12,6 +12,8 @@ const sesService = new SesService({
   accountId: process.env.ACCOUNT_ID,
   domainName: process.env.DOMAIN_NAME,
   region: process.env.REGION,
+  envType: process.env.ENV_TYPE,
+  envName: process.env.ENV_NAME,
 });
 
 /**

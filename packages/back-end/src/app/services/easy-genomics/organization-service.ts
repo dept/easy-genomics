@@ -10,7 +10,7 @@ import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genom
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
 
-export class OrganizationService extends DynamoDBService implements Service {
+export class OrganizationService extends DynamoDBService implements Service<Organization> {
   readonly ORGANIZATION_TABLE_NAME: string = `${process.env.NAME_PREFIX}-organization-table`;
   readonly UNIQUE_REFERENCE_TABLE_NAME: string = `${process.env.NAME_PREFIX}-unique-reference-table`;
 
@@ -152,7 +152,6 @@ export class OrganizationService extends DynamoDBService implements Service {
               ExpressionAttributeNames: expressionAttributeNames,
               ExpressionAttributeValues: expressionAttributeValues,
               UpdateExpression: updateExpression,
-              ReturnValues: 'ALL_NEW',
             },
           },
           {

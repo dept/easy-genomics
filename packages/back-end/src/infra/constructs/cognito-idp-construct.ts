@@ -5,6 +5,9 @@ import {
   UserPool,
   UserPoolClient,
   UserPoolOperation,
+  UserPoolIdentityProviderGoogle,
+  OAuthScope,
+  UserPoolClientIdentityProvider,
 } from 'aws-cdk-lib/aws-cognito';
 import { Key } from 'aws-cdk-lib/aws-kms';
 import { IFunction } from 'aws-cdk-lib/aws-lambda';
@@ -14,6 +17,13 @@ import { AuthNestedStackProps } from '../types/back-end-stack';
 export interface CognitoIDPConstructProps extends AuthNestedStackProps {
   authLambdaFunctions?: Map<string, IFunction>;
   customSenderKmsKey?: Key;
+  // Google OAuth settings
+  googleClientId?: string;
+  googleClientSecret?: string;
+  // Cognito Domain
+  cognitoDomainPrefix?: string;
+  callbackUrls?: string;
+  logoutUrls?: string;
 }
 
 export class CognitoIdpConstruct extends Construct {
@@ -27,7 +37,6 @@ export class CognitoIdpConstruct extends Construct {
     this.props = props;
     const removalPolicy = props.envType !== 'prod' ? RemovalPolicy.DESTROY : undefined; // Only for Non-Prod
 
-    // The auth construct defines Cognito Resources for user authentication.
     this.userPool = new UserPool(this, 'user-pool', {
       userPoolName: `${props.constructNamespace}-user-pool`,
       selfSignUpEnabled: false,
@@ -48,23 +57,54 @@ export class CognitoIdpConstruct extends Construct {
         requireSymbols: true,
       },
       customSenderKmsKey: props.customSenderKmsKey,
-      removalPolicy: removalPolicy,
+      removalPolicy,
     });
 
+    // ---- COGNITO DOMAIN ----
+    if (props.cognitoDomainPrefix) {
+      this.userPool.addDomain('CognitoDomain', {
+        cognitoDomain: { domainPrefix: props.cognitoDomainPrefix },
+      });
+    }
+
+    // ---- GOOGLE IDP ----
+    let googleIdp;
+    if (props.googleClientId && props.googleClientSecret) {
+      googleIdp = new UserPoolIdentityProviderGoogle(this, 'GoogleIdP', {
+        userPool: this.userPool,
+        clientId: props.googleClientId,
+        clientSecret: props.googleClientSecret,
+        scopes: ['email', 'profile', 'openid'],
+      });
+    }
+
+    // User Pool Client
     this.userPoolClient = this.userPool.addClient('client', {
       userPoolClientName: `${props.constructNamespace}-user-pool-client`,
       preventUserExistenceErrors: true,
       authFlows: {
         userSrp: true,
-        // TODO: `userPassword` is enabled for testing purposes only; remove this in future after
-        //       enabling alternative signin for testing
         userPassword: true,
       },
+      supportedIdentityProviders: googleIdp
+        ? [UserPoolClientIdentityProvider.COGNITO, UserPoolClientIdentityProvider.GOOGLE]
+        : [UserPoolClientIdentityProvider.COGNITO],
+      oAuth: googleIdp
+        ? {
+            flows: { authorizationCodeGrant: true },
+            scopes: [OAuthScope.OPENID, OAuthScope.EMAIL, OAuthScope.PROFILE],
+            callbackUrls: props.callbackUrls?.split(', ') ?? [],
+            logoutUrls: props.logoutUrls?.split(', ') ?? [],
+          }
+        : undefined,
     });
+
+    if (googleIdp) {
+      this.userPoolClient.node.addDependency(googleIdp);
+    }
 
     this.userPoolGroup = new CfnUserPoolGroup(this, 'system-admin-user-pool-group', {
       userPoolId: this.userPool.userPoolId,
-      // the properties below are optional
       description: 'SystemAdmin Group',
       groupName: 'SystemAdmin',
       precedence: 0,

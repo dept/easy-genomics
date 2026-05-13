@@ -21,6 +21,7 @@
  *   NextFlowTowerApiBaseUrl?: <string>,
  *   NextFlowTowerWorkspaceId?: <string>,
  *   HasNextFlowTowerAccessToken?: <boolean>,
+ *   EnableNewWorkflowsByDefault?: <boolean>,
  *   CreatedAt?: <string>,
  *   CreatedBy?: <string>,
  *   ModifiedAt?: <string>,
@@ -41,4 +42,16 @@ export interface Laboratory extends BaseAttributes {
   NextFlowTowerApiBaseUrl?: string;
   NextFlowTowerWorkspaceId?: string;
   HasNextFlowTowerAccessToken?: boolean;
+
+  /**
+   * When true, workflows/pipelines without a DENY row are allowed (new AWS-console workflows included).
+   * When false/omitted, only explicit ALLOW rows grant access.
+   */
+  EnableNewWorkflowsByDefault?: boolean;
+
+  /**
+   * Laboratory-wide run retention policy, in months, applied after a run reaches a terminal state.
+   * - 0 means "never delete run records" (no TTL expiration).
+   */
+  RunRetentionMonths?: number;
 }

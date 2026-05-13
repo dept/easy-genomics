@@ -4,15 +4,20 @@ export interface SesServiceProps {
   accountId: string;
   region: string;
   domainName: string;
+  envType: string;
+  envName: string;
 }
 
 export class SesService {
   readonly sesClient;
   readonly props: SesServiceProps;
+  readonly templateNamePrefix: string;
 
   public constructor(props: SesServiceProps) {
     this.props = props;
     this.sesClient = new SESClient();
+    this.templateNamePrefix =
+      props.envType && props.envName && props.envType !== 'prod' ? `${props.envName}-${props.envType}-` : '';
   }
 
   public async sendNewUserInvitationEmail(
@@ -31,7 +36,7 @@ export class SesService {
       ReplyToAddresses: [`no.reply@${this.props.domainName}`],
       ReturnPath: `no.reply@${this.props.domainName}`,
       SourceArn: `arn:aws:ses:${this.props.region}:${this.props.accountId}:identity/${this.props.domainName}`,
-      Template: 'NewUserInvitationEmailTemplate',
+      Template: `${this.templateNamePrefix}NewUserInvitationEmailTemplate`,
       TemplateData: JSON.stringify({
         COPYRIGHT_YEAR: `${new Date().getFullYear()}`,
         DOMAIN_NAME: this.props.domainName,
@@ -42,11 +47,11 @@ export class SesService {
     });
 
     try {
-      const response = await this.sesClient.send<SendTemplatedEmailCommand>(sendTemplatedEmailCommand);
+      const response = await this.sesClient.send(sendTemplatedEmailCommand);
       console.info(`Send New Existing User Invitation Email to ${toAddress} response: `, response);
       return response;
     } catch (error: unknown) {
-      throw new Error(`${logRequestMessage} unsuccessful: ${error.message}`);
+      throw new Error(`${logRequestMessage} unsuccessful: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -65,7 +70,7 @@ export class SesService {
       ReplyToAddresses: [`no.reply@${this.props.domainName}`],
       ReturnPath: `no.reply@${this.props.domainName}`,
       SourceArn: `arn:aws:ses:${this.props.region}:${this.props.accountId}:identity/${this.props.domainName}`,
-      Template: 'ExistingUserCourtesyEmailTemplate',
+      Template: `${this.templateNamePrefix}ExistingUserCourtesyEmailTemplate`,
       TemplateData: JSON.stringify({
         COPYRIGHT_YEAR: `${new Date().getFullYear()}`,
         DOMAIN_NAME: this.props.domainName,
@@ -75,11 +80,11 @@ export class SesService {
     });
 
     try {
-      const response = await this.sesClient.send<SendTemplatedEmailCommand>(sendTemplatedEmailCommand);
+      const response = await this.sesClient.send(sendTemplatedEmailCommand);
       console.info(`Send Existing User Courtesy Email to ${toAddress} response: `, response);
       return response;
     } catch (error: unknown) {
-      throw new Error(`${logRequestMessage} unsuccessful: ${error.message}`);
+      throw new Error(`${logRequestMessage} unsuccessful: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -98,7 +103,7 @@ export class SesService {
       ReplyToAddresses: [`no.reply@${this.props.domainName}`],
       ReturnPath: `no.reply@${this.props.domainName}`,
       SourceArn: `arn:aws:ses:${this.props.region}:${this.props.accountId}:identity/${this.props.domainName}`,
-      Template: 'UserForgotPasswordEmailTemplate',
+      Template: `${this.templateNamePrefix}UserForgotPasswordEmailTemplate`,
       TemplateData: JSON.stringify({
         COPYRIGHT_YEAR: `${new Date().getFullYear()}`,
         DOMAIN_NAME: this.props.domainName,
@@ -109,11 +114,11 @@ export class SesService {
     });
 
     try {
-      const response = await this.sesClient.send<SendTemplatedEmailCommand>(sendTemplatedEmailCommand);
+      const response = await this.sesClient.send(sendTemplatedEmailCommand);
       console.info(`Send User Forgot Password Email to ${toAddress} response: `, response);
       return response;
     } catch (error: unknown) {
-      throw new Error(`${logRequestMessage} unsuccessful: ${error.message}`);
+      throw new Error(`${logRequestMessage} unsuccessful: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }

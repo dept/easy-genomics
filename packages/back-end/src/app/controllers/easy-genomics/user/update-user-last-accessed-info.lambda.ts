@@ -1,14 +1,14 @@
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
+import {
+  InvalidRequestError,
+  RequiredIdNotFoundError,
+  UnauthorizedAccessError,
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import {
   UpdateUserLastAccessedInfo,
   UpdateUserLastAccessedInfoSchema,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user';
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
-import {
-  InvalidRequestError,
-  RequiredIdNotFoundError,
-  UnauthorizedAccessError,
-} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { UserService } from '@BE/services/easy-genomics/user-service';
 

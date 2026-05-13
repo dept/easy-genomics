@@ -138,24 +138,24 @@ export class DynamoDBService {
    * @param command
    * @param data
    */
-  private getDynamoDBCommand = <DynamoDBCommandInput>(command: DynamoDBCommand, data: DynamoDBCommandInput): any => {
+  private getDynamoDBCommand = (command: DynamoDBCommand, data: unknown): any => {
     switch (command) {
       case DynamoDBCommand.PUT_ITEM:
-        return new PutItemCommand(data);
+        return new PutItemCommand(data as PutItemCommandInput);
       case DynamoDBCommand.TRANSACT_WRITE:
-        return new TransactWriteItemsCommand(data);
+        return new TransactWriteItemsCommand(data as TransactWriteItemsCommandInput);
       case DynamoDBCommand.SCAN_ITEMS:
-        return new ScanCommand(data);
+        return new ScanCommand(data as ScanCommandInput);
       case DynamoDBCommand.BATCH_GET_ITEM:
-        return new BatchGetItemCommand(data);
+        return new BatchGetItemCommand(data as BatchGetItemCommandInput);
       case DynamoDBCommand.GET_ITEM:
-        return new GetItemCommand(data);
+        return new GetItemCommand(data as GetItemCommandInput);
       case DynamoDBCommand.QUERY_ITEMS:
-        return new QueryCommand(data);
+        return new QueryCommand(data as QueryCommandInput);
       case DynamoDBCommand.UPDATE_ITEM:
-        return new UpdateItemCommand(data);
+        return new UpdateItemCommand(data as UpdateItemCommandInput);
       case DynamoDBCommand.DELETE_ITEM:
-        return new DeleteItemCommand(data);
+        return new DeleteItemCommand(data as DeleteItemCommandInput);
       default:
         throw new Error(`Unsupported DynamoDB Command '${command}'`);
     }
@@ -166,7 +166,10 @@ export class DynamoDBService {
    * ExpressionAttributeNames from an object's property names.
    * @param object
    */
-  public getExpressionAttributeNamesDefinition = <T>(object: T, exclusions?: string[]): { [p: string]: string } => {
+  public getExpressionAttributeNamesDefinition = <T extends object>(
+    object: T,
+    exclusions?: string[],
+  ): { [p: string]: string } => {
     const objectExpressionAttributeNames: { [p: string]: string }[] = Object.keys(object)
       .filter((key: string) => !exclusions?.includes(key))
       .map((key: string) => {
@@ -188,12 +191,16 @@ export class DynamoDBService {
    *
    * @param object
    */
-  public getExpressionAttributeValuesDefinition = <T>(object: T, exclusions?: string[]): { [p: string]: any } => {
+  public getExpressionAttributeValuesDefinition = <T extends object>(
+    object: T,
+    exclusions?: string[],
+  ): { [p: string]: any } => {
+    const obj = object as Record<string, unknown>;
     const objectExpressionAttributeValues: { [p: string]: any }[] = Object.keys(object)
       .filter((key: string) => !exclusions?.includes(key))
       .map((key: string) => {
         const attributeId = `${key.charAt(0).toLowerCase() + key.slice(1)}`; // Camel Case
-        const attributeValue = object[key];
+        const attributeValue = obj[key];
         const attributeType = typeof attributeValue;
 
         if (attributeType === 'boolean') {
@@ -202,19 +209,20 @@ export class DynamoDBService {
           };
         } else if (attributeType === 'number') {
           return {
-            [`:${attributeId}`]: { N: attributeValue }, // Number
+            [`:${attributeId}`]: { N: `${attributeValue}` }, // Number
           };
         } else if (attributeType === 'string') {
           return {
             [`:${attributeId}`]: { S: attributeValue }, // String
           };
         } else if (attributeType === 'object') {
-          if (Array.isArray(object[key])) {
-            if (object[key].every((_) => typeof _ === 'number')) {
+          if (Array.isArray(obj[key])) {
+            if (obj[key].every((_: unknown) => typeof _ === 'number')) {
+              const numberSet = (attributeValue as number[]).map((n) => `${n}`);
               return {
-                [`:${attributeId}`]: { NS: attributeValue }, // Number Set
+                [`:${attributeId}`]: { NS: numberSet }, // Number Set
               };
-            } else if (object[key].every((_) => typeof _ === 'string')) {
+            } else if (obj[key].every((_: unknown) => typeof _ === 'string')) {
               return {
                 [`:${attributeId}`]: { SS: attributeValue }, // String Set
               };
@@ -244,7 +252,7 @@ export class DynamoDBService {
    * @param attributeNames
    * @param attributeValues
    */
-  public getUpdateExpression = <T>(attributeNames: T, attributeValues: T): string => {
+  public getUpdateExpression = <T extends object>(attributeNames: T, attributeValues: T): string => {
     const attributeNameKeys = Object.keys(attributeNames);
     const attributeValueKeys = Object.keys(attributeValues);
 

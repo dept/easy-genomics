@@ -13,6 +13,8 @@ const sesService = new SesService({
   accountId: process.env.ACCOUNT_ID,
   region: process.env.REGION,
   domainName: process.env.DOMAIN_NAME,
+  envType: process.env.ENV_TYPE,
+  envName: process.env.ENV_NAME,
 });
 
 export class UserInviteService {

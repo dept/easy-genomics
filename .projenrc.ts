@@ -23,6 +23,7 @@ const defaultReleaseBranch = 'main';
 const cdkVersion = '2.176.0';
 const nodeVersion = '20.15.0';
 const pnpmVersion = '9.15.0';
+const awsSdkClientOmicsVersion = '^3.1019.0';
 const authorName = 'DEPT Agency';
 const copyrightOwner = authorName;
 const copyrightPeriod = `${new Date().getFullYear()}`;
@@ -151,7 +152,8 @@ const root = new typescript.TypeScriptProject({
   packageManager: javascript.NodePackageManager.PNPM,
   prettier: true,
   prettierOptions,
-  projenCommand: 'pnpm dlx projen',
+  // Use the pinned workspace projen version (avoid `pnpm dlx` drift).
+  projenCommand: 'pnpm exec projen',
   projenrcTs: true,
   sampleCode: false,
   tsconfig: tsConfigOptions,
@@ -221,7 +223,7 @@ root.addScripts({
     'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --verbose=true && ' +
     'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --verbose=true',
   ['prepare']: 'husky || true', // Enable Husky each time projen is synthesized
-  ['projen']: 'nx reset; pnpm dlx projen', // Clear NX cache each time projen is synthesized to avoid cache disk-space overconsumption
+  ['projen']: 'nx reset; pnpm exec projen', // Clear NX cache each time projen is synthesized to avoid cache disk-space overconsumption
   ['pre-commit']: 'lint-staged',
 });
 
@@ -252,7 +254,7 @@ const sharedLib = new typescript.TypeScriptProject({
   deps: [
     '@aws-sdk/client-api-gateway',
     '@aws-sdk/client-cognito-identity-provider',
-    '@aws-sdk/client-omics',
+    `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-s3',
     '@nestjs/config',
     'aws-cdk',
@@ -266,6 +268,10 @@ const sharedLib = new typescript.TypeScriptProject({
   tsconfig: {
     ...tsConfigOptions,
     compilerOptions: {
+      ...tsConfigOptions.compilerOptions,
+      // Emit lib/app/... (not lib/src/app/...) so deep imports like
+      // @easy-genomics/shared-lib/lib/app/utils/common resolve after compile.
+      rootDir: 'src',
       baseUrl: '.',
       paths: {
         '@BE/*': ['../packages/back-end/src/app/*'],
@@ -293,6 +299,18 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
   defaultReleaseBranch: defaultReleaseBranch,
   docgen: false,
   eslint: true,
+  jest: true,
+  jestOptions: {
+    jestConfig: {
+      // Ensure Jest can resolve tsconfig path aliases used by lambda handlers/tests.
+      moduleNameMapper: {
+        '^@BE/(.*)$': '<rootDir>/src/app/$1',
+        '^@SharedLib/(.*)$': '<rootDir>/../shared-lib/src/app/$1',
+        '^@FE/(.*)$': '<rootDir>/../front-end/src/app/$1',
+      },
+      collectCoverageFrom: ['<rootDir>/src/app/**/*.ts', '!<rootDir>/src/app/**/*.d.ts'],
+    },
+  },
   lambdaAutoDiscover: false,
   requireApproval: awscdk.ApprovalLevel.NEVER,
   sampleCode: false,
@@ -319,19 +337,22 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@aws-crypto/encrypt-node',
     '@aws-sdk/client-cognito-identity-provider',
     '@aws-sdk/client-dynamodb',
-    '@aws-sdk/client-omics',
+    `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-ses',
     '@aws-sdk/client-sns',
     '@aws-sdk/client-sqs',
+    '@aws-sdk/client-secrets-manager',
     '@aws-sdk/client-ssm',
     '@aws-sdk/client-sso-oidc',
     '@aws-sdk/client-sts',
     '@aws-sdk/client-s3',
     '@aws-sdk/lib-dynamodb',
+    '@aws-sdk/lib-storage',
     '@aws-sdk/s3-request-presigner',
     '@aws-sdk/types',
     '@aws-sdk/util-dynamodb',
     '@easy-genomics/shared-lib@workspace:*',
+    'archiver',
     'aws-cdk-lib',
     'aws-lambda',
     'base64-js',
@@ -343,24 +364,48 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
   devDeps: [
     '@aws-sdk/types',
     '@types/aws-lambda',
+    '@types/express',
     '@types/jsonwebtoken',
     '@types/node',
+    '@types/archiver',
     '@types/uuid',
+    'aws-jwt-verify',
     'aws-sdk-client-mock',
-    'prettier',
     'eslint-plugin-prettier',
+    'express',
+    'prettier',
+    'tsx',
   ],
 });
 backEndApp.addScripts({
-  ['cdk-audit']: 'export CDK_AUDIT=true && pnpm dlx projen build',
-  ['build']: 'pnpm dlx projen compile && pnpm dlx projen test && pnpm dlx projen build',
-  ['deploy']: 'pnpm cdk bootstrap && pnpm dlx projen deploy',
+  ['cdk-audit']: 'export CDK_AUDIT=true && pnpm exec projen build',
+  ['build']: 'pnpm exec projen compile && pnpm exec projen test && pnpm exec projen build',
+  ['deploy']: 'pnpm cdk bootstrap && pnpm exec projen deploy',
   ['build-and-deploy']: 'pnpm -w run build-back-end && pnpm run deploy --require-approval any-change', // Run root build-back-end script to inc shared-lib
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
+  ['local-server']: 'tsx src/local-server/index.ts',
+  ['local-server:watch']: 'tsx watch src/local-server/index.ts',
+  ['invoke-process-handler']: 'tsx src/local-server/invoke-process-handler.ts',
+  ['backfill-omics-run-tags']: 'tsx scripts/backfill-omics-run-tags.ts',
+  ['backfill-omics-run-tags:dry-run']: 'tsx scripts/backfill-omics-run-tags.ts --dry-run',
+  ['recompute-laboratory-run-retention']:
+    'tsx scripts/recompute-laboratory-run-retention.ts --laboratoryId $LAB_ID --retentionMonths $RETENTION_MONTHS',
 });
 
 if (backEndApp.eslint) {
   backEndApp.eslint.addRules({ ...eslintGlobalRules });
+  // `src/local-server/**` is a dev-only entrypoint, so it may import devDependencies.
+  // Keep the default rule behavior everywhere else.
+  backEndApp.eslint.addRules({
+    'import/no-extraneous-dependencies': [
+      'error',
+      {
+        devDependencies: ['**/test/**', '**/build-tools/**', '**/src/local-server/**'],
+        optionalDependencies: false,
+        peerDependencies: true,
+      },
+    ],
+  });
   backEndApp.eslint.addPlugins('prettier');
 }
 // Defines the Easy Genomics 'front-end' subproject
@@ -405,12 +450,13 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
   },
   deps: [
     '@aws-amplify/ui-vue@3.1.30',
-    '@aws-sdk/client-omics',
+    `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-s3',
     '@aws-sdk/s3-request-presigner',
     '@aws-sdk/util-format-url',
     '@easy-genomics/shared-lib@workspace:*',
     '@iconify-json/heroicons',
+    '@iconify-json/logos@1.2.10',
     '@nuxt/ui@2.18.4', // Lock to version 2.18.4 due to input text bug
     '@pinia/nuxt',
     '@playwright/test',
@@ -459,12 +505,12 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
   ],
 });
 frontEndApp.addScripts({
-  ['cdk-audit']: 'export CDK_AUDIT=true && pnpm dlx projen build',
+  ['cdk-audit']: 'export CDK_AUDIT=true && pnpm exec projen build',
   ['build']:
-    'pnpm run nuxt-reset && pnpm run nuxt-prepare && pnpm dlx projen test && pnpm dlx projen build && pnpm run nuxt-load-settings && pnpm run nuxt-generate',
-  ['deploy']: 'pnpm cdk bootstrap && pnpm dlx projen deploy',
+    'pnpm run nuxt-reset && pnpm run nuxt-prepare && pnpm exec projen test && pnpm exec projen build && pnpm run nuxt-load-settings && pnpm run nuxt-generate',
+  ['deploy']: 'pnpm cdk bootstrap && pnpm exec projen deploy',
   ['build-and-deploy']:
-    'pnpm -w run build-front-end && pnpm cdk bootstrap && pnpm dlx projen deploy --require-approval any-change', // Run root build-front-end script to inc shared-lib
+    'pnpm -w run build-front-end && pnpm cdk bootstrap && pnpm exec projen deploy --require-approval any-change', // Run root build-front-end script to inc shared-lib
   ['nuxt-dev']: 'pnpm -w run build-front-end && pnpm kill-port 3000 && nuxt dev',
   ['nuxt-load-settings']: 'npx esrun nuxt-load-configuration-settings.ts',
   ['nuxt-generate']: 'nuxt generate',
@@ -484,6 +530,7 @@ frontEndApp.addScripts({
   ['nuxt-reset']: 'nuxt cleanup',
   ['nftower-spec-to-zod']: "pnpm typed-openapi ../shared-lib/src/app/types/nf-tower/seqera-api-latest.yml -r 'zod'",
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
+  ['local-server']: 'USE_LOCAL_BACKEND=1 pnpm run nuxt-dev',
 });
 
 // Setup Frontend App ESLint configuration
@@ -502,8 +549,18 @@ new PnpmWorkspace(root);
 new VscodeSettings(root);
 new Nx(root);
 new Husky(root);
-new GithubActionsCICDRelease(root, { environment: 'quality', pnpmVersion: pnpmVersion, e2e: true });
-new GithubActionsCICDRelease(root, { environment: 'quality-uat', pnpmVersion: pnpmVersion, e2e: true });
+new GithubActionsCICDRelease(root, {
+  environment: 'quality',
+  pnpmVersion: pnpmVersion,
+  onPushBranch: 'development',
+  e2e: true,
+});
+new GithubActionsCICDRelease(root, {
+  environment: 'quality-uat',
+  pnpmVersion: pnpmVersion,
+  onPushBranch: 'staging',
+  e2e: true,
+});
 new GithubActionsCICDRelease(root, {
   environment: 'sandbox',
   pnpmVersion: pnpmVersion,
@@ -536,7 +593,10 @@ root.gitignore.addPatterns(
   'packages/front-end/test-results',
   'packages/front-end/tests/e2e/.auth/*.json',
   'packages/front-end/playwright-report',
+  '.pnpm-store',
 );
+// Exception: Include .env example files (used for local dev setup documentation)
+root.gitignore.addPatterns('!packages/back-end/.env.local.example', '!config/.env.nuxt.local.example');
 
 // Synthesize the project
 root.synth();

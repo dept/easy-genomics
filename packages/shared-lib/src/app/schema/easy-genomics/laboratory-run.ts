@@ -17,6 +17,7 @@ export const LaboratoryRunSchema = z
     Status: z.string(),
     Owner: z.string(),
     WorkflowName: z.string().optional(),
+    WorkflowVersionName: z.string().optional(),
     ExternalRunId: z.string().optional(),
     InputS3Url: z.string().optional(),
     OutputS3Url: z.string().optional(),
@@ -26,6 +27,22 @@ export const LaboratoryRunSchema = z
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
     ModifiedBy: z.string().optional(),
+    /**
+     * ISO timestamp indicating when the run first reached a terminal state.
+     * Used as the anchor for retention/TTL recomputation.
+     */
+    TerminalAt: z.string().optional(),
+    /**
+     * DynamoDB TTL epoch timestamp (in seconds).
+     * When enabled, DynamoDB will remove items after this timestamp.
+     */
+    ExpiresAt: z.number().optional(),
+    /**
+     * Actual execution duration reported by the underlying platform, in seconds.
+     * Populated by the status-check processor from Seqera `workflow.duration`
+     * or AWS HealthOmics `stopTime - startTime`.
+     */
+    RunDurationSeconds: z.number().nonnegative().optional(),
   })
   .strict();
 
@@ -41,6 +58,7 @@ export const ReadLaboratoryRunSchema = z
     Status: z.string(),
     Owner: z.string(), // User Email for display purposes
     WorkflowName: z.string().optional(), // Seqera Pipeline Name or AWS HealthOmics Workflow Name
+    WorkflowVersionName: z.string().optional(),
     ExternalRunId: z.string().optional(),
     InputS3Url: z.string().optional(),
     OutputS3Url: z.string().optional(),
@@ -50,6 +68,9 @@ export const ReadLaboratoryRunSchema = z
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
     ModifiedBy: z.string().optional(),
+    TerminalAt: z.string().optional(),
+    ExpiresAt: z.number().optional(),
+    RunDurationSeconds: z.number().nonnegative().optional(),
   })
   .strict();
 export type ReadLaboratoryRun = z.infer<typeof ReadLaboratoryRunSchema>;
@@ -63,6 +84,7 @@ export const AddLaboratoryRunSchema = z
     PlatformApiBaseUrl: z.string().optional(),
     Status: z.string(),
     WorkflowName: z.string().optional(), // Seqera Pipeline Name or AWS HealthOmics Workflow Name
+    WorkflowVersionName: z.string().optional(),
     ExternalRunId: z.string().optional(),
     InputS3Url: z.string().optional(),
     OutputS3Url: z.string().optional(),

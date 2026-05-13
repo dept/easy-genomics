@@ -1,3 +1,9 @@
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
+import {
+  InvalidRequestError,
+  LaboratoryNotFoundError,
+  UnauthorizedAccessError,
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import {
   AddLaboratoryRun,
   AddLaboratoryRunSchema,
@@ -5,12 +11,6 @@ import {
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import { SnsProcessingEvent } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
-import {
-  InvalidRequestError,
-  LaboratoryNotFoundError,
-  UnauthorizedAccessError,
-} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
@@ -21,6 +21,12 @@ import {
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
+import {
+  calculateExpiresAtEpochSeconds,
+  getRetentionMonthsOrDefault,
+  isTerminalLaboratoryRunStatus,
+  shouldExpireWithRetentionMonths,
+} from '@BE/utils/laboratory-run-ttl-utils';
 
 const laboratoryRunService = new LaboratoryRunService();
 const laboratoryService = new LaboratoryService();
@@ -57,6 +63,14 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
+    const createdAt = new Date();
+    const isTerminalAtCreate = isTerminalLaboratoryRunStatus(request.Status);
+    const retentionMonths = getRetentionMonthsOrDefault(laboratory.RunRetentionMonths);
+    const laboratorioRunExpiresAt: number | undefined =
+      isTerminalAtCreate && shouldExpireWithRetentionMonths(retentionMonths)
+        ? calculateExpiresAtEpochSeconds(createdAt, retentionMonths)
+        : undefined;
+
     const laboratoryRun: LaboratoryRun = await laboratoryRunService.add(<LaboratoryRun>{
       LaboratoryId: laboratory.LaboratoryId,
       RunId: request.RunId,
@@ -68,13 +82,16 @@ export const handler: Handler = async (
       Status: request.Status,
       Owner: currentUserEmail,
       WorkflowName: request.WorkflowName,
+      WorkflowVersionName: request.WorkflowVersionName,
       ExternalRunId: request.ExternalRunId,
       InputS3Url: request.InputS3Url,
       OutputS3Url: request.OutputS3Url,
       SampleSheetS3Url: request.SampleSheetS3Url,
       Settings: JSON.stringify(request.Settings || {}),
-      CreatedAt: new Date().toISOString(),
+      CreatedAt: createdAt.toISOString(),
       CreatedBy: currentUserId,
+      ...(isTerminalAtCreate ? { TerminalAt: createdAt.toISOString() } : {}),
+      ...(laboratorioRunExpiresAt !== undefined ? { ExpiresAt: laboratorioRunExpiresAt } : {}),
     });
 
     if (laboratoryRun.ExternalRunId) {

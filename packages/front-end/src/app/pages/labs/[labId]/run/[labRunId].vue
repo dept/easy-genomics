@@ -1,5 +1,4 @@
 <script setup lang="ts">
-  import { S3Response } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-list-bucket-objects';
   import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
   import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import { useLabsStore, useRunStore, useUiStore } from '@FE/stores';
@@ -19,25 +18,40 @@
 
   const lab = computed<Laboratory | null>(() => labsStore.labs[labId] ?? null);
   const labRun = computed<LaboratoryRun | null>(() => runStore.labRuns[labRunId] ?? null);
-  // The LaboratoryRun's InputS3Url is the authoritative reference to obtain S3Bucket & S3Prefix for the File Manager
+  // Prefer OutputS3Url as the authoritative reference for the File Manager root when available (supports custom output dirs).
+  // Fall back to InputS3Url for legacy runs where OutputS3Url was not set.
   const inputS3Url = computed<string | null>(() => labRun.value?.InputS3Url ?? null);
+  const outputS3Url = computed<string | null>(() => labRun.value?.OutputS3Url ?? null);
+  const effectiveRootS3Url = computed<string | null>(() => outputS3Url.value ?? inputS3Url.value);
   const s3Bucket = computed<string | null>(
-    () => inputS3Url.value?.match(/(?<=^s3:\/\/)([a-z0-9][a-z0-9-]{1,61}[a-z0-9])(?=\/*)/g)?.toString() ?? null,
+    () => effectiveRootS3Url.value?.match(/(?<=^s3:\/\/)([a-z0-9][a-z0-9-]{1,61}[a-z0-9])(?=\/*)/g)?.toString() ?? null,
   );
   const s3Prefix = computed<string | null>(
-    () => inputS3Url.value?.match(/(?<=^s3:\/\/[a-z0-9][a-z0-9-]{1,61}[a-z0-9]\/)(.*)/g)?.toString() ?? null,
+    () => effectiveRootS3Url.value?.match(/(?<=^s3:\/\/[a-z0-9][a-z0-9-]{1,61}[a-z0-9]\/)(.*)/g)?.toString() ?? null,
   );
-  const s3Contents = ref<S3Response | null>(null);
 
   const outputPath = computed<string[] | null>(() => {
-    const outputS3Url = labRun.value?.OutputS3Url ?? null;
-    if (inputS3Url.value === null || outputS3Url === null) return null;
+    const run = labRun.value;
+    const outputUrl = run?.OutputS3Url ?? null;
+    const inputUrl = inputS3Url.value;
+
+    // If we have an explicit OutputS3Url, the File Manager root is that location.
+    // For AWS HealthOmics runs, Omics generates an additional sub-folder with the ExternalRunId
+    // which we still want to auto-descend into.
+    if (outputUrl) {
+      if (run?.Platform === 'AWS HealthOmics' && !!run.ExternalRunId) {
+        return [run.ExternalRunId];
+      }
+      return null;
+    }
+
+    if (!inputUrl) return null;
 
     // get length of shared prefix
     let i = 0;
-    while (inputS3Url.value[i] === outputS3Url[i]) i++;
+    while (inputUrl[i] === outputUrl[i]) i++;
 
-    let outputRelativeLocation = outputS3Url.slice(i);
+    let outputRelativeLocation = (run?.OutputS3Url ?? '').slice(i);
     if (!outputRelativeLocation.match(/^(\/[^\/]+)+$/)) return null;
 
     // omics generates an additional sub-folder with the omics run id which we also want to descend into
@@ -56,10 +70,7 @@
   }
 
   onBeforeMount(async () => {
-    await Promise.all([
-      fetchLabRuns(), // this is in case the runs haven't been loaded by the lab page already
-      fetchS3Content(),
-    ]);
+    await fetchLabRuns();
   });
 
   async function fetchLabRuns() {
@@ -68,26 +79,6 @@
       await runStore.loadLabRunsForLab(labId);
     } finally {
       uiStore.setRequestComplete('loadLabRuns');
-    }
-  }
-
-  async function fetchS3Content() {
-    useUiStore().setRequestPending('fetchS3Content');
-    if (s3Bucket.value && s3Prefix.value) {
-      try {
-        const res = await $api.file.requestListBucketObjects({
-          LaboratoryId: labId,
-          S3Bucket: `${s3Bucket.value}`,
-          S3Prefix: `${s3Prefix.value}`,
-        });
-        s3Contents.value = res || null;
-      } catch (error) {
-        console.error('Error fetching S3 content:', error);
-      } finally {
-        useUiStore().setRequestComplete('fetchS3Content');
-      }
-    } else {
-      s3Contents.value = null;
     }
   }
 
@@ -184,6 +175,7 @@
       <!-- Run Details -->
       <div v-if="item.key === 'runDetails'" class="space-y-3">
         <section
+          v-if="labRun"
           class="stroke-light flex flex-col rounded-none rounded-b-2xl border border-solid bg-white p-6 pt-0 max-md:px-5"
         >
           <dl class="mt-4 space-y-0">
@@ -197,10 +189,15 @@
               <dd :class="rowContentStyle">{{ labRun.WorkflowName }}</dd>
             </div>
 
+            <div v-if="labRun.Platform === 'AWS HealthOmics'" :class="rowStyle">
+              <dt :class="rowLabelStyle">Workflow version</dt>
+              <dd :class="rowContentStyle">{{ labRun.WorkflowVersionName || '—' }}</dd>
+            </div>
+
             <div :class="rowStyle">
               <dt :class="rowLabelStyle">{{ pipelineOrWorkflow }} Run Status</dt>
               <dd :class="rowContentStyle">
-                <EGStatusChip :status="labRun?.Status" />
+                <EGStatusChip :status="labRun.Status" />
               </dd>
             </div>
 
@@ -230,7 +227,7 @@
                 <EGS3SampleSheetBar
                   :url="labRun.SampleSheetS3Url"
                   :lab-id="labId"
-                  :lab-name="lab.labName"
+                  :lab-name="lab?.Name ?? ''"
                   :pipeline-or-workflow-name="labRun.WorkflowName"
                   :platform="labRun.Platform"
                   :run-name="labRun.RunName"
@@ -258,11 +255,10 @@
       <div v-if="item.key === 'fileManager'" class="space-y-3">
         <EGFileExplorer
           :lab-id="labId"
+          :run-id="labRunId"
           :s3-bucket="s3Bucket"
           :s3-prefix="s3Prefix"
-          :s3-contents="s3Contents"
           :start-path="outputPath"
-          :is-loading="useUiStore().isRequestPending('fetchS3Content')"
         />
       </div>
     </template>

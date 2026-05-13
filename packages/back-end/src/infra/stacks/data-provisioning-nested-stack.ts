@@ -65,7 +65,7 @@ export class DataProvisioningNestedStack extends NestedStack {
 
       // S3 Bucket Names must be globally unique and less than 63 in length
       const s3BucketFullName = `${this.props.env.account!}-${this.props.namePrefix}-lab-bucket`;
-      if (s3BucketFullName.length > 63) {
+      if (s3BucketFullName && s3BucketFullName.length > 63) {
         throw new Error(`S3 Bucket Name: "${s3BucketFullName}" is too long`);
       }
       this.s3Construct.createBucket(s3BucketFullName, this.props.envType);

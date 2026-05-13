@@ -1,4 +1,5 @@
 import { LaboratoryRunSchema } from '@easy-genomics/shared-lib/lib/app/schema/easy-genomics/laboratory-run';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   InvalidRequestError,
   LaboratoryNotFoundError,
@@ -7,7 +8,6 @@ import {
 import { ReadLaboratoryRun } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
@@ -52,9 +52,9 @@ export const handler: Handler = async (
     const laboratoryRuns: LaboratoryRun[] = await laboratoryRunService.queryByLaboratoryId(laboratoryId);
 
     // Get optional query parameter(s)
-    const queryParameters: [string, string][] = <[string, string][]>(
-      // Exclude the mandatory 'LaboratoryId' query parameter
-      Object.entries(event.queryStringParameters).filter((_: [string, string]) => _[0] !== 'LaboratoryId')
+    const params = event.queryStringParameters ?? {};
+    const queryParameters: [string, string][] = Object.entries(params).filter(
+      (entry): entry is [string, string] => entry[0] !== 'LaboratoryId' && entry[1] !== undefined,
     );
     // Sanitize query parameters to the LaboratoryRun object's properties
     const filters: [string, string][] = getFilters(Object.keys(LaboratoryRunSchema.shape), queryParameters);

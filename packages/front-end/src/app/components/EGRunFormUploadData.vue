@@ -12,6 +12,7 @@
     UploadedFileInfo,
     UploadedFilePairInfo,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/upload/s3-file-upload-sample-sheet';
+  import { validateSampleSheetFile } from '@FE/utils/sample-sheet-utils';
   import { useToastStore } from '@FE/stores';
   import { useNetwork } from '@vueuse/core';
   import { RunType } from '@easy-genomics/shared-lib/src/app/types/base-entity';
@@ -50,6 +51,7 @@
   const toastStore = useToastStore();
   const labsStore = useLabsStore();
   const uiStore = useUiStore();
+  const userStore = useUserStore();
 
   const emit = defineEmits(['next-step', 'previous-step', 'step-validated']);
   const props = defineProps<{
@@ -64,7 +66,12 @@
   const UPLOAD_TIMEOUT = 600000; // 10 mins
 
   const chooseFilesButton = ref<HTMLButtonElement | null>(null);
+  const sampleSheetFileInput = ref<HTMLInputElement | null>(null);
   const isDropzoneActive = ref(false);
+  const isUploadingSampleSheet = ref(false);
+  const sampleSheetValidationError = ref<string | null>(null);
+  const sampleIdSplitPattern = ref(userStore.currentUserDetails.sampleIdSplitPattern ?? '');
+  const showAdvancedOptions = ref(!!sampleIdSplitPattern.value);
 
   // Track ongoing upload requests
   const uploadControllers = ref<{ [key: string]: AbortController }>({});
@@ -310,10 +317,11 @@
 
   function addFileToFilePairs(fileDetails: FileDetails) {
     const sampleId = getSampleIdFromRFileName(fileDetails.name);
+    const readDirection = getReadDirection(fileDetails.name);
     const fileName = getFileNameWithoutExt(fileDetails.name);
 
     // handle files without R values
-    if (!sampleId) {
+    if (!sampleId || !readDirection) {
       // file does not have an R_ value, so it must be a single file, and cannot be paired
       // make a new pair with just this file as R1
       filePairs.value.push({
@@ -352,18 +360,44 @@
   }
 
   function addToFilePair(fileDetails: FileDetails, filePair: FilePair) {
-    if (fileDetails.name.includes('_R1_')) {
+    const readDirection = getReadDirection(fileDetails.name);
+    if (readDirection === 'R1') {
       filePair.r1File = fileDetails;
-    } else if (fileDetails.name.includes('_R2_')) {
+    } else if (readDirection === 'R2') {
       filePair.r2File = fileDetails;
     } else {
-      const message = `File ${fileDetails.name} does not contain _R1_ or _R2_`;
+      const message = `File ${fileDetails.name} does not contain a recognized read indicator`;
       useToastStore().error(message);
       throw new Error(message);
     }
   }
 
+  function getReadDirection(fileName: string): 'R1' | 'R2' | null {
+    const nameWithoutExt = getFileNameWithoutExt(fileName);
+
+    // Backward-compatible read detection for existing R1/R2 naming conventions
+    if (/_R1(?:_|$)/i.test(nameWithoutExt)) return 'R1';
+    if (/_R2(?:_|$)/i.test(nameWithoutExt)) return 'R2';
+
+    // Custom split pattern mode (e.g. _S1_ / _S2_)
+    const pattern = sampleIdSplitPattern.value;
+    if (!pattern) return null;
+
+    const patternIndex = nameWithoutExt.indexOf(pattern);
+    if (patternIndex === -1) return null;
+
+    const suffixAfterPattern = nameWithoutExt.substring(patternIndex + pattern.length);
+    const readNumberMatch = suffixAfterPattern.match(/^([12])(?:_|$)/);
+    if (!readNumberMatch) return null;
+
+    return readNumberMatch[1] === '1' ? 'R1' : 'R2';
+  }
+
   function getSampleIdFromRFileName(fileName: string): string | null {
+    if (sampleIdSplitPattern.value) {
+      const idx = fileName.indexOf(sampleIdSplitPattern.value);
+      return idx !== -1 ? fileName.substring(0, idx) || null : null;
+    }
     return fileName.substring(0, fileName.lastIndexOf('_R')) || null;
   }
 
@@ -381,10 +415,89 @@
     isDropzoneActive.value = val;
   }
 
+  function validateSplitPatternAgainstFiles(): boolean {
+    const pattern = sampleIdSplitPattern.value;
+    if (!pattern || files.value.length === 0) return true;
+
+    // Block patterns containing _R1/_R2 — they would match only one read direction,
+    // leaving the other direction's files with no sample ID and breaking pairing.
+    if (/_R[12]/i.test(pattern)) {
+      toastStore.error(
+        `The split pattern "${pattern}" contains a read indicator (_R1 or _R2). Using this pattern would break R1/R2 file pairing. Please use a pattern that appears before the read indicator in the filename.`,
+        8000,
+      );
+      return false;
+    }
+
+    const fileNames = files.value.map((f) => f.name);
+    const nonMatchingFiles = fileNames.filter((name) => !name.includes(pattern));
+
+    // Pattern does not appear in any file
+    if (nonMatchingFiles.length === fileNames.length) {
+      toastStore.error(
+        `The split pattern "${pattern}" does not appear in any of the uploaded file names. Please update the pattern or remove it to continue.`,
+        8000,
+      );
+      return false;
+    }
+
+    // Pattern is inconsistent — matches some files but not others.
+    // Non-matching files would silently be treated as unpaired single-file samples.
+    if (nonMatchingFiles.length > 0) {
+      const preview = nonMatchingFiles.slice(0, 2).join(', ');
+      const andMore = nonMatchingFiles.length > 2 ? ` and ${nonMatchingFiles.length - 2} more` : '';
+      toastStore.error(
+        `The split pattern "${pattern}" only matches ${fileNames.length - nonMatchingFiles.length} of ${fileNames.length} files. It must match all files consistently. Unmatched: ${preview}${andMore}.`,
+        8000,
+      );
+      return false;
+    }
+
+    // Per-file checks for files where the pattern does match
+    for (const name of fileNames) {
+      const idx = name.indexOf(pattern);
+      const sampleIdPart = name.substring(0, idx);
+
+      // Pattern at the very start — would produce an empty sample ID
+      if (!sampleIdPart) {
+        toastStore.error(
+          `The split pattern "${pattern}" appears at the start of "${name}", which would result in an empty sample ID. Use a pattern that comes after the sample identifier.`,
+          8000,
+        );
+        return false;
+      }
+
+      // Pattern appears after the read indicator — the extracted sample ID would include
+      // _R1 or _R2, corrupting the sample ID and breaking pairing.
+      if (/_R[12]/i.test(sampleIdPart)) {
+        toastStore.error(
+          `In "${name}", the split pattern "${pattern}" appears after the read indicator (_R1/_R2). The pattern must come before the read indicator in order to correctly extract the sample ID.`,
+          8000,
+        );
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   async function startUploadProcess() {
+    if (!validateSplitPatternAgainstFiles()) {
+      return;
+    }
+
     clearErrorsFromFiles(filesNotUploaded.value);
     initializeProgressForFiles(filesNotUploaded.value);
     removeStoredSampleSheetInfo();
+
+    if (userStore.currentUserDetails.id) {
+      userStore.currentUserDetails.sampleIdSplitPattern = sampleIdSplitPattern.value || null;
+      $api.users
+        .updateUser(userStore.currentUserDetails.id, { SampleIdSplitPattern: sampleIdSplitPattern.value })
+        .catch((error) => {
+          console.error('Failed to save sample ID split pattern:', error);
+        });
+    }
 
     // pre-upload work - catch and handle errors in this step with applyErrorToFiles
     try {
@@ -447,10 +560,11 @@
       };
 
       const sampleId = getSampleIdFromRFileName(Name);
+      const readDirection = getReadDirection(Name);
       const fileName = getFileNameWithoutExt(Name);
 
       // handle files without R values
-      if (!sampleId) {
+      if (!sampleId || !readDirection) {
         // file does not have an R_ value, so it must be a single file, and cannot be paired
         // make a new pair with just this file as R1
         uploadedFilePairs.push({
@@ -466,9 +580,9 @@
           sampleId,
       );
       if (existingFilePair) {
-        if (Name.includes('_R1_')) {
+        if (readDirection === 'R1') {
           existingFilePair.R1 = uploadFileInfo;
-        } else if (Name.includes('_R2_')) {
+        } else if (readDirection === 'R2') {
           existingFilePair.R2 = uploadFileInfo;
         }
 
@@ -482,8 +596,8 @@
       } else {
         const newFilePair: UploadedFilePairInfo = {
           SampleId: fileName, // as above, individual files should use the fileName
-          R1: Name.includes('_R1_') ? uploadFileInfo : undefined,
-          R2: Name.includes('_R2_') ? uploadFileInfo : undefined,
+          R1: readDirection === 'R1' ? uploadFileInfo : undefined,
+          R2: readDirection === 'R2' ? uploadFileInfo : undefined,
         };
         uploadedFilePairs.push(newFilePair);
       }
@@ -741,6 +855,70 @@
     return true;
   };
 
+  function handleSampleSheetFileChange(e: Event) {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    // Reset input so the same file can be re-selected if needed
+    (e.target as HTMLInputElement).value = '';
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      toastStore.error('Only CSV files are accepted as sample sheets.');
+      return;
+    }
+    uploadCustomSampleSheet(file);
+  }
+
+  async function uploadCustomSampleSheet(file: File) {
+    const { valid, error } = await validateSampleSheetFile(file);
+    sampleSheetValidationError.value = error ?? null;
+    if (!valid) return;
+
+    if (!wipRun.value.transactionId) {
+      toastStore.error('Run is not initialised yet. Please try again.');
+      return;
+    }
+
+    isUploadingSampleSheet.value = true;
+    uiStore.setRequestPending('generateSampleSheet');
+
+    try {
+      const manifest = await $api.uploads.getFileUploadManifest({
+        LaboratoryId: props.labId,
+        TransactionId: wipRun.value.transactionId,
+        Platform: props.platform,
+        Files: [{ Name: file.name, Size: file.size }],
+      });
+
+      const fileInfo = manifest.Files[0];
+      if (!fileInfo?.S3Url) throw new Error('No upload URL returned from server.');
+
+      await axios.put(fileInfo.S3Url, file, {
+        headers: { 'Content-Type': 'text/csv' },
+        timeout: UPLOAD_TIMEOUT,
+      });
+
+      const s3Uri = `s3://${fileInfo.Bucket}/${fileInfo.Key}`;
+      const s3Path = fileInfo.Key.substring(0, fileInfo.Key.lastIndexOf('/'));
+
+      wipRunUpdateFunction.value(props.wipRunTempId, {
+        sampleSheetS3Url: s3Uri,
+        s3Bucket: fileInfo.Bucket,
+        s3Path,
+      });
+      wipRunUpdateParamsFunction.value(props.wipRunTempId, {
+        input: s3Uri,
+        outdir: `s3://${fileInfo.Bucket}/${s3Path}/results`,
+      });
+
+      toastStore.success(`Sample sheet "${file.name}" uploaded successfully.`);
+    } catch (error: any) {
+      console.error('Custom sample sheet upload failed:', error);
+      toastStore.error('Failed to upload the sample sheet. Please try again.');
+    } finally {
+      isUploadingSampleSheet.value = false;
+      uiStore.setRequestComplete('generateSampleSheet');
+    }
+  }
+
   watch(canProceedToNextStep, (val) => {
     emit('step-validated', val);
   });
@@ -750,24 +928,26 @@
   <EGCard>
     <EGText tag="small" class="mb-4">Step 02</EGText>
     <EGText tag="h4" class="mb-4">Upload Data</EGText>
-    <ul class="text-muted ml-6 mt-1 list-disc text-xs font-normal tracking-tight">
-      <li>
-        Files containing _R1_ or _R2_ with a matching prefix and suffix will be combined as paired-end data samples e.g,
-        <ul>
-          <li>
-            GOL2051A55857_S103_L002
-            <strong>_R1_</strong>
-            001.fastq.gz
-          </li>
-          <li>
-            GOL2051A55857_S103_L002
-            <strong>_R2_</strong>
-            001.fastq.gz
-          </li>
-        </ul>
-      </li>
-      <li>5GB max size per individual file</li>
-    </ul>
+    <p class="text-muted mt-1 text-xs font-normal tracking-tight">
+      Any similar files with the suffix _R1 or _R2 will be combined as paired-end data samples. Max file size is 5GB.
+      <button
+        type="button"
+        class="text-primary ml-1 underline hover:opacity-80"
+        @click="showAdvancedOptions = !showAdvancedOptions"
+      >
+        {{ showAdvancedOptions ? 'Collapse advanced options' : 'View advanced options' }}
+      </button>
+    </p>
+
+    <div v-if="showAdvancedOptions" class="mt-4">
+      <UDivider />
+      <label class="text-body mb-1 mt-4 block text-sm font-medium">Sample ID split pattern</label>
+      <UInput v-model="sampleIdSplitPattern" class="w-64" />
+      <p class="text-muted mb-4 mt-1 text-xs">
+        Enter the character or pattern that appears after the Sample ID in your file names (e.g. _S, _L001, etc.).
+      </p>
+    </div>
+
     <UDivider class="py-4" />
     <div
       class="py-4"
@@ -819,6 +999,9 @@
         </div>
       </div>
     </div>
+
+    <!-- Hidden CSV file input for custom sample sheet -->
+    <input ref="sampleSheetFileInput" type="file" accept=".csv" hidden @change="handleSampleSheetFileChange" />
 
     <div class="files-list mb-6" v-if="filesForTable.length > 0">
       <div class="files-list-header text-body mb-4 border-b border-[#d9d9d9]">
@@ -922,28 +1105,42 @@
       :display-label="true"
     />
 
-    <div class="flex justify-end gap-4 pt-4">
+    <div class="flex items-center justify-between pt-4">
       <EGButton
-        v-if="showGenerateSampleSheetButton"
-        @click="saveSampleSheetInfo"
-        :loading="uiStore.isRequestPending('generateSampleSheet')"
-        label="Generate Sample Sheet"
         variant="secondary"
+        label="Upload Sample Sheet"
+        icon="i-heroicons-arrow-up-tray"
+        :loading="isUploadingSampleSheet"
+        :disabled="isUploadingSampleSheet"
+        @click="sampleSheetFileInput?.click()"
       />
+      <p v-if="sampleSheetValidationError" class="text-alert-danger mt-2 max-w-xl text-sm">
+        {{ sampleSheetValidationError }}
+      </p>
 
-      <EGButton
-        @click="startUploadProcess"
-        :disabled="isUploadButtonDisabled"
-        :loading="uploadStatus === 'uploading'"
-        label="Upload Files"
-      />
+      <div class="flex gap-4">
+        <EGButton
+          v-if="showGenerateSampleSheetButton"
+          @click="saveSampleSheetInfo"
+          :loading="uiStore.isRequestPending('generateSampleSheet')"
+          label="Generate Sample Sheet"
+          variant="secondary"
+        />
+
+        <EGButton
+          @click="startUploadProcess"
+          :disabled="isUploadButtonDisabled"
+          :loading="uploadStatus === 'uploading'"
+          label="Upload Files"
+        />
+      </div>
     </div>
   </EGCard>
 
   <div class="mt-6 flex justify-between">
     <EGButton :size="ButtonSizeEnum.enum.sm" variant="secondary" label="Previous step" @click="emit('previous-step')" />
     <EGButton
-      v-if="filePairs.length"
+      v-if="filePairs.length || hasSampleSheetUrl"
       :size="ButtonSizeEnum.enum.sm"
       variant="primary"
       label="Next step"

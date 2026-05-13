@@ -14,11 +14,16 @@ export interface ConfigurationSettings {
   // The following Front-End Infrastructure settings will need to be pre-configured in AWS and defined when 'env-type' is 'pre-prod' or 'prod'.
   ['aws-hosted-zone-id']?: string; // Not required when env-type: 'dev', but must exist for the same app-domain-name if configured
   ['aws-certificate-arn']?: string; // Not required when env-type: 'dev', but must exist for the same app-domain-name if configured
-
+  ['google-client-id']?: string;
+  ['google-client-secret']?: string;
+  ['cognito-domain-prefix']?: string;
+  ['callback-urls']?: string;
+  ['logout-urls']?: string;
   // Back-End specific settings
   ['back-end']: {
     ['jwt-secret-key']?: string; // Optional: If undefined, a random value will be generated on deployment for JWT Signature
     ['seqera-api-base-url']?: string; // Optional: Update for self-hosted Seqera API Base URL; if unspecified this defaults to 'https://api.cloud.seqera.io'
+    ['github-pat-secret-name']?: string; // Optional: Secrets Manager secret name for GitHub PAT used to fetch nf-core workflow schemas
     ['vpc-peering']?: VpcPeeringSettings; // Optional: VPC Peering Accepter details
     // The System Admin account is required
     ['sys-admin-email']?: string;

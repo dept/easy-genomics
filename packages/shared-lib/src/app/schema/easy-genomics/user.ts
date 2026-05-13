@@ -16,23 +16,32 @@ export const OrganizationAccessDetailsSchema = z.object({
 
 export const OrganizationAccessSchema = z.record(z.string(), OrganizationAccessDetailsSchema);
 
-export const UserSchema = z
-  .object({
-    UserId: z.string().uuid(),
-    Email: z.string(),
-    PreferredName: z.string().optional(),
-    FirstName: z.string().optional(),
-    LastName: z.string().optional(),
-    Status: z.enum(['Active', 'Inactive', 'Invited']),
-    DefaultOrganization: z.string().optional(),
-    DefaultLaboratory: z.string().optional(),
-    OrganizationAccess: OrganizationAccessSchema.optional(),
-    CreatedAt: z.string().optional(),
-    CreatedBy: z.string().optional(),
-    ModifiedAt: z.string().optional(),
-    ModifiedBy: z.string().optional(),
-  })
-  .strict();
+export const FavouriteWorkflowSchema = z.object({
+  WorkflowId: z.string(),
+  WorkflowName: z.string(),
+  Description: z.string().optional(),
+  Platform: z.enum(['Seqera Cloud', 'AWS HealthOmics']),
+  LaboratoryId: z.string(),
+});
+
+export const UserSchema = z.object({
+  UserId: z.string().uuid(),
+  Email: z.string(),
+  PreferredName: z.string().optional(),
+  FirstName: z.string().optional(),
+  LastName: z.string().optional(),
+  Status: z.enum(['Active', 'Inactive', 'Invited']),
+  DefaultOrganization: z.string().optional(),
+  DefaultLaboratory: z.string().optional(),
+  OrganizationAccess: OrganizationAccessSchema.optional(),
+  SampleIdSplitPattern: z.string().optional(),
+  OmicsWorkflowDefaultParams: z.record(z.string(), z.record(z.string(), z.any())).optional(),
+  FavouriteWorkflows: z.array(FavouriteWorkflowSchema).optional(),
+  CreatedAt: z.string().optional(),
+  CreatedBy: z.string().optional(),
+  ModifiedAt: z.string().optional(),
+  ModifiedBy: z.string().optional(),
+});
 
 export const CreateUserSchema = z
   .object({
@@ -50,6 +59,9 @@ export const UpdateUserSchema = z
     PreferredName: z.string().optional(),
     FirstName: z.string().optional(),
     LastName: z.string().optional(),
+    SampleIdSplitPattern: z.string().optional(),
+    OmicsWorkflowDefaultParams: z.record(z.string(), z.record(z.string(), z.any())).optional(),
+    FavouriteWorkflows: z.array(FavouriteWorkflowSchema).optional(),
   })
   .strict();
 export type UpdateUser = z.infer<typeof UpdateUserSchema>;

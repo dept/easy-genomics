@@ -10,10 +10,14 @@ import HttpFactory from '@FE/repository/factory';
 import { validateApiResponse } from '@FE/utils/api-utils';
 
 class SeqeraRunsModule extends HttpFactory {
-  async createPipelineRun(labId: string, pipelineLaunchRequest: CreateWorkflowLaunchRequest): Promise<any> {
+  async createPipelineRun(
+    labId: string,
+    pipelineId: string,
+    pipelineLaunchRequest: CreateWorkflowLaunchRequest,
+  ): Promise<any> {
     const res = await this.callSeqera<any>(
       'POST',
-      `/workflow/create-workflow-execution?laboratoryId=${labId}`,
+      `/workflow/create-workflow-execution?laboratoryId=${labId}&pipelineId=${encodeURIComponent(pipelineId)}`,
       pipelineLaunchRequest,
     );
     console.log('createPipelineRun response:', res);
