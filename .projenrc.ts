@@ -593,6 +593,7 @@ root.gitignore.addPatterns(
   'packages/front-end/test-results',
   'packages/front-end/tests/e2e/.auth/*.json',
   'packages/front-end/playwright-report',
+  'docs/E2E-PLAYWRIGHT.md',
   '.pnpm-store',
 );
 // Exception: Include .env example files (used for local dev setup documentation)
