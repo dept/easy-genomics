@@ -1,11 +1,50 @@
 import { OrganizationAccess, User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
+import { APIGatewayProxyWithCognitoAuthorizerEvent } from 'aws-lambda';
 import { APIGatewayProxyEvent } from 'aws-lambda/trigger/api-gateway-proxy';
 import {
   getLaboratoryAccessLaboratoryIds,
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
+  validateSystemAdminAccess,
   verifyCurrentOrganizationAccess,
 } from '../../../src/app/utils/auth-utils';
+
+describe('validateSystemAdminAccess', () => {
+  const eventWithGroups = (groups: unknown): APIGatewayProxyWithCognitoAuthorizerEvent =>
+    ({
+      requestContext: {
+        authorizer: {
+          claims: {
+            'cognito:groups': groups,
+          },
+        },
+      },
+    }) as unknown as APIGatewayProxyWithCognitoAuthorizerEvent;
+
+  it('returns false when cognito:groups is missing', () => {
+    expect(validateSystemAdminAccess({ requestContext: { authorizer: { claims: {} } } } as any)).toBe(false);
+  });
+
+  it('returns true for a single SystemAdmin group string', () => {
+    expect(validateSystemAdminAccess(eventWithGroups('SystemAdmin'))).toBe(true);
+  });
+
+  it('returns true when SystemAdmin appears among comma-separated groups', () => {
+    expect(validateSystemAdminAccess(eventWithGroups('OrganizationAdmin,SystemAdmin'))).toBe(true);
+  });
+
+  it('returns true when SystemAdmin appears among whitespace-separated groups', () => {
+    expect(validateSystemAdminAccess(eventWithGroups('OrganizationAdmin SystemAdmin'))).toBe(true);
+  });
+
+  it('returns true when cognito:groups is an array containing SystemAdmin', () => {
+    expect(validateSystemAdminAccess(eventWithGroups(['OrganizationAdmin', 'SystemAdmin']))).toBe(true);
+  });
+
+  it('returns false when SystemAdmin is not present', () => {
+    expect(validateSystemAdminAccess(eventWithGroups('OrganizationAdmin'))).toBe(false);
+  });
+});
 
 describe('get laboratory access ids from authorizer claims', () => {
   let mockEvent: APIGatewayProxyEvent = {

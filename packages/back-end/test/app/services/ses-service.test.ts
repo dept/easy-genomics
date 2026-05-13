@@ -88,6 +88,21 @@ describe('SesService', () => {
     expect(cmdInput.Template).toBe('ExistingUserCourtesyEmailTemplate');
   });
 
+  it('does not call SES for existing-user courtesy email in non-prod (SES sandbox)', async () => {
+    const service = new SesService({
+      accountId: '123456789012',
+      region: 'us-west-2',
+      domainName: 'example.com',
+      envType: 'dev',
+      envName: 'sandbox',
+    });
+
+    const result = await service.sendExistingUserCourtesyEmail('anyone@example.com', 'My Org');
+
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(result.MessageId).toBe('skipped-non-prod-courtesy-email');
+  });
+
   it('builds forgot-password SES command with jwt in payload', async () => {
     mockSend.mockResolvedValueOnce({ MessageId: 'ghi' });
     const service = new SesService({

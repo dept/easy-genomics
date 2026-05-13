@@ -168,8 +168,8 @@ class UsersModule extends HttpFactory {
 
   async updateUserLastAccessInfo(userId: string, organizationId?: string, laboratoryId?: string) {
     const data: UpdateUserLastAccessedInfo = {
-      OrganizationId: organizationId,
-      LaboratoryId: laboratoryId,
+      ...(organizationId != null && organizationId !== '' ? { OrganizationId: organizationId } : {}),
+      ...(laboratoryId != null && laboratoryId !== '' ? { LaboratoryId: laboratoryId } : {}),
     };
     const parseResult = UpdateUserLastAccessedInfoSchema.safeParse(data);
     if (!parseResult.success) {
