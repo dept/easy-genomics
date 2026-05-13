@@ -694,3 +694,196 @@ describe('LaboratoryDataTaggingService preserves FILE rows when run usage histor
     expect(filePut!.LaboratoryRunUsages).toBeDefined();
   });
 });
+
+describe('LaboratoryDataTaggingService.ensurePermanentTag', () => {
+  let svc: LaboratoryDataTaggingService;
+  let mockGetItem: jest.Mock;
+  let mockPutItem: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratoryDataTaggingService();
+    mockGetItem = jest.fn();
+    mockPutItem = jest.fn().mockResolvedValue({});
+    (svc as unknown as { getItem: typeof mockGetItem }).getItem = mockGetItem;
+    (svc as unknown as { putItem: typeof mockPutItem }).putItem = mockPutItem;
+  });
+
+  it('returns the existing row when the singleton permanent tag is already provisioned', async () => {
+    const lab = labFixture();
+    const existingId = svc.getPermanentTagId(lab.LaboratoryId);
+    mockGetItem.mockResolvedValueOnce({
+      Item: marshall({
+        LaboratoryId: lab.LaboratoryId,
+        Sk: `TAG#${existingId}`,
+        TagId: existingId,
+        Name: 'Permanent',
+        ColorHex: '#DC2626',
+        Kind: 'permanent',
+        FileCount: 3,
+      }),
+    });
+    const tag = await svc.ensurePermanentTag(lab, 'user-1');
+    expect(tag.Kind).toBe('permanent');
+    expect(tag.TagId).toBe(existingId);
+    expect(tag.Name).toBe('Permanent');
+    expect(mockPutItem).not.toHaveBeenCalled();
+  });
+
+  it('lazy-creates the permanent tag with deterministic id when missing', async () => {
+    const lab = labFixture();
+    const expectedId = svc.getPermanentTagId(lab.LaboratoryId);
+    mockGetItem.mockResolvedValueOnce({});
+
+    const tag = await svc.ensurePermanentTag(lab, 'user-1');
+    expect(tag.TagId).toBe(expectedId);
+    expect(tag.Kind).toBe('permanent');
+    expect(tag.ColorHex).toBe('#DC2626');
+    expect(mockPutItem).toHaveBeenCalledTimes(1);
+    const item = unmarshall(mockPutItem.mock.calls[0][0].Item) as { Kind: string; Sk: string; Name: string };
+    expect(item.Kind).toBe('permanent');
+    expect(item.Sk).toBe(`TAG#${expectedId}`);
+    expect(item.Name).toBe('Permanent');
+  });
+
+  it('returns the winning row when a concurrent creator wins the ConditionalCheckFailed race', async () => {
+    const lab = labFixture();
+    const expectedId = svc.getPermanentTagId(lab.LaboratoryId);
+    mockGetItem
+      .mockResolvedValueOnce({}) // initial getTagRow: not found
+      .mockResolvedValueOnce({
+        // post-conflict re-read: returns the winning row
+        Item: marshall({
+          LaboratoryId: lab.LaboratoryId,
+          Sk: `TAG#${expectedId}`,
+          TagId: expectedId,
+          Name: 'Permanent',
+          ColorHex: '#DC2626',
+          Kind: 'permanent',
+          FileCount: 0,
+        }),
+      });
+    mockPutItem.mockImplementationOnce(async () => {
+      throw Object.assign(new Error('Conditional check failed'), {
+        name: 'ConditionalCheckFailedException',
+      });
+    });
+
+    const tag = await svc.ensurePermanentTag(lab, 'user-1');
+    expect(tag.TagId).toBe(expectedId);
+    expect(tag.Kind).toBe('permanent');
+  });
+});
+
+describe('LaboratoryDataTaggingService.createTag / deleteTag reject permanent kind', () => {
+  let svc: LaboratoryDataTaggingService;
+  let mockGetItem: jest.Mock;
+  let mockQueryItems: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratoryDataTaggingService();
+    mockGetItem = jest.fn();
+    mockQueryItems = jest.fn().mockResolvedValue({ Items: [] });
+    (svc as unknown as { getItem: typeof mockGetItem }).getItem = mockGetItem;
+    (svc as unknown as { queryItems: typeof mockQueryItems }).queryItems = mockQueryItems;
+    (svc as unknown as { putItem: jest.Mock }).putItem = jest.fn().mockResolvedValue({});
+    (svc as unknown as { deleteItem: jest.Mock }).deleteItem = jest.fn().mockResolvedValue({});
+  });
+
+  it('createTag rejects kind="permanent"', async () => {
+    const lab = labFixture();
+    await expect(svc.createTag(lab, 'user-1', 'Whatever', '#DC2626', 'permanent')).rejects.toThrow(
+      /Permanent tags cannot be created directly/,
+    );
+  });
+
+  it('deleteTag rejects an existing permanent tag', async () => {
+    const lab = labFixture();
+    const pid = svc.getPermanentTagId(lab.LaboratoryId);
+    mockGetItem.mockResolvedValueOnce({
+      Item: marshall({
+        LaboratoryId: lab.LaboratoryId,
+        Sk: `TAG#${pid}`,
+        TagId: pid,
+        Name: 'Permanent',
+        ColorHex: '#DC2626',
+        Kind: 'permanent',
+        FileCount: 0,
+      }),
+    });
+    await expect(svc.deleteTag(lab.LaboratoryId, pid)).rejects.toThrow(/Permanent tags are system-managed/);
+  });
+});
+
+describe('LaboratoryDataTaggingService.updateRunUsageExpiresAt', () => {
+  let svc: LaboratoryDataTaggingService;
+  let mockUpdateItem: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratoryDataTaggingService();
+    mockUpdateItem = jest.fn().mockResolvedValue({});
+    (svc as unknown as { updateItem: typeof mockUpdateItem }).updateItem = mockUpdateItem;
+  });
+
+  it('SETs ExpiresAt onto each input file row when a value is supplied', async () => {
+    const lab = labFixture();
+    const bucket = lab.S3Bucket!;
+    await svc.updateRunUsageExpiresAt(
+      lab,
+      bucket,
+      'run-7',
+      ['org-1/lab-1/a.fq.gz', 'org-1/lab-1/b.fq.gz'],
+      1_900_000_000,
+    );
+    expect(mockUpdateItem).toHaveBeenCalledTimes(2);
+    const update = mockUpdateItem.mock.calls[0][0];
+    expect(update.UpdateExpression).toMatch(/SET #lru.#rid.#exp = :exp/);
+    const values = unmarshall(update.ExpressionAttributeValues) as { ':exp': number };
+    expect(values[':exp']).toBe(1_900_000_000);
+  });
+
+  it('REMOVEs the ExpiresAt sub-attribute when value is undefined', async () => {
+    const lab = labFixture();
+    await svc.updateRunUsageExpiresAt(lab, lab.S3Bucket!, 'run-7', ['org-1/lab-1/a.fq.gz'], undefined);
+    expect(mockUpdateItem).toHaveBeenCalledTimes(1);
+    expect(mockUpdateItem.mock.calls[0][0].UpdateExpression).toMatch(/REMOVE #lru.#rid.#exp/);
+  });
+
+  it('skips keys that fall outside the laboratory prefix', async () => {
+    const lab = labFixture();
+    await svc.updateRunUsageExpiresAt(lab, lab.S3Bucket!, 'run-7', ['other-org/lab-1/x.fq.gz'], 1_900_000_000);
+    expect(mockUpdateItem).not.toHaveBeenCalled();
+  });
+});
+
+describe('LaboratoryDataTaggingService.removeLaboratoryRunUsageForRunIds preserveEmptyFileRow', () => {
+  let svc: LaboratoryDataTaggingService;
+  let mockGetItem: jest.Mock;
+  let mockDeleteItem: jest.Mock;
+  let mockUpdateItem: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratoryDataTaggingService();
+    mockGetItem = jest.fn().mockResolvedValue({});
+    mockDeleteItem = jest.fn().mockResolvedValue({});
+    mockUpdateItem = jest.fn().mockResolvedValue({});
+    (svc as unknown as { getItem: typeof mockGetItem }).getItem = mockGetItem;
+    (svc as unknown as { deleteItem: typeof mockDeleteItem }).deleteItem = mockDeleteItem;
+    (svc as unknown as { updateItem: typeof mockUpdateItem }).updateItem = mockUpdateItem;
+  });
+
+  it('with preserveEmptyFileRow=true never deletes the FILE# row even when it ends up empty', async () => {
+    const lab = labFixture();
+    const bucket = lab.S3Bucket!;
+    const key = 'org-1/lab-1/last-usage.fq.gz';
+
+    await svc.removeLaboratoryRunUsageForRunIds(lab, bucket, { 'run-1': [key] }, { preserveEmptyFileRow: true });
+
+    expect(mockUpdateItem).toHaveBeenCalledTimes(1);
+    expect(mockGetItem).not.toHaveBeenCalled();
+    expect(mockDeleteItem).not.toHaveBeenCalled();
+  });
+});

@@ -6,6 +6,8 @@ import { EasyGenomicsNestedStack } from '../../../src/infra/stacks/easy-genomics
 
 jest.mock('aws-cdk-lib/aws-lambda-event-sources', () => ({
   SqsEventSource: jest.fn().mockImplementation(() => ({})),
+  SqsDlq: jest.fn().mockImplementation(() => ({})),
+  DynamoEventSource: jest.fn().mockImplementation(() => ({})),
 }));
 
 jest.mock('../../../src/infra/constructs/iam-construct', () => ({
@@ -55,8 +57,10 @@ jest.mock('../../../src/infra/constructs/sqs-construct', () => ({
 describe('EasyGenomicsNestedStack environment wiring', () => {
   // Tables live on the parent `EasyGenomicsApiStack` and are injected via
   // props (see that stack's JSDoc for the rationale tied to `cdk import`).
-  // The wiring tests below don't exercise table identity, so an empty map
-  // is sufficient to satisfy the prop contract.
+  // The wiring tests below don't exercise table identity, but the nested stack
+  // does require `laboratory-run-table` for the DynamoDB-stream event source it
+  // wires up; we inject a minimal fake here that satisfies the surface area used
+  // (DynamoEventSource calls `tableStreamArn` / `grantStreamRead`).
   const createProps = () =>
     ({
       env: { account: '123456789012', region: 'us-west-2' },
@@ -73,7 +77,18 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
       cognitoIdpKmsKey: { keyArn: 'arn:aws:kms:us-west-2:123456789012:key/abc', keyId: 'abc' } as any,
       userPool: { userPoolId: 'pool-id' } as any,
       userPoolClient: { userPoolClientId: 'client-id' } as any,
-      dynamoDBTables: new Map(),
+      dynamoDBTables: new Map<string, any>([
+        [
+          'easy-genomics-laboratory-run-table',
+          {
+            tableName: 'easy-genomics-laboratory-run-table',
+            tableArn: 'arn:aws:dynamodb:us-west-2:123456789012:table/easy-genomics-laboratory-run-table',
+            tableStreamArn:
+              'arn:aws:dynamodb:us-west-2:123456789012:table/easy-genomics-laboratory-run-table/stream/2026-01-01T00:00:00.000',
+            grantStreamRead: jest.fn(),
+          },
+        ],
+      ]),
     }) as any;
 
   beforeEach(() => {

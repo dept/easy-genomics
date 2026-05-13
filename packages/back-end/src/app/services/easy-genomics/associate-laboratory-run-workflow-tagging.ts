@@ -49,6 +49,12 @@ export async function associateInputsWithWorkflowTag(args: {
       RunCreatedAt: run.CreatedAt ?? new Date().toISOString(),
       InputFileCount: labScopedKeys.length,
       InputFileKeys: labScopedKeys,
+      // Mirror the run's current `ExpiresAt` (when known) onto every per-file usage entry so
+      // the data collections page can compute "Expiring soon" without a second round trip
+      // to the run table. When the run is not yet terminal or retention is disabled this is
+      // left undefined; the value is patched on the file rows when the run later transitions
+      // to a terminal status (see `updateRunUsageExpiresAt`).
+      ...(typeof run.ExpiresAt === 'number' ? { ExpiresAt: run.ExpiresAt } : {}),
     };
 
     await tagging.recordLaboratoryRunInputUsage(laboratory, userId, laboratory.S3Bucket, labScopedKeys, summary);
