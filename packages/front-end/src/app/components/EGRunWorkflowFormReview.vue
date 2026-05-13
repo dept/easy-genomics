@@ -23,7 +23,7 @@
   const runStore = useRunStore();
   const wipOmicsRun = computed(() => runStore.wipOmicsRuns[props.omicsRunTempId]);
 
-  const labName = useLabsStore().labs[props.labId].Name;
+  const labName = useLabsStore().labs[props.labId]?.Name ?? '';
   const isLaunchingRun = ref(false);
   const emit = defineEmits(['submit-launch-request', 'submit-launch-request-error', 'has-launched', 'previous-tab']);
 
@@ -43,27 +43,33 @@
 
   async function launchRun() {
     emit('submit-launch-request');
+    isLaunchingRun.value = true;
+
+    // Tracked separately so the createLabRun catch can reference it even after
+    // the external run has already been submitted successfully.
+    let externalRunId: string | undefined;
 
     try {
-      isLaunchingRun.value = true;
       if (props.workflowId === undefined) {
-        throw new Error('pipeline id not found in wip run config');
+        throw new Error('workflow id not found in wip run config');
       }
 
-      const startOmicsRes = await $api.omicsRuns.createExecution(
-        props.labId,
-        props.workflowId,
-        props.runName,
-        withoutEmptyFields(props.params),
-        props.workflowVersionName,
-      );
-
-      if (!startOmicsRes) {
-        throw new Error('Failed to create workflow run. Response is empty.');
-      }
-
-      if (!startOmicsRes.id) {
-        throw new Error('Workflow Run ID is missing in the response');
+      let startOmicsRes;
+      try {
+        startOmicsRes = await $api.omicsRuns.createExecution(
+          props.labId,
+          props.workflowId,
+          props.runName,
+          withoutEmptyFields(props.params),
+          props.workflowVersionName,
+        );
+        if (!startOmicsRes?.id) throw new Error('Workflow Run ID is missing in the response');
+        externalRunId = startOmicsRes.id;
+      } catch (error) {
+        console.error('Error submitting run to AWS HealthOmics:', error);
+        useToastStore().error('Failed to submit run to AWS HealthOmics. Please try again.');
+        emit('submit-launch-request-error');
+        return;
       }
 
       try {
@@ -86,15 +92,19 @@
         };
         await $api.labs.createLabRun(labRunRequest);
       } catch (error) {
-        console.error('Error launching workflow:', error);
-        throw error;
+        console.error('Error recording lab run after successful Omics submission:', error);
+        useToastStore().error(
+          `Your run was submitted but could not be recorded. Contact support with run ID: ${externalRunId}.`,
+        );
+        emit('submit-launch-request-error');
+        return;
       }
 
       delete runStore.wipOmicsRuns[props.omicsRunTempId];
       emit('has-launched');
     } catch (error) {
-      useToastStore().error('Error launching run: ' + error);
-      console.error('Error launching workflow:', error);
+      console.error('Unexpected error launching run:', error);
+      useToastStore().error('An unexpected error occurred while launching the run. Please try again.');
       emit('submit-launch-request-error');
     } finally {
       isLaunchingRun.value = false;

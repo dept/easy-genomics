@@ -125,7 +125,7 @@
             .then((childResponse: S3TopLevelResponse) => {
               loadedDirectories.value.set(childCacheKey, transformS3Response(childResponse));
             })
-            .catch(() => {}); // silently ignore pre-fetch errors
+            .catch((error) => console.error('Pre-fetch failed for', childPrefix, error));
         }
       });
   };

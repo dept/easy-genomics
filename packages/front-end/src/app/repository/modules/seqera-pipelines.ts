@@ -7,6 +7,8 @@ import {
 import {
   ListPipelinesResponse as ListPipelinesResponseSchema,
   PipelineSchemaResponse as PipelineSchemaResponseSchema,
+  DescribePipelineResponse as DescribePipelineResponseSchema,
+  DescribeLaunchResponse as DescribeLaunchResponseSchema,
 } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-zod-schemas.client';
 import HttpFactory from '@FE/repository/factory';
 import { validateApiResponse, stripNullProperties } from '@FE/utils/api-utils';
@@ -36,7 +38,7 @@ class SeqeraPipelinesModule extends HttpFactory {
       throw new Error('Failed to retrieve pipeline');
     }
 
-    // TODO: add validateApiResponse()
+    validateApiResponse(DescribePipelineResponseSchema, res);
     return res;
   }
 
@@ -50,7 +52,7 @@ class SeqeraPipelinesModule extends HttpFactory {
       throw new Error('Failed to retrieve pipeline launch details');
     }
 
-    // TODO: add validateApiResponse()
+    validateApiResponse(DescribeLaunchResponseSchema, res);
     return res;
   }
 
