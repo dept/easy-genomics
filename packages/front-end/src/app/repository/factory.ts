@@ -81,10 +81,7 @@ class HttpFactory {
       try {
         token = shouldRefresh ? await this.refreshToken() : await getToken();
       } catch (tokenError) {
-        console.error('Failed to get auth token:', tokenError);
-        useToastStore().error('Your session could not be verified. Please sign in again.');
-        await navigateTo('/signin');
-        throw new Error('Auth token unavailable');
+        console.warn(`Failed to get token; reason: ${tokenError}; continuing without Bearer or X-API header`);
       }
       if (token) {
         headers.append('Authorization', `Bearer ${token}`);
