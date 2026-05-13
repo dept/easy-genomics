@@ -29,8 +29,8 @@ export const handler: Handler = async (
     const isOrgAdmin: boolean = !!validateOrganizationAdminAccess(event, organizationId);
     const isAdmin: boolean = isSystemAdmin || isOrgAdmin;
 
-    // Only the SystemAdmin or any User with access to the Organization is allowed access to this API
-    if (!(isSystemAdmin || validateOrganizationAccess(event, organizationId))) {
+    // SystemAdmin, OrganizationAdmin, or active Organization membership
+    if (!(isSystemAdmin || isOrgAdmin || validateOrganizationAccess(event, organizationId))) {
       throw new UnauthorizedAccessError();
     }
 

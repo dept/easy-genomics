@@ -144,9 +144,6 @@ describe('list-laboratories.lambda', () => {
     mockValidateOrgAccess.mockReturnValue(false);
     mockValidateOrgAdmin.mockReturnValue(true);
 
-    (mockUserService.prototype.queryByEmail as jest.Mock).mockResolvedValue([
-      { UserId: 'user-1', Email: 'user@example.com' },
-    ]);
     (mockLabService.prototype.queryByOrganizationId as jest.Mock).mockResolvedValue([
       { OrganizationId: 'org-1', LaboratoryId: 'lab-1' },
       { OrganizationId: 'org-1', LaboratoryId: 'lab-2' },
