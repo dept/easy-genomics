@@ -49,6 +49,9 @@
 
   const workflowVersionOptions = ref<{ value: string; label: string }[] | undefined>(undefined);
 
+  /** True when the user record still has OmicsWorkflowDefaultParams for this workflow (drives the save-defaults checkbox). */
+  const hasOmicsWorkflowSavedParameterDefaults = ref(false);
+
   const wipOmicsRun = computed<WipRun | null>(() => runStore.wipOmicsRuns[omicsRunTempId.value] || null);
 
   const workflow = computed<ReadWorkflow | null>(() => omicsWorkflowsStore.workflows[workflowId] || null);
@@ -152,19 +155,38 @@
       })
       .filter((_) => _ != undefined);
 
+    // fetch user defaults for this workflow (if any), scoped to current parameter template keys
+    const userId = userStore.currentUserDetails.id;
+    let workflowDefaultParams: Record<string, unknown> = {};
+    let rawSavedDefaults: Record<string, unknown> = {};
+    if (userId) {
+      const user = await $api.users.getUser();
+      rawSavedDefaults = user.OmicsWorkflowDefaultParams?.[workflowId] ?? {};
+      workflowDefaultParams = Object.fromEntries(
+        Object.entries(rawSavedDefaults).filter(([paramName]) =>
+          Object.prototype.hasOwnProperty.call(omicsWorkflow.parameterTemplate, paramName),
+        ),
+      );
+    }
+    hasOmicsWorkflowSavedParameterDefaults.value =
+      typeof rawSavedDefaults === 'object' && Object.keys(rawSavedDefaults).length > 0;
+
     // initialize wip run in store
     runStore.updateWipOmicsRun(omicsRunTempId.value, {
       transactionId: omicsRunTempId.value,
       paramsRequired: paramsRequired,
     });
-    // unlike seqera runs, omics runs don't have default values for parameters
-    runStore.updateWipOmicsRunParams(omicsRunTempId.value, {});
+    runStore.updateWipOmicsRunParams(omicsRunTempId.value, workflowDefaultParams);
 
     uiStore.setRequestComplete('loadOmicsWorkflow');
   }
 
   function resetParams() {
     runStore.updateWipOmicsRun(omicsRunTempId.value, { params: {} });
+  }
+
+  function onOmicsWorkflowDefaultsCleared() {
+    hasOmicsWorkflowSavedParameterDefaults.value = false;
   }
 
   /**
@@ -334,8 +356,10 @@
               :lab-id="labId"
               :workflow-id="workflowId"
               :omics-run-temp-id="omicsRunTempId"
+              :has-saved-defaults="hasOmicsWorkflowSavedParameterDefaults"
               @next-step="() => nextStep('review')"
               @previous-step="() => previousStep()"
+              @defaults-cleared="onOmicsWorkflowDefaultsCleared"
             />
           </template>
 
