@@ -22,30 +22,64 @@ pnpm run backfill-omics-run-tags:dry-run
 
 **Environment:** `NAME_PREFIX`, `ACCOUNT_ID`, `REGION` (see script header for IAM expectations).
 
-## `backfill-laboratory-run-usages.ts`
+## `backfill-workflow-run-history-and-usages.ts`
 
-**Purpose:** Populates the per-file `LaboratoryRunUsages` map on `FILE#` rows of the laboratory data tagging table from
-the existing `LaboratoryRun` records, so the Data Collections "Analysis History" tooltip shows runs that pre-date the
-file-history feature. Each run with non-empty `InputFileKeys` produces one idempotent entry per (RunId, file).
+**Purpose:** Retroactively populates per-file run usage (`LaboratoryRunUsages`) **and** workflow→file tag links for
+laboratory runs created before the file-history feature was tracking `InputFileKeys` and `WorkflowExternalId`
+automatically. For each candidate row the script infers `InputFileKeys` (from the row, the `SampleSheetS3Url` object in
+whatever bucket that URL references, or `s3://` URLs found in `Settings.input` / `parameters.input`), resolves
+`WorkflowExternalId` / `WorkflowVersionName` via the platform when missing (Omics `GetRun`, Seqera
+`GET /workflow/{id}`), optionally writes the inferred fields back to the run row, then invokes
+`associateInputsWithWorkflowTag` — the same hook `create-laboratory-run` uses — so the tagging table receives the
+canonical writes. Sample-sheet bodies are read from the URL's bucket; only cells that reference the **laboratory data
+bucket** (`Laboratory.S3Bucket`) are turned into `InputFileKeys`.
 
-**When to use:** Once after deploying the file-history feature to a prior environment, or any time you suspect history
-was lost (e.g. legacy data import).
+This script supersedes the earlier usage-only backfill that replayed `LaboratoryRunUsages` from rows that already had
+`InputFileKeys` but did not infer keys, update run rows, or apply workflow tags. Use `--force-reassociate` when you only
+need to re-apply tagging from existing keys without re-inferring them.
+
+**When to use:** Once after deploying the workflow-history feature against an environment with legacy runs, or to retry
+partially-tagged runs after import / restore.
 
 **Usage:**
 
 ```bash
-pnpm run backfill-laboratory-run-usages
-pnpm run backfill-laboratory-run-usages:dry-run
-pnpm run backfill-laboratory-run-usages -- --lab <laboratoryId>
+pnpm run backfill-workflow-run-history-and-usages
+pnpm run backfill-workflow-run-history-and-usages:dry-run
+pnpm run backfill-workflow-run-history-and-usages -- --lab <laboratoryId>
+pnpm run backfill-workflow-run-history-and-usages -- --platform "AWS HealthOmics" --limit 50
+pnpm run backfill-workflow-run-history-and-usages -- --omics-use-default-credentials
 ```
 
-- `--dry-run` — log what would be recorded without writing to DynamoDB.
+- `--dry-run` — log what would change without writing to DynamoDB / S3 / platforms.
 - `--lab <laboratoryId>` — limit the backfill to a single laboratory.
+- `--platform <name>` — filter by `LaboratoryRun.Platform` (`AWS HealthOmics` or `Seqera Cloud`).
+- `--limit <n>` — process at most N runs (useful for staged rollouts).
+- `--force-reassociate` — re-run tagging for rows that already have keys (safe; tagging writes are idempotent).
+- `--skip-run-table-update` — only update the tagging table; don't write inferred fields back to the run row.
+- `--list-input-prefix` — opt in to a guarded `ListObjectsV2` fallback when no sample sheet is available but
+  `Settings.input` resolves to a lab-scoped prefix. Off by default because shared prefixes lead to false positives.
+- `--max-list-keys <n>` — cap on listed keys when `--list-input-prefix` is on (default `200`).
+- `--omics-use-default-credentials` — call Omics `GetRun` with your ambient AWS credentials instead of STS AssumeRole
+  into `${NAME_PREFIX}-easy-genomics-omics-access-role`. Typical for local runs where `ACCOUNT_ID` is set but your SSO
+  user cannot `sts:AssumeRole` that role, **or** when you omit `ACCOUNT_ID` and still have account-wide `omics:GetRun`.
 
-**Environment:** `NAME_PREFIX`, `REGION`.
+**Known gaps (best-effort by design):** runs whose sample sheet has been deleted, whose CSV contains no `s3://`
+references, or whose `Settings` does not point at a lab-scoped S3 object cannot be reconstructed from EG data alone.
+Seqera's describe-workflow response does not expose the platform `pipelineId` we store as `WorkflowExternalId`, so for
+Seqera runs missing that field the script records run usage without a workflow tag and logs a note.
 
-**IAM:** DynamoDB `Scan` on `laboratory-run-table`; DynamoDB `GetItem` on `laboratory-table`; DynamoDB `UpdateItem` on
-`laboratory-data-tagging-table`.
+**Environment:** `NAME_PREFIX`, `REGION`, `ACCOUNT_ID` when Omics workflow lookup uses STS AssumeRole (same as deployed
+Lambdas). If `ACCOUNT_ID` is missing, the role ARN is invalid (`arn:aws:iam::undefined/...`). Either set `ACCOUNT_ID` or
+use `--omics-use-default-credentials`. Set `SEQERA_API_BASE_URL` when Seqera runs in labs without
+`NextFlowTowerApiBaseUrl`.
+
+**IAM:** DynamoDB `Scan` / `UpdateItem` on `laboratory-run-table`; DynamoDB `Query` on `laboratory-table` (and
+`laboratory-data-tagging-table`); S3 `GetObject` on the **laboratory data bucket** and on **any bucket** referenced by
+`SampleSheetS3Url` / `Settings` (provisioning buckets are common); `ListBucket` if `--list-input-prefix`; `omics:GetRun`
+via STS AssumeRole into `${NAME_PREFIX}-easy-genomics-omics-access-role` **or** default credentials when
+`--omics-use-default-credentials` is set; SSM `GetParameter` (with decryption) for Seqera labs' access token. Your
+operator principal may need `sts:AssumeRole` on the Omics access role when not using `--omics-use-default-credentials`.
 
 ## `seed-workflow-tagging-test-runs.ts`
 
