@@ -526,14 +526,13 @@
             @drop="onCardDrop($event)"
           >
             <div class="absolute right-2 top-2 flex items-center gap-1.5" @mousedown.stop @click.stop>
-              <span
+              <UIcon
                 v-if="isFilePermanent(f.Key)"
-                class="inline-flex items-center gap-0.5 rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 ring-1 ring-inset ring-red-200"
-                title="Permanent files are never auto-deleted, even after their run retention expires."
-              >
-                <UIcon name="i-heroicons-lock-closed" class="h-3 w-3" aria-hidden="true" />
-                <span>Permanent</span>
-              </span>
+                name="i-heroicons-lock-closed"
+                class="h-3.5 w-3.5 shrink-0 text-red-600"
+                title="This file is protected from auto-deletion when run retention expires."
+                aria-label="Protected from auto-deletion"
+              />
               <UCheckbox :model-value="selectedKeys.includes(f.Key)" @update:model-value="emit('toggleKey', f.Key)" />
             </div>
             <div class="absolute left-0 top-0 z-[1]" @mousedown.stop @click.stop>
@@ -664,8 +663,8 @@
                       v-if="isFilePermanent(f.Key)"
                       name="i-heroicons-lock-closed"
                       class="h-3.5 w-3.5 shrink-0 text-red-600"
-                      :title="'Permanent: never auto-deleted'"
-                      aria-label="Permanent"
+                      title="This file is protected from auto-deletion when run retention expires."
+                      aria-label="Protected from auto-deletion"
                     />
                     <span class="truncate font-medium text-gray-900">{{ fileName(f.Key) }}</span>
                   </div>
@@ -711,13 +710,13 @@
                   </div>
                 </td>
                 <td class="text-muted px-3 py-2 align-middle">
-                  <span
+                  <UIcon
                     v-if="isFilePermanent(f.Key)"
-                    class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700 ring-1 ring-inset ring-red-200"
-                  >
-                    <UIcon name="i-heroicons-lock-closed" class="h-3 w-3" aria-hidden="true" />
-                    Never
-                  </span>
+                    name="i-heroicons-lock-closed"
+                    class="inline-block h-3.5 w-3.5 text-red-600"
+                    title="This file is protected from auto-deletion when run retention expires. It does not expire with run retention."
+                    aria-label="Protected from auto-deletion; does not expire with run retention"
+                  />
                   <span v-else class="tabular-nums">{{ formatExpiresLabel(f.Key) }}</span>
                 </td>
               </tr>
