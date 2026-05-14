@@ -12,6 +12,7 @@ import { DescribeWorkflowResponse } from '@easy-genomics/shared-lib/src/app/type
 import { APIGatewayProxyResult, Handler, SQSRecord } from 'aws-lambda';
 import { SQSEvent } from 'aws-lambda/trigger/sqs';
 //import { v4 as uuidv4 } from 'uuid';
+import { LaboratoryDataTaggingService } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
@@ -27,7 +28,34 @@ import { getNextFlowApiQueryParameters, httpRequest, REST_API_METHOD } from '@BE
 
 const laboratoryService = new LaboratoryService();
 const laboratoryRunService = new LaboratoryRunService();
+const laboratoryDataTaggingService = new LaboratoryDataTaggingService();
 const ssmService = new SsmService();
+
+/**
+ * Best-effort mirror of a run's ExpiresAt into each input file's `LaboratoryRunUsages` entry.
+ * Logs and swallows so tagging-side failures never break the status-check pipeline.
+ */
+async function safePropagateExpiresAt(
+  laboratory: Laboratory | undefined,
+  run: LaboratoryRun,
+  expiresAt: number | undefined,
+): Promise<void> {
+  if (expiresAt === undefined) return;
+  if (!laboratory?.S3Bucket) return;
+  const keys = run.InputFileKeys || [];
+  if (!keys.length) return;
+  try {
+    await laboratoryDataTaggingService.updateRunUsageExpiresAt(
+      laboratory,
+      laboratory.S3Bucket,
+      run.RunId,
+      keys,
+      expiresAt,
+    );
+  } catch (err) {
+    console.warn('Failed to propagate ExpiresAt to LaboratoryRunUsages (continuing):', err);
+  }
+}
 
 export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxyResult> => {
   console.log('EVENT: \n' + JSON.stringify(event, null, 2));
@@ -106,12 +134,14 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         }
       }
 
+      const backfilledExpiresAt = missingExpiresAt
+        ? calculateExpiresAtEpochSeconds(new Date(terminalAtIso), retentionMonths)
+        : undefined;
+
       const updated = await laboratoryRunService.update({
         ...existingRun,
         ...(missingTerminalAt ? { TerminalAt: terminalAtIso } : {}),
-        ...(missingExpiresAt
-          ? { ExpiresAt: calculateExpiresAtEpochSeconds(new Date(terminalAtIso), retentionMonths) }
-          : {}),
+        ...(backfilledExpiresAt !== undefined ? { ExpiresAt: backfilledExpiresAt } : {}),
         ...(snapshot?.durationSeconds != null && existingRun.RunDurationSeconds == null
           ? { RunDurationSeconds: snapshot.durationSeconds }
           : {}),
@@ -119,6 +149,7 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         ModifiedBy: 'Status Check',
       });
       void updated;
+      await safePropagateExpiresAt(laboratory, updated, backfilledExpiresAt);
       return true;
     }
 
@@ -145,19 +176,23 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         shouldExpireWithRetentionMonths(retentionMonths) &&
         terminalAtIso != null;
 
+      const newExpiresAt =
+        shouldSetExpiresAt && terminalAtIso
+          ? calculateExpiresAtEpochSeconds(new Date(terminalAtIso), retentionMonths)
+          : undefined;
+
       laboratoryRun = await laboratoryRunService.update({
         ...existingRun,
         Status: newStatusNormalized,
         ...(shouldSetTerminalAt ? { TerminalAt: terminalAtIso } : {}),
-        ...(shouldSetExpiresAt && terminalAtIso
-          ? { ExpiresAt: calculateExpiresAtEpochSeconds(new Date(terminalAtIso), retentionMonths) }
-          : {}),
+        ...(newExpiresAt !== undefined ? { ExpiresAt: newExpiresAt } : {}),
         ...(snapshot.durationSeconds != null && existingRun.RunDurationSeconds == null
           ? { RunDurationSeconds: snapshot.durationSeconds }
           : {}),
         ModifiedAt: now.toISOString(),
         ModifiedBy: 'Status Check',
       });
+      await safePropagateExpiresAt(laboratory, laboratoryRun, newExpiresAt);
     } else if (snapshot.durationSeconds != null && existingRun.RunDurationSeconds == null) {
       // No status change, but the platform now reports a duration we hadn't captured yet.
       const now = new Date();

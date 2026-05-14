@@ -25,6 +25,27 @@ const GSI1_NAME = 'Gsi1Pk_Index';
 /** Namespace UUID for v5 workflow tag ids (stable per lab + platform + workflow identity). */
 const WORKFLOW_TAG_ID_NAMESPACE = 'a3d8f7e2-4c1b-5d6e-9f8a-0b1c2d3e4f5a';
 
+/**
+ * Namespace UUID for v5 permanent tag ids (one stable id per laboratory). The permanent tag is a
+ * lazily-created singleton per laboratory — its id is derived from the laboratory id under this
+ * namespace so the same id is recovered after stack rebuilds, restores, and concurrent first
+ * reads.
+ */
+const PERMANENT_TAG_ID_NAMESPACE = '7b2c6f81-9d3a-4e25-8f47-12a4d8b6e9c0';
+
+/** Fixed display name for every laboratory's singleton permanent tag. */
+const PERMANENT_TAG_NAME = 'Permanent';
+/** Fixed red palette used to distinguish the permanent tag chip in the UI from user tags. */
+const PERMANENT_TAG_COLOR = '#DC2626';
+
+function deterministicPermanentTagId(laboratoryId: string): string {
+  return uuidv5(laboratoryId, PERMANENT_TAG_ID_NAMESPACE);
+}
+
+export function permanentTagIdForLaboratory(laboratoryId: string): string {
+  return deterministicPermanentTagId(laboratoryId);
+}
+
 function isConditionalCheckFailed(e: unknown): boolean {
   return (
     e instanceof ConditionalCheckFailedException ||
@@ -169,6 +190,76 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     return { Tags: tags };
   }
 
+  /**
+   * Lab-stable id of the singleton permanent tag for the given laboratory. The TAG# row itself
+   * is lazily created on first access via {@link ensurePermanentTag}; consumers that just need
+   * the id (e.g. to test membership on a FILE# row) can call this without a write.
+   */
+  public getPermanentTagId(laboratoryId: string): string {
+    return deterministicPermanentTagId(laboratoryId);
+  }
+
+  /**
+   * Returns the laboratory's singleton permanent tag, creating it on first call. Mirrors the
+   * lazy-creation pattern used by workflow tags so callers don't have to gate read paths on a
+   * separate provisioning step. Safe under concurrent creation: the deterministic id +
+   * conditional PutItem makes the second writer observe a `ConditionalCheckFailedException` and
+   * read the winning row back.
+   */
+  public async ensurePermanentTag(laboratory: Laboratory, userId: string): Promise<LaboratoryDataTag> {
+    const laboratoryId = laboratory.LaboratoryId;
+    const tagId = deterministicPermanentTagId(laboratoryId);
+    const existing = await this.getTagRow(laboratoryId, tagId);
+    if (existing) {
+      return existing;
+    }
+
+    const now = new Date().toISOString();
+    const tag: LaboratoryDataTag = {
+      TagId: tagId,
+      Name: PERMANENT_TAG_NAME,
+      ColorHex: PERMANENT_TAG_COLOR,
+      Kind: 'permanent',
+      FileCount: 0,
+      CreatedAt: now,
+      CreatedBy: userId,
+      ModifiedAt: now,
+      ModifiedBy: userId,
+    };
+
+    try {
+      await this.putItem({
+        TableName: TABLE_NAME,
+        Item: marshall(
+          {
+            LaboratoryId: laboratoryId,
+            Sk: skTag(tagId),
+            TagId: tagId,
+            Name: PERMANENT_TAG_NAME,
+            ColorHex: PERMANENT_TAG_COLOR,
+            Kind: 'permanent',
+            FileCount: 0,
+            CreatedAt: now,
+            CreatedBy: userId,
+            ModifiedAt: now,
+            ModifiedBy: userId,
+          },
+          { removeUndefinedValues: true },
+        ),
+        ConditionExpression: 'attribute_not_exists(#pk) AND attribute_not_exists(#sk)',
+        ExpressionAttributeNames: { '#pk': 'LaboratoryId', '#sk': 'Sk' },
+      });
+    } catch (e: unknown) {
+      if (isConditionalCheckFailed(e)) {
+        const won = await this.getTagRow(laboratoryId, tagId);
+        if (won) return won;
+      }
+      throw e;
+    }
+
+    return tag;
+  }
+
   /** Converts a raw TAG row from DynamoDB into the shared LaboratoryDataTag model. */
   private tagRowToModel(row: Record<string, unknown>): LaboratoryDataTag {
     /** Set on workflow TAG rows; Kind/Platform scalars may be missing on legacy or partially-projected items. */
@@ -176,14 +267,21 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
 
     const rawKindAttr = row.Kind ?? row.kind;
     const rawKind = typeof rawKindAttr === 'string' ? rawKindAttr : 'standard';
-    let kind: LaboratoryDataTagKind = rawKind === 'batch' ? 'batch' : rawKind === 'workflow' ? 'workflow' : 'standard';
+    let kind: LaboratoryDataTagKind =
+      rawKind === 'batch'
+        ? 'batch'
+        : rawKind === 'workflow'
+          ? 'workflow'
+          : rawKind === 'permanent'
+            ? 'permanent'
+            : 'standard';
     /** Workflow rows always carry platform + external id; infer Kind if an older row omitted it. */
     const hasWorkflowIdentity =
       typeof row.Platform === 'string' &&
       row.Platform.length > 0 &&
       typeof row.WorkflowExternalId === 'string' &&
       (row.WorkflowExternalId as string).length > 0;
-    if (kind !== 'batch' && hasWorkflowIdentity) {
+    if (kind !== 'batch' && kind !== 'permanent' && hasWorkflowIdentity) {
       kind = 'workflow';
     }
     /** Workflow tags are indexed under Gsi1Pk `{LaboratoryId}#WORKFLOW` — infer Kind when scalars were omitted. */
@@ -198,7 +296,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
      * Also infer from `Gsi1Sk` alone: some stored rows retain the workflow identity sort key but not Gsi1Pk/Kind
      * (e.g. partial updates). Pattern matches {@link workflowGsiSk} output only for workflow tags.
      */
-    if (kind !== 'batch' && (workflowIndexTag || gsiSkParsed)) {
+    if (kind !== 'batch' && kind !== 'permanent' && (workflowIndexTag || gsiSkParsed)) {
       kind = 'workflow';
     }
 
@@ -240,6 +338,9 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
   ): Promise<LaboratoryDataTag> {
     if (kind === 'workflow') {
       throw new Error('Workflow tags cannot be created directly; use getOrCreateWorkflowTag.');
+    }
+    if (kind === 'permanent') {
+      throw new Error('Permanent tags cannot be created directly; use getOrCreatePermanentTag.');
     }
     const laboratoryId = laboratory.LaboratoryId;
     const existing = await this.listTags(laboratoryId);
@@ -430,6 +531,9 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     if (existingRow.Kind === 'workflow') {
       throw new Error('Workflow tags are auto-managed and cannot be edited');
     }
+    if (existingRow.Kind === 'permanent') {
+      throw new Error('Permanent tags are system-managed and cannot be edited');
+    }
 
     const nextName = name !== undefined ? name.trim() : existingRow.Name;
     const nextColor = colorHex !== undefined ? colorHex : existingRow.ColorHex;
@@ -488,6 +592,9 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     const tagRow = await this.getTagRow(laboratoryId, tagId);
     if (!tagRow) {
       return;
+    }
+    if (tagRow.Kind === 'permanent') {
+      throw new Error('Permanent tags are system-managed and cannot be deleted');
     }
 
     const gsiPk = gsi1PkForTag(laboratoryId, tagId);
@@ -564,15 +671,18 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
   /**
    * For tag ids present on files but missing from the listTags-derived sets (e.g. eventual
    * consistency right after workflow tagging), load TAG# rows via BatchGetItem and add ids
-   * to batchTagIds / workflowTagIds so listFileTags partitions correctly.
+   * to batchTagIds / workflowTagIds / permanentTagIds so listFileTags partitions correctly.
    */
   private async hydrateKindSetsFromTagIds(
     laboratoryId: string,
     tagIds: Iterable<string>,
     batchTagIds: Set<string>,
     workflowTagIds: Set<string>,
+    permanentTagIds: Set<string>,
   ): Promise<void> {
-    const toResolve = [...new Set(tagIds)].filter((id) => !batchTagIds.has(id) && !workflowTagIds.has(id));
+    const toResolve = [...new Set(tagIds)].filter(
+      (id) => !batchTagIds.has(id) && !workflowTagIds.has(id) && !permanentTagIds.has(id),
+    );
     if (!toResolve.length) return;
 
     for (let i = 0; i < toResolve.length; i += 100) {
@@ -596,6 +706,8 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         const isWorkflow = tag.Kind === 'workflow' || !!(tag.Platform && tag.WorkflowExternalId);
         if (tag.Kind === 'batch') {
           batchTagIds.add(tag.TagId);
+        } else if (tag.Kind === 'permanent') {
+          permanentTagIds.add(tag.TagId);
         } else if (isWorkflow) {
           workflowTagIds.add(tag.TagId);
         }
@@ -605,9 +717,16 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
 
   public async listFileTags(laboratoryId: string, bucket: string, keys: string[]): Promise<FileTagAssignment[]> {
     const out: FileTagAssignment[] = [];
-    const { batchTagIds, workflowTagIds } = await this.getKindIndexedTagIds(laboratoryId);
+    const { batchTagIds, workflowTagIds, permanentTagIds } = await this.getKindIndexedTagIds(laboratoryId);
     const batchTagIdsMutable = new Set(batchTagIds);
     const workflowTagIdsMutable = new Set(workflowTagIds);
+    const permanentTagIdsMutable = new Set(permanentTagIds);
+    /**
+     * Always treat the lab's deterministic permanent tag id as permanent, even if the TAG# row
+     * hasn't been provisioned yet (newer labs created before the first `listTags` lazy-create).
+     * This keeps file-row partitioning correct under any ordering.
+     */
+    permanentTagIdsMutable.add(deterministicPermanentTagId(laboratoryId));
 
     for (let i = 0; i < keys.length; i += 100) {
       const batchKeys = keys.slice(i, i + 100);
@@ -641,7 +760,13 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         }
       }
 
-      await this.hydrateKindSetsFromTagIds(laboratoryId, chunkTagIds, batchTagIdsMutable, workflowTagIdsMutable);
+      await this.hydrateKindSetsFromTagIds(
+        laboratoryId,
+        chunkTagIds,
+        batchTagIdsMutable,
+        workflowTagIdsMutable,
+        permanentTagIdsMutable,
+      );
 
       for (let j = 0; j < batchKeys.length; j++) {
         const key = batchKeys[j];
@@ -650,8 +775,11 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         const standard: string[] = [];
         const workflowIds: string[] = [];
         let batchTagId: string | undefined;
+        let isPermanent = false;
         for (const id of rawIds) {
-          if (batchTagIdsMutable.has(id)) {
+          if (permanentTagIdsMutable.has(id)) {
+            isPermanent = true;
+          } else if (batchTagIdsMutable.has(id)) {
             batchTagId = id;
           } else if (workflowTagIdsMutable.has(id)) {
             workflowIds.push(id);
@@ -668,6 +796,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
           TagIds: standard,
           WorkflowTagIds: workflowIds,
           ...(batchTagId ? { BatchTagId: batchTagId } : {}),
+          ...(isPermanent ? { IsPermanent: true } : {}),
           ...(usageList && usageList.length ? { LaboratoryRunUsages: usageList } : {}),
         });
       }
@@ -849,6 +978,68 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
   }
 
   /**
+   * Patches the `ExpiresAt` value on every `LaboratoryRunUsages` entry for the given `RunId`,
+   * across all of its recorded input file rows. Called when a laboratory run transitions to a
+   * terminal status and `ExpiresAt` is computed (or recomputed via the retention policy
+   * lambda), so the data collections page sees an up-to-date expiry without re-reading the
+   * run table.
+   *
+   * `expiresAt === undefined` clears the attribute (used when retention is disabled or the
+   * run leaves a terminal status). Silently skips file rows that no longer carry the run id
+   * (e.g. cleanup has already run), keeping the operation idempotent.
+   */
+  public async updateRunUsageExpiresAt(
+    laboratory: Laboratory,
+    bucket: string,
+    runId: string,
+    inputFileKeys: string[],
+    expiresAt: number | undefined,
+  ): Promise<void> {
+    const laboratoryId = laboratory.LaboratoryId;
+    this.assertBucketMatchesLab(laboratory, bucket);
+
+    for (const key of inputFileKeys) {
+      if (!key || !key.startsWith(`${laboratory.OrganizationId}/${laboratoryId}/`)) continue;
+      const ref = encodeS3ObjectRef(bucket, key);
+      const now = new Date().toISOString();
+      try {
+        if (expiresAt === undefined) {
+          await this.updateItem({
+            TableName: TABLE_NAME,
+            Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
+            UpdateExpression: 'REMOVE #lru.#rid.#exp SET ModifiedAt = :ma',
+            ExpressionAttributeNames: {
+              '#lru': 'LaboratoryRunUsages',
+              '#rid': runId,
+              '#exp': 'ExpiresAt',
+            },
+            ExpressionAttributeValues: marshall({ ':ma': now }),
+            ConditionExpression: 'attribute_exists(#lru) AND attribute_exists(#lru.#rid)',
+          });
+        } else {
+          await this.updateItem({
+            TableName: TABLE_NAME,
+            Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
+            UpdateExpression: 'SET #lru.#rid.#exp = :exp, ModifiedAt = :ma',
+            ExpressionAttributeNames: {
+              '#lru': 'LaboratoryRunUsages',
+              '#rid': runId,
+              '#exp': 'ExpiresAt',
+            },
+            ExpressionAttributeValues: marshall({ ':exp': expiresAt, ':ma': now }),
+            ConditionExpression: 'attribute_exists(#lru) AND attribute_exists(#lru.#rid)',
+          });
+        }
+      } catch (e: unknown) {
+        if (isConditionalCheckFailed(e)) {
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
+
+  /**
    * Removes the given `RunId` entries from each file's `LaboratoryRunUsages` map. Used by
    * maintenance flows (seed reset, run deletion) that need to undo run history without
    * touching unrelated tags. If a FILE# row ends up with no tags **and** no usages after the
@@ -862,6 +1053,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     laboratory: Laboratory,
     bucket: string,
     runIdToInputKeys: Record<string, string[]>,
+    options: { preserveEmptyFileRow?: boolean } = {},
   ): Promise<void> {
     const laboratoryId = laboratory.LaboratoryId;
     this.assertBucketMatchesLab(laboratory, bucket);
@@ -897,6 +1089,12 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         // Re-read the row to decide whether it can be deleted entirely. The row may have other
         // tags, batch assignments, or remaining run usages — only delete when both TagIds and
         // LaboratoryRunUsages are empty.
+        //
+        // The DynamoDB-stream subscriber sets `preserveEmptyFileRow: true` so the row remains
+        // discoverable by the scheduled S3 cleanup job; otherwise we would lose the
+        // `S3Bucket`+`ObjectKey` pair needed to issue the `s3:DeleteObject`. Seed/maintenance
+        // callers leave the option unset and get the original cleanup behavior.
+        if (options.preserveEmptyFileRow) continue;
         const after = await this.getFileRow(laboratoryId, ref);
         if (!after) continue;
         const hasTags = (after.TagIds || []).length > 0;
@@ -909,6 +1107,79 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         }
       }
     }
+  }
+
+  /**
+   * Internal shape used by maintenance flows (e.g. `process-expired-laboratory-data`) to walk
+   * every FILE# row in a laboratory partition without leaking the raw DynamoDB schema.
+   */
+  public async listAllFileRowsForLab(laboratoryId: string): Promise<
+    Array<{
+      Ref: string;
+      S3Bucket: string;
+      ObjectKey: string;
+      TagIds: string[];
+      LaboratoryRunUsages?: Record<string, LaboratoryRunUsageSummary>;
+    }>
+  > {
+    const out: Array<{
+      Ref: string;
+      S3Bucket: string;
+      ObjectKey: string;
+      TagIds: string[];
+      LaboratoryRunUsages?: Record<string, LaboratoryRunUsageSummary>;
+    }> = [];
+
+    let startKey: Record<string, unknown> | undefined;
+    do {
+      const response: QueryCommandOutput = await this.queryItems({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: '#pk = :pk AND begins_with(#sk, :filePrefix)',
+        ExpressionAttributeNames: { '#pk': 'LaboratoryId', '#sk': 'Sk' },
+        ExpressionAttributeValues: {
+          ':pk': { S: laboratoryId },
+          ':filePrefix': { S: 'FILE#' },
+        },
+        ...(startKey ? { ExclusiveStartKey: startKey as never } : {}),
+      });
+      for (const item of response.Items || []) {
+        const row = unmarshall(item) as Record<string, unknown>;
+        const sk = row.Sk as string;
+        const ref = typeof sk === 'string' && sk.startsWith('FILE#') ? sk.slice('FILE#'.length) : '';
+        if (!ref) continue;
+        out.push({
+          Ref: ref,
+          S3Bucket: row.S3Bucket as string,
+          ObjectKey: row.ObjectKey as string,
+          TagIds: (row.TagIds as string[]) || [],
+          LaboratoryRunUsages: (row.LaboratoryRunUsages as Record<string, LaboratoryRunUsageSummary>) || undefined,
+        });
+      }
+      startKey = response.LastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (startKey);
+
+    return out;
+  }
+
+  /**
+   * Deletes a FILE# row and all of its MAP# associations (one per tag id). Decrements
+   * `FileCount` on the affected TAG# rows so counts stay consistent with the data
+   * collections UI. Used by the scheduled S3 cleanup Lambda after the S3 object itself
+   * has been deleted.
+   */
+  public async deleteFileRowAndAssociations(laboratoryId: string, ref: string): Promise<void> {
+    const fileRow = await this.getFileRow(laboratoryId, ref);
+    if (!fileRow) return;
+
+    for (const tagId of fileRow.TagIds || []) {
+      await this.deleteMapIfExists(laboratoryId, tagId, ref);
+      await this.adjustTagFileCount(laboratoryId, tagId, -1);
+    }
+
+    await this.deleteItem({
+      TableName: TABLE_NAME,
+      Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
+    });
   }
 
   public async listFilesByTag(
@@ -1157,24 +1428,27 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
   }
 
   /**
-   * Single-pass tag listing that returns the batch and workflow tag id sets used to
+   * Single-pass tag listing that returns the batch / workflow / permanent tag id sets used to
    * partition file rows in `listFileTags`. Avoids two `listTags` round-trips on hot paths.
    */
   private async getKindIndexedTagIds(
     laboratoryId: string,
-  ): Promise<{ batchTagIds: Set<string>; workflowTagIds: Set<string> }> {
+  ): Promise<{ batchTagIds: Set<string>; workflowTagIds: Set<string>; permanentTagIds: Set<string> }> {
     const { Tags } = await this.listTags(laboratoryId);
     const batchTagIds = new Set<string>();
     const workflowTagIds = new Set<string>();
+    const permanentTagIds = new Set<string>();
     for (const t of Tags) {
       const kind = t.Kind ?? 'standard';
       if (kind === 'batch') {
         batchTagIds.add(t.TagId);
+      } else if (kind === 'permanent') {
+        permanentTagIds.add(t.TagId);
       } else if (kind === 'workflow' || !!(t.Platform && t.WorkflowExternalId)) {
         workflowTagIds.add(t.TagId);
       }
     }
-    return { batchTagIds, workflowTagIds };
+    return { batchTagIds, workflowTagIds, permanentTagIds };
   }
 
   private async putMapRow(

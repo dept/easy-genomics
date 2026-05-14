@@ -33,6 +33,12 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
+    // Lazy-create the laboratory's singleton permanent tag so the UI can always render the
+    // "Mark Permanent" affordance without a separate provisioning round trip. Idempotent and
+    // safe under concurrent first reads (deterministic id + conditional PutItem).
+    const userId = event.requestContext.authorizer?.claims?.['cognito:username'] || 'system';
+    await taggingService.ensurePermanentTag(laboratory, userId);
+
     const res = await taggingService.listTags(laboratoryId);
     return buildResponse(200, JSON.stringify(res), event);
   } catch (err: any) {

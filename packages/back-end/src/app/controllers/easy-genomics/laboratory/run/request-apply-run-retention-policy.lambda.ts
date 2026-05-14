@@ -7,6 +7,7 @@ import {
   UnauthorizedAccessError,
 } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { LaboratoryDataTaggingService } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import {
@@ -24,6 +25,7 @@ import {
 
 const laboratoryRunService = new LaboratoryRunService();
 const laboratoryService = new LaboratoryService();
+const laboratoryDataTaggingService = new LaboratoryDataTaggingService();
 
 type RequestBody = {
   retentionMonths?: number;
@@ -110,6 +112,23 @@ export const handler: Handler = async (
         },
         remove: needsExpiresAtRemove ? ['ExpiresAt'] : [],
       });
+
+      // Mirror the new (or cleared) ExpiresAt onto each input file's LaboratoryRunUsages entry
+      // so the data collections UI reflects the policy change without re-reading the run table.
+      // Best-effort: tagging-side failures must not roll back the retention update.
+      if (laboratory.S3Bucket && (run.InputFileKeys || []).length > 0) {
+        try {
+          await laboratoryDataTaggingService.updateRunUsageExpiresAt(
+            laboratory,
+            laboratory.S3Bucket,
+            run.RunId,
+            run.InputFileKeys || [],
+            needsExpiresAtRemove ? undefined : desiredExpiresAt,
+          );
+        } catch (err) {
+          console.warn(`Failed to propagate ExpiresAt to tagging for RunId=${run.RunId} (continuing):`, err);
+        }
+      }
 
       if (needsExpiresAtRemove) removed++;
       if (needsTerminalAt || needsExpiresAtSet) updated++;

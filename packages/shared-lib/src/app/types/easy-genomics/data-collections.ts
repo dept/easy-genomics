@@ -1,4 +1,4 @@
-export type LaboratoryDataTagKind = 'standard' | 'batch' | 'workflow';
+export type LaboratoryDataTagKind = 'standard' | 'batch' | 'workflow' | 'permanent';
 
 export type WorkflowPlatform = 'AWS HealthOmics' | 'Seqera Cloud';
 
@@ -27,12 +27,18 @@ export type ListLaboratoryDataTagsResponse = {
 
 export type FileTagAssignment = {
   Key: string;
-  /** Standard (non-batch, non-workflow) tags only. */
+  /** Standard (non-batch, non-workflow, non-permanent) tags only. */
   TagIds: string[];
   /** At most one batch tag id if the file is assigned to a batch. */
   BatchTagId?: string;
   /** Workflow tag ids that have been associated with this file via run launches. */
   WorkflowTagIds: string[];
+  /**
+   * True when the file carries the laboratory's system-managed `permanent` tag. Files marked
+   * permanent are never auto-deleted by the run-retention cleanup job (see
+   * `process-expired-laboratory-data` Lambda).
+   */
+  IsPermanent?: boolean;
   /**
    * Per-laboratory-run usage history for this file, sorted newest first by `RunCreatedAt`.
    * Each entry records that the file appeared in a run's `InputFileKeys` at run creation time,
@@ -53,6 +59,14 @@ export type LaboratoryRunUsageSummary = {
   InputFileCount: number;
   /** Full list of S3 object keys (lab-scoped) for the run, used by the tooltip's "select samples" action. */
   InputFileKeys: string[];
+  /**
+   * Mirror of the laboratory run's `ExpiresAt` (epoch seconds, DynamoDB TTL) at the time this
+   * usage entry was recorded or last refreshed. Undefined when the run is non-expiring
+   * (`Laboratory.RunRetentionMonths === 0`) or when the run had not yet reached a terminal
+   * status. Surfaced to the front-end so the data collections page can power the
+   * "Expiring soon" scope filter without an extra round trip to the run table.
+   */
+  ExpiresAt?: number;
 };
 
 export type ListFileTagsResponse = {

@@ -26,6 +26,12 @@
      * (Not yet analyzed / Analyzed / Analyzed Nx) and the analysis history tooltip.
      */
     keyToRunUsages?: Record<string, LaboratoryRunUsageSummary[]>;
+    /**
+     * Per-file flag indicating the lab's system-managed Permanent tag is applied. Rendered as
+     * a dedicated red lock affordance on each card / table row; never appears in the standard
+     * tag pill rail.
+     */
+    keyToIsPermanent?: Record<string, boolean>;
     batchTags?: LaboratoryDataTag[];
     tags: LaboratoryDataTag[];
     selectedKeys: string[];
@@ -97,6 +103,39 @@
   function fileName(key: string): string {
     const parts = key.split('/').filter(Boolean);
     return parts[parts.length - 1] || key;
+  }
+
+  function isFilePermanent(key: string): boolean {
+    return !!(props.keyToIsPermanent && props.keyToIsPermanent[key]);
+  }
+
+  /**
+   * Soonest run-retention expiry (epoch seconds) recorded against the file, or undefined if
+   * no usages carry an `ExpiresAt`. Used by the table view's Expires column.
+   */
+  function soonestRunExpiresAt(key: string): number | undefined {
+    const usages = props.keyToRunUsages?.[key];
+    if (!usages || !usages.length) return undefined;
+    let soonest: number | undefined;
+    for (const u of usages) {
+      if (typeof u.ExpiresAt === 'number' && (soonest === undefined || u.ExpiresAt < soonest)) {
+        soonest = u.ExpiresAt;
+      }
+    }
+    return soonest;
+  }
+
+  function formatExpiresLabel(key: string): string {
+    if (isFilePermanent(key)) return 'Never';
+    const epoch = soonestRunExpiresAt(key);
+    if (epoch === undefined) return '—';
+    const now = Math.floor(Date.now() / 1000);
+    const diffDays = Math.round((epoch - now) / 86400);
+    if (diffDays <= 0) return 'Expired';
+    if (diffDays === 1) return 'in 1 day';
+    if (diffDays < 30) return `in ${diffDays} days`;
+    const months = Math.round(diffDays / 30);
+    return months <= 1 ? 'in ~1 month' : `in ~${months} months`;
   }
 
   /** Folder path under the lab root (for flat recursive listings). */
@@ -486,7 +525,14 @@
             @dragleave="onCardDragLeave"
             @drop="onCardDrop($event)"
           >
-            <div class="absolute right-2 top-2" @mousedown.stop @click.stop>
+            <div class="absolute right-2 top-2 flex items-center gap-1.5" @mousedown.stop @click.stop>
+              <UIcon
+                v-if="isFilePermanent(f.Key)"
+                name="i-heroicons-lock-closed"
+                class="h-3.5 w-3.5 shrink-0 text-red-600"
+                title="This file is protected from auto-deletion when run retention expires."
+                aria-label="Protected from auto-deletion"
+              />
               <UCheckbox :model-value="selectedKeys.includes(f.Key)" @update:model-value="emit('toggleKey', f.Key)" />
             </div>
             <div class="absolute left-0 top-0 z-[1]" @mousedown.stop @click.stop>
@@ -612,7 +658,16 @@
                   />
                 </td>
                 <td class="max-w-[14rem] px-3 py-2 align-middle">
-                  <div class="font-medium text-gray-900">{{ fileName(f.Key) }}</div>
+                  <div class="flex items-center gap-1.5">
+                    <UIcon
+                      v-if="isFilePermanent(f.Key)"
+                      name="i-heroicons-lock-closed"
+                      class="h-3.5 w-3.5 shrink-0 text-red-600"
+                      title="This file is protected from auto-deletion when run retention expires."
+                      aria-label="Protected from auto-deletion"
+                    />
+                    <span class="truncate font-medium text-gray-900">{{ fileName(f.Key) }}</span>
+                  </div>
                   <div v-if="folderPathUnderLab(f.Key)" class="text-muted truncate text-xs">
                     {{ folderPathUnderLab(f.Key) }}
                   </div>
@@ -654,7 +709,16 @@
                     <span v-else class="text-muted text-[10px] italic">No tags</span>
                   </div>
                 </td>
-                <td class="text-muted px-3 py-2 align-middle">—</td>
+                <td class="text-muted px-3 py-2 align-middle">
+                  <UIcon
+                    v-if="isFilePermanent(f.Key)"
+                    name="i-heroicons-lock-closed"
+                    class="inline-block h-3.5 w-3.5 text-red-600"
+                    title="This file is protected from auto-deletion when run retention expires. It does not expire with run retention."
+                    aria-label="Protected from auto-deletion; does not expire with run retention"
+                  />
+                  <span v-else class="tabular-nums">{{ formatExpiresLabel(f.Key) }}</span>
+                </td>
               </tr>
             </template>
           </tbody>
