@@ -215,6 +215,13 @@
     ),
   );
 
+  /** Standard tags plus the system Permanent tag for the bulk add/remove tray only (left rail still omits Permanent). */
+  const bulkPanelAssignableTags = computed(() => {
+    const std = standardTags.value;
+    const p = permanentTag.value;
+    return p ? [...std, p] : std;
+  });
+
   const batchTags = computed(() => tags.value.filter((t) => (t.Kind ?? 'standard') === 'batch'));
 
   const workflowTags = computed(() => tags.value.filter((t) => isWorkflowLaboratoryTag(t)));
@@ -397,9 +404,13 @@
     const sel = selectedKeys.value;
     if (!sel.length) return [] as { tagId: string; count: number }[];
     const counts = new Map<string, number>();
+    const pid = permanentTagId.value;
     for (const key of sel) {
       for (const tid of standardTagIdsForFileKey(key)) {
         counts.set(tid, (counts.get(tid) || 0) + 1);
+      }
+      if (pid && isFilePermanent(key)) {
+        counts.set(pid, (counts.get(pid) || 0) + 1);
       }
     }
     return [...counts.entries()]
@@ -534,10 +545,15 @@
         break;
     }
     if (tagsFilterUntagged.value) {
-      list = list.filter((f) => !standardTagIdsForFileKey(f.Key).length);
+      list = list.filter((f) => !standardTagIdsForFileKey(f.Key).length && !isFilePermanent(f.Key));
     } else if (tagsFilterTagIds.value.length > 0) {
       const selected = new Set(tagsFilterTagIds.value);
-      list = list.filter((f) => standardTagIdsForFileKey(f.Key).some((tid: string) => selected.has(tid)));
+      const pid = permanentTagId.value;
+      list = list.filter(
+        (f) =>
+          standardTagIdsForFileKey(f.Key).some((tid: string) => selected.has(tid)) ||
+          (!!pid && selected.has(pid) && isFilePermanent(f.Key)),
+      );
     }
     return list;
   });
@@ -566,6 +582,29 @@
     const out: Record<string, number> = {};
     for (const [k, v] of counts) out[k] = v;
     return out;
+  });
+
+  /** Listed files (current search scope) that carry the Permanent tag — drives left-rail Permanent filter visibility. */
+  const permanentTaggedFileCountInSearch = computed(
+    () => filesMatchingSearch.value.filter((f) => isFilePermanent(f.Key)).length,
+  );
+
+  /**
+   * Left-rail tag filters: all standard tags, plus Permanent only when at least one file in the
+   * current listing/search has it (same universe as chip counts).
+   */
+  const leftRailTagFilterTags = computed(() => {
+    const std = standardTags.value;
+    const p = permanentTag.value;
+    if (!p || permanentTaggedFileCountInSearch.value === 0) return std;
+    return [...std, p];
+  });
+
+  watch(permanentTaggedFileCountInSearch, (n) => {
+    const pid = permanentTagId.value;
+    if (pid && n === 0 && tagsFilterTagIds.value.includes(pid)) {
+      tagsFilterTagIds.value = tagsFilterTagIds.value.filter((id) => id !== pid);
+    }
   });
 
   /** Explorer dismiss chips — ids must stay in sync with `clearExplorerFilter`. */
@@ -809,75 +848,6 @@
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       toast.error(`Update failed: ${msg}`);
-    } finally {
-      uiStore.setRequestComplete('dataCollectionsMutate');
-    }
-  }
-
-  /**
-   * Counts of permanent / non-permanent files in the current selection, used to decide
-   * whether to render Mark/Unmark Permanent (and to keep the affordance disabled when the
-   * lab's permanent tag hasn't been provisioned yet — `listTags` lazy-creates it server-side,
-   * so this state is transient).
-   */
-  const selectionPermanentStats = computed(() => {
-    const sel = selectedKeys.value;
-    let permanent = 0;
-    let nonPermanent = 0;
-    for (const key of sel) {
-      if (isFilePermanent(key)) permanent++;
-      else nonPermanent++;
-    }
-    return { permanent, nonPermanent, total: sel.length };
-  });
-
-  async function markSelectionPermanent(): Promise<void> {
-    if (!lab.value?.S3Bucket || !selectedKeys.value.length) return;
-    const pid = permanentTagId.value;
-    if (!pid) {
-      toast.error('Permanent tag is still being provisioned; please retry in a moment.');
-      await loadTags();
-      return;
-    }
-    const keys = selectedKeys.value.filter((k) => !isFilePermanent(k));
-    if (!keys.length) {
-      toast.info('All selected files are already Permanent.');
-      return;
-    }
-    uiStore.setRequestPending('dataCollectionsMutate');
-    try {
-      await addTagsToFilesInChunks(keys, [pid], []);
-      await loadTags();
-      await loadListing();
-      await nextTick();
-      toast.success('Marked as Permanent');
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      toast.error(`Mark Permanent failed: ${msg}`);
-    } finally {
-      uiStore.setRequestComplete('dataCollectionsMutate');
-    }
-  }
-
-  async function unmarkSelectionPermanent(): Promise<void> {
-    if (!lab.value?.S3Bucket || !selectedKeys.value.length) return;
-    const pid = permanentTagId.value;
-    if (!pid) return;
-    const keys = selectedKeys.value.filter((k) => isFilePermanent(k));
-    if (!keys.length) {
-      toast.info('No selected files are Permanent.');
-      return;
-    }
-    uiStore.setRequestPending('dataCollectionsMutate');
-    try {
-      await addTagsToFilesInChunks(keys, [], [pid]);
-      await loadTags();
-      await loadListing();
-      await nextTick();
-      toast.success('Removed Permanent flag');
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      toast.error(`Unmark Permanent failed: ${msg}`);
     } finally {
       uiStore.setRequestComplete('dataCollectionsMutate');
     }
@@ -1212,7 +1182,7 @@
               <span>Untagged</span>
             </button>
             <button
-              v-for="t in standardTags"
+              v-for="t in leftRailTagFilterTags"
               :key="t.TagId"
               class="hover:bg-primary-muted flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
               :class="{ 'bg-primary-muted font-medium': isStandardTagFilterActive(t.TagId) }"
@@ -1220,15 +1190,27 @@
               @dragover.prevent="onCardDragOverTag"
               @drop="onTagRowDrop($event, t.TagId)"
             >
-              <span class="flex min-w-0 items-center gap-2">
+              <span class="flex min-w-0 flex-1 items-center gap-2">
                 <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: t.ColorHex }" />
-                <span class="truncate">{{ t.Name }}</span>
+                <span class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span class="truncate">{{ t.Name }}</span>
+                  <span
+                    v-if="(t.Kind ?? 'standard') === 'permanent'"
+                    class="text-muted shrink-0 text-[10px] font-normal"
+                  >
+                    Protect from expiry
+                  </span>
+                </span>
               </span>
               <UBadge
                 size="xs"
                 class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif tabular-nums ring-0"
               >
-                {{ standardTagIdToChipCount[t.TagId] ?? 0 }}
+                {{
+                  (t.Kind ?? 'standard') === 'permanent'
+                    ? permanentTaggedFileCountInSearch
+                    : (standardTagIdToChipCount[t.TagId] ?? 0)
+                }}
               </UBadge>
             </button>
 
@@ -1316,30 +1298,6 @@
         <span v-else class="text-muted text-xs">Select files in the grid to add or remove tags in bulk.</span>
         <div v-if="hasSelection" class="ml-auto flex flex-wrap items-center gap-2">
           <UIcon v-if="bulkPanelBusy" name="i-heroicons-arrow-path" class="text-muted h-5 w-5 shrink-0 animate-spin" />
-          <UButton
-            v-if="selectionPermanentStats.nonPermanent > 0"
-            size="sm"
-            variant="outline"
-            color="red"
-            :disabled="bulkPanelBusy || !permanentTagId"
-            :title="`Mark ${selectionPermanentStats.nonPermanent} file(s) as Permanent so they are never auto-deleted, even after their run retention expires.`"
-            @click="markSelectionPermanent"
-          >
-            <UIcon name="i-heroicons-lock-closed" class="mr-1 h-4 w-4" aria-hidden="true" />
-            Mark Permanent
-          </UButton>
-          <UButton
-            v-if="selectionPermanentStats.permanent > 0"
-            size="sm"
-            variant="outline"
-            color="red"
-            :disabled="bulkPanelBusy || !permanentTagId"
-            :title="`Remove the Permanent flag from ${selectionPermanentStats.permanent} file(s). They will again follow the lab's run retention policy.`"
-            @click="unmarkSelectionPermanent"
-          >
-            <UIcon name="i-heroicons-lock-open" class="mr-1 h-4 w-4" aria-hidden="true" />
-            Unmark Permanent
-          </UButton>
           <UButton size="sm" variant="soft" :disabled="bulkPanelBusy" @click="openAddBulkPanel">Add Tags</UButton>
           <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openRemoveBulkPanel">
             Remove Tags
@@ -1376,12 +1334,20 @@
                 :key="row.tagId"
                 class="flex items-center justify-between gap-2 rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2"
               >
-                <span class="flex min-w-0 items-center gap-2">
+                <span class="flex min-w-0 flex-1 items-center gap-2">
                   <span
                     class="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
                     :style="{ background: tagById(row.tagId)?.ColorHex || '#ccc' }"
                   />
-                  <span class="truncate font-medium">{{ tagById(row.tagId)?.Name ?? row.tagId }}</span>
+                  <span class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span class="truncate font-medium">{{ tagById(row.tagId)?.Name ?? row.tagId }}</span>
+                    <span
+                      v-if="tagById(row.tagId)?.Kind === 'permanent'"
+                      class="text-muted shrink-0 text-[10px] font-normal"
+                    >
+                      Protect from expiry
+                    </span>
+                  </span>
                 </span>
                 <span class="text-muted shrink-0 text-xs tabular-nums">
                   {{ row.count }} / {{ selectedKeys.length }}
@@ -1394,7 +1360,7 @@
             <h3 class="text-muted mb-3 text-xs font-semibold uppercase tracking-wide">Add Tags</h3>
             <ul class="max-h-56 space-y-2 overflow-y-auto pr-1 text-sm">
               <li
-                v-for="t in standardTags"
+                v-for="t in bulkPanelAssignableTags"
                 :key="'add-' + t.TagId"
                 class="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 hover:bg-gray-50"
               >
@@ -1403,7 +1369,15 @@
                   @update:model-value="toggleBulkAddTag(t.TagId)"
                 />
                 <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: t.ColorHex }" />
-                <span class="truncate">{{ t.Name }}</span>
+                <span class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span class="truncate">{{ t.Name }}</span>
+                  <span
+                    v-if="(t.Kind ?? 'standard') === 'permanent'"
+                    class="text-muted shrink-0 text-[10px] font-normal"
+                  >
+                    Protect from expiry
+                  </span>
+                </span>
               </li>
             </ul>
             <div class="mt-3 border-t border-gray-100 pt-3">
@@ -1456,7 +1430,12 @@
                   class="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
                   :style="{ background: tagById(tid)?.ColorHex || '#ccc' }"
                 />
-                <span class="truncate">{{ tagById(tid)?.Name ?? tid }}</span>
+                <span class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span class="truncate">{{ tagById(tid)?.Name ?? tid }}</span>
+                  <span v-if="tagById(tid)?.Kind === 'permanent'" class="text-muted shrink-0 text-[10px] font-normal">
+                    Protect from expiry
+                  </span>
+                </span>
               </li>
             </ul>
           </div>
