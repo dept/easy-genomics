@@ -5,7 +5,7 @@ import {
   TransactWriteItemsCommandOutput,
 } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
-import { LaboratoryNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { InvalidRequestError, LaboratoryNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { LaboratorySchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { Service } from '../../types/service';
@@ -24,7 +24,7 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
     console.info(logRequestMessage);
 
     // Data validation safety check
-    if (!LaboratorySchema.safeParse(laboratory).success) throw new Error('Invalid request');
+    if (!LaboratorySchema.safeParse(laboratory).success) throw new InvalidRequestError();
 
     const response = await this.transactWriteItems({
       TransactItems: [
@@ -152,7 +152,7 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
     console.info(logRequestMessage);
 
     // Data validation safety check
-    if (!LaboratorySchema.safeParse(laboratory).success) throw new Error('Invalid request');
+    if (!LaboratorySchema.safeParse(laboratory).success) throw new InvalidRequestError();
 
     // Check if Laboratory Name is unchanged
     if (laboratory.Name === existing.Name) {
