@@ -7,10 +7,13 @@
     LaboratoryDataTag,
     LaboratoryRunUsageSummary,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
+  import { formatFileSize } from '@FE/utils/file-size';
 
   const props = defineProps<{
     /** Used to deep-link from the analysis history tooltip to a laboratory run detail page. */
     labId: string;
+    /** When set, path tooltips use `s3://bucket/key` instead of the raw key only. */
+    s3Bucket?: string;
     labRoot: string;
     visibleFiles: { Key: string; Size?: number; LastModified?: string }[];
     keyToTagIds: Record<string, string[]>;
@@ -46,6 +49,8 @@
     selectAllDisplayed: [];
     clearSelection: [];
     clearFilter: [chipId: string];
+    /** Fired when a file-card drag ends (including cancel) so parents can clear drop-target UI. */
+    fileKeysDragEnd: [];
     removeTagFromFile: [payload: { key: string; tagId: string }];
     /** Tooltip emits this when the user clicks the check button on a run row. */
     selectRunFiles: [payload: { runId: string; inputFileKeys: string[] }];
@@ -97,6 +102,13 @@
   function fileName(key: string): string {
     const parts = key.split('/').filter(Boolean);
     return parts[parts.length - 1] || key;
+  }
+
+  /** Full object location for hover tooltips (truncated paths in the grid). */
+  function s3ObjectTooltip(key: string): string {
+    const b = props.s3Bucket?.trim();
+    if (b) return `s3://${b}/${key}`;
+    return key;
   }
 
   /** Folder path under the lab root (for flat recursive listings). */
@@ -157,6 +169,18 @@
 
   const BATCH_HEADER_DOT_NOT_ANALYZED = '#EF9F27';
   const BATCH_HEADER_DOT_ANALYZED = '#2DB48F';
+
+  /**
+   * Nuxt UI v2 tooltip theme defaults: `max-w-xs`, fixed `h-6`, and `truncate` on the content box
+   * (see `node_modules/@nuxt/ui/dist/runtime/ui.config/overlays/tooltip.js`). That clips long S3
+   * URIs; widen the popper and allow wrapped multi-line text with vertical scroll if needed.
+   */
+  const s3PathTooltipUi = {
+    /** Default `inline-flex` keeps min-content width — long filenames overflow the card grid cell. */
+    wrapper: 'relative block w-full min-w-0 max-w-full',
+    width: 'max-w-[min(92vw,52rem)]',
+    base: '[@media(pointer:coarse)]:hidden min-h-0 h-auto max-h-[min(80vh,32rem)] overflow-y-auto overflow-x-hidden px-2.5 py-2 text-xs font-normal whitespace-normal break-all text-left relative',
+  };
 
   function batchSectionHeaderParts(sec: {
     batchId: string | null;
@@ -316,6 +340,10 @@
     e.dataTransfer?.setData('text/plain', 'keys');
   }
 
+  function onFileCardDragEnd(): void {
+    emit('fileKeysDragEnd');
+  }
+
   function onPillDragStart(e: DragEvent, tagId: string, key: string): void {
     e.stopPropagation();
     dragTagId = tagId;
@@ -344,7 +372,7 @@
 </script>
 
 <template>
-  <div class="flex min-w-0 flex-1 flex-col">
+  <div class="flex min-h-0 min-w-0 flex-1 flex-col">
     <div class="border-border-muted flex flex-wrap items-center gap-3 border-b px-4 py-3">
       <UInput
         :model-value="search"
@@ -417,7 +445,7 @@
       listing limit.
     </div>
 
-    <div ref="scrollEl" class="relative flex-1 overflow-auto p-2" @mousedown="onScrollHostMouseDown">
+    <div ref="scrollEl" class="relative min-h-0 flex-1 overflow-auto p-2" @mousedown="onScrollHostMouseDown">
       <div
         v-if="loading"
         class="absolute inset-0 z-20 flex min-h-[14rem] flex-col items-center justify-center gap-3 bg-white/90 p-6 backdrop-blur-[1px]"
@@ -475,13 +503,14 @@
             data-file-card
             :data-key="f.Key"
             draggable="true"
-            class="border-border-muted relative cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition"
+            class="border-border-muted relative min-w-0 cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition"
             :class="{
               'bg-primary-muted ring-primary ring-2': selectedKeys.includes(f.Key),
               'z-[80]': analysisPopoverOpenKey === f.Key,
             }"
             @click="emit('toggleKey', f.Key)"
             @dragstart="onCardDragStart($event, f.Key)"
+            @dragend="onFileCardDragEnd"
             @dragover="onCardDragOver"
             @dragleave="onCardDragLeave"
             @drop="onCardDrop($event)"
@@ -502,11 +531,20 @@
                 @update:open="onAnalysisPopoverOpen(f.Key, $event)"
               />
             </div>
-            <div class="mt-7 pr-8 text-sm font-medium leading-snug">{{ fileName(f.Key) }}</div>
-            <div v-if="folderPathUnderLab(f.Key)" class="text-muted mt-0.5 truncate text-[11px]">
-              {{ folderPathUnderLab(f.Key) }}
-            </div>
-            <div class="text-muted mt-1 text-xs">{{ f.Size != null ? `${f.Size} bytes` : '' }}</div>
+            <UTooltip :open-delay="500" :ui="s3PathTooltipUi">
+              <template #text>
+                {{ s3ObjectTooltip(f.Key) }}
+              </template>
+              <div class="w-full min-w-0 pr-8">
+                <div class="mt-7 line-clamp-2 w-full min-w-0 break-all text-sm font-medium leading-snug">
+                  {{ fileName(f.Key) }}
+                </div>
+                <div v-if="folderPathUnderLab(f.Key)" class="text-muted mt-0.5 truncate text-[11px]">
+                  {{ folderPathUnderLab(f.Key) }}
+                </div>
+              </div>
+            </UTooltip>
+            <div class="text-muted mt-1 text-xs">{{ formatFileSize(f.Size) }}</div>
             <div class="mt-2 flex min-h-[1.25rem] flex-wrap gap-1">
               <template v-if="standardTagIdsForFileKey(f.Key).length">
                 <span
@@ -601,6 +639,7 @@
                 }"
                 @click="emit('toggleKey', f.Key)"
                 @dragstart="onCardDragStart($event, f.Key)"
+                @dragend="onFileCardDragEnd"
                 @dragover="onCardDragOver"
                 @dragleave="onCardDragLeave"
                 @drop="onCardDrop($event)"
@@ -612,10 +651,17 @@
                   />
                 </td>
                 <td class="max-w-[14rem] px-3 py-2 align-middle">
-                  <div class="font-medium text-gray-900">{{ fileName(f.Key) }}</div>
-                  <div v-if="folderPathUnderLab(f.Key)" class="text-muted truncate text-xs">
-                    {{ folderPathUnderLab(f.Key) }}
-                  </div>
+                  <UTooltip :open-delay="500" :ui="s3PathTooltipUi">
+                    <template #text>
+                      {{ s3ObjectTooltip(f.Key) }}
+                    </template>
+                    <div class="min-w-0">
+                      <div class="font-medium text-gray-900">{{ fileName(f.Key) }}</div>
+                      <div v-if="folderPathUnderLab(f.Key)" class="text-muted truncate text-xs">
+                        {{ folderPathUnderLab(f.Key) }}
+                      </div>
+                    </div>
+                  </UTooltip>
                 </td>
                 <td class="text-muted px-3 py-2 align-middle">{{ batchDisplayName(f.Key) }}</td>
                 <td class="px-3 py-2 align-middle">

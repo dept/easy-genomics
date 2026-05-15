@@ -135,7 +135,8 @@
       runs: 'View your pipeline runs',
       seqeraPipelines: 'View your Seqera pipelines',
       omicsWorkflows: 'View your HealthOmics workflows',
-      dataCollections: 'Tag and browse files in your lab S3 bucket',
+      dataCollections:
+        "All of your lab's sequencing data lives here. Tag samples by organism, run, or any other grouping that makes sense for your lab, then use those tags to select what goes into a workflow.",
       users: 'View your lab users',
       details: 'View your lab settings',
     };

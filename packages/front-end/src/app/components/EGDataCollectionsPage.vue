@@ -469,6 +469,11 @@
     return out;
   });
 
+  /** Files with no standard tags, among search results (same universe as tag filter chips). */
+  const untaggedChipCount = computed(
+    () => filesMatchingSearch.value.filter((f) => !standardTagIdsForFileKey(f.Key).length).length,
+  );
+
   /** Explorer dismiss chips — ids must stay in sync with `clearExplorerFilter`. */
   const CHIP_SCOPE_NOT_ANALYZED = 'chip-scope-not-analyzed';
   const CHIP_TAG_UNTAGGED = 'chip-tag-untagged';
@@ -707,9 +712,14 @@
 
   async function applyTagToKeys(tagId: string, keys: string[]): Promise<void> {
     if (!lab.value?.S3Bucket || !keys.length) return;
+    const keysToTag = keys.filter((k) => !(keyToTagIds.value[k] ?? []).includes(tagId));
+    if (!keysToTag.length) {
+      toast.info(keys.length === 1 ? 'Tag already applied to that sample.' : 'Tag already applied to those samples.');
+      return;
+    }
     uiStore.setRequestPending('dataCollectionsMutate');
     try {
-      await addTagsToFilesInChunks(keys, [tagId], []);
+      await addTagsToFilesInChunks(keysToTag, [tagId], []);
       selectedKeys.value = [];
       await loadTags();
       await loadListing();
@@ -745,13 +755,33 @@
     }
   }
 
-  function onCardDragOverTag(e: DragEvent): void {
-    if (e.dataTransfer?.types.includes('application/x-eg-keys')) {
-      e.preventDefault();
-    }
+  /** While dragging files from the explorer onto a tag row, that tag id is highlighted. */
+  const tagDropHighlightId = ref<string | null>(null);
+
+  function dataTransferHasFileKeys(dt: DataTransfer | null): boolean {
+    if (!dt) return false;
+    return [...dt.types].includes('application/x-eg-keys');
+  }
+
+  function onTagRowDragOver(e: DragEvent, tagId: string): void {
+    if (!dataTransferHasFileKeys(e.dataTransfer)) return;
+    e.preventDefault();
+    tagDropHighlightId.value = tagId;
+  }
+
+  function onTagRowDragLeave(e: DragEvent, tagId: string): void {
+    const cur = e.currentTarget as HTMLElement;
+    const rel = e.relatedTarget as Node | null;
+    if (rel && cur.contains(rel)) return;
+    if (tagDropHighlightId.value === tagId) tagDropHighlightId.value = null;
+  }
+
+  function clearTagDropHighlight(): void {
+    tagDropHighlightId.value = null;
   }
 
   function onTagRowDrop(e: DragEvent, tagId: string): void {
+    clearTagDropHighlight();
     e.preventDefault();
     const raw = e.dataTransfer?.getData('application/x-eg-keys');
     if (!raw) return;
@@ -852,264 +882,284 @@
   <div v-if="!lab?.S3Bucket" class="text-muted rounded-lg border border-dashed p-8 text-center text-sm">
     This lab has no S3 bucket configured. Set a bucket in Lab Settings to use Data Collections.
   </div>
-  <div
-    v-else
-    class="flex min-h-[480px] min-w-0 flex-col gap-0 overflow-hidden rounded-xl border border-gray-200 bg-white"
-  >
-    <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-      <div class="border-border-muted flex w-[280px] shrink-0 flex-col overflow-y-auto border-r bg-gray-50">
-        <div class="border-border-muted border-b p-2">
-          <button
-            type="button"
-            class="hover:bg-primary-muted flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
-            :class="{ 'bg-primary-muted font-medium': isScopeAllActive() }"
-            @click="onAllSamplesScopeClick"
-          >
-            <span>All samples</span>
-            <UBadge
-              size="xs"
-              class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif tabular-nums ring-0"
-            >
-              {{ allSamplesChipCount }}
-            </UBadge>
-          </button>
-          <button
-            type="button"
-            class="hover:bg-primary-muted flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
-            :class="{ 'bg-primary-muted font-medium': isNotAnalyzedScopeActive() }"
-            @click="onNotYetAnalyzedScopeClick"
-          >
-            <span>Not yet analyzed</span>
-            <UBadge
-              size="xs"
-              class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif tabular-nums ring-0"
-            >
-              {{ notAnalyzedChipCount }}
-            </UBadge>
-          </button>
-        </div>
-
-        <div class="border-border-muted border-b p-2">
-          <button
-            type="button"
-            class="text-muted hover:bg-primary-muted mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs font-medium uppercase tracking-wide"
-            :aria-expanded="workflowsSectionExpanded"
-            @click="workflowsSectionExpanded = !workflowsSectionExpanded"
-          >
-            <UIcon
-              :name="workflowsSectionExpanded ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
-              class="h-4 w-4 shrink-0"
-              aria-hidden="true"
-            />
-            <span>Workflows</span>
-          </button>
-          <div v-show="workflowsSectionExpanded">
-            <p v-if="!workflowTemplates.length" class="text-muted mt-2 px-2 text-xs italic">
-              No workflows have been run on these files yet.
-            </p>
-
-            <div v-for="tmpl in visibleWorkflowTemplates" :key="tmpl.key" class="mt-1">
-              <div
-                class="hover:bg-primary-muted flex w-full cursor-pointer items-center gap-1 rounded-lg pr-2 text-left text-sm"
-                :class="{
-                  'bg-primary-muted font-medium': isWorkflowTemplateScopeActive(tmpl.key),
-                }"
+  <div v-else class="flex min-w-0 flex-col gap-0">
+    <div class="overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <div class="flex h-[calc(100dvh-12rem)] min-h-0 flex-col overflow-hidden">
+        <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+          <div class="border-border-muted flex w-[280px] shrink-0 flex-col overflow-y-auto border-r bg-gray-50">
+            <div class="border-border-muted border-b p-2">
+              <button
+                type="button"
+                class="hover:bg-primary-muted flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
+                :class="{ 'bg-primary-muted font-medium': isScopeAllActive() }"
+                @click="onAllSamplesScopeClick"
               >
-                <button
-                  v-if="tmpl.versions.length > 1"
-                  type="button"
-                  class="text-muted hover:text-primary flex h-7 w-7 shrink-0 items-center justify-center rounded"
-                  :aria-label="expandedWorkflowTemplates[tmpl.key] ? 'Collapse versions' : 'Expand versions'"
-                  @click.stop="toggleWorkflowTemplate(tmpl.key)"
+                <span>All samples</span>
+                <UBadge
+                  size="xs"
+                  class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif tabular-nums ring-0"
                 >
-                  <UIcon
-                    :name="
-                      expandedWorkflowTemplates[tmpl.key] ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'
-                    "
-                    class="h-4 w-4"
-                  />
-                </button>
-                <span v-else class="block h-7 w-7 shrink-0" />
-                <button
-                  type="button"
-                  class="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 text-left"
-                  @click="onWorkflowTemplateScopeClick(tmpl.key)"
+                  {{ allSamplesChipCount }}
+                </UBadge>
+              </button>
+              <button
+                type="button"
+                class="hover:bg-primary-muted flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
+                :class="{ 'bg-primary-muted font-medium': isNotAnalyzedScopeActive() }"
+                @click="onNotYetAnalyzedScopeClick"
+              >
+                <span>Not yet analyzed</span>
+                <UBadge
+                  size="xs"
+                  class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif tabular-nums ring-0"
                 >
-                  <span class="flex min-w-0 items-center gap-2">
-                    <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: tmpl.color }" />
-                    <span class="truncate">{{ tmpl.name }}</span>
-                  </span>
-                  <span class="text-muted shrink-0 text-xs">{{ tmpl.fileCount }}</span>
-                </button>
-              </div>
+                  {{ notAnalyzedChipCount }}
+                </UBadge>
+              </button>
+            </div>
 
-              <div v-if="expandedWorkflowTemplates[tmpl.key] && tmpl.versions.length > 1" class="ml-7 mt-0.5">
+            <div class="border-border-muted border-b p-2">
+              <button
+                type="button"
+                class="text-muted hover:bg-primary-muted mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs font-medium uppercase tracking-wide"
+                :aria-expanded="workflowsSectionExpanded"
+                @click="workflowsSectionExpanded = !workflowsSectionExpanded"
+              >
+                <UIcon
+                  :name="workflowsSectionExpanded ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
+                  class="h-4 w-4 shrink-0"
+                  aria-hidden="true"
+                />
+                <span>Workflows</span>
+              </button>
+              <div v-show="workflowsSectionExpanded">
+                <p v-if="!workflowTemplates.length" class="text-muted mt-2 px-2 text-xs italic">
+                  No workflows have been run on these files yet.
+                </p>
+
+                <div v-for="tmpl in visibleWorkflowTemplates" :key="tmpl.key" class="mt-1">
+                  <div
+                    class="hover:bg-primary-muted flex w-full cursor-pointer items-center gap-1 rounded-lg pr-2 text-left text-sm"
+                    :class="{
+                      'bg-primary-muted font-medium': isWorkflowTemplateScopeActive(tmpl.key),
+                    }"
+                  >
+                    <button
+                      v-if="tmpl.versions.length > 1"
+                      type="button"
+                      class="text-muted hover:text-primary flex h-7 w-7 shrink-0 items-center justify-center rounded"
+                      :aria-label="expandedWorkflowTemplates[tmpl.key] ? 'Collapse versions' : 'Expand versions'"
+                      @click.stop="toggleWorkflowTemplate(tmpl.key)"
+                    >
+                      <UIcon
+                        :name="
+                          expandedWorkflowTemplates[tmpl.key] ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'
+                        "
+                        class="h-4 w-4"
+                      />
+                    </button>
+                    <span v-else class="block h-7 w-7 shrink-0" />
+                    <button
+                      type="button"
+                      class="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 text-left"
+                      @click="onWorkflowTemplateScopeClick(tmpl.key)"
+                    >
+                      <span class="flex min-w-0 items-center gap-2">
+                        <span
+                          class="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                          :style="{ background: tmpl.color }"
+                        />
+                        <span class="truncate">{{ tmpl.name }}</span>
+                      </span>
+                      <span class="text-muted shrink-0 text-xs">{{ tmpl.fileCount }}</span>
+                    </button>
+                  </div>
+
+                  <div v-if="expandedWorkflowTemplates[tmpl.key] && tmpl.versions.length > 1" class="ml-7 mt-0.5">
+                    <button
+                      v-for="v in tmpl.versions"
+                      :key="v.tag.TagId"
+                      type="button"
+                      class="hover:bg-primary-muted flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs"
+                      :class="{
+                        'bg-primary-muted font-medium': isWorkflowVersionScopeActive(v.tag.TagId),
+                      }"
+                      @click="onWorkflowVersionScopeClick(v.tag.TagId)"
+                    >
+                      <span class="text-muted truncate">{{ v.label }}</span>
+                      <span class="text-muted shrink-0 tabular-nums">{{ v.tag.FileCount }}</span>
+                    </button>
+                  </div>
+                </div>
+
                 <button
-                  v-for="v in tmpl.versions"
-                  :key="v.tag.TagId"
+                  v-if="workflowTemplates.length > visibleWorkflowTemplates.length || showAllWorkflowTemplates"
+                  v-show="workflowTemplates.length > 6"
                   type="button"
-                  class="hover:bg-primary-muted flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs"
-                  :class="{
-                    'bg-primary-muted font-medium': isWorkflowVersionScopeActive(v.tag.TagId),
-                  }"
-                  @click="onWorkflowVersionScopeClick(v.tag.TagId)"
+                  class="text-primary mt-2 px-2 text-xs font-medium hover:underline"
+                  @click="showAllWorkflowTemplates = !showAllWorkflowTemplates"
                 >
-                  <span class="text-muted truncate">{{ v.label }}</span>
-                  <span class="text-muted shrink-0 tabular-nums">{{ v.tag.FileCount }}</span>
+                  {{
+                    showAllWorkflowTemplates
+                      ? 'Show fewer'
+                      : `Show ${workflowTemplates.length - visibleWorkflowTemplates.length} more`
+                  }}
                 </button>
               </div>
             </div>
 
-            <button
-              v-if="workflowTemplates.length > visibleWorkflowTemplates.length || showAllWorkflowTemplates"
-              v-show="workflowTemplates.length > 6"
-              type="button"
-              class="text-primary mt-2 px-2 text-xs font-medium hover:underline"
-              @click="showAllWorkflowTemplates = !showAllWorkflowTemplates"
-            >
-              {{
-                showAllWorkflowTemplates
-                  ? 'Show fewer'
-                  : `Show ${workflowTemplates.length - visibleWorkflowTemplates.length} more`
-              }}
-            </button>
-          </div>
-        </div>
-
-        <div class="p-2">
-          <button
-            type="button"
-            class="text-muted hover:bg-primary-muted mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs font-medium uppercase tracking-wide"
-            :aria-expanded="tagsSectionExpanded"
-            @click="tagsSectionExpanded = !tagsSectionExpanded"
-          >
-            <UIcon
-              :name="tagsSectionExpanded ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
-              class="h-4 w-4 shrink-0"
-              aria-hidden="true"
-            />
-            <span>Tags</span>
-          </button>
-          <div v-show="tagsSectionExpanded">
-            <button
-              type="button"
-              class="hover:bg-primary-muted flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm"
-              :class="{ 'bg-primary-muted font-medium': isUntaggedTagFilterActive() }"
-              @click="onUntaggedTagFilterClick"
-            >
-              <span>Untagged</span>
-            </button>
-            <button
-              v-for="t in standardTags"
-              :key="t.TagId"
-              class="hover:bg-primary-muted flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
-              :class="{ 'bg-primary-muted font-medium': isStandardTagFilterActive(t.TagId) }"
-              @click="onStandardTagFilterClick(t.TagId)"
-              @dragover.prevent="onCardDragOverTag"
-              @drop="onTagRowDrop($event, t.TagId)"
-            >
-              <span class="flex min-w-0 items-center gap-2">
-                <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: t.ColorHex }" />
-                <span class="truncate">{{ t.Name }}</span>
-              </span>
-              <UBadge
-                size="xs"
-                class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif tabular-nums ring-0"
-              >
-                {{ standardTagIdToChipCount[t.TagId] ?? 0 }}
-              </UBadge>
-            </button>
-
-            <div class="border-border-muted mt-2 border-t pt-2">
+            <div class="p-2">
               <button
-                v-if="!showLeftRailCreateTag"
                 type="button"
-                class="text-primary hover:text-primary-dark px-2 py-1.5 text-left text-xs font-medium hover:underline"
-                @click="showLeftRailCreateTag = true"
+                class="text-muted hover:bg-primary-muted mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs font-medium uppercase tracking-wide"
+                :aria-expanded="tagsSectionExpanded"
+                @click="tagsSectionExpanded = !tagsSectionExpanded"
               >
-                + New Tag
+                <UIcon
+                  :name="tagsSectionExpanded ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
+                  class="h-4 w-4 shrink-0"
+                  aria-hidden="true"
+                />
+                <span>Tags</span>
               </button>
-              <div v-else class="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-                <div class="text-muted mb-2 text-xs font-semibold uppercase tracking-wide">Create Tag</div>
-                <div class="space-y-2">
-                  <div>
-                    <label class="text-muted mb-0.5 block text-xs font-medium">Tag name</label>
-                    <UInput v-model="leftRailNewTagName" placeholder="Tag name" size="sm" />
-                  </div>
-                  <div>
-                    <label class="text-muted mb-0.5 block text-xs font-medium">Tag color</label>
-                    <div class="flex flex-wrap gap-1">
-                      <button
-                        v-for="c in presetColors"
-                        :key="'left-rail-preset-' + c"
-                        type="button"
-                        class="h-7 w-7 rounded border-2"
-                        :class="leftRailNewTagColor === c ? 'border-primary' : 'border-transparent'"
-                        :style="{ background: c }"
-                        @click="leftRailNewTagColor = c"
-                      />
+              <div v-show="tagsSectionExpanded">
+                <button
+                  type="button"
+                  class="hover:bg-primary-muted flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
+                  :class="{ 'bg-primary-muted font-medium': isUntaggedTagFilterActive() }"
+                  @click="onUntaggedTagFilterClick"
+                >
+                  <span>Untagged</span>
+                  <UBadge
+                    size="xs"
+                    class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif tabular-nums ring-0"
+                  >
+                    {{ untaggedChipCount }}
+                  </UBadge>
+                </button>
+                <button
+                  v-for="t in standardTags"
+                  :key="t.TagId"
+                  class="hover:bg-primary-muted flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
+                  :class="{
+                    'bg-primary-muted font-medium': isStandardTagFilterActive(t.TagId),
+                    'ring-primary ring-2 ring-inset': tagDropHighlightId === t.TagId,
+                  }"
+                  @click="onStandardTagFilterClick(t.TagId)"
+                  @dragover="onTagRowDragOver($event, t.TagId)"
+                  @dragleave="onTagRowDragLeave($event, t.TagId)"
+                  @drop="onTagRowDrop($event, t.TagId)"
+                >
+                  <span class="flex min-w-0 items-center gap-2">
+                    <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: t.ColorHex }" />
+                    <span class="truncate">{{ t.Name }}</span>
+                  </span>
+                  <UBadge
+                    size="xs"
+                    class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif tabular-nums ring-0"
+                  >
+                    {{ standardTagIdToChipCount[t.TagId] ?? 0 }}
+                  </UBadge>
+                </button>
+
+                <div class="border-border-muted mt-2 border-t pt-2">
+                  <button
+                    v-if="!showLeftRailCreateTag"
+                    type="button"
+                    class="text-primary hover:text-primary-dark px-2 py-1.5 text-left text-xs font-medium hover:underline"
+                    @click="showLeftRailCreateTag = true"
+                  >
+                    + New Tag
+                  </button>
+                  <div v-else class="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+                    <div class="text-muted mb-2 text-xs font-semibold uppercase tracking-wide">Create Tag</div>
+                    <div class="space-y-2">
+                      <div>
+                        <label class="text-muted mb-0.5 block text-xs font-medium">Tag name</label>
+                        <UInput v-model="leftRailNewTagName" placeholder="Tag name" size="sm" />
+                      </div>
+                      <div>
+                        <label class="text-muted mb-0.5 block text-xs font-medium">Tag color</label>
+                        <div class="flex flex-wrap gap-1">
+                          <button
+                            v-for="c in presetColors"
+                            :key="'left-rail-preset-' + c"
+                            type="button"
+                            class="h-7 w-7 rounded border-2"
+                            :class="leftRailNewTagColor === c ? 'border-primary' : 'border-transparent'"
+                            :style="{ background: c }"
+                            @click="leftRailNewTagColor = c"
+                          />
+                        </div>
+                        <UInput v-model="leftRailNewTagColor" placeholder="#RRGGBB" size="sm" class="mt-1.5" />
+                      </div>
+                      <div class="flex gap-2 pt-1">
+                        <UButton size="xs" variant="ghost" @click="cancelLeftRailCreateTag">Cancel</UButton>
+                        <UButton
+                          size="xs"
+                          :disabled="!leftRailNewTagName.trim()"
+                          :loading="loading"
+                          @click="createTagLeftRail"
+                        >
+                          Create
+                        </UButton>
+                      </div>
                     </div>
-                    <UInput v-model="leftRailNewTagColor" placeholder="#RRGGBB" size="sm" class="mt-1.5" />
-                  </div>
-                  <div class="flex gap-2 pt-1">
-                    <UButton size="xs" variant="ghost" @click="cancelLeftRailCreateTag">Cancel</UButton>
-                    <UButton
-                      size="xs"
-                      :disabled="!leftRailNewTagName.trim()"
-                      :loading="loading"
-                      @click="createTagLeftRail"
-                    >
-                      Create
-                    </UButton>
                   </div>
                 </div>
               </div>
             </div>
           </div>
+
+          <EGDataCollectionsExplorer
+            class="min-h-0 min-w-0 flex-1"
+            :lab-id="props.labId"
+            :lab-root="labRoot"
+            :s3-bucket="lab?.S3Bucket"
+            :visible-files="visibleFiles"
+            :key-to-tag-ids="keyToStandardTagIdsForExplorer"
+            :key-to-batch-tag-id="keyToBatchTagId"
+            :key-to-workflow-tag-ids="keyToWorkflowTagIdsEffective"
+            :key-to-run-usages="keyToRunUsages"
+            :batch-tags="batchTags"
+            :tags="tags"
+            :selected-keys="selectedKeys"
+            :loading="loading"
+            :search="search"
+            :listing-file-count="files.length"
+            :listing-truncated="listingTruncated"
+            :filter-chips="explorerFilterChips"
+            @update:search="search = $event"
+            @update:selected-keys="selectedKeys = $event"
+            @toggle-key="toggleKey"
+            @select-all-displayed="selectAllDisplayed"
+            @clear-selection="selectedKeys = []"
+            @clear-filter="clearExplorerFilter($event)"
+            @file-keys-drag-end="clearTagDropHighlight"
+            @remove-tag-from-file="removeTagFromFile($event.key, $event.tagId)"
+            @select-run-files="selectFilesForRun($event)"
+          />
         </div>
-      </div>
 
-      <EGDataCollectionsExplorer
-        class="min-h-0 min-w-0 flex-1"
-        :lab-id="props.labId"
-        :lab-root="labRoot"
-        :visible-files="visibleFiles"
-        :key-to-tag-ids="keyToStandardTagIdsForExplorer"
-        :key-to-batch-tag-id="keyToBatchTagId"
-        :key-to-workflow-tag-ids="keyToWorkflowTagIdsEffective"
-        :key-to-run-usages="keyToRunUsages"
-        :batch-tags="batchTags"
-        :tags="tags"
-        :selected-keys="selectedKeys"
-        :loading="loading"
-        :search="search"
-        :listing-file-count="files.length"
-        :listing-truncated="listingTruncated"
-        :filter-chips="explorerFilterChips"
-        @update:search="search = $event"
-        @update:selected-keys="selectedKeys = $event"
-        @toggle-key="toggleKey"
-        @select-all-displayed="selectAllDisplayed"
-        @clear-selection="selectedKeys = []"
-        @clear-filter="clearExplorerFilter($event)"
-        @remove-tag-from-file="removeTagFromFile($event.key, $event.tagId)"
-        @select-run-files="selectFilesForRun($event)"
-      />
-    </div>
-
-    <div class="border-border-muted shrink-0 border-t bg-gray-50">
-      <div class="flex flex-wrap items-center gap-2 px-4 py-2">
-        <span v-if="hasSelection" class="text-muted text-xs">{{ selectedKeys.length }} file(s) selected</span>
-        <span v-else class="text-muted text-xs">Select files in the grid to add or remove tags in bulk.</span>
-        <div v-if="hasSelection" class="ml-auto flex flex-wrap items-center gap-2">
-          <UIcon v-if="bulkPanelBusy" name="i-heroicons-arrow-path" class="text-muted h-5 w-5 shrink-0 animate-spin" />
-          <UButton size="sm" variant="soft" :disabled="bulkPanelBusy" @click="openAddBulkPanel">Add Tags</UButton>
-          <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openRemoveBulkPanel">
-            Remove Tags
-          </UButton>
-          <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openChangeBatchModal">
-            Change Batch
-          </UButton>
+        <div class="border-border-muted shrink-0 border-t bg-gray-50">
+          <div class="flex flex-wrap items-center gap-2 px-4 py-2">
+            <span v-if="hasSelection" class="text-muted text-xs">{{ selectedKeys.length }} file(s) selected</span>
+            <span v-else class="text-muted text-xs">Select files in the grid to add or remove tags in bulk.</span>
+            <div v-if="hasSelection" class="ml-auto flex flex-wrap items-center gap-2">
+              <UIcon
+                v-if="bulkPanelBusy"
+                name="i-heroicons-arrow-path"
+                class="text-muted h-5 w-5 shrink-0 animate-spin"
+              />
+              <UButton size="sm" variant="soft" :disabled="bulkPanelBusy" @click="openAddBulkPanel">Add Tags</UButton>
+              <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openRemoveBulkPanel">
+                Remove Tags
+              </UButton>
+              <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openChangeBatchModal">
+                Change Batch
+              </UButton>
+            </div>
+          </div>
         </div>
       </div>
 
