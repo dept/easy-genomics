@@ -2,6 +2,7 @@ import { PassThrough, type Readable } from 'stream';
 import type { S3Client } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import archiver from 'archiver';
 import { APIGatewayProxyResult, Handler } from 'aws-lambda';
 import { SQSEvent } from 'aws-lambda/trigger/sqs';
@@ -149,7 +150,7 @@ const zipS3Prefix = async (job: FolderDownloadJobMessage): Promise<void> => {
 };
 
 export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
   try {
     for (const record of event.Records) {
       const job = parseSnsWrappedMessage(record.body);

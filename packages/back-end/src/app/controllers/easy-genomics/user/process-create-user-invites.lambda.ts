@@ -1,4 +1,5 @@
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization';
 import {
   SnsProcessingEvent,
@@ -17,7 +18,7 @@ const organizationService = new OrganizationService();
 const userService = new UserService();
 
 export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
   try {
     const sqsRecords: SQSRecord[] = event.Records;
     for (const sqsRecord of sqsRecords) {

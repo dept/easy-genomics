@@ -5,6 +5,7 @@ import {
   LaboratoryNotFoundError,
   UnauthorizedAccessError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import { ReadLaboratoryRun } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
@@ -25,7 +26,7 @@ const laboratoryRunService = new LaboratoryRunService();
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
 ): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
   try {
     // Get mandatory query parameter(s)
     const laboratoryId: string | undefined = event.queryStringParameters?.LaboratoryId;

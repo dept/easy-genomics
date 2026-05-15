@@ -1,4 +1,5 @@
 import { GetWorkflowCommandInput } from '@aws-sdk/client-omics';
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
 import { RequiredIdNotFoundError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
@@ -105,7 +106,7 @@ async function fetchSchemaFromGitHub(workflowId: string): Promise<WorkflowSchema
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
 ): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
   try {
     const workflowId = event.pathParameters?.id || '';
     if (workflowId === '') throw new RequiredIdNotFoundError();

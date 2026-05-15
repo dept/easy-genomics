@@ -6,6 +6,7 @@ import {
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
@@ -35,7 +36,7 @@ const omicsService = new OmicsService();
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
 ): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
   try {
     const laboratoryId: string = event.queryStringParameters?.laboratoryId || '';
     if (laboratoryId === '') throw new RequiredIdNotFoundError('laboratoryId');

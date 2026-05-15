@@ -4,6 +4,7 @@ import {
   LaboratoryNotFoundError,
   UnauthorizedAccessError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import {
   AddLaboratoryRun,
   AddLaboratoryRunSchema,
@@ -38,7 +39,7 @@ const snsService = new SnsService();
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
 ): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
   try {
     const currentUserId = event.requestContext.authorizer.claims['cognito:username'];
     const currentUserEmail = event.requestContext.authorizer.claims.email;

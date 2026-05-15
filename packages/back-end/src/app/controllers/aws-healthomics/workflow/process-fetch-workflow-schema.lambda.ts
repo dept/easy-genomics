@@ -1,4 +1,5 @@
 import { GetWorkflowCommandInput } from '@aws-sdk/client-omics';
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import { Handler } from 'aws-lambda';
 import { fetchGitHubSchemaJsonFile } from '@BE/services/aws-healthomics/fetch-github-schema-json';
 import { GITHUB_SCHEMA_URL_TAG, parseGitHubSchemaFileUrl } from '@BE/services/aws-healthomics/parse-github-schema-url';
@@ -108,7 +109,7 @@ async function resolveGitHubToken(workflowTags?: Record<string, string>): Promis
  * defaults, enums, and descriptions defined in the nf-core JSON Schema format.
  */
 export const handler: Handler = async (event: EventBridgeTagChangeEvent): Promise<void> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
 
   try {
     const workflowArn = event.resources?.[0];

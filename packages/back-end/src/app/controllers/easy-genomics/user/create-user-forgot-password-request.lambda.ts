@@ -5,6 +5,7 @@ import {
   UnauthorizedAccessError,
   UserNotFoundError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import { CreateUserForgotPasswordRequestSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user-password';
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { CreateUserForgotPasswordRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-password';
@@ -16,7 +17,7 @@ const cognitoIdpService = new CognitoIdpService({ userPoolId: process.env.COGNIT
 const userService: UserService = new UserService();
 
 export const handler: Handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
   try {
     // Post Request Body
     const request: CreateUserForgotPasswordRequest = event.isBase64Encoded

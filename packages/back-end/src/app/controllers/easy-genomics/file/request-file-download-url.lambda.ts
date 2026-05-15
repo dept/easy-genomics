@@ -1,6 +1,7 @@
 import { BucketLocationConstraint } from '@aws-sdk/client-s3';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import { RequestFileDownloadUrlSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-file-download-url';
 import {
   FileDownloadUrlResponse,
@@ -33,7 +34,7 @@ const s3Service = new S3Service();
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
 ): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
   try {
     // Post Request Body
     const request: RequestFileDownloadUrl = event.isBase64Encoded

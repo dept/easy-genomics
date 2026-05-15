@@ -10,6 +10,7 @@ import {
   OrganizationNotFoundError,
   UnauthorizedAccessError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import {
   CreateLaboratory,
   CreateLaboratorySchema,
@@ -29,7 +30,7 @@ const ssmService = new SsmService();
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
 ): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
   try {
     const currentUserId = event.requestContext.authorizer.claims['cognito:username'];
     // Post Request Body

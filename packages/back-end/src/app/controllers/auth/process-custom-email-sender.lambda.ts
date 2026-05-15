@@ -1,4 +1,5 @@
 import { createHmac } from 'crypto';
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import {
   UserForgotPasswordJwt,
   UserInvitationJwt,
@@ -25,7 +26,7 @@ const sesService = new SesService({
 export const handler: Handler = async (
   event: CustomEmailSenderTriggerEvent,
 ): Promise<CustomEmailSenderTriggerEvent> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
 
   if (event.triggerSource === 'CustomEmailSender_AdminCreateUser') {
     const email: string = event.request.userAttributes.email;

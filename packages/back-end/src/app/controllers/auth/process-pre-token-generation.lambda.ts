@@ -1,3 +1,4 @@
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { Handler } from 'aws-lambda';
 import { PreTokenGenerationTriggerEvent } from 'aws-lambda/trigger/cognito-user-pool-trigger/pre-token-generation';
@@ -14,7 +15,7 @@ const userService = new UserService();
 export const handler: Handler = async (
   event: PreTokenGenerationTriggerEvent,
 ): Promise<PreTokenGenerationTriggerEvent> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
 
   // System Admin Account only exists within Cognito User Pool
   if (process.env.SYSTEM_ADMIN_EMAIL === event.request.userAttributes.email) {

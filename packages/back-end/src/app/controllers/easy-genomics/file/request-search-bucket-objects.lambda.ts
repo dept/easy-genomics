@@ -1,6 +1,7 @@
 import { ListObjectsV2CommandOutput } from '@aws-sdk/client-s3';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import { RequestSearchBucketObjectsSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-search-bucket-objects';
 import { RequestSearchBucketObjects } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-search-bucket-objects';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
@@ -39,7 +40,7 @@ const parseS3Uri = (value: string): { bucket: string; prefix: string } | null =>
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
 ): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
   try {
     const request: RequestSearchBucketObjects = event.isBase64Encoded
       ? JSON.parse(atob(event.body!))
