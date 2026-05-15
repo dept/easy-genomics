@@ -4,6 +4,7 @@ import {
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import { BatchUpdateLaboratoryWorkflowAccessRequestSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-workflow-access';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { BatchUpdateLaboratoryWorkflowAccessRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-workflow-access';
@@ -22,7 +23,7 @@ const accessService = new LaboratoryWorkflowAccessService();
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
 ): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
   try {
     const organizationId: string = event.queryStringParameters?.organizationId || '';
     if (organizationId === '') throw new RequiredIdNotFoundError('organizationId');

@@ -10,6 +10,7 @@ import {
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import {
   UpdateLaboratory,
   UpdateLaboratorySchema,
@@ -28,7 +29,7 @@ const ssmService = new SsmService();
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
 ): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
   try {
     // Get Path Parameter
     const id: string = event.pathParameters?.id || '';

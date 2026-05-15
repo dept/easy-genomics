@@ -1,3 +1,4 @@
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
 import { UnauthorizedAccessError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
@@ -9,7 +10,7 @@ const userService = new UserService();
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
 ): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
   try {
     const tokenClaims = event.requestContext.authorizer?.claims || {};
     const tokenUserId = tokenClaims.UserId;

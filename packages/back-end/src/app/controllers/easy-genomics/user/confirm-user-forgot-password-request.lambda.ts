@@ -3,6 +3,7 @@ import { buildClient, CommitmentPolicy, KmsKeyringNode } from '@aws-crypto/clien
 import { AdminGetUserCommandOutput } from '@aws-sdk/client-cognito-identity-provider';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import { ConfirmUserForgotPasswordRequestSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user-password';
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { ConfirmUserForgotPasswordRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-password';
@@ -23,7 +24,7 @@ const cognitoIdpService = new CognitoIdpService({ userPoolId: process.env.COGNIT
 const userService = new UserService();
 
 export const handler: Handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logSafeEvent(event);
   try {
     // Post Request Body
     const request: ConfirmUserForgotPasswordRequest = event.isBase64Encoded
