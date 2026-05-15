@@ -7,6 +7,7 @@ import {
   TransactWriteItemsCommandOutput,
 } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
+import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { UserSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user';
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { Service } from '../../types/service';
@@ -23,7 +24,7 @@ export class UserService extends DynamoDBService implements Service<User> {
   /** Validates and returns a canonical user shape (unknown keys removed — see UserSchema in shared-lib). */
   private validatedUserForWrite(user: User): User {
     const parsed = UserSchema.safeParse(user);
-    if (!parsed.success) throw new Error('Invalid request');
+    if (!parsed.success) throw new InvalidRequestError();
     return parsed.data;
   }
 

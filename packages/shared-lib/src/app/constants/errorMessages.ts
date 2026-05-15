@@ -4,6 +4,7 @@ export const ERROR_CODES: ErrorMessages = {
   'EG-101': 'Not Found',
   'EG-102': 'Required field is missing or Invalid request',
   'EG-103': 'Unauthorized access',
+  'EG-104': 'Workflow access denied',
   'EG-110': 'Expired organization access',
   'EG-201': 'Organization already exists',
   'EG-202': 'Organization deletion failed',
@@ -28,11 +29,15 @@ export const ERROR_CODES: ErrorMessages = {
   'EG-314': 'Laboratory Bucket not found',
   'EG-315': 'Laboratory does not have AWS HealthOmics enabled',
   'EG-316': 'Laboratory does not have Seqera Cloud / NextFlow Tower enabled',
+  'EG-322': 'Laboratory run deletion failed',
+  'EG-323': 'Laboratory run not found',
   'EG-401': 'User already exists',
   'EG-402': 'User deletion failed',
   'EG-403': 'User not found',
   'EG-404': 'User name already taken',
   'EG-405': 'User not permitted access without first granted access to the Organization',
+  'EG-503': 'Workflow not found in AWS HealthOmics',
+  'EG-600': 'Seqera Cloud API error',
 };
 
 /**
