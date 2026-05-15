@@ -1,5 +1,5 @@
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
-import { UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { CreateBulkUserInvitationRequestSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user-invitation';
 import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization';
 import { SnsProcessingEvent } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
@@ -28,7 +28,7 @@ export const handler: Handler = async (
       : JSON.parse(event.body!);
 
     // Data validation safety check
-    if (!CreateBulkUserInvitationRequestSchema.safeParse(request).success) throw new Error('Invalid request');
+    if (!CreateBulkUserInvitationRequestSchema.safeParse(request).success) throw new InvalidRequestError();
 
     // Only the SystemAdmin or any User with access to the Organization is allowed access to this API
     if (!(validateSystemAdminAccess(event) || validateOrganizationAdminAccess(event, request.OrganizationId))) {

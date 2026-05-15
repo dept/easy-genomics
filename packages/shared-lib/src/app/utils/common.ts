@@ -57,6 +57,8 @@ export function buildErrorResponse(
   if (isHttpErrorShape(error)) {
     errorCode = error.errorCode;
     statusCode = error.statusCode;
+  } else {
+    console.error('Unexpected error:', error);
   }
 
   const body = JSON.stringify({
