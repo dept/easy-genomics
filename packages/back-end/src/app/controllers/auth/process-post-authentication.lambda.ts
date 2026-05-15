@@ -1,5 +1,6 @@
+import { logSafeEvent } from '@easy-genomics/shared-lib/lib/app/utils/logSafeEvent';
 import { AuthenticationLogEvent } from '@easy-genomics/shared-lib/src/app/types/auth/authentication-log-event';
-import { APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { PostAuthenticationTriggerEvent, PostAuthenticationTriggerHandler } from 'aws-lambda';
 import { AuthenticationLogService } from '../../services/auth/authentication-log-service';
 
 const authenticationLogService = new AuthenticationLogService();
@@ -17,17 +18,17 @@ const authenticationLogService = new AuthenticationLogService();
  *
  * @param event
  */
-export const handler: Handler = async (
-  event: APIGatewayProxyWithCognitoAuthorizerEvent,
-): Promise<APIGatewayProxyWithCognitoAuthorizerEvent> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
-  // @ts-ignore
+export const handler: PostAuthenticationTriggerHandler = async (
+  event: PostAuthenticationTriggerEvent,
+): Promise<PostAuthenticationTriggerEvent> => {
+  logSafeEvent(event);
   await authenticationLogService
     .add(<AuthenticationLogEvent>{
       UserName: event.userName,
       DateTime: Date.now(), // UNIX timestamp
       Event: JSON.stringify(event),
     })
+    // Intentional: auth must not fail if audit logging fails — swallow and log only.
     .catch((err) => {
       console.error(err);
     });

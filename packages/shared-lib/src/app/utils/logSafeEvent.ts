@@ -1,8 +1,8 @@
 const REDACTED = '[REDACTED]';
 
-const SENSITIVE_KEY_PATTERN = /authorization|cookie|token|password|email/i;
+const SENSITIVE_KEY_PATTERN = /authorization|cookie|token|password|email|phone/i;
 
-function redactKeys(value: unknown): any {
+function redactKeys(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(redactKeys);
   }
@@ -17,7 +17,7 @@ function redactKeys(value: unknown): any {
 }
 
 export function logSafeEvent(event: unknown): void {
-  const safe = redactKeys(event);
+  const safe = redactKeys(event) as Record<string, any>;
   // Redact Cognito claims wholesale — contains email, sub, phone_number, cognito:username, UserId
   if (safe?.requestContext?.authorizer !== undefined) {
     safe.requestContext.authorizer = REDACTED;
