@@ -32,7 +32,8 @@
       state.value.email = '';
       $emit('invite-success');
     } catch (error) {
-      console.error(error);
+      console.error('Failed to send invitation:', error);
+      useToastStore().error('Failed to send invitation. Please try again.');
     } finally {
       useUiStore().setRequestComplete('sendInvite');
     }

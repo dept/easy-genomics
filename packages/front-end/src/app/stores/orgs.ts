@@ -22,18 +22,27 @@ const useOrgsStore = defineStore('orgsStore', {
       const { $api } = useNuxtApp();
       const freshOrgs: Record<string, Organization> = {};
 
-      for (const org of await $api.orgs.list()) {
-        freshOrgs[org.OrganizationId] = org;
+      try {
+        for (const org of await $api.orgs.list()) {
+          freshOrgs[org.OrganizationId] = org;
+        }
+        this.orgs = freshOrgs;
+      } catch (error) {
+        console.error('Failed to load organizations:', error);
+        useToastStore().error('Failed to load organizations. Please refresh.');
       }
-
-      this.orgs = freshOrgs;
     },
 
     async loadOrg(orgId: string): Promise<void> {
       const { $api } = useNuxtApp();
-      const org = await $api.orgs.orgSettings(orgId);
 
-      this.orgs[org.OrganizationId] = org;
+      try {
+        const org = await $api.orgs.orgSettings(orgId);
+        this.orgs[org.OrganizationId] = org;
+      } catch (error) {
+        console.error('Failed to load organization:', error);
+        useToastStore().error('Failed to load organization details. Please refresh.');
+      }
     },
   },
 

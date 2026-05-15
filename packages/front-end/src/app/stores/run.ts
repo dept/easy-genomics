@@ -106,12 +106,16 @@ const useRunStore = defineStore('runStore', {
     async loadLabRunsForLab(labId: string): Promise<void> {
       const { $api } = useNuxtApp();
 
-      this.labRunIdsByLab[labId] = [];
-
-      const labRuns = await $api.labs.listLabRuns(labId);
-      for (const labRun of labRuns) {
-        this.labRuns[labRun.RunId] = labRun;
-        this.labRunIdsByLab[labId].push(labRun.RunId);
+      try {
+        this.labRunIdsByLab[labId] = [];
+        const labRuns = await $api.labs.listLabRuns(labId);
+        for (const labRun of labRuns) {
+          this.labRuns[labRun.RunId] = labRun;
+          this.labRunIdsByLab[labId].push(labRun.RunId);
+        }
+      } catch (error) {
+        console.error('Failed to load lab runs:', error);
+        useToastStore().error('Failed to load runs. Please refresh.');
       }
     },
 
@@ -120,34 +124,43 @@ const useRunStore = defineStore('runStore', {
     async loadSeqeraRunsForLab(labId: string): Promise<void> {
       const { $api } = useNuxtApp();
 
-      // fetch new runs without modifying existing state
-      const runs: SeqeraRun[] = await $api.seqeraRuns.list(labId);
+      try {
+        // fetch new runs without modifying existing state
+        const runs: SeqeraRun[] = await $api.seqeraRuns.list(labId);
 
-      // prepare temporary storage
-      const newRuns: Record<string, SeqeraRun> = {};
-      const newRunIds: string[] = [];
+        // prepare temporary storage
+        const newRuns: Record<string, SeqeraRun> = {};
+        const newRunIds: string[] = [];
 
-      for (const run of runs) {
-        if (run.id !== undefined) {
-          newRuns[run.id] = run;
-          newRunIds.push(run.id);
+        for (const run of runs) {
+          if (run.id !== undefined) {
+            newRuns[run.id] = run;
+            newRunIds.push(run.id);
+          }
         }
-      }
 
-      // update state with the new data
-      this.seqeraRuns[labId] = newRuns;
-      this.seqeraRunIdsByLab[labId] = newRunIds;
+        // update state with the new data
+        this.seqeraRuns[labId] = newRuns;
+        this.seqeraRunIdsByLab[labId] = newRunIds;
+      } catch (error) {
+        console.error('Failed to load Seqera runs:', error);
+        useToastStore().error('Failed to load Seqera runs. Please refresh.');
+      }
     },
 
     async loadSingleSeqeraRun(labId: string, runId: string): Promise<void> {
       const { $api } = useNuxtApp();
 
-      const run: SeqeraRun = await $api.seqeraRuns.get(labId, runId);
-
-      if (!this.seqeraRuns[labId]) {
-        this.seqeraRuns[labId] = {};
+      try {
+        const run: SeqeraRun = await $api.seqeraRuns.get(labId, runId);
+        if (!this.seqeraRuns[labId]) {
+          this.seqeraRuns[labId] = {};
+        }
+        this.seqeraRuns[labId][run.id] = run;
+      } catch (error) {
+        console.error('Failed to load Seqera run:', error);
+        useToastStore().error('Failed to load run details. Please refresh.');
       }
-      this.seqeraRuns[labId][run.id] = run;
     },
 
     // Omics Runs
@@ -155,35 +168,44 @@ const useRunStore = defineStore('runStore', {
     async loadOmicsRunsForLab(labId: string): Promise<void> {
       const { $api } = useNuxtApp();
 
-      // fetch new runs without modifying existing state
-      const res = await $api.omicsRuns.list(labId);
-      const runs: OmicsRun[] = res.items || [];
+      try {
+        // fetch new runs without modifying existing state
+        const res = await $api.omicsRuns.list(labId);
+        const runs: OmicsRun[] = res.items || [];
 
-      // prepare temporary storage
-      const newRuns: Record<string, OmicsRun> = {};
-      const newRunIds: string[] = [];
+        // prepare temporary storage
+        const newRuns: Record<string, OmicsRun> = {};
+        const newRunIds: string[] = [];
 
-      for (const run of runs) {
-        if (run.id !== undefined) {
-          newRuns[run.id] = run;
-          newRunIds.push(run.id);
+        for (const run of runs) {
+          if (run.id !== undefined) {
+            newRuns[run.id] = run;
+            newRunIds.push(run.id);
+          }
         }
-      }
 
-      // update state with the new data
-      this.omicsRuns[labId] = newRuns;
-      this.omicsRunIdsByLab[labId] = newRunIds;
+        // update state with the new data
+        this.omicsRuns[labId] = newRuns;
+        this.omicsRunIdsByLab[labId] = newRunIds;
+      } catch (error) {
+        console.error('Failed to load Omics runs:', error);
+        useToastStore().error('Failed to load Omics runs. Please refresh.');
+      }
     },
 
     async loadSingleOmicsRun(labId: string, runId: string): Promise<void> {
       const { $api } = useNuxtApp();
 
-      const run: OmicsRun = await $api.omicsRuns.get(labId, runId);
-
-      if (!this.omicsRuns[labId]) {
-        this.omicsRuns[labId] = {};
+      try {
+        const run: OmicsRun = await $api.omicsRuns.get(labId, runId);
+        if (!this.omicsRuns[labId]) {
+          this.omicsRuns[labId] = {};
+        }
+        this.omicsRuns[labId][runId] = run;
+      } catch (error) {
+        console.error('Failed to load Omics run:', error);
+        useToastStore().error('Failed to load run details. Please refresh.');
       }
-      this.omicsRuns[labId][runId] = run;
     },
 
     // Temp Runs

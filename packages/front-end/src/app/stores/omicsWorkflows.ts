@@ -36,7 +36,7 @@ const useOmicsWorkflowsStore = defineStore('omicsWorkflowsStore', {
       const res = await $api.omicsWorkflows.list(labId);
 
       if (!res.items) {
-        throw new Error('list seqera pipelines response did not contain data');
+        throw new Error('list omics workflows response did not contain data');
       }
 
       this.workflowIdsByLab[labId] = [];

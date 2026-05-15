@@ -378,10 +378,18 @@
       const promises: Promise<any>[] = [$api.labs.listLabRuns(props.labId), $api.users.getUser()];
 
       if (labData?.NextFlowTowerEnabled) {
-        promises.push(seqeraPipelinesStore.loadPipelinesForLab(props.labId).catch(() => {}));
+        promises.push(
+          seqeraPipelinesStore
+            .loadPipelinesForLab(props.labId)
+            .catch(() => useToastStore().error('Failed to load pipelines. Please refresh.')),
+        );
       }
       if (labData?.AwsHealthOmicsEnabled) {
-        promises.push(omicsWorkflowsStore.loadWorkflowsForLab(props.labId).catch(() => {}));
+        promises.push(
+          omicsWorkflowsStore
+            .loadWorkflowsForLab(props.labId)
+            .catch(() => useToastStore().error('Failed to load workflows. Please refresh.')),
+        );
       }
 
       const [runs, user] = await Promise.all(promises);
