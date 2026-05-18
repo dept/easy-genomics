@@ -881,28 +881,6 @@
     }
   }
 
-  async function removeTagFromFile(key: string, tagId: string): Promise<void> {
-    if (!lab.value?.S3Bucket) return;
-    uiStore.setRequestPending('dataCollectionsMutate');
-    try {
-      await $api.dataCollections.addTagsToFiles({
-        LaboratoryId: props.labId,
-        S3Bucket: lab.value.S3Bucket,
-        Keys: [key],
-        RemoveTagIds: [tagId],
-      });
-      await loadTags();
-      await loadListing();
-      await nextTick();
-      toast.success('Tag removed');
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      toast.error(`Remove failed: ${msg}`);
-    } finally {
-      uiStore.setRequestComplete('dataCollectionsMutate');
-    }
-  }
-
   /** While dragging files from the explorer onto a tag row, that tag id is highlighted. */
   const tagDropHighlightId = ref<string | null>(null);
 
@@ -1331,7 +1309,6 @@
             @clear-selection="selectedKeys = []"
             @clear-filter="clearExplorerFilter($event)"
             @file-keys-drag-end="clearTagDropHighlight"
-            @remove-tag-from-file="removeTagFromFile($event.key, $event.tagId)"
             @select-run-files="selectFilesForRun($event)"
           />
         </div>

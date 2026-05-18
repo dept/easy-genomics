@@ -57,7 +57,6 @@
     clearFilter: [chipId: string];
     /** Fired when a file-card drag ends (including cancel) so parents can clear drop-target UI. */
     fileKeysDragEnd: [];
-    removeTagFromFile: [payload: { key: string; tagId: string }];
     /** Tooltip emits this when the user clicks the check button on a run row. */
     selectRunFiles: [payload: { runId: string; inputFileKeys: string[] }];
   }>();
@@ -78,8 +77,6 @@
   });
   let lx0 = 0;
   let ly0 = 0;
-  let dragTagId: string | null = null;
-  let dragSourceKey: string | null = null;
 
   /** While a file’s analysis popover is open, that card/row is stacked above siblings so other files’ dots do not show through the panel. */
   const analysisPopoverOpenKey = ref<string | null>(null);
@@ -372,8 +369,6 @@
   });
 
   function onCardDragStart(e: DragEvent, key: string): void {
-    dragTagId = null;
-    dragSourceKey = null;
     const keys = props.selectedKeys.includes(key) ? [...props.selectedKeys] : [key];
     e.dataTransfer?.setData('application/x-eg-keys', JSON.stringify(keys));
     e.dataTransfer?.setData('text/plain', 'keys');
@@ -381,32 +376,6 @@
 
   function onFileCardDragEnd(): void {
     emit('fileKeysDragEnd');
-  }
-
-  function onPillDragStart(e: DragEvent, tagId: string, key: string): void {
-    e.stopPropagation();
-    dragTagId = tagId;
-    dragSourceKey = key;
-    e.dataTransfer?.setData('text/plain', 'tag');
-  }
-
-  function onCardDragOver(e: DragEvent): void {
-    if (!dragTagId) return;
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).classList.add('outline', 'outline-2', 'outline-red-400');
-  }
-
-  function onCardDragLeave(e: DragEvent): void {
-    (e.currentTarget as HTMLElement).classList.remove('outline', 'outline-2', 'outline-red-400');
-  }
-
-  function onCardDrop(e: DragEvent): void {
-    (e.currentTarget as HTMLElement).classList.remove('outline', 'outline-2', 'outline-red-400');
-    if (!dragTagId || !dragSourceKey) return;
-    e.preventDefault();
-    emit('removeTagFromFile', { key: dragSourceKey, tagId: dragTagId });
-    dragTagId = null;
-    dragSourceKey = null;
   }
 </script>
 
@@ -550,9 +519,6 @@
             @click="emit('toggleKey', f.Key)"
             @dragstart="onCardDragStart($event, f.Key)"
             @dragend="onFileCardDragEnd"
-            @dragover="onCardDragOver"
-            @dragleave="onCardDragLeave"
-            @drop="onCardDrop($event)"
           >
             <div class="absolute right-2 top-2 flex items-center gap-1.5" @mousedown.stop @click.stop>
               <UIcon
@@ -596,13 +562,11 @@
                 <span
                   v-for="tid in standardTagIdsForFileKey(f.Key)"
                   :key="tid"
-                  class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                  draggable="true"
+                  class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
                   :style="{
                     background: tagById(tid)?.ColorHex || '#e2e2e8',
                     color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
                   }"
-                  @dragstart="onPillDragStart($event, tid, f.Key)"
                   @click.stop
                 >
                   {{ tagById(tid)?.Name || tid }}
@@ -619,7 +583,9 @@
           <thead>
             <tr class="border-border-muted bg-gray-50/90 text-xs uppercase tracking-wide text-gray-600">
               <th class="border-border-muted w-10 border-b px-3 py-2.5" scope="col" />
-              <th class="border-border-muted border-b px-3 py-2.5 font-semibold" scope="col">Sample ID</th>
+              <th class="border-border-muted min-w-0 max-w-[14rem] border-b px-3 py-2.5 font-semibold" scope="col">
+                Sample ID
+              </th>
               <th class="border-border-muted border-b px-3 py-2.5 font-semibold" scope="col">Batch</th>
               <th class="border-border-muted border-b px-3 py-2.5 font-semibold" scope="col">Status</th>
               <th class="border-border-muted border-b px-3 py-2.5 font-semibold" scope="col">Tags</th>
@@ -686,9 +652,6 @@
                 @click="emit('toggleKey', f.Key)"
                 @dragstart="onCardDragStart($event, f.Key)"
                 @dragend="onFileCardDragEnd"
-                @dragover="onCardDragOver"
-                @dragleave="onCardDragLeave"
-                @drop="onCardDrop($event)"
               >
                 <td class="px-3 py-2 align-middle" @mousedown.stop @click.stop>
                   <UCheckbox
@@ -696,13 +659,13 @@
                     @update:model-value="emit('toggleKey', f.Key)"
                   />
                 </td>
-                <td class="max-w-[14rem] px-3 py-2 align-middle">
+                <td class="min-w-0 max-w-[14rem] overflow-hidden px-3 py-2 align-middle">
                   <UTooltip :open-delay="500" :ui="s3PathTooltipUi">
                     <template #text>
                       {{ s3ObjectTooltip(f.Key) }}
                     </template>
                     <div class="min-w-0">
-                      <div class="flex items-center gap-1.5">
+                      <div class="flex min-w-0 items-center gap-1.5">
                         <UIcon
                           v-if="isFilePermanent(f.Key)"
                           name="i-heroicons-lock-closed"
@@ -740,13 +703,11 @@
                       <span
                         v-for="tid in standardTagIdsForFileKey(f.Key)"
                         :key="tid"
-                        class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                        draggable="true"
+                        class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
                         :style="{
                           background: tagById(tid)?.ColorHex || '#e2e2e8',
                           color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
                         }"
-                        @dragstart="onPillDragStart($event, tid, f.Key)"
                         @click.stop
                       >
                         {{ tagById(tid)?.Name || tid }}

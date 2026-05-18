@@ -1,7 +1,7 @@
 <script setup lang="ts">
   /**
    * Hover-triggered analysis history panel for a single file in the data collections explorer.
-   * Card view: dot (+ count chip when N>1) only. Table view: dot + status text. Panel lists runs;
+   * Card view: dot (+ count chip when N>1) + trailing chevron. Table view: dot + status text. Panel lists runs;
    * left opens run detail; right zone selects input files for that run.
    */
   import { format } from 'date-fns';
@@ -17,7 +17,7 @@
     standardTagNames: string[];
     /** Per-run usage history, sorted newest first by `RunCreatedAt`. */
     runUsages: LaboratoryRunUsageSummary[];
-    /** Card = dot (+ count when N>1) only; table = dot + status label. */
+    /** Card = dot (+ count when N>1) + trailing chevron; table = dot + status label. */
     variant?: 'card' | 'table';
   }>();
 
@@ -114,7 +114,7 @@
     :ui="popoverUi"
     @update:open="emit('update:open', $event)"
   >
-    <!-- Card: circle (+ count when N>1); hover flush to card top-left (parent is absolute left-0 top-0 on card). -->
+    <!-- Card: circle (+ count when N>1) + trailing chevron; chevron hints hover reveals analysis history (parent is absolute left-0 top-0 on card). -->
     <span
       v-if="isCard"
       class="inline-flex cursor-default items-center gap-1 rounded-tl-xl pb-1.5 pl-2 pr-1.5 pt-2 transition-colors hover:bg-gray-100 focus:outline-none"
@@ -137,6 +137,7 @@
       >
         {{ runCount }}
       </span>
+      <UIcon name="i-heroicons-chevron-down" class="text-muted h-3 w-3 shrink-0" aria-hidden="true" />
     </span>
 
     <!-- Table: dot + status text, no chip outline -->
