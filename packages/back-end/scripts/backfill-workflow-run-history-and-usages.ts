@@ -33,8 +33,9 @@
  *   --lab <laboratoryId>            Limit the backfill to a single laboratory id.
  *   --platform <name>               Filter by `LaboratoryRun.Platform` (e.g. `AWS HealthOmics` or `Seqera Cloud`).
  *   --limit <n>                     Process at most N runs (useful for staged rollouts).
- *   --force-reassociate             Re-run tagging for rows that already have lab-scoped InputFileKeys.
- *                                   Safe because tagging writes are idempotent.
+ *   --force-reassociate             Re-run tagging for rows that already have lab-scoped InputFileKeys, and
+ *                                   re-fetch workflow fields from the platform when applicable. Safe because
+ *                                   tagging writes are idempotent.
  *   --skip-run-table-update         Don't write inferred fields back to the laboratory-run row;
  *                                   only update the tagging table via association.
  *   --list-input-prefix             Allow ListObjectsV2 fallback when no sample sheet is available
@@ -81,8 +82,8 @@ import { getNextFlowApiQueryParameters, httpRequest, REST_API_METHOD } from '../
 
 type Platform = LaboratoryRun['Platform'];
 
-const AWS_HEALTH_OMICS: Platform = 'AWS HealthOmics';
-const SEQERA_CLOUD: Platform = 'Seqera Cloud';
+const AWS_HEALTH_OMICS_PLATFORM: Platform = 'AWS HealthOmics';
+const SEQERA_CLOUD_PLATFORM: Platform = 'Seqera Cloud';
 
 const DEFAULT_SCRIPT_USER_ID = '00000000-0000-4000-8000-000000000000';
 const BACKFILL_MODIFIED_BY = 'backfill-workflow-run-history-and-usages';
@@ -143,11 +144,11 @@ function parseFlags(): Flags {
   const platformRaw = getFlagValue('--platform');
   let platformFilter: Platform | undefined;
   if (platformRaw) {
-    if (platformRaw === AWS_HEALTH_OMICS || platformRaw === SEQERA_CLOUD) {
+    if (platformRaw === AWS_HEALTH_OMICS_PLATFORM || platformRaw === SEQERA_CLOUD_PLATFORM) {
       platformFilter = platformRaw;
     } else {
       console.error(
-        `Unsupported --platform value: ${platformRaw}. Expected "${AWS_HEALTH_OMICS}" or "${SEQERA_CLOUD}".`,
+        `Unsupported --platform value: ${platformRaw}. Expected "${AWS_HEALTH_OMICS_PLATFORM}" or "${SEQERA_CLOUD_PLATFORM}".`,
       );
       process.exit(1);
     }
@@ -425,22 +426,28 @@ async function resolveWorkflowFields(
   ssm: SsmService,
   flags: Flags,
 ): Promise<WorkflowResolution> {
-  if (run.WorkflowExternalId && run.WorkflowVersionName) {
+  if (run.WorkflowExternalId && run.WorkflowVersionName && !flags.forceReassociate) {
     return { workflowExternalId: run.WorkflowExternalId, workflowVersionName: run.WorkflowVersionName };
   }
-  if (run.Platform === AWS_HEALTH_OMICS) {
+  if (run.Platform === AWS_HEALTH_OMICS_PLATFORM) {
     const omics = await resolveOmicsWorkflowFields(run, flags);
     return {
-      workflowExternalId: run.WorkflowExternalId || omics.workflowExternalId,
-      workflowVersionName: run.WorkflowVersionName || omics.workflowVersionName,
+      workflowExternalId: flags.forceReassociate
+        ? (omics.workflowExternalId ?? run.WorkflowExternalId)
+        : run.WorkflowExternalId || omics.workflowExternalId,
+      workflowVersionName: flags.forceReassociate
+        ? (omics.workflowVersionName ?? run.WorkflowVersionName)
+        : run.WorkflowVersionName || omics.workflowVersionName,
       notes: omics.notes,
     };
   }
-  if (run.Platform === SEQERA_CLOUD) {
+  if (run.Platform === SEQERA_CLOUD_PLATFORM) {
     const seqera = await resolveSeqeraWorkflowFields(run, laboratory, ssm);
     return {
       workflowExternalId: run.WorkflowExternalId,
-      workflowVersionName: run.WorkflowVersionName || seqera.workflowVersionName,
+      workflowVersionName: flags.forceReassociate
+        ? (seqera.workflowVersionName ?? run.WorkflowVersionName)
+        : run.WorkflowVersionName || seqera.workflowVersionName,
       notes: seqera.notes,
     };
   }
@@ -516,7 +523,10 @@ async function main(): Promise<void> {
   console.log(`Processing ${limited.length} candidate run(s)${flags.limit ? ` (--limit ${flags.limit})` : ''}.\n`);
 
   const omicsNeedsAssumeRoleLookup = limited.some(
-    (r) => r.Platform === AWS_HEALTH_OMICS && !!r.ExternalRunId && !(r.WorkflowExternalId && r.WorkflowVersionName),
+    (r) =>
+      r.Platform === AWS_HEALTH_OMICS_PLATFORM &&
+      !!r.ExternalRunId &&
+      (!(r.WorkflowExternalId && r.WorkflowVersionName) || flags.forceReassociate),
   );
   if (omicsNeedsAssumeRoleLookup && !flags.omicsUseDefaultCredentials && !process.env.ACCOUNT_ID?.trim()) {
     const namePrefix = process.env.NAME_PREFIX ?? '';
@@ -615,6 +625,7 @@ async function main(): Promise<void> {
           } catch (err) {
             outcome.error = `LaboratoryRunService.update failed: ${(err as Error).message ?? err}`;
             console.warn(`  ${outcome.error}`);
+            continue;
           }
         }
       }
