@@ -244,6 +244,68 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
     }
   };
 
+  /**
+   * Targeted DynamoDB update for retention/TTL bookkeeping (`TerminalAt`, `ExpiresAt`,
+   * audit fields) without rewriting unrelated run attributes.
+   */
+  public async updateRetentionMetadata(input: {
+    LaboratoryId: string;
+    RunId: string;
+    set: {
+      TerminalAt?: string;
+      ExpiresAt?: number;
+      ModifiedAt: string;
+      ModifiedBy: string;
+    };
+    remove: string[];
+  }): Promise<LaboratoryRun> {
+    const expressionAttributeNames: Record<string, string> = {
+      '#ModifiedAt': 'ModifiedAt',
+      '#ModifiedBy': 'ModifiedBy',
+    };
+    const valuePayload: Record<string, unknown> = {
+      ':ModifiedAt': input.set.ModifiedAt,
+      ':ModifiedBy': input.set.ModifiedBy,
+    };
+    const setFragments = ['#ModifiedAt = :ModifiedAt', '#ModifiedBy = :ModifiedBy'];
+
+    if (input.set.TerminalAt !== undefined) {
+      expressionAttributeNames['#TerminalAt'] = 'TerminalAt';
+      valuePayload[':TerminalAt'] = input.set.TerminalAt;
+      setFragments.push('#TerminalAt = :TerminalAt');
+    }
+    if (input.set.ExpiresAt !== undefined) {
+      expressionAttributeNames['#ExpiresAt'] = 'ExpiresAt';
+      valuePayload[':ExpiresAt'] = input.set.ExpiresAt;
+      setFragments.push('#ExpiresAt = :ExpiresAt');
+    }
+
+    let updateExpression = `SET ${setFragments.join(', ')}`;
+    if (input.remove.includes('ExpiresAt')) {
+      expressionAttributeNames['#ExpRemove'] = 'ExpiresAt';
+      updateExpression += ' REMOVE #ExpRemove';
+    }
+
+    const response: UpdateItemCommandOutput = await this.updateItem({
+      TableName: this.LABORATORY_RUN_TABLE_NAME,
+      Key: {
+        LaboratoryId: { S: input.LaboratoryId },
+        RunId: { S: input.RunId },
+      },
+      UpdateExpression: updateExpression,
+      ExpressionAttributeNames: expressionAttributeNames,
+      ExpressionAttributeValues: marshall(valuePayload, { removeUndefinedValues: true }),
+      ReturnValues: 'ALL_NEW',
+    });
+
+    if (response.$metadata.httpStatusCode === 200 && response.Attributes) {
+      return withCoercedInputFileKeys(<LaboratoryRun>unmarshall(response.Attributes));
+    }
+    throw new Error(
+      `Update retention metadata for LaboratoryId=${input.LaboratoryId} RunId=${input.RunId} failed: HTTP ${response.$metadata.httpStatusCode}`,
+    );
+  }
+
   public delete = async (laboratoryRun: LaboratoryRun): Promise<boolean> => {
     const logRequestMessage = `Delete LaboratoryRun LaboratoryId=${laboratoryRun.LaboratoryId}, RunId=${laboratoryRun.RunId} request`;
     console.info(logRequestMessage);

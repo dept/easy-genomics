@@ -13,6 +13,15 @@ const s3Service = new S3Service();
 
 const METRIC_NAMESPACE = 'EasyGenomics/DataRetention';
 
+function parseMaxDeletesPerLabSweep(): number {
+  const raw = process.env.MAX_DELETES_PER_LAB_SWEEP;
+  if (raw == null || raw === '') return 25_000;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0) return 25_000;
+  // `0` disables all per-lab deletes for this invocation (useful in emergencies).
+  return n;
+}
+
 /**
  * Scheduled (daily) Lambda that performs the S3 deletion half of the run-retention cascade
  * described in the "Permanent tag and S3 expiry" plan.
@@ -25,14 +34,17 @@ const METRIC_NAMESPACE = 'EasyGenomics/DataRetention';
  *      "never-used orphan" (orphans are intentionally NOT auto-deleted per the plan).
  *   3. The file row does NOT carry the laboratory's singleton permanent tag id.
  *
- * Honors a DRY_RUN env flag for safe initial deploys; emits CloudWatch metrics under the
- * `EasyGenomics/DataRetention` namespace.
+ * Honors a DRY_RUN env flag for safe initial deploys: only the literal value `false` enables
+ * real S3 and tagging-table deletes (any other value, including unset, runs in dry-run mode).
+ * Optional `MAX_DELETES_PER_LAB_SWEEP` caps how many objects a single invocation may delete per
+ * lab (defense in depth). Emits CloudWatch EMF metrics under `EasyGenomics/DataRetention`.
  *
  * Triggered by an EventBridge Scheduled Rule (see `easy-genomics-nested-stack.ts`).
  */
 export const handler: Handler<ScheduledEvent, void> = async (event: ScheduledEvent): Promise<void> => {
-  const dryRun = (process.env.DRY_RUN ?? '').toLowerCase() === 'true';
-  console.log(`Starting expired laboratory data sweep (dryRun=${dryRun})`, {
+  const dryRun = process.env.DRY_RUN !== 'false';
+  const maxDeletesPerLab = parseMaxDeletesPerLabSweep();
+  console.log(`Starting expired laboratory data sweep (dryRun=${dryRun}, maxDeletesPerLab=${maxDeletesPerLab})`, {
     eventId: event?.id,
     time: event?.time,
   });
@@ -41,15 +53,17 @@ export const handler: Handler<ScheduledEvent, void> = async (event: ScheduledEve
   let totalDeleted = 0;
   let totalPermanentProtected = 0;
   let totalErrors = 0;
+  let totalLabsHitDeleteCap = 0;
 
   const laboratories = await laboratoryService.listAllLaboratories();
   for (const lab of laboratories) {
     try {
-      const stats = await sweepLaboratory(lab, dryRun);
+      const stats = await sweepLaboratory(lab, dryRun, maxDeletesPerLab);
       totalEligible += stats.eligible;
       totalDeleted += stats.deleted;
       totalPermanentProtected += stats.permanentProtected;
       totalErrors += stats.errors;
+      totalLabsHitDeleteCap += stats.hitDeleteCap ? 1 : 0;
     } catch (err) {
       console.error(`Sweep failed for lab ${lab.LaboratoryId} (continuing):`, err);
       totalErrors++;
@@ -63,6 +77,7 @@ export const handler: Handler<ScheduledEvent, void> = async (event: ScheduledEve
     deleted: totalDeleted,
     permanentProtected: totalPermanentProtected,
     errors: totalErrors,
+    labsHitDeleteCap: totalLabsHitDeleteCap,
   });
 
   emitEmfMetrics({
@@ -70,6 +85,7 @@ export const handler: Handler<ScheduledEvent, void> = async (event: ScheduledEve
     Deleted: totalDeleted,
     PermanentProtected: totalPermanentProtected,
     Errors: totalErrors,
+    LabsHitDeleteCap: totalLabsHitDeleteCap,
   });
 };
 
@@ -81,14 +97,23 @@ export const handler: Handler<ScheduledEvent, void> = async (event: ScheduledEve
 async function sweepLaboratory(
   laboratory: Laboratory,
   dryRun: boolean,
-): Promise<{ eligible: number; deleted: number; permanentProtected: number; errors: number }> {
+  maxDeletesPerLab: number,
+): Promise<{
+  eligible: number;
+  deleted: number;
+  permanentProtected: number;
+  errors: number;
+  hitDeleteCap: boolean;
+}> {
   let eligible = 0;
   let deleted = 0;
   let permanentProtected = 0;
   let errors = 0;
+  let hitDeleteCap = false;
+  let loggedDeleteCap = false;
 
   if (!laboratory.S3Bucket) {
-    return { eligible, deleted, permanentProtected, errors };
+    return { eligible, deleted, permanentProtected, errors, hitDeleteCap };
   }
 
   const labPermanentTagId = permanentTagIdForLaboratory(laboratory.LaboratoryId);
@@ -120,6 +145,29 @@ async function sweepLaboratory(
       continue;
     }
 
+    if (deleted >= maxDeletesPerLab) {
+      hitDeleteCap = true;
+      if (!loggedDeleteCap) {
+        loggedDeleteCap = true;
+        console.warn(
+          `Lab ${laboratory.LaboratoryId} reached MAX_DELETES_PER_LAB_SWEEP=${maxDeletesPerLab}; remaining eligible rows left for a future run.`,
+        );
+      }
+      continue;
+    }
+
+    try {
+      dataTaggingService.assertBucketMatchesLab(laboratory, bucket);
+      dataTaggingService.assertKeyUnderLabPrefix(laboratory, key);
+    } catch (guardErr) {
+      console.warn(
+        `  Skip delete s3://${bucket}/${key} (lab=${laboratory.LaboratoryId}): bucket/key guard failed:`,
+        guardErr,
+      );
+      errors++;
+      continue;
+    }
+
     try {
       await s3Service.deleteObject({ Bucket: bucket, Key: key });
       // Standard tag and batch tag refs are also gone with the FILE# row; their MAP# rows are
@@ -137,7 +185,7 @@ async function sweepLaboratory(
     `Lab ${laboratory.LaboratoryId} sweep complete: eligible=${eligible} deleted=${deleted} permanentProtected=${permanentProtected} errors=${errors}`,
   );
 
-  return { eligible, deleted, permanentProtected, errors };
+  return { eligible, deleted, permanentProtected, errors, hitDeleteCap };
 }
 
 /**

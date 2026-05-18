@@ -1,6 +1,6 @@
 process.env.NAME_PREFIX = 'unit-test';
 
-import type { AttributeValue } from '@aws-sdk/client-dynamodb';
+import { ConditionalCheckFailedException, type AttributeValue } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import {
@@ -855,6 +855,36 @@ describe('LaboratoryDataTaggingService.updateRunUsageExpiresAt', () => {
     const lab = labFixture();
     await svc.updateRunUsageExpiresAt(lab, lab.S3Bucket!, 'run-7', ['other-org/lab-1/x.fq.gz'], 1_900_000_000);
     expect(mockUpdateItem).not.toHaveBeenCalled();
+  });
+
+  it('no-ops when the FILE row has no LaboratoryRunUsages entry for the RunId (conditional failure)', async () => {
+    const lab = labFixture();
+    mockUpdateItem.mockRejectedValueOnce(new ConditionalCheckFailedException({ message: 'c', $metadata: {} }));
+    await expect(
+      svc.updateRunUsageExpiresAt(lab, lab.S3Bucket!, 'run-7', ['org-1/lab-1/a.fq.gz'], 1_900_000_000),
+    ).resolves.toBeUndefined();
+    expect(mockUpdateItem).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('LaboratoryDataTaggingService.deleteFileRowAndAssociations', () => {
+  let svc: LaboratoryDataTaggingService;
+  let mockGetItem: jest.Mock;
+  let mockDeleteItem: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratoryDataTaggingService();
+    mockGetItem = jest.fn().mockResolvedValue({});
+    mockDeleteItem = jest.fn().mockResolvedValue({});
+    (svc as unknown as { getItem: typeof mockGetItem }).getItem = mockGetItem;
+    (svc as unknown as { deleteItem: typeof mockDeleteItem }).deleteItem = mockDeleteItem;
+  });
+
+  it('returns without deleting when the FILE# row is already gone (idempotent)', async () => {
+    await svc.deleteFileRowAndAssociations('lab-1', 'ref-1');
+    expect(mockGetItem).toHaveBeenCalled();
+    expect(mockDeleteItem).not.toHaveBeenCalled();
   });
 });
 

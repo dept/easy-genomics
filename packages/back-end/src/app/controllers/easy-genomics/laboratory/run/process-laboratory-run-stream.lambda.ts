@@ -1,5 +1,6 @@
 import type { AttributeValue as DDBAttributeValue } from '@aws-sdk/client-dynamodb';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
+import { LaboratoryNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import { DynamoDBRecord, DynamoDBStreamEvent, Handler } from 'aws-lambda';
@@ -86,8 +87,17 @@ async function processRecord(record: DynamoDBRecord): Promise<void> {
   try {
     laboratory = await laboratoryService.queryByLaboratoryId(laboratoryId);
   } catch (err) {
-    console.warn(`Skip cascade for RunId=${runId}: failed to load Laboratory ${laboratoryId} (continuing):`, err);
-    return;
+    if (err instanceof LaboratoryNotFoundError) {
+      console.warn(
+        `Skip cascade for RunId=${runId}: Laboratory ${laboratoryId} not found (run bookkeeping is a no-op).`,
+      );
+      return;
+    }
+    console.error(
+      `Failed to load Laboratory ${laboratoryId} for RunId=${runId} cascade (will retry via stream/DLQ):`,
+      err,
+    );
+    throw err;
   }
   if (!laboratory?.S3Bucket) {
     console.warn(`Skip cascade for RunId=${runId}: Laboratory ${laboratoryId} has no S3Bucket configured.`);

@@ -16,12 +16,20 @@ jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service', ()
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-data-tagging-service', () => {
   const actual = jest.requireActual('../../../../../src/app/services/easy-genomics/laboratory-data-tagging-service');
+  const proto = actual.LaboratoryDataTaggingService.prototype as {
+    assertBucketMatchesLab: (laboratory: unknown, bucket: string) => void;
+    assertKeyUnderLabPrefix: (laboratory: unknown, key: string) => void;
+  };
   return {
     ...actual,
     LaboratoryDataTaggingService: jest.fn().mockImplementation(() => ({
       listAllFileRowsForLab: mockListFileRows,
       deleteFileRowAndAssociations: mockDeleteRow,
       listTags: mockListTags,
+      assertBucketMatchesLab: (laboratory: unknown, bucket: string) =>
+        proto.assertBucketMatchesLab(laboratory as never, bucket),
+      assertKeyUnderLabPrefix: (laboratory: unknown, key: string) =>
+        proto.assertKeyUnderLabPrefix(laboratory as never, key),
     })),
   };
 });
@@ -48,6 +56,7 @@ describe('process-expired-laboratory-data.lambda eligibility', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.DRY_RUN = 'false';
+    delete process.env.MAX_DELETES_PER_LAB_SWEEP;
 
     mockListLabs.mockReset().mockResolvedValue([lab]);
     mockListFileRows.mockReset();
@@ -138,5 +147,59 @@ describe('process-expired-laboratory-data.lambda eligibility', () => {
     await handler(event, ctx, jest.fn());
     expect(mockDeleteObject).not.toHaveBeenCalled();
     expect(mockDeleteRow).not.toHaveBeenCalled();
+  });
+
+  it('defaults to dry-run when DRY_RUN is unset (only false enables deletes)', async () => {
+    delete process.env.DRY_RUN;
+    mockListFileRows.mockResolvedValueOnce([
+      {
+        Ref: 'r1',
+        S3Bucket: 'my-bucket',
+        ObjectKey: 'org-1/lab-1/a.fq.gz',
+        TagIds: ['wf-1'],
+        LaboratoryRunUsages: undefined,
+      },
+    ]);
+    await handler(event, ctx, jest.fn());
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockDeleteRow).not.toHaveBeenCalled();
+  });
+
+  it('skips deletes when the FILE row bucket does not match the laboratory configuration', async () => {
+    mockListFileRows.mockResolvedValueOnce([
+      {
+        Ref: 'r1',
+        S3Bucket: 'wrong-bucket',
+        ObjectKey: 'org-1/lab-1/a.fq.gz',
+        TagIds: ['wf-1'],
+        LaboratoryRunUsages: undefined,
+      },
+    ]);
+    await handler(event, ctx, jest.fn());
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockDeleteRow).not.toHaveBeenCalled();
+  });
+
+  it('respects MAX_DELETES_PER_LAB_SWEEP across multiple eligible rows', async () => {
+    process.env.MAX_DELETES_PER_LAB_SWEEP = '1';
+    mockListFileRows.mockResolvedValueOnce([
+      {
+        Ref: 'r1',
+        S3Bucket: 'my-bucket',
+        ObjectKey: 'org-1/lab-1/a.fq.gz',
+        TagIds: ['wf-1'],
+        LaboratoryRunUsages: undefined,
+      },
+      {
+        Ref: 'r2',
+        S3Bucket: 'my-bucket',
+        ObjectKey: 'org-1/lab-1/b.fq.gz',
+        TagIds: ['wf-1'],
+        LaboratoryRunUsages: undefined,
+      },
+    ]);
+    await handler(event, ctx, jest.fn());
+    expect(mockDeleteObject).toHaveBeenCalledTimes(1);
+    expect(mockDeleteRow).toHaveBeenCalledTimes(1);
   });
 });

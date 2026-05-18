@@ -1112,6 +1112,10 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
   /**
    * Internal shape used by maintenance flows (e.g. `process-expired-laboratory-data`) to walk
    * every FILE# row in a laboratory partition without leaking the raw DynamoDB schema.
+   *
+   * Consistency: this is a point-in-time snapshot. FILE# rows can appear/disappear while this
+   * query pages (e.g. concurrent tagging writes or another sweep instance). Callers must treat
+   * per-row follow-up operations as best-effort (conditional deletes / idempotent cleanup).
    */
   public async listAllFileRowsForLab(laboratoryId: string): Promise<
     Array<{
