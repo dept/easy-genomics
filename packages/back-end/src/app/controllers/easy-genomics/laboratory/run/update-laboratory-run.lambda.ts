@@ -13,6 +13,7 @@ import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-geno
 import { SnsProcessingEvent } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { v4 as uuidv4 } from 'uuid';
+import { LaboratoryDataTaggingService } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { SnsService } from '@BE/services/sns-service';
@@ -33,6 +34,7 @@ const snsService = new SnsService();
 
 const laboratoryRunService = new LaboratoryRunService();
 const laboratoryService = new LaboratoryService();
+const laboratoryDataTaggingService = new LaboratoryDataTaggingService();
 
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -100,6 +102,23 @@ export const handler: Handler = async (
       ModifiedAt: now.toISOString(),
       ModifiedBy: currentUserId,
     });
+
+    // Propagate the freshly computed `ExpiresAt` into every per-file LaboratoryRunUsages entry
+    // so the data collections page can power "Expiring soon" without re-reading the run table.
+    // Best-effort: tagging-side failures must not break the run update.
+    if (expiresAt !== undefined && laboratory?.S3Bucket && (response.InputFileKeys || []).length > 0) {
+      try {
+        await laboratoryDataTaggingService.updateRunUsageExpiresAt(
+          laboratory,
+          laboratory.S3Bucket,
+          response.RunId,
+          response.InputFileKeys || [],
+          expiresAt,
+        );
+      } catch (err) {
+        console.warn('Failed to propagate ExpiresAt to LaboratoryRunUsages (continuing):', err);
+      }
+    }
 
     //TODO: check if it is an active request
 

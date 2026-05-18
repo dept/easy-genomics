@@ -5,6 +5,7 @@
     LaboratoryRunUsageSummary,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
   import { useLabsStore, useToastStore, useUiStore } from '@FE/stores';
+  import { isExpiringSoon } from '@FE/utils/data-collections-filters';
 
   const props = defineProps<{
     labId: string;
@@ -29,6 +30,13 @@
    */
   const keyToWorkflowTagIds = ref<Record<string, string[]>>({});
   /**
+   * Whether each file carries the lab's system-managed permanent tag. Sourced from the
+   * `IsPermanent` field on `FileTagAssignment` so the UI doesn't need to cross-reference
+   * `tags.value` to know. Files marked Permanent are never auto-deleted by the run-retention
+   * cleanup job and are excluded from the "Expiring soon" filter.
+   */
+  const keyToIsPermanent = ref<Record<string, boolean>>({});
+  /**
    * Per-file laboratory run usage history, sorted newest first by `RunCreatedAt` (see
    * `listFileTags` on the back end). Drives the per-file Analysis History tooltip and the
    * orange/green/indigo status dot. Empty array means the file has never been used in a run.
@@ -39,16 +47,56 @@
   const selectedKeys = ref<string[]>([]);
 
   /**
-   * Scope rail filter: at most one of all | not-yet-analyzed | workflow template | workflow version.
+   * Scope rail filter: at most one of all | not-yet-analyzed | expiring-soon | workflow template | workflow version.
    * Tags section (untagged + multiple standard tags) applies on top with OR semantics among selected tags.
    */
   type ScopeFilter =
     | { kind: 'all' }
     | { kind: 'not-analyzed' }
+    | { kind: 'expiring-soon' }
     | { kind: 'workflow-template'; templateKey: string }
     | { kind: 'workflow-version'; tagId: string };
 
   const scopeFilter = ref<ScopeFilter>({ kind: 'all' });
+
+  /**
+   * User-adjustable threshold (in days) for the "Expiring soon" filter. A file is "expiring
+   * soon" iff at least one of its referencing runs has an `ExpiresAt` within this many days
+   * from now AND the file is not marked Permanent. Persisted per-lab to localStorage so the
+   * setting survives reloads but doesn't bleed across labs.
+   */
+  const EXPIRING_SOON_DEFAULT_DAYS = 30;
+  const EXPIRING_SOON_MIN_DAYS = 1;
+  const EXPIRING_SOON_MAX_DAYS = 365;
+
+  function readPersistedExpiringSoonDays(labId: string): number {
+    if (typeof window === 'undefined') return EXPIRING_SOON_DEFAULT_DAYS;
+    try {
+      const raw = window.localStorage?.getItem(`eg.dataCollections.${labId}.expiringSoonDays`);
+      const n = raw != null ? Number(raw) : NaN;
+      if (!Number.isFinite(n)) return EXPIRING_SOON_DEFAULT_DAYS;
+      return Math.min(EXPIRING_SOON_MAX_DAYS, Math.max(EXPIRING_SOON_MIN_DAYS, Math.floor(n)));
+    } catch {
+      return EXPIRING_SOON_DEFAULT_DAYS;
+    }
+  }
+  const expiringSoonThresholdDays = ref<number>(readPersistedExpiringSoonDays(props.labId));
+  watch(expiringSoonThresholdDays, (next) => {
+    if (typeof window === 'undefined') return;
+    try {
+      const clamped = Math.min(EXPIRING_SOON_MAX_DAYS, Math.max(EXPIRING_SOON_MIN_DAYS, Math.floor(Number(next) || 0)));
+      if (clamped !== next) expiringSoonThresholdDays.value = clamped;
+      window.localStorage?.setItem(`eg.dataCollections.${props.labId}.expiringSoonDays`, String(clamped));
+    } catch {
+      // localStorage unavailable (private mode, quota); state still lives in-memory.
+    }
+  });
+  watch(
+    () => props.labId,
+    (next) => {
+      expiringSoonThresholdDays.value = readPersistedExpiringSoonDays(next);
+    },
+  );
   /** Tags section: untagged is mutually exclusive with selecting specific standard tags. */
   const tagsFilterUntagged = ref(false);
   /** Multiple standard tags combine with OR (file matches if it has any selected tag). */
@@ -95,6 +143,19 @@
     return !!(t.Platform && t.WorkflowExternalId);
   }
 
+  /** Singleton permanent tag for this lab (lazy-created server-side on first listTags). */
+  const permanentTag = computed<LaboratoryDataTag | undefined>(() => tags.value.find((t) => t.Kind === 'permanent'));
+  const permanentTagId = computed<string | undefined>(() => permanentTag.value?.TagId);
+
+  function isFilePermanent(key: string): boolean {
+    if (keyToIsPermanent.value[key]) return true;
+    const pid = permanentTagId.value;
+    if (!pid) return false;
+    // Fall back to the raw TagIds list when `IsPermanent` was missing from the API payload
+    // (defensive — older list-file-tags responses may not project the field).
+    return (keyToTagIds.value[key] || []).includes(pid);
+  }
+
   /**
    * Workflow tag ids for a file: prefer API `WorkflowTagIds`, else infer from raw `TagIds` using
    * tag metadata (needed when list-file-tags mis-buckets or tags load after file assignments).
@@ -124,13 +185,18 @@
   /**
    * Tag ids that belong in the generic (user) tag pill row. The API splits workflow ids into
    * `WorkflowTagIds`, but mis-partitioning or missing `Kind` on list-tags must not show workflow
-   * chips in the standard row.
+   * chips in the standard row. The permanent tag is rendered as a dedicated lock affordance
+   * elsewhere and is also excluded from this list.
    */
   function standardTagIdsForFileKey(key: string): string[] {
     const wf = new Set(workflowTagIdsForFileKey(key));
+    const pid = permanentTagId.value;
     return (keyToTagIds.value[key] || []).filter((tid: string) => {
       if (wf.has(tid)) return false;
       if (isWorkflowLaboratoryTag(tagById(tid))) return false;
+      if (pid && tid === pid) return false;
+      const tag = tagById(tid);
+      if (tag?.Kind === 'permanent') return false;
       return true;
     });
   }
@@ -144,8 +210,17 @@
   });
 
   const standardTags = computed(() =>
-    tags.value.filter((t) => (t.Kind ?? 'standard') === 'standard' && !isWorkflowLaboratoryTag(t)),
+    tags.value.filter(
+      (t) => (t.Kind ?? 'standard') === 'standard' && t.Kind !== 'permanent' && !isWorkflowLaboratoryTag(t),
+    ),
   );
+
+  /** Standard tags plus the system Permanent tag for the bulk add/remove tray only (left rail still omits Permanent). */
+  const bulkPanelAssignableTags = computed(() => {
+    const std = standardTags.value;
+    const p = permanentTag.value;
+    return p ? [...std, p] : std;
+  });
 
   const batchTags = computed(() => tags.value.filter((t) => (t.Kind ?? 'standard') === 'batch'));
 
@@ -218,6 +293,10 @@
     return scopeFilter.value.kind === 'not-analyzed';
   }
 
+  function isExpiringSoonScopeActive(): boolean {
+    return scopeFilter.value.kind === 'expiring-soon';
+  }
+
   function isWorkflowTemplateScopeActive(templateKey: string): boolean {
     const s = scopeFilter.value;
     return s.kind === 'workflow-template' && s.templateKey === templateKey;
@@ -251,6 +330,14 @@
       return;
     }
     scopeFilter.value = { kind: 'not-analyzed' };
+  }
+
+  function onExpiringSoonScopeClick(): void {
+    if (scopeFilter.value.kind === 'expiring-soon') {
+      scopeFilter.value = { kind: 'all' };
+      return;
+    }
+    scopeFilter.value = { kind: 'expiring-soon' };
   }
 
   function onWorkflowTemplateScopeClick(templateKey: string): void {
@@ -317,9 +404,13 @@
     const sel = selectedKeys.value;
     if (!sel.length) return [] as { tagId: string; count: number }[];
     const counts = new Map<string, number>();
+    const pid = permanentTagId.value;
     for (const key of sel) {
       for (const tid of standardTagIdsForFileKey(key)) {
         counts.set(tid, (counts.get(tid) || 0) + 1);
+      }
+      if (pid && isFilePermanent(key)) {
+        counts.set(pid, (counts.get(pid) || 0) + 1);
       }
     }
     return [...counts.entries()]
@@ -362,6 +453,7 @@
       const map: Record<string, string[]> = {};
       const batchMap: Record<string, string | undefined> = {};
       const workflowMap: Record<string, string[]> = {};
+      const permanentMap: Record<string, boolean> = {};
       const runUsagesMap: Record<string, LaboratoryRunUsageSummary[]> = {};
       if (keys.length) {
         for (let i = 0; i < keys.length; i += KEYS_CHUNK) {
@@ -375,6 +467,7 @@
             map[f.Key] = f.TagIds;
             batchMap[f.Key] = f.BatchTagId;
             workflowMap[f.Key] = f.WorkflowTagIds ?? [];
+            permanentMap[f.Key] = !!f.IsPermanent;
             runUsagesMap[f.Key] = f.LaboratoryRunUsages ?? [];
           }
         }
@@ -384,6 +477,7 @@
       keyToTagIds.value = map;
       keyToBatchTagId.value = batchMap;
       keyToWorkflowTagIds.value = workflowMap;
+      keyToIsPermanent.value = permanentMap;
       keyToRunUsages.value = runUsagesMap;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -416,6 +510,15 @@
     return keyToRunUsages.value[key]?.length ?? 0;
   }
 
+  function isFileExpiringSoon(key: string): boolean {
+    return isExpiringSoon({
+      isPermanent: isFilePermanent(key),
+      usages: keyToRunUsages.value[key],
+      thresholdDays: expiringSoonThresholdDays.value,
+      nowEpoch: Math.floor(Date.now() / 1000),
+    });
+  }
+
   const visibleFiles = computed(() => {
     let list = filesMatchingSearch.value;
     const sf = scopeFilter.value;
@@ -425,6 +528,9 @@
       case 'not-analyzed':
         // Run-history-based: a file is "not yet analyzed" iff it has zero recorded run usages.
         list = list.filter((f) => runCountForFileKey(f.Key) === 0);
+        break;
+      case 'expiring-soon':
+        list = list.filter((f) => isFileExpiringSoon(f.Key));
         break;
       case 'workflow-template': {
         const tmpl = workflowTemplates.value.find((t) => t.key === sf.templateKey);
@@ -439,10 +545,15 @@
         break;
     }
     if (tagsFilterUntagged.value) {
-      list = list.filter((f) => !standardTagIdsForFileKey(f.Key).length);
+      list = list.filter((f) => !standardTagIdsForFileKey(f.Key).length && !isFilePermanent(f.Key));
     } else if (tagsFilterTagIds.value.length > 0) {
       const selected = new Set(tagsFilterTagIds.value);
-      list = list.filter((f) => standardTagIdsForFileKey(f.Key).some((tid: string) => selected.has(tid)));
+      const pid = permanentTagId.value;
+      list = list.filter(
+        (f) =>
+          standardTagIdsForFileKey(f.Key).some((tid: string) => selected.has(tid)) ||
+          (!!pid && selected.has(pid) && isFilePermanent(f.Key)),
+      );
     }
     return list;
   });
@@ -452,6 +563,10 @@
 
   const notAnalyzedChipCount = computed(
     () => filesMatchingSearch.value.filter((f) => runCountForFileKey(f.Key) === 0).length,
+  );
+
+  const expiringSoonChipCount = computed(
+    () => filesMatchingSearch.value.filter((f) => isFileExpiringSoon(f.Key)).length,
   );
 
   /** Per standard-tag file counts among `filesMatchingSearch` (matches `case 'tag'` in `visibleFiles`). */
@@ -469,8 +584,32 @@
     return out;
   });
 
+  /** Listed files (current search scope) that carry the Permanent tag — drives left-rail Permanent filter visibility. */
+  const permanentTaggedFileCountInSearch = computed(
+    () => filesMatchingSearch.value.filter((f) => isFilePermanent(f.Key)).length,
+  );
+
+  /**
+   * Left-rail tag filters: all standard tags, plus Permanent only when at least one file in the
+   * current listing/search has it (same universe as chip counts).
+   */
+  const leftRailTagFilterTags = computed(() => {
+    const std = standardTags.value;
+    const p = permanentTag.value;
+    if (!p || permanentTaggedFileCountInSearch.value === 0) return std;
+    return [...std, p];
+  });
+
+  watch(permanentTaggedFileCountInSearch, (n) => {
+    const pid = permanentTagId.value;
+    if (pid && n === 0 && tagsFilterTagIds.value.includes(pid)) {
+      tagsFilterTagIds.value = tagsFilterTagIds.value.filter((id) => id !== pid);
+    }
+  });
+
   /** Explorer dismiss chips — ids must stay in sync with `clearExplorerFilter`. */
   const CHIP_SCOPE_NOT_ANALYZED = 'chip-scope-not-analyzed';
+  const CHIP_SCOPE_EXPIRING_SOON = 'chip-scope-expiring-soon';
   const CHIP_TAG_UNTAGGED = 'chip-tag-untagged';
 
   function chipIdWorkflowTemplate(templateKey: string): string {
@@ -490,6 +629,11 @@
     const sf = scopeFilter.value;
     if (sf.kind === 'not-analyzed') {
       chips.push({ chipId: CHIP_SCOPE_NOT_ANALYZED, label: 'Not yet analyzed' });
+    } else if (sf.kind === 'expiring-soon') {
+      chips.push({
+        chipId: CHIP_SCOPE_EXPIRING_SOON,
+        label: `Expiring soon (≤ ${expiringSoonThresholdDays.value}d)`,
+      });
     } else if (sf.kind === 'workflow-template') {
       const tmpl = workflowTemplates.value.find((t) => t.key === sf.templateKey);
       chips.push({
@@ -516,6 +660,10 @@
   function clearExplorerFilter(chipId: string): void {
     if (chipId === CHIP_SCOPE_NOT_ANALYZED) {
       if (scopeFilter.value.kind === 'not-analyzed') scopeFilter.value = { kind: 'all' };
+      return;
+    }
+    if (chipId === CHIP_SCOPE_EXPIRING_SOON) {
+      if (scopeFilter.value.kind === 'expiring-soon') scopeFilter.value = { kind: 'all' };
       return;
     }
     if (chipId.startsWith('chip-wft:')) {
@@ -887,6 +1035,40 @@
               {{ notAnalyzedChipCount }}
             </UBadge>
           </button>
+          <button
+            type="button"
+            class="hover:bg-primary-muted flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
+            :class="{ 'bg-primary-muted font-medium': isExpiringSoonScopeActive() }"
+            :title="`Files whose soonest run-retention ExpiresAt is within ${expiringSoonThresholdDays} days. Permanent files are excluded.`"
+            @click="onExpiringSoonScopeClick"
+          >
+            <span class="flex items-center gap-2">
+              <UIcon name="i-heroicons-clock" class="h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+              <span>Expiring soon</span>
+            </span>
+            <UBadge
+              size="xs"
+              class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif tabular-nums ring-0"
+            >
+              {{ expiringSoonChipCount }}
+            </UBadge>
+          </button>
+          <div
+            v-if="isExpiringSoonScopeActive()"
+            class="text-muted mt-1 flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-xs"
+          >
+            <label :for="`expiring-soon-days-${props.labId}`">Days ahead</label>
+            <input
+              :id="`expiring-soon-days-${props.labId}`"
+              v-model.number="expiringSoonThresholdDays"
+              type="number"
+              :min="EXPIRING_SOON_MIN_DAYS"
+              :max="EXPIRING_SOON_MAX_DAYS"
+              step="1"
+              class="focus:border-primary w-16 rounded border border-gray-300 px-2 py-1 text-right text-xs tabular-nums focus:outline-none"
+              @click.stop
+            />
+          </div>
         </div>
 
         <div class="border-border-muted border-b p-2">
@@ -1000,7 +1182,7 @@
               <span>Untagged</span>
             </button>
             <button
-              v-for="t in standardTags"
+              v-for="t in leftRailTagFilterTags"
               :key="t.TagId"
               class="hover:bg-primary-muted flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
               :class="{ 'bg-primary-muted font-medium': isStandardTagFilterActive(t.TagId) }"
@@ -1008,15 +1190,27 @@
               @dragover.prevent="onCardDragOverTag"
               @drop="onTagRowDrop($event, t.TagId)"
             >
-              <span class="flex min-w-0 items-center gap-2">
+              <span class="flex min-w-0 flex-1 items-center gap-2">
                 <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: t.ColorHex }" />
-                <span class="truncate">{{ t.Name }}</span>
+                <span class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span class="truncate">{{ t.Name }}</span>
+                  <span
+                    v-if="(t.Kind ?? 'standard') === 'permanent'"
+                    class="text-muted shrink-0 text-[10px] font-normal"
+                  >
+                    Protect from expiry
+                  </span>
+                </span>
               </span>
               <UBadge
                 size="xs"
                 class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif tabular-nums ring-0"
               >
-                {{ standardTagIdToChipCount[t.TagId] ?? 0 }}
+                {{
+                  (t.Kind ?? 'standard') === 'permanent'
+                    ? permanentTaggedFileCountInSearch
+                    : (standardTagIdToChipCount[t.TagId] ?? 0)
+                }}
               </UBadge>
             </button>
 
@@ -1078,6 +1272,7 @@
         :key-to-batch-tag-id="keyToBatchTagId"
         :key-to-workflow-tag-ids="keyToWorkflowTagIdsEffective"
         :key-to-run-usages="keyToRunUsages"
+        :key-to-is-permanent="keyToIsPermanent"
         :batch-tags="batchTags"
         :tags="tags"
         :selected-keys="selectedKeys"
@@ -1139,12 +1334,20 @@
                 :key="row.tagId"
                 class="flex items-center justify-between gap-2 rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2"
               >
-                <span class="flex min-w-0 items-center gap-2">
+                <span class="flex min-w-0 flex-1 items-center gap-2">
                   <span
                     class="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
                     :style="{ background: tagById(row.tagId)?.ColorHex || '#ccc' }"
                   />
-                  <span class="truncate font-medium">{{ tagById(row.tagId)?.Name ?? row.tagId }}</span>
+                  <span class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span class="truncate font-medium">{{ tagById(row.tagId)?.Name ?? row.tagId }}</span>
+                    <span
+                      v-if="tagById(row.tagId)?.Kind === 'permanent'"
+                      class="text-muted shrink-0 text-[10px] font-normal"
+                    >
+                      Protect from expiry
+                    </span>
+                  </span>
                 </span>
                 <span class="text-muted shrink-0 text-xs tabular-nums">
                   {{ row.count }} / {{ selectedKeys.length }}
@@ -1157,7 +1360,7 @@
             <h3 class="text-muted mb-3 text-xs font-semibold uppercase tracking-wide">Add Tags</h3>
             <ul class="max-h-56 space-y-2 overflow-y-auto pr-1 text-sm">
               <li
-                v-for="t in standardTags"
+                v-for="t in bulkPanelAssignableTags"
                 :key="'add-' + t.TagId"
                 class="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 hover:bg-gray-50"
               >
@@ -1166,7 +1369,15 @@
                   @update:model-value="toggleBulkAddTag(t.TagId)"
                 />
                 <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: t.ColorHex }" />
-                <span class="truncate">{{ t.Name }}</span>
+                <span class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span class="truncate">{{ t.Name }}</span>
+                  <span
+                    v-if="(t.Kind ?? 'standard') === 'permanent'"
+                    class="text-muted shrink-0 text-[10px] font-normal"
+                  >
+                    Protect from expiry
+                  </span>
+                </span>
               </li>
             </ul>
             <div class="mt-3 border-t border-gray-100 pt-3">
@@ -1219,7 +1430,12 @@
                   class="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
                   :style="{ background: tagById(tid)?.ColorHex || '#ccc' }"
                 />
-                <span class="truncate">{{ tagById(tid)?.Name ?? tid }}</span>
+                <span class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span class="truncate">{{ tagById(tid)?.Name ?? tid }}</span>
+                  <span v-if="tagById(tid)?.Kind === 'permanent'" class="text-muted shrink-0 text-[10px] font-normal">
+                    Protect from expiry
+                  </span>
+                </span>
               </li>
             </ul>
           </div>

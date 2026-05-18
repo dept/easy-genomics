@@ -1,5 +1,5 @@
 import { CfnOutput, Stack } from 'aws-cdk-lib';
-import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
+import { AttributeType, StreamViewType, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 import { DataProvisioningNestedStack } from './data-provisioning-nested-stack';
@@ -327,6 +327,12 @@ export class EasyGenomicsApiStack extends Stack {
         type: AttributeType.STRING,
       },
       timeToLiveAttribute: 'ExpiresAt',
+      // OLD_IMAGE stream drives the laboratory-run REMOVE subscriber that keeps the data
+      // tagging table's `LaboratoryRunUsages` map in sync when run rows disappear (via TTL
+      // or manual delete). OLD_IMAGE is sufficient — the subscriber needs the row's
+      // `InputFileKeys` from the deleted record, never the new image (none exists for
+      // REMOVE events).
+      stream: StreamViewType.OLD_IMAGE,
       gsi: [
         {
           partitionKey: {
