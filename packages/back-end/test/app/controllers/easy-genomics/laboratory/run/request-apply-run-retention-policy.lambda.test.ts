@@ -35,7 +35,7 @@ describe('request-apply-run-retention-policy.lambda', () => {
       requestContext: {
         authorizer: {
           claims: {
-            email: 'user@example.com',
+            'email': 'user@example.com',
             'cognito:username': 'user-1',
           },
         },
