@@ -320,8 +320,9 @@ export class EasyGenomicsNestedStack extends NestedStack {
         // Scheduled (daily) S3 deletion sweep that completes the run-retention cascade. Walks
         // every lab's FILE# rows, deletes the underlying S3 object + tagging-table rows for
         // files whose last referencing run has TTL'd out, and skips anything tagged Permanent.
-        // `DRY_RUN=true` is the safe initial-deploy setting; flip it to "false" once the
-        // CloudWatch metrics show the expected counts.
+        // Only `DRY_RUN=false` enables real deletes (unset or any other value stays dry-run).
+        // Runtime `assertBucketMatchesLab` / `assertKeyUnderLabPrefix` bound blast radius; IAM
+        // still uses `s3://*/*` because lab buckets are provisioned per org at data-setup time.
         '/easy-genomics/data-collections/process-expired-laboratory-data': {
           timeoutSeconds: 900,
           memorySizeMb: 1024,
@@ -1824,8 +1825,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: laboratoryDataTaggingDynamoActions,
       }),
       new PolicyStatement({
-        // Wildcard bucket because labs are provisioned with arbitrary bucket names per
-        // organization; tightening this requires knowing every lab bucket at deploy time.
+        // Wildcard bucket: lab S3Bucket values come from org provisioning. The sweep Lambda
+        // calls `assertBucketMatchesLab` + `assertKeyUnderLabPrefix` before each delete.
         resources: ['arn:aws:s3:::*/*'],
         actions: ['s3:DeleteObject'],
         effect: Effect.ALLOW,

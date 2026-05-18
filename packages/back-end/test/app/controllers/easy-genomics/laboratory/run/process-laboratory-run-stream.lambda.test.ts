@@ -18,6 +18,7 @@ jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-data-tagg
   })),
 }));
 
+import { LaboratoryNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { handler } from '../../../../../../src/app/controllers/easy-genomics/laboratory/run/process-laboratory-run-stream.lambda';
 
 function buildEvent(
@@ -118,8 +119,8 @@ describe('process-laboratory-run-stream.lambda', () => {
     expect(mockRemove).not.toHaveBeenCalled();
   });
 
-  it('skips when the lab cannot be loaded (no throw)', async () => {
-    mockQueryByLaboratoryId.mockRejectedValueOnce(new Error('lab gone'));
+  it('skips when the laboratory row is missing (LaboratoryNotFoundError) without throwing', async () => {
+    mockQueryByLaboratoryId.mockRejectedValueOnce(new LaboratoryNotFoundError());
     const event = buildEvent([
       {
         eventName: 'REMOVE',
@@ -127,6 +128,18 @@ describe('process-laboratory-run-stream.lambda', () => {
       },
     ]);
     await expect(handler(event, ctx, jest.fn())).resolves.toBeUndefined();
+    expect(mockRemove).not.toHaveBeenCalled();
+  });
+
+  it('rethrows when loading the laboratory fails for a non-404 reason', async () => {
+    mockQueryByLaboratoryId.mockRejectedValueOnce(new Error('lab gone'));
+    const event = buildEvent([
+      {
+        eventName: 'REMOVE',
+        oldImage: { LaboratoryId: 'lab-1', RunId: 'run-5', InputFileKeys: ['org-1/lab-1/a.fq.gz'] },
+      },
+    ]);
+    await expect(handler(event, ctx, jest.fn())).rejects.toThrow(/lab gone/);
     expect(mockRemove).not.toHaveBeenCalled();
   });
 
