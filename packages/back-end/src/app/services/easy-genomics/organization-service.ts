@@ -5,6 +5,7 @@ import {
   UpdateItemCommandOutput,
 } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
+import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { OrganizationSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/organization';
 import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization';
 import { Service } from '../../types/service';
@@ -23,7 +24,7 @@ export class OrganizationService extends DynamoDBService implements Service<Orga
     console.info(logRequestMessage);
 
     // Data validation safety check
-    if (!OrganizationSchema.safeParse(organization).success) throw new Error('Invalid request');
+    if (!OrganizationSchema.safeParse(organization).success) throw new InvalidRequestError();
 
     const response = await this.transactWriteItems({
       TransactItems: [
@@ -103,7 +104,7 @@ export class OrganizationService extends DynamoDBService implements Service<Orga
     console.info(logRequestMessage);
 
     // Data validation safety check
-    if (!OrganizationSchema.safeParse(organization).success) throw new Error('Invalid request');
+    if (!OrganizationSchema.safeParse(organization).success) throw new InvalidRequestError();
 
     const updateExclusions: string[] = ['OrganizationId', 'CreatedAt', 'CreatedBy'];
 
