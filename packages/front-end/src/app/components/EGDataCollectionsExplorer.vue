@@ -7,6 +7,7 @@
     LaboratoryDataTag,
     LaboratoryRunUsageSummary,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
+  import type { DataCollectionFileTypeFilter, HiddenFileTypeBreakdownRow } from '@FE/utils/data-collections-file-type';
   import { formatFileSize } from '@FE/utils/file-size';
 
   const props = defineProps<{
@@ -46,10 +47,15 @@
     listingTruncated?: boolean;
     /** Active filter chips (scope + tags); each chip can be dismissed independently in the explorer header. */
     filterChips?: { chipId: string; label: string }[];
+    fileTypeFilter: DataCollectionFileTypeFilter;
+    fileTypeCounts: { fastq: number; fasta: number; other: number };
+    hiddenByFileTypeCount: number;
+    hiddenByFileTypeBreakdown: HiddenFileTypeBreakdownRow[];
   }>();
 
   const emit = defineEmits<{
     'update:search': [v: string];
+    'update:fileTypeFilter': [value: DataCollectionFileTypeFilter];
     'update:selectedKeys': [keys: string[]];
     toggleKey: [key: string];
     selectAllDisplayed: [];
@@ -65,6 +71,14 @@
 
   /** Cards grid vs tabular explorer layout. */
   const explorerView = ref<'cards' | 'table'>('cards');
+
+  const fileTypeFilterOpen = ref(false);
+
+  function onOpenFileTypeFilterFromHiddenChip(): void {
+    nextTick(() => {
+      fileTypeFilterOpen.value = true;
+    });
+  }
 
   const scrollEl = ref<HTMLElement | null>(null);
   const lassoActive = ref(false);
@@ -381,7 +395,7 @@
 
 <template>
   <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-    <div class="border-border-muted flex flex-wrap items-center gap-3 border-b px-4 py-3">
+    <motion.div class="border-border-muted flex flex-wrap items-center gap-3 border-b px-4 py-3">
       <UInput
         :model-value="search"
         placeholder="Search file names…"
@@ -409,12 +423,26 @@
           @click="explorerView = 'table'"
         />
       </div>
-    </div>
+      <div class="ml-auto shrink-0">
+        <EGDataCollectionsFileTypeFilter
+          v-model:open="fileTypeFilterOpen"
+          :model-value="fileTypeFilter"
+          :counts="fileTypeCounts"
+          @update:model-value="emit('update:fileTypeFilter', $event)"
+        />
+      </div>
+    </motion.div>
     <div class="border-border-muted flex flex-wrap items-center gap-2 border-b bg-gray-50 px-4 py-2">
       <span class="text-xs font-semibold leading-snug text-gray-900">
         {{ visibleFiles.length }} {{ visibleSampleNoun }}
       </span>
-      <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+      <motion.div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+        <EGDataCollectionsHiddenFileTypesPopover
+          v-if="hiddenByFileTypeCount > 0"
+          :hidden-count="hiddenByFileTypeCount"
+          :breakdown="hiddenByFileTypeBreakdown"
+          @open-file-type-filter="onOpenFileTypeFilterFromHiddenChip"
+        />
         <div
           v-for="chip in filterChipsResolved"
           :key="chip.chipId"
@@ -431,7 +459,7 @@
             @click="emit('clearFilter', chip.chipId)"
           />
         </div>
-      </div>
+      </motion.div>
       <div class="ml-auto flex shrink-0">
         <UButton v-if="selectedKeys.length" size="xs" variant="ghost" @click="emit('clearSelection')">
           Deselect all ({{ selectedKeys.length }})
