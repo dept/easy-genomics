@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DATA_COLLECTION_BATCH_NAME_MAX_LENGTH } from '../../../constants/data-collections';
 
 /** Exactly one of ClearBatch, BatchTagId, or NewBatchName must be set. */
 export const AssignBatchSchema = z
@@ -8,7 +9,7 @@ export const AssignBatchSchema = z
     Keys: z.array(z.string().min(1)).min(1).max(100),
     ClearBatch: z.boolean().optional(),
     BatchTagId: z.string().min(1).optional(),
-    NewBatchName: z.string().trim().min(1).max(128).optional(),
+    NewBatchName: z.string().trim().min(1).max(DATA_COLLECTION_BATCH_NAME_MAX_LENGTH).optional(),
   })
   .strict()
   .refine(
