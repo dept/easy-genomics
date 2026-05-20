@@ -176,7 +176,14 @@
       transactionId: omicsRunTempId.value,
       paramsRequired: paramsRequired,
     });
-    runStore.updateWipOmicsRunParams(omicsRunTempId.value, workflowDefaultParams);
+
+    const existingWip = runStore.wipOmicsRuns[omicsRunTempId.value];
+    const paramsToApply = { ...workflowDefaultParams };
+    if (existingWip?.sampleSheetS3Url && existingWip?.params?.input) {
+      paramsToApply.input = existingWip.params.input;
+      paramsToApply.outdir = existingWip.params.outdir;
+    }
+    runStore.updateWipOmicsRunParams(omicsRunTempId.value, paramsToApply);
 
     applyDataCollectionsPrepopulation();
 
