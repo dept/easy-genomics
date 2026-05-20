@@ -2,10 +2,8 @@
   import { z } from 'zod';
   import { v4 as uuidv4 } from 'uuid';
   import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-  import type { LaboratoryDataTag } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
   import { RunType } from '@easy-genomics/shared-lib/src/app/types/base-entity';
   import {
-    useLabsStore,
     useOmicsWorkflowsStore,
     useRunStore,
     useSeqeraPipelinesStore,
@@ -15,8 +13,6 @@
   } from '@FE/stores';
   import { buildUploadedFilePairsFromKeys } from '@FE/utils/data-collections-to-sample-sheet';
   import { buildSampleSheetFileName } from '@FE/utils/sample-sheet-utils';
-
-  export type RunFromCollectionsTagRow = { tagId: string; count: number; name: string; kind?: string };
 
   export type WorkflowPickerOption = {
     key: string;
@@ -31,12 +27,10 @@
     labId: string;
     lab: Laboratory | null;
     selectedKeys: string[];
-    tagsOnSelection: RunFromCollectionsTagRow[];
-    batchNamesSummary: string;
-    neverAnalyzedCount: number;
-    previouslyAnalyzedCount: number;
+    acrossBatchesSummary: string;
+    tagsPresentSummary: string;
+    previouslyAnalyzedSummary: string;
     listingTruncated: boolean;
-    tagById: (tagId: string) => LaboratoryDataTag | undefined;
   }>();
 
   const emit = defineEmits<{
@@ -281,42 +275,22 @@
         <div class="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
           <dl class="space-y-2 text-sm">
             <div class="flex justify-between gap-4">
-              <dt class="text-muted shrink-0">Selected files</dt>
+              <dt class="text-muted shrink-0">Samples selected</dt>
               <dd class="font-medium tabular-nums">{{ selectedKeys.length }}</dd>
             </div>
             <div class="flex items-start justify-between gap-4">
-              <dt class="text-muted shrink-0 pt-0.5">Batch(es)</dt>
-              <dd class="min-w-0 flex-1 break-words text-right font-medium leading-snug">{{ batchNamesSummary }}</dd>
+              <dt class="text-muted shrink-0 pt-0.5">Across batches</dt>
+              <dd class="min-w-0 flex-1 break-words text-right font-medium leading-snug">{{ acrossBatchesSummary }}</dd>
             </div>
-            <div class="flex justify-between gap-4">
-              <dt class="text-muted shrink-0">Never analyzed</dt>
-              <dd class="font-medium tabular-nums">{{ neverAnalyzedCount }}</dd>
+            <div class="flex items-start justify-between gap-4">
+              <dt class="text-muted shrink-0 pt-0.5">Tags present</dt>
+              <dd class="min-w-0 flex-1 break-words text-right font-medium leading-snug">{{ tagsPresentSummary }}</dd>
             </div>
             <div class="flex justify-between gap-4">
               <dt class="text-muted shrink-0">Previously analyzed</dt>
-              <dd class="font-medium tabular-nums">{{ previouslyAnalyzedCount }}</dd>
+              <dd class="font-medium tabular-nums">{{ previouslyAnalyzedSummary }}</dd>
             </div>
           </dl>
-        </div>
-
-        <div v-if="tagsOnSelection.length">
-          <p class="text-muted mb-2 text-xs font-semibold uppercase tracking-wide">Tags on selection</p>
-          <ul class="max-h-28 space-y-1 overflow-y-auto text-sm">
-            <li
-              v-for="row in tagsOnSelection"
-              :key="row.tagId"
-              class="flex items-center justify-between gap-2 rounded border border-gray-100 bg-white px-2 py-1"
-            >
-              <span class="flex min-w-0 items-center gap-2">
-                <span
-                  class="inline-block h-2 w-2 shrink-0 rounded-full"
-                  :style="{ background: tagById(row.tagId)?.ColorHex || '#ccc' }"
-                />
-                <span class="truncate">{{ row.name }}</span>
-              </span>
-              <span class="text-muted shrink-0 text-xs tabular-nums">{{ row.count }}/{{ selectedKeys.length }}</span>
-            </li>
-          </ul>
         </div>
 
         <div v-if="uiStore.isRequestPending('runFromCollectionsWorkflows')" class="flex justify-center py-6">
