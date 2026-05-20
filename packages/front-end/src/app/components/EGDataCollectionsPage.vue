@@ -6,6 +6,13 @@
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
   import { useLabsStore, useToastStore, useUiStore } from '@FE/stores';
   import { isExpiringSoon } from '@FE/utils/data-collections-filters';
+  import {
+    dataCollectionFileKind,
+    enabledFileTypeKinds,
+    fileMatchesFileTypeFilter,
+    groupHiddenFilesByTypeLabel,
+    type DataCollectionFileTypeFilter,
+  } from '@FE/utils/data-collections-file-type';
 
   const props = defineProps<{
     labId: string;
@@ -109,6 +116,13 @@
   const tagsSectionExpanded = ref(true);
   const workflowsSectionExpanded = ref(true);
   const search = ref('');
+
+  /** File-type filter: default FASTQ only (see plan). */
+  const fileTypeFilterEnabled = ref<DataCollectionFileTypeFilter>({
+    fastq: true,
+    fasta: false,
+    other: false,
+  });
 
   const KEYS_CHUNK = 100;
 
@@ -519,7 +533,7 @@
     });
   }
 
-  const visibleFiles = computed(() => {
+  const filesBeforeFileTypeFilter = computed(() => {
     let list = filesMatchingSearch.value;
     const sf = scopeFilter.value;
     switch (sf.kind) {
@@ -556,6 +570,32 @@
       );
     }
     return list;
+  });
+
+  const enabledFileTypes = computed(() => enabledFileTypeKinds(fileTypeFilterEnabled.value));
+
+  const visibleFiles = computed(() => {
+    const kinds = enabledFileTypes.value;
+    return filesBeforeFileTypeFilter.value.filter((f) => fileMatchesFileTypeFilter(f.Key, kinds));
+  });
+
+  const fileTypeCounts = computed(() => {
+    const counts = { fastq: 0, fasta: 0, other: 0 };
+    for (const f of filesMatchingSearch.value) {
+      counts[dataCollectionFileKind(f.Key)] += 1;
+    }
+    return counts;
+  });
+
+  const hiddenByFileTypeCount = computed(() => {
+    const before = filesBeforeFileTypeFilter.value.length;
+    return before - visibleFiles.value.length;
+  });
+
+  const hiddenByFileTypeBreakdown = computed(() => {
+    const kinds = enabledFileTypes.value;
+    const hidden = filesBeforeFileTypeFilter.value.filter((f) => !fileMatchesFileTypeFilter(f.Key, kinds));
+    return groupHiddenFilesByTypeLabel(hidden);
   });
 
   /** Count for "All samples" chip — all loaded files matching search (same universe as no filter). */
@@ -1302,7 +1342,12 @@
             :listing-file-count="files.length"
             :listing-truncated="listingTruncated"
             :filter-chips="explorerFilterChips"
+            :file-type-filter="fileTypeFilterEnabled"
+            :file-type-counts="fileTypeCounts"
+            :hidden-by-file-type-count="hiddenByFileTypeCount"
+            :hidden-by-file-type-breakdown="hiddenByFileTypeBreakdown"
             @update:search="search = $event"
+            @update:file-type-filter="fileTypeFilterEnabled = $event"
             @update:selected-keys="selectedKeys = $event"
             @toggle-key="toggleKey"
             @select-all-displayed="selectAllDisplayed"
