@@ -144,6 +144,19 @@
   const bulkPanelBusy = computed(() => uiStore.isRequestPending('dataCollectionsMutate'));
 
   const hasSelection = computed(() => selectedKeys.value.length > 0);
+
+  const showRunWorkflowModal = ref(false);
+
+  const canRunWorkflow = computed(
+    () =>
+      !!lab.value?.S3Bucket &&
+      (!!lab.value?.AwsHealthOmicsEnabled ||
+        (!!lab.value?.NextFlowTowerEnabled && !!lab.value?.HasNextFlowTowerAccessToken)),
+  );
+
+  function openRunWorkflowModal(): void {
+    showRunWorkflowModal.value = true;
+  }
   const bulkPanelOpen = computed(() => bulkPanelMode.value !== 'closed');
 
   function tagById(id: string): LaboratoryDataTag | undefined {
@@ -438,6 +451,23 @@
 
   /** Tag ids that appear on at least one selected file (for Remove column list). */
   const removableTagIds = computed(() => tagsOnSelection.value.map((t) => t.tagId));
+
+  /** Comma-separated unique batch names for the run-workflow modal (sorted). */
+  const runModalAcrossBatchesSummary = computed(() => changeBatchCurrentlyInLine.value);
+
+  /** Comma-separated unique standard/permanent tag names on the selection (sorted). */
+  const runModalTagsPresentSummary = computed(() => {
+    const names = tagsOnSelection.value.map((row) => tagById(row.tagId)?.Name ?? row.tagId);
+    if (!names.length) return '—';
+    return names.join(', ');
+  });
+
+  const runModalPreviouslyAnalyzedSummary = computed(() => {
+    const total = selectedKeys.value.length;
+    if (!total) return '—';
+    const analyzed = selectedKeys.value.filter((key) => runCountForFileKey(key) > 0).length;
+    return `${analyzed} of ${total}`;
+  });
 
   async function loadTags(): Promise<void> {
     uiStore.setRequestPending('dataCollectionsTags');
@@ -1375,6 +1405,14 @@
               <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openChangeBatchModal">
                 Change Batch
               </UButton>
+              <UButton
+                size="sm"
+                icon="i-heroicons-play"
+                :disabled="bulkPanelBusy || !canRunWorkflow"
+                @click="openRunWorkflowModal"
+              >
+                Run workflow
+              </UButton>
             </div>
           </div>
         </div>
@@ -1519,6 +1557,17 @@
         </div>
       </div>
     </div>
+
+    <EGRunFromCollectionsModal
+      v-model="showRunWorkflowModal"
+      :lab-id="labId"
+      :lab="lab"
+      :selected-keys="selectedKeys"
+      :across-batches-summary="runModalAcrossBatchesSummary"
+      :tags-present-summary="runModalTagsPresentSummary"
+      :previously-analyzed-summary="runModalPreviouslyAnalyzedSummary"
+      :listing-truncated="listingTruncated"
+    />
 
     <UModal
       v-model="showChangeBatchModal"

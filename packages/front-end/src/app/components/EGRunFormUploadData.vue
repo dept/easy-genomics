@@ -12,7 +12,11 @@
     UploadedFileInfo,
     UploadedFilePairInfo,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/upload/s3-file-upload-sample-sheet';
-  import { extractS3KeysFromCsv, validateSampleSheetFile } from '@FE/utils/sample-sheet-utils';
+  import {
+    buildSampleSheetFileName,
+    extractS3KeysFromCsv,
+    validateSampleSheetFile,
+  } from '@FE/utils/sample-sheet-utils';
   import { useToastStore } from '@FE/stores';
   import { useNetwork } from '@vueuse/core';
   import { RunType } from '@easy-genomics/shared-lib/src/app/types/base-entity';
@@ -112,6 +116,18 @@
   );
 
   const hasSampleSheetUrl = computed<boolean>(() => !!wipRun.value.sampleSheetS3Url);
+
+  /** Files were selected on Data Collections; sample sheet was generated without browser upload. */
+  const isFromDataCollections = computed<boolean>(() => {
+    const hasPreSeededSheet = !!wipRun.value.sampleSheetS3Url;
+    const hasInputKeys = (wipRun.value.inputFileKeys?.length ?? 0) > 0;
+    const noUploadedFiles = !wipRun.value.files?.length;
+    return hasPreSeededSheet && hasInputKeys && noUploadedFiles;
+  });
+
+  const dataCollectionsFileBasenames = computed<string[]>(() =>
+    (wipRun.value.inputFileKeys ?? []).map((key) => key.split('/').pop() || key).sort((a, b) => a.localeCompare(b)),
+  );
 
   const haveUnmatchedFiles = computed<boolean>(() =>
     filePairs.value.some((filePair) => !filePair.r1File || !filePair.r2File),
@@ -619,9 +635,7 @@
   async function getSampleSheetCsv(uploadedFilePairs: UploadedFilePairInfo[]): Promise<SampleSheetResponse> {
     if (!wipRun.value.transactionId) throw new Error('no transaction id on wip run');
 
-    const sampleSheetName: string = wipRun.value.runName
-      ? `samplesheet-${wipRun.value.runName}.csv`
-      : 'samplesheet.csv';
+    const sampleSheetName: string = buildSampleSheetFileName(wipRun.value.runName);
 
     const request: SampleSheetRequest = {
       SampleSheetName: sampleSheetName,
@@ -955,165 +969,185 @@
   <EGCard>
     <EGText tag="small" class="mb-4">Step 02</EGText>
     <EGText tag="h4" class="mb-4">Upload Data</EGText>
-    <p class="text-muted mt-1 text-xs font-normal tracking-tight">
-      Any similar files with the suffix _R1 or _R2 will be combined as paired-end data samples. Max file size is 5GB.
-      <button
-        type="button"
-        class="text-primary ml-1 underline hover:opacity-80"
-        @click="showAdvancedOptions = !showAdvancedOptions"
-      >
-        {{ showAdvancedOptions ? 'Collapse advanced options' : 'View advanced options' }}
-      </button>
-    </p>
 
-    <div v-if="showAdvancedOptions" class="mt-4">
-      <UDivider />
-      <label class="text-body mb-1 mt-4 block text-sm font-medium">Sample ID split pattern</label>
-      <UInput v-model="sampleIdSplitPattern" class="w-64" />
-      <p class="text-muted mb-4 mt-1 text-xs">
-        Enter the character or pattern that appears after the Sample ID in your file names (e.g. _S, _L001, etc.).
+    <template v-if="isFromDataCollections">
+      <p class="text-muted mb-4 text-sm">
+        {{ dataCollectionsFileBasenames.length }} file(s) from Data Collections are included in this run. A sample sheet
+        has already been generated.
       </p>
-    </div>
+      <div class="mb-4 max-h-48 overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+        <ul class="space-y-1 text-sm">
+          <li v-for="name in dataCollectionsFileBasenames" :key="name" class="truncate font-mono text-xs">
+            {{ name }}
+          </li>
+        </ul>
+      </div>
+      <UDivider class="py-4" />
+    </template>
 
-    <UDivider class="py-4" />
-    <div
-      class="py-4"
-      @drop.prevent="handleDroppedFiles"
-      :class="{ 'pointer-events-none opacity-50': !isDropzoneEnabled }"
-    >
+    <template v-else>
+      <p class="text-muted mt-1 text-xs font-normal tracking-tight">
+        Any similar files with the suffix _R1 or _R2 will be combined as paired-end data samples. Max file size is 5GB.
+        <button
+          type="button"
+          class="text-primary ml-1 underline hover:opacity-80"
+          @click="showAdvancedOptions = !showAdvancedOptions"
+        >
+          {{ showAdvancedOptions ? 'Collapse advanced options' : 'View advanced options' }}
+        </button>
+      </p>
+
+      <div v-if="showAdvancedOptions" class="mt-4">
+        <UDivider />
+        <label class="text-body mb-1 mt-4 block text-sm font-medium">Sample ID split pattern</label>
+        <UInput v-model="sampleIdSplitPattern" class="w-64" />
+        <p class="text-muted mb-4 mt-1 text-xs">
+          Enter the character or pattern that appears after the Sample ID in your file names (e.g. _S, _L001, etc.).
+        </p>
+      </div>
+
+      <UDivider class="py-4" />
       <div
-        id="dropzone"
-        @dragenter.prevent="setDropzoneActive(true)"
-        @dragleave.prevent="setDropzoneActive(false)"
-        @dragover.prevent
-        @drop.prevent="setDropzoneActive(false)"
+        class="py-4"
+        @drop.prevent="handleDroppedFiles"
+        :class="{ 'pointer-events-none opacity-50': !isDropzoneEnabled }"
       >
         <div
-          :class="
-            cn(
-              'ring-primary-500 text-body flex w-full items-center justify-center rounded-lg py-8 ring-2 ring-offset-1 transition-colors duration-200',
-              {
-                'bg-alert-success-muted ring-alert-success font-semibold ring-offset-2': isDropzoneActive,
-              },
-            )
-          "
+          id="dropzone"
+          @dragenter.prevent="setDropzoneActive(true)"
+          @dragleave.prevent="setDropzoneActive(false)"
+          @dragover.prevent
+          @drop.prevent="setDropzoneActive(false)"
         >
-          <div class="flex items-center justify-center">
-            <div>
-              <span :class="cn('visible', { 'invisible': isDropzoneActive })">Drag and&nbsp;</span>
-              <span v-if="isDropzoneActive">Drop</span>
-              <span v-else>drop</span>
-              your files
-              <span :class="cn('visible', { 'invisible': isDropzoneActive })">here or</span>
-            </div>
-            <input
-              accept=".gz,.fastq"
-              ref="chooseFilesButton"
-              type="file"
-              id="dropzoneFiles"
-              @change="handleFileInputChange"
-              hidden
-              multiple
-            />
-            <EGButton
-              :disabled="!isDropzoneEnabled"
-              :class="cn('visible ml-4', { 'invisible': isDropzoneActive })"
-              @click="chooseFiles"
-              label="Choose Files"
-              size="sm"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Hidden CSV file input for custom sample sheet -->
-    <input ref="sampleSheetFileInput" type="file" accept=".csv" hidden @change="handleSampleSheetFileChange" />
-
-    <div class="files-list mb-6" v-if="filesForTable.length > 0">
-      <div class="files-list-header text-body mb-4 border-b border-[#d9d9d9]">
-        <div class="file-cell sample-id flex w-[30%] min-w-[240px]">Sample ID</div>
-        <div class="file-cell flex w-[60%] min-w-[320px]">Sample File</div>
-        <div class="file-cell flex w-[10%] min-w-[70px]"></div>
-      </div>
-      <div class="files-list-body">
-        <div
-          v-for="(row, index) in filesForTable"
-          :key="row.fileName"
-          class="file-row"
-          :style="{
-            background: row.error
-              ? '#FFF2F0'
-              : row.progress === 100
-                ? '#E2FBE8'
-                : row.progress !== undefined && row.progress > 0
-                  ? `linear-gradient(to right, #E2FBE8 ${row.progress}%, transparent ${Math.min(row.progress + 10, 100)}%), #f7f7f7`
-                  : '#f7f7f7',
-          }"
-        >
-          <div class="file-cell sample-id text-body flex w-[30%] min-w-[240px] items-center">
-            <div v-if="!row.error" class="truncate">{{ row.sampleId }}</div>
-            <div v-else class="text-alert-danger-dark mr-1 truncate font-medium">(Upload Failed)</div>
-          </div>
           <div
-            class="file-cell flex w-[60%] min-w-[320px] items-center"
-            :style="{ color: row.progress === 100 && !row.error ? '#306239' : 'inherit' }"
+            :class="
+              cn(
+                'ring-primary-500 text-body flex w-full items-center justify-center rounded-lg py-8 ring-2 ring-offset-1 transition-colors duration-200',
+                {
+                  'bg-alert-success-muted ring-alert-success font-semibold ring-offset-2': isDropzoneActive,
+                },
+              )
+            "
           >
-            <template v-if="row.error">
-              <UIcon name="i-heroicons-exclamation-triangle" class="text-alert-danger-dark mr-2" size="20" />
-            </template>
-            <div class="truncate">{{ row.fileName }}</div>
-          </div>
-
-          <div class="file-cell flex w-[10%] min-w-[70px] items-center justify-end gap-4">
-            <!-- retry button -->
-            <button
-              v-if="row.error"
-              class="flex items-center"
-              :class="[canRetryUpload(row) ? 'text-gray-900 hover:text-gray-700' : 'cursor-not-allowed text-gray-400']"
-              @click="retryUpload(row)"
-              :disabled="!isOnline || !canRetryUpload(row)"
-            >
-              <UIcon name="i-heroicons-arrow-path" size="20" />
-            </button>
-
-            <!-- complete check -->
-            <UIcon
-              v-if="!row.error && row.progress === 100"
-              size="20"
-              name="i-heroicons-check"
-              class="text-alert-success-text"
-            />
-
-            <!-- cancel upload button -->
-            <button
-              v-if="!row.error && row.progress && row.progress < 100"
-              class="flex items-center text-gray-500 hover:text-gray-700"
-              @click="cancelUpload(row.fileName)"
-            >
-              <UIcon name="i-heroicons-x-mark" size="20" />
-            </button>
-
-            <!-- delete button -->
-            <button
-              class="flex items-center"
-              :disabled="!isOnline || uploadStatus === 'uploading'"
-              :class="[
-                isOnline && uploadStatus !== 'uploading'
-                  ? 'text-alert-danger hover:text-alert-danger-dark'
-                  : 'cursor-not-allowed text-gray-400',
-              ]"
-              @click="removeFile(row)"
-            >
-              <UIcon name="i-heroicons-trash" size="20" />
-            </button>
+            <div class="flex items-center justify-center">
+              <div>
+                <span :class="cn('visible', { 'invisible': isDropzoneActive })">Drag and&nbsp;</span>
+                <span v-if="isDropzoneActive">Drop</span>
+                <span v-else>drop</span>
+                your files
+                <span :class="cn('visible', { 'invisible': isDropzoneActive })">here or</span>
+              </div>
+              <input
+                accept=".gz,.fastq"
+                ref="chooseFilesButton"
+                type="file"
+                id="dropzoneFiles"
+                @change="handleFileInputChange"
+                hidden
+                multiple
+              />
+              <EGButton
+                :disabled="!isDropzoneEnabled"
+                :class="cn('visible ml-4', { 'invisible': isDropzoneActive })"
+                @click="chooseFiles"
+                label="Choose Files"
+                size="sm"
+              />
+            </div>
           </div>
         </div>
       </div>
-    </div>
+
+      <!-- Hidden CSV file input for custom sample sheet -->
+      <input ref="sampleSheetFileInput" type="file" accept=".csv" hidden @change="handleSampleSheetFileChange" />
+
+      <div class="files-list mb-6" v-if="filesForTable.length > 0">
+        <div class="files-list-header text-body mb-4 border-b border-[#d9d9d9]">
+          <div class="file-cell sample-id flex w-[30%] min-w-[240px]">Sample ID</div>
+          <div class="file-cell flex w-[60%] min-w-[320px]">Sample File</div>
+          <div class="file-cell flex w-[10%] min-w-[70px]"></div>
+        </div>
+        <div class="files-list-body">
+          <div
+            v-for="(row, index) in filesForTable"
+            :key="row.fileName"
+            class="file-row"
+            :style="{
+              background: row.error
+                ? '#FFF2F0'
+                : row.progress === 100
+                  ? '#E2FBE8'
+                  : row.progress !== undefined && row.progress > 0
+                    ? `linear-gradient(to right, #E2FBE8 ${row.progress}%, transparent ${Math.min(row.progress + 10, 100)}%), #f7f7f7`
+                    : '#f7f7f7',
+            }"
+          >
+            <div class="file-cell sample-id text-body flex w-[30%] min-w-[240px] items-center">
+              <div v-if="!row.error" class="truncate">{{ row.sampleId }}</div>
+              <div v-else class="text-alert-danger-dark mr-1 truncate font-medium">(Upload Failed)</div>
+            </div>
+            <div
+              class="file-cell flex w-[60%] min-w-[320px] items-center"
+              :style="{ color: row.progress === 100 && !row.error ? '#306239' : 'inherit' }"
+            >
+              <template v-if="row.error">
+                <UIcon name="i-heroicons-exclamation-triangle" class="text-alert-danger-dark mr-2" size="20" />
+              </template>
+              <div class="truncate">{{ row.fileName }}</div>
+            </div>
+
+            <div class="file-cell flex w-[10%] min-w-[70px] items-center justify-end gap-4">
+              <!-- retry button -->
+              <button
+                v-if="row.error"
+                class="flex items-center"
+                :class="[
+                  canRetryUpload(row) ? 'text-gray-900 hover:text-gray-700' : 'cursor-not-allowed text-gray-400',
+                ]"
+                @click="retryUpload(row)"
+                :disabled="!isOnline || !canRetryUpload(row)"
+              >
+                <UIcon name="i-heroicons-arrow-path" size="20" />
+              </button>
+
+              <!-- complete check -->
+              <UIcon
+                v-if="!row.error && row.progress === 100"
+                size="20"
+                name="i-heroicons-check"
+                class="text-alert-success-text"
+              />
+
+              <!-- cancel upload button -->
+              <button
+                v-if="!row.error && row.progress && row.progress < 100"
+                class="flex items-center text-gray-500 hover:text-gray-700"
+                @click="cancelUpload(row.fileName)"
+              >
+                <UIcon name="i-heroicons-x-mark" size="20" />
+              </button>
+
+              <!-- delete button -->
+              <button
+                class="flex items-center"
+                :disabled="!isOnline || uploadStatus === 'uploading'"
+                :class="[
+                  isOnline && uploadStatus !== 'uploading'
+                    ? 'text-alert-danger hover:text-alert-danger-dark'
+                    : 'cursor-not-allowed text-gray-400',
+                ]"
+                @click="removeFile(row)"
+              >
+                <UIcon name="i-heroicons-trash" size="20" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
 
     <div
-      v-if="filesProblemAlertMessage"
+      v-if="!isFromDataCollections && filesProblemAlertMessage"
       class="bg-alert-danger-muted text-alert-danger my-10 flex items-center gap-2 rounded-lg p-6"
     >
       <UIcon class="text-2xl" name="i-heroicons-exclamation-triangle" />
@@ -1132,7 +1166,7 @@
       :display-label="true"
     />
 
-    <div class="flex items-center justify-between pt-4">
+    <div v-if="!isFromDataCollections" class="flex items-center justify-between pt-4">
       <EGButton
         variant="secondary"
         label="Upload Sample Sheet"

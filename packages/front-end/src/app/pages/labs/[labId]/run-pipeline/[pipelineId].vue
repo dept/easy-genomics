@@ -173,6 +173,8 @@
       paramsRequired: paramsRequired,
     });
 
+    const existingWip = runStore.wipSeqeraRuns[seqeraRunTempId.value];
+
     // initialize params and save so that they can be easily reset
     initialParams.value = {
       ...schemaDefaults, // default values for all non-hidden fields
@@ -180,13 +182,32 @@
       input: '', // clear the default sample sheet github link that comes from the pipeline itself
     };
 
-    runStore.updateWipSeqeraRunParams(
-      seqeraRunTempId.value,
-      // make a copy of initialParams to ensure the original doesn't get changed
-      JSON.parse(JSON.stringify(initialParams.value)),
-    );
+    const paramsToApply = JSON.parse(JSON.stringify(initialParams.value));
+    if (existingWip?.sampleSheetS3Url && existingWip?.params?.input) {
+      paramsToApply.input = existingWip.params.input;
+      paramsToApply.outdir = existingWip.params.outdir;
+    }
+
+    runStore.updateWipSeqeraRunParams(seqeraRunTempId.value, paramsToApply);
+
+    applyDataCollectionsPrepopulation();
 
     uiStore.setRequestComplete('loadSeqeraPipeline');
+  }
+
+  /** When opened from Data Collections with a pre-built sample sheet, skip to parameter configuration. */
+  function applyDataCollectionsPrepopulation(): void {
+    if ($route.query.from !== 'data-collections') return;
+
+    const wip = runStore.wipSeqeraRuns[seqeraRunTempId.value];
+    if (!wip?.sampleSheetS3Url || !wip?.runName) return;
+
+    setStepEnabled('upload', true);
+    setStepEnabled('parameters', true);
+    const parametersIndex = steps.value.findIndex((step) => step.key === 'parameters');
+    if (parametersIndex >= 0) {
+      selectedStepIndex.value = parametersIndex;
+    }
   }
 
   function resetParams() {

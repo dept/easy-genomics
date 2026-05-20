@@ -176,9 +176,33 @@
       transactionId: omicsRunTempId.value,
       paramsRequired: paramsRequired,
     });
-    runStore.updateWipOmicsRunParams(omicsRunTempId.value, workflowDefaultParams);
+
+    const existingWip = runStore.wipOmicsRuns[omicsRunTempId.value];
+    const paramsToApply = { ...workflowDefaultParams };
+    if (existingWip?.sampleSheetS3Url && existingWip?.params?.input) {
+      paramsToApply.input = existingWip.params.input;
+      paramsToApply.outdir = existingWip.params.outdir;
+    }
+    runStore.updateWipOmicsRunParams(omicsRunTempId.value, paramsToApply);
+
+    applyDataCollectionsPrepopulation();
 
     uiStore.setRequestComplete('loadOmicsWorkflow');
+  }
+
+  /** When opened from Data Collections with a pre-built sample sheet, skip to parameter configuration. */
+  function applyDataCollectionsPrepopulation(): void {
+    if ($route.query.from !== 'data-collections') return;
+
+    const wip = runStore.wipOmicsRuns[omicsRunTempId.value];
+    if (!wip?.sampleSheetS3Url || !wip?.runName) return;
+
+    setStepEnabled('upload', true);
+    setStepEnabled('parameters', true);
+    const parametersIndex = steps.value.findIndex((step) => step.key === 'parameters');
+    if (parametersIndex >= 0) {
+      selectedStepIndex.value = parametersIndex;
+    }
   }
 
   function resetParams() {

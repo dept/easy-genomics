@@ -1,6 +1,28 @@
+/** Matches create-file-upload-sample-sheet Lambda validation (no spaces). */
+const SAMPLE_SHEET_NAME_PATTERN = /^[a-zA-Z0-9._:!@#$%^()-]+(\.csv)$/;
+
 export interface SampleSheetValidationResult {
   valid: boolean;
   error?: string;
+}
+
+/**
+ * Builds a sample sheet object key filename from a run name. Run names may contain spaces
+ * (e.g. AWS HealthOmics); the S3 sample sheet name must not.
+ */
+export function buildSampleSheetFileName(runName?: string | null): string {
+  const trimmed = runName?.trim() ?? '';
+  if (!trimmed) {
+    return 'samplesheet.csv';
+  }
+
+  const sanitized = trimmed
+    .replace(/[^a-zA-Z0-9._:!@#$%^()-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  const candidate = sanitized ? `samplesheet-${sanitized}.csv` : 'samplesheet.csv';
+  return SAMPLE_SHEET_NAME_PATTERN.test(candidate) ? candidate : 'samplesheet.csv';
 }
 
 /**
