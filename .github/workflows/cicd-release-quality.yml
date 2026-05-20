@@ -58,7 +58,7 @@ jobs:
           fail-on-cache-miss: false
           key: nx-${{ github.repository_id }}-${{ github.sha }}
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
       - name: Derive SHAs for nx affected commands
         uses: nrwl/nx-set-shas@v4
         with:
@@ -127,7 +127,7 @@ jobs:
           fail-on-cache-miss: false
           key: nx-${{ github.repository_id }}-${{ github.sha }}
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
       - name: Derive SHAs for nx affected commands
         uses: nrwl/nx-set-shas@v4
         with:
@@ -141,6 +141,40 @@ jobs:
           role-duration-seconds: 3600
           aws-region: ${{ secrets.AWS_REGION }}
           audience: sts.amazonaws.com
+      - name: Derive API URLs from stack outputs
+        run: |-
+          set -euo pipefail
+          MAIN_STACK_NAME="${ENV_TYPE}-${ENV_NAME}-main-back-end-stack"
+          EASY_STACK_NAME="${ENV_TYPE}-${ENV_NAME}-easy-genomics-api-stack"
+
+          BASE_URL="$(aws cloudformation describe-stacks \
+            --region "$AWS_REGION" \
+            --stack-name "$MAIN_STACK_NAME" \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayRestApiUrl`].OutputValue' \
+            --output text)"
+
+          if [ -z "${BASE_URL:-}" ] || [ "${BASE_URL:-}" = "None" ]; then
+            echo "Unable to derive AWS_API_GATEWAY_URL from stack output ApiGatewayRestApiUrl in $MAIN_STACK_NAME" >&2
+            exit 1
+          fi
+
+          BASE_URL="${BASE_URL%/}"
+          echo "AWS_API_GATEWAY_URL=$BASE_URL" >> "$GITHUB_ENV"
+          echo "Derived AWS_API_GATEWAY_URL=$BASE_URL"
+
+          EG_URL="$(aws cloudformation describe-stacks \
+            --region "$AWS_REGION" \
+            --stack-name "$EASY_STACK_NAME" \
+            --query 'Stacks[0].Outputs[?OutputKey==`EasyGenomicsApiUrl`].OutputValue' \
+            --output text 2>/dev/null || true)"
+
+          if [ -n "${EG_URL:-}" ] && [ "${EG_URL:-}" != "None" ]; then
+            EG_URL="${EG_URL%/}"
+            echo "AWS_EASY_GENOMICS_API_URL=$EG_URL" >> "$GITHUB_ENV"
+            echo "Derived AWS_EASY_GENOMICS_API_URL=$EG_URL"
+          else
+            echo "Easy Genomics API output not found in $EASY_STACK_NAME; leaving AWS_EASY_GENOMICS_API_URL unset."
+          fi
       - name: Run CI/CD Build & Deploy Front-End
         run: pnpm cicd-build-deploy-front-end
   run-e2e-tests:
@@ -196,11 +230,54 @@ jobs:
           fail-on-cache-miss: false
           key: nx-${{ github.repository_id }}-${{ github.sha }}
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
       - name: Derive SHAs for nx affected commands
         uses: nrwl/nx-set-shas@v4
         with:
           main-branch-name: main
+      - name: Configure AWS Credentials
+        id: configure_iam_credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHub_to_AWS_via_FederatedOIDC
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          role-duration-seconds: 3600
+          aws-region: ${{ secrets.AWS_REGION }}
+          audience: sts.amazonaws.com
+      - name: Derive API URLs from stack outputs
+        run: |-
+          set -euo pipefail
+          MAIN_STACK_NAME="${ENV_TYPE}-${ENV_NAME}-main-back-end-stack"
+          EASY_STACK_NAME="${ENV_TYPE}-${ENV_NAME}-easy-genomics-api-stack"
+
+          BASE_URL="$(aws cloudformation describe-stacks \
+            --region "$AWS_REGION" \
+            --stack-name "$MAIN_STACK_NAME" \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayRestApiUrl`].OutputValue' \
+            --output text)"
+
+          if [ -z "${BASE_URL:-}" ] || [ "${BASE_URL:-}" = "None" ]; then
+            echo "Unable to derive AWS_API_GATEWAY_URL from stack output ApiGatewayRestApiUrl in $MAIN_STACK_NAME" >&2
+            exit 1
+          fi
+
+          BASE_URL="${BASE_URL%/}"
+          echo "AWS_API_GATEWAY_URL=$BASE_URL" >> "$GITHUB_ENV"
+          echo "Derived AWS_API_GATEWAY_URL=$BASE_URL"
+
+          EG_URL="$(aws cloudformation describe-stacks \
+            --region "$AWS_REGION" \
+            --stack-name "$EASY_STACK_NAME" \
+            --query 'Stacks[0].Outputs[?OutputKey==`EasyGenomicsApiUrl`].OutputValue' \
+            --output text 2>/dev/null || true)"
+
+          if [ -n "${EG_URL:-}" ] && [ "${EG_URL:-}" != "None" ]; then
+            EG_URL="${EG_URL%/}"
+            echo "AWS_EASY_GENOMICS_API_URL=$EG_URL" >> "$GITHUB_ENV"
+            echo "Derived AWS_EASY_GENOMICS_API_URL=$EG_URL"
+          else
+            echo "Easy Genomics API output not found in $EASY_STACK_NAME; leaving AWS_EASY_GENOMICS_API_URL unset."
+          fi
       - name: Clear Playwright Cache
         run: rm -rf /home/runner/.cache/ms-playwright
       - name: Install Playwright + Chromium Only and Slack Reporter

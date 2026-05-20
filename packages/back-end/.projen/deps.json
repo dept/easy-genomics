@@ -122,6 +122,11 @@
       "type": "runtime"
     },
     {
+      "name": "@aws-sdk/client-cloudformation",
+      "version": "^3.786.0",
+      "type": "runtime"
+    },
+    {
       "name": "@aws-sdk/client-cognito-identity-provider",
       "type": "runtime"
     },
@@ -131,7 +136,7 @@
     },
     {
       "name": "@aws-sdk/client-omics",
-      "version": "^3.1019.0",
+      "version": "^3.1014.0",
       "type": "runtime"
     },
     {
@@ -140,6 +145,7 @@
     },
     {
       "name": "@aws-sdk/client-secrets-manager",
+      "version": "^3.782.0",
       "type": "runtime"
     },
     {

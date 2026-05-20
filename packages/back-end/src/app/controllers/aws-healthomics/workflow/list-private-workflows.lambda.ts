@@ -2,9 +2,9 @@ import { ListWorkflowsCommandInput } from '@aws-sdk/client-omics/dist-types/comm
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   LaboratoryNotFoundError,
+  MissingAWSHealthOmicsAccessError,
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
-  MissingAWSHealthOmicsAccessError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';

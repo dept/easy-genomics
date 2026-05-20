@@ -62,6 +62,16 @@ export class SesService {
     const logRequestMessage = `Send Existing User Courtesy Email request: ${toAddress}`;
     console.info(logRequestMessage);
 
+    // Non-prod accounts typically run SES in sandbox: recipients must be verified, so inviting
+    // arbitrary existing users fails with "Email address is not verified". Courtesy mail is
+    // non-critical; skip the send so the org membership update can complete.
+    if (this.props.envType && this.props.envType !== 'prod') {
+      console.warn(
+        `Skipping ${logRequestMessage} in ${this.props.envType}: SES sandbox cannot deliver to unverified addresses.`,
+      );
+      return { MessageId: 'skipped-non-prod-courtesy-email' } as SendTemplatedEmailCommandOutput;
+    }
+
     const sendTemplatedEmailCommand: SendTemplatedEmailCommand = new SendTemplatedEmailCommand({
       Source: `no.reply@${this.props.domainName}`,
       Destination: {
