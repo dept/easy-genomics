@@ -8,6 +8,14 @@ loadNuxtSettings();
 
 // @ts-ignore
 export default defineNuxtConfig({
+  app: {
+    head: {
+      htmlAttrs: { lang: 'en' },
+      title: 'Easy Genomics',
+      titleTemplate: '%s — Easy Genomics',
+    },
+  },
+
   colorMode: {
     preference: 'light',
   },

@@ -49,6 +49,13 @@
           variant="ghost"
           :trailing-icon="items.length > 0 ? 'i-heroicons-chevron-up-down' : undefined"
           color="black"
+          :aria-label="
+            items.length > 0
+              ? `Organization: ${currentOrg?.Name}. Switch organization`
+              : `Organization: ${currentOrg?.Name}`
+          "
+          :aria-expanded="items.length > 0 ? isOpen : undefined"
+          :aria-haspopup="items.length > 0 ? 'menu' : undefined"
         >
           {{ currentOrg?.Name }}
         </UButton>

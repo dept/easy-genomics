@@ -2,9 +2,11 @@
   withDefaults(
     defineProps<{
       items: { name: string; icon: string; action: () => void }[];
+      menuLabel?: string;
     }>(),
     {
       items: () => [],
+      menuLabel: 'Actions',
     },
   );
   const isOpen = ref(false);
@@ -25,10 +27,21 @@
         class="hover:bg-null h-full w-full justify-center text-black"
         variant="ghost"
         icon="i-heroicons-ellipsis-horizontal-20-solid"
+        :aria-label="menuLabel"
+        :aria-expanded="isOpen"
+        aria-haspopup="menu"
       />
     </div>
     <template #item="{ item }">
-      <span class="truncate" :class="{ 'is-highlighted': item.isHighlighted }">{{ item.label }}</span>
+      <span class="flex items-center gap-2 truncate" :class="{ 'is-highlighted': item.isHighlighted }">
+        <UIcon
+          v-if="item.isHighlighted"
+          name="i-heroicons-exclamation-triangle"
+          class="h-4 w-4 shrink-0"
+          aria-hidden="true"
+        />
+        {{ item.label }}
+      </span>
     </template>
   </UDropdown>
 </template>
@@ -42,6 +55,7 @@
 
   .is-highlighted {
     color: #ef5c45;
+    font-weight: 500;
   }
 
   .active {

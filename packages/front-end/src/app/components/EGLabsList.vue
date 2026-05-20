@@ -36,7 +36,7 @@
     },
     {
       key: 'actions',
-      label: '',
+      label: 'Actions',
     },
   ];
 
@@ -55,6 +55,7 @@
         {
           label: 'Remove',
           class: 'text-alert-danger-dark',
+          isHighlighted: true,
           click: () => deleteLab(lab.LaboratoryId, lab.Name),
         },
       ]);
