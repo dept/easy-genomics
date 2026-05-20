@@ -144,6 +144,35 @@
   const bulkPanelBusy = computed(() => uiStore.isRequestPending('dataCollectionsMutate'));
 
   const hasSelection = computed(() => selectedKeys.value.length > 0);
+
+  const showRunWorkflowModal = ref(false);
+
+  const canRunWorkflow = computed(
+    () =>
+      !!lab.value?.S3Bucket &&
+      (!!lab.value?.AwsHealthOmicsEnabled ||
+        (!!lab.value?.NextFlowTowerEnabled && !!lab.value?.HasNextFlowTowerAccessToken)),
+  );
+
+  const tagsOnSelectionForRunModal = computed(() =>
+    tagsOnSelection.value.map((row) => ({
+      ...row,
+      name: tagById(row.tagId)?.Name ?? row.tagId,
+      kind: tagById(row.tagId)?.Kind,
+    })),
+  );
+
+  const neverAnalyzedCountOnSelection = computed(
+    () => selectedKeys.value.filter((key) => runCountForFileKey(key) === 0).length,
+  );
+
+  const previouslyAnalyzedCountOnSelection = computed(
+    () => selectedKeys.value.filter((key) => runCountForFileKey(key) > 0).length,
+  );
+
+  function openRunWorkflowModal(): void {
+    showRunWorkflowModal.value = true;
+  }
   const bulkPanelOpen = computed(() => bulkPanelMode.value !== 'closed');
 
   function tagById(id: string): LaboratoryDataTag | undefined {
@@ -1375,6 +1404,14 @@
               <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openChangeBatchModal">
                 Change Batch
               </UButton>
+              <UButton
+                size="sm"
+                icon="i-heroicons-play"
+                :disabled="bulkPanelBusy || !canRunWorkflow"
+                @click="openRunWorkflowModal"
+              >
+                Run workflow
+              </UButton>
             </div>
           </div>
         </div>
@@ -1519,6 +1556,19 @@
         </div>
       </div>
     </div>
+
+    <EGRunFromCollectionsModal
+      v-model="showRunWorkflowModal"
+      :lab-id="labId"
+      :lab="lab"
+      :selected-keys="selectedKeys"
+      :tags-on-selection="tagsOnSelectionForRunModal"
+      :batch-names-summary="changeBatchCurrentlyInLine"
+      :never-analyzed-count="neverAnalyzedCountOnSelection"
+      :previously-analyzed-count="previouslyAnalyzedCountOnSelection"
+      :listing-truncated="listingTruncated"
+      :tag-by-id="tagById"
+    />
 
     <UModal
       v-model="showChangeBatchModal"
