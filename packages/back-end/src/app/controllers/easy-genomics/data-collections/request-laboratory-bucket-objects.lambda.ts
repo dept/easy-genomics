@@ -16,8 +16,160 @@ import {
 const laboratoryService = new LaboratoryService();
 const s3Service = new S3Service();
 
+const DEFAULT_MAX_TOTAL_KEYS = 15_000;
+const DEFAULT_MAX_TRANSACTION_FOLDERS = 10_000;
+const LIST_CONCURRENCY = 15;
+
 function isFileObjectKey(key: string | undefined): boolean {
   return !!key && !key.endsWith('/');
+}
+
+function lastPathSegment(prefix: string): string {
+  const normalized = prefix.endsWith('/') ? prefix.slice(0, -1) : prefix;
+  const idx = normalized.lastIndexOf('/');
+  return idx >= 0 ? normalized.slice(idx + 1) : normalized;
+}
+
+/** Do not descend into workflow output/work dirs or Omics workflow-definition uploads. */
+function shouldSkipDescentPrefix(prefix: string): boolean {
+  const segment = lastPathSegment(prefix);
+  return segment === 'results' || segment === 'work' || segment === 'workflow-definitions';
+}
+
+async function listOneLevel(
+  bucket: string,
+  prefix: string,
+  pageSize: number,
+): Promise<{ contents: _Object[]; commonPrefixes: string[] }> {
+  const contents: _Object[] = [];
+  const commonPrefixes: string[] = [];
+  let continuationToken: string | undefined;
+  let isTruncated = true;
+
+  while (isTruncated) {
+    const response: ListObjectsV2CommandOutput = await s3Service.listBucketObjectsV2({
+      Bucket: bucket,
+      Prefix: prefix,
+      Delimiter: '/',
+      MaxKeys: pageSize,
+      ContinuationToken: continuationToken,
+    });
+
+    if (response.Contents) {
+      contents.push(...response.Contents);
+    }
+
+    if (response.CommonPrefixes) {
+      for (const cp of response.CommonPrefixes) {
+        if (cp.Prefix) {
+          commonPrefixes.push(cp.Prefix);
+        }
+      }
+    }
+
+    isTruncated = !!response.IsTruncated;
+    continuationToken = response.NextContinuationToken;
+  }
+
+  return { contents, commonPrefixes };
+}
+
+function appendFileObjects(target: _Object[], objects: _Object[], maxTotalKeys: number): boolean {
+  for (const obj of objects) {
+    if (!isFileObjectKey(obj.Key)) {
+      continue;
+    }
+    if (target.length >= maxTotalKeys) {
+      return true;
+    }
+    target.push(obj);
+  }
+  return target.length >= maxTotalKeys;
+}
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += limit) {
+    const chunk = items.slice(i, i + limit);
+    results.push(...(await Promise.all(chunk.map(fn))));
+  }
+  return results;
+}
+
+type ListTransactionInputsOptions = {
+  bucket: string;
+  labPrefix: string;
+  pageSize: number;
+  maxTotalKeys: number;
+  maxTransactionFolders: number;
+};
+
+type ListTransactionInputsResult = {
+  contents: _Object[];
+  listingTruncated: boolean;
+};
+
+/**
+ * Lists input files for Data Collections by walking org/lab → platform → transaction
+ * with S3 delimiter "/", never descending into results/, work/, or workflow-definitions/.
+ */
+async function listTransactionInputs(options: ListTransactionInputsOptions): Promise<ListTransactionInputsResult> {
+  const { bucket, labPrefix, pageSize, maxTotalKeys, maxTransactionFolders } = options;
+  const allContents: _Object[] = [];
+  let listingTruncated = false;
+
+  const addLevel = (contents: _Object[]): boolean => {
+    if (appendFileObjects(allContents, contents, maxTotalKeys)) {
+      listingTruncated = true;
+      return true;
+    }
+    return false;
+  };
+
+  const labLevel = await listOneLevel(bucket, labPrefix, pageSize);
+  if (addLevel(labLevel.contents)) {
+    return { contents: allContents, listingTruncated: true };
+  }
+
+  const platformPrefixes = labLevel.commonPrefixes.filter((p) => !shouldSkipDescentPrefix(p));
+
+  const platformResults = await mapWithConcurrency(platformPrefixes, LIST_CONCURRENCY, async (platformPrefix) => {
+    const platformLevel = await listOneLevel(bucket, platformPrefix, pageSize);
+    const txnPrefixes = platformLevel.commonPrefixes.filter((p) => !shouldSkipDescentPrefix(p));
+    return { contents: platformLevel.contents, transactionPrefixes: txnPrefixes };
+  });
+
+  const transactionPrefixes: string[] = [];
+  for (const { contents, transactionPrefixes: txnPrefixes } of platformResults) {
+    if (addLevel(contents)) {
+      return { contents: allContents, listingTruncated: true };
+    }
+    transactionPrefixes.push(...txnPrefixes);
+  }
+
+  if (listingTruncated) {
+    return { contents: allContents, listingTruncated: true };
+  }
+
+  let transactionPrefixesToWalk = transactionPrefixes;
+  if (transactionPrefixes.length > maxTransactionFolders) {
+    listingTruncated = true;
+    transactionPrefixesToWalk = transactionPrefixes.slice(0, maxTransactionFolders);
+  }
+
+  await mapWithConcurrency(transactionPrefixesToWalk, LIST_CONCURRENCY, async (transactionPrefix) => {
+    if (listingTruncated) {
+      return;
+    }
+
+    const transactionLevel = await listOneLevel(bucket, transactionPrefix, pageSize);
+    // Inputs live at the transaction root; do not descend into results/, work/, etc.
+    if (addLevel(transactionLevel.contents)) {
+      listingTruncated = true;
+    }
+  });
+
+  return { contents: allContents, listingTruncated };
 }
 
 export const handler: Handler = async (
@@ -58,78 +210,16 @@ export const handler: Handler = async (
     }
 
     const pageSize = Math.min(body.MaxKeys ?? 1000, 1000);
-    const recursive = body.Recursive === true;
+    const maxTotalKeys = Math.min(body.MaxTotalKeys ?? DEFAULT_MAX_TOTAL_KEYS, 50000);
+    const maxTransactionFolders = Math.min(body.MaxTransactionFolders ?? DEFAULT_MAX_TRANSACTION_FOLDERS, 50000);
 
-    let allContents: _Object[] = [];
-    let allCommonPrefixes: { Prefix: string }[] = [];
-    let isTruncated = true;
-    let continuationToken: string | undefined = undefined;
-    let listingTruncated = false;
-
-    if (!recursive) {
-      while (isTruncated) {
-        const response: ListObjectsV2CommandOutput = await s3Service.listBucketObjectsV2({
-          Bucket: s3Bucket,
-          Prefix: normalizedPrefix,
-          Delimiter: '/',
-          MaxKeys: pageSize,
-          ContinuationToken: continuationToken,
-        });
-
-        if (response.Contents) {
-          allContents = allContents.concat(response.Contents);
-        }
-
-        if (response.CommonPrefixes) {
-          allCommonPrefixes = allCommonPrefixes.concat(response.CommonPrefixes);
-        }
-
-        isTruncated = !!response.IsTruncated;
-        continuationToken = response.NextContinuationToken;
-      }
-    } else {
-      const maxTotalKeys = Math.min(body.MaxTotalKeys ?? 15000, 50000);
-      isTruncated = true;
-      continuationToken = undefined;
-
-      while (isTruncated && allContents.length < maxTotalKeys) {
-        const remaining = maxTotalKeys - allContents.length;
-        const requestMax = Math.max(1, Math.min(pageSize, remaining));
-
-        const response: ListObjectsV2CommandOutput = await s3Service.listBucketObjectsV2({
-          Bucket: s3Bucket,
-          Prefix: normalizedPrefix,
-          MaxKeys: requestMax,
-          ContinuationToken: continuationToken,
-        });
-
-        for (const obj of response.Contents || []) {
-          if (!isFileObjectKey(obj.Key)) {
-            continue;
-          }
-          if (allContents.length >= maxTotalKeys) {
-            listingTruncated = true;
-            break;
-          }
-          allContents.push(obj);
-        }
-
-        const s3More = !!response.IsTruncated;
-        continuationToken = response.NextContinuationToken;
-        if (listingTruncated) {
-          isTruncated = false;
-          break;
-        }
-        isTruncated = s3More;
-        if (!s3More) {
-          break;
-        }
-        if (allContents.length >= maxTotalKeys) {
-          listingTruncated = true;
-          break;
-        }
-      }
-    }
+    const { contents: allContents, listingTruncated } = await listTransactionInputs({
+      bucket: s3Bucket,
+      labPrefix: normalizedPrefix,
+      pageSize,
+      maxTotalKeys,
+      maxTransactionFolders,
+    });
 
     return buildResponse(
       200,
@@ -142,11 +232,10 @@ export const handler: Handler = async (
           totalRetryDelay: 0,
         },
         Contents: allContents,
-        CommonPrefixes: allCommonPrefixes,
-        IsTruncated: recursive ? listingTruncated : false,
+        CommonPrefixes: [],
+        IsTruncated: listingTruncated,
         S3Bucket: s3Bucket,
         ResolvedPrefix: normalizedPrefix,
-        Recursive: recursive,
         ListingTruncated: listingTruncated,
         ReturnedKeyCount: allContents.length,
       }),

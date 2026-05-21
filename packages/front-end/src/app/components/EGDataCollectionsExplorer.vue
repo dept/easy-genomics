@@ -43,7 +43,7 @@
     search: string;
     /** Files returned for the current S3 prefix (before search / tag filters in the parent). */
     listingFileCount: number;
-    /** Recursive listing stopped at MaxTotalKeys; more objects exist in S3. */
+    /** Listing stopped at MaxTotalKeys or MaxTransactionFolders; more objects may exist in S3. */
     listingTruncated?: boolean;
     /** Active filter chips (scope + tags); each chip can be dismissed independently in the explorer header. */
     filterChips?: { chipId: string; label: string }[];

@@ -489,7 +489,6 @@
     try {
       const res = await $api.dataCollections.requestLaboratoryBucketObjects({
         LaboratoryId: props.labId,
-        Recursive: true,
         MaxTotalKeys: 25_000,
       });
       const nextTruncated = !!res.ListingTruncated;
