@@ -585,19 +585,20 @@
               </div>
             </UTooltip>
             <div class="text-muted mt-1 text-xs">{{ formatFileSize(f.Size) }}</div>
-            <div class="mt-2 flex min-h-[1.25rem] flex-wrap gap-1">
+            <div class="mt-2 flex min-h-[1.25rem] min-w-0 max-w-full flex-wrap gap-1">
               <template v-if="standardTagIdsForFileKey(f.Key).length">
                 <span
                   v-for="tid in standardTagIdsForFileKey(f.Key)"
                   :key="tid"
-                  class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+                  class="inline-flex min-w-0 max-w-full overflow-hidden rounded-full px-2 py-0.5 text-[10px] font-medium"
+                  :title="tagById(tid)?.Name || tid"
                   :style="{
                     background: tagById(tid)?.ColorHex || '#e2e2e8',
                     color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
                   }"
                   @click.stop
                 >
-                  {{ tagById(tid)?.Name || tid }}
+                  <span class="min-w-0 truncate">{{ tagById(tid)?.Name || tid }}</span>
                 </span>
               </template>
               <span v-else class="text-muted text-[10px] italic">No tags</span>
@@ -725,20 +726,21 @@
                     />
                   </span>
                 </td>
-                <td class="px-3 py-2 align-middle">
-                  <div class="flex min-h-[1.25rem] flex-wrap gap-1">
+                <td class="min-w-0 px-3 py-2 align-middle">
+                  <div class="flex min-h-[1.25rem] min-w-0 max-w-full flex-wrap gap-1">
                     <template v-if="standardTagIdsForFileKey(f.Key).length">
                       <span
                         v-for="tid in standardTagIdsForFileKey(f.Key)"
                         :key="tid"
-                        class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+                        class="inline-flex min-w-0 max-w-full overflow-hidden rounded-full px-2 py-0.5 text-[10px] font-medium"
+                        :title="tagById(tid)?.Name || tid"
                         :style="{
                           background: tagById(tid)?.ColorHex || '#e2e2e8',
                           color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
                         }"
                         @click.stop
                       >
-                        {{ tagById(tid)?.Name || tid }}
+                        <span class="min-w-0 truncate">{{ tagById(tid)?.Name || tid }}</span>
                       </span>
                     </template>
                     <span v-else class="text-muted text-[10px] italic">No tags</span>
