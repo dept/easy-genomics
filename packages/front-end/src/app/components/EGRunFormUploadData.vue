@@ -967,8 +967,8 @@
 
 <template>
   <EGCard>
-    <EGText tag="small" class="mb-4">Step 02</EGText>
-    <EGText tag="h4" class="mb-4">Upload Data</EGText>
+    <p class="text-muted mb-1 text-sm">Step 2 of 4</p>
+    <h2 class="text-heading mb-4 text-lg font-medium">Upload Data</h2>
 
     <template v-if="isFromDataCollections">
       <p class="text-muted mb-4 text-sm">
@@ -990,17 +990,21 @@
         Any similar files with the suffix _R1 or _R2 will be combined as paired-end data samples. Max file size is 5GB.
         <button
           type="button"
-          class="text-primary ml-1 underline hover:opacity-80"
+          class="text-primary focus-visible:outline-primary-500 ml-1 underline hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+          :aria-expanded="showAdvancedOptions"
+          aria-controls="upload-advanced-options"
           @click="showAdvancedOptions = !showAdvancedOptions"
         >
           {{ showAdvancedOptions ? 'Collapse advanced options' : 'View advanced options' }}
         </button>
       </p>
 
-      <div v-if="showAdvancedOptions" class="mt-4">
+      <div v-if="showAdvancedOptions" id="upload-advanced-options" class="mt-4">
         <UDivider />
-        <label class="text-body mb-1 mt-4 block text-sm font-medium">Sample ID split pattern</label>
-        <UInput v-model="sampleIdSplitPattern" class="w-64" />
+        <label for="sample-id-split-pattern" class="text-body mb-1 mt-4 block text-sm font-medium">
+          Sample ID split pattern
+        </label>
+        <UInput id="sample-id-split-pattern" v-model="sampleIdSplitPattern" class="w-64" />
         <p class="text-muted mb-4 mt-1 text-xs">
           Enter the character or pattern that appears after the Sample ID in your file names (e.g. _S, _L001, etc.).
         </p>
@@ -1012,8 +1016,11 @@
         @drop.prevent="handleDroppedFiles"
         :class="{ 'pointer-events-none opacity-50': !isDropzoneEnabled }"
       >
+        <label id="dropzone-label" class="sr-only">Upload sequencing files (.fastq, .gz)</label>
         <div
           id="dropzone"
+          role="region"
+          aria-labelledby="dropzone-label"
           @dragenter.prevent="setDropzoneActive(true)"
           @dragleave.prevent="setDropzoneActive(false)"
           @dragover.prevent
@@ -1042,6 +1049,7 @@
                 ref="chooseFilesButton"
                 type="file"
                 id="dropzoneFiles"
+                aria-labelledby="dropzone-label"
                 @change="handleFileInputChange"
                 hidden
                 multiple
@@ -1059,10 +1067,24 @@
       </div>
 
       <!-- Hidden CSV file input for custom sample sheet -->
-      <input ref="sampleSheetFileInput" type="file" accept=".csv" hidden @change="handleSampleSheetFileChange" />
+      <label for="sample-sheet-csv-input" class="sr-only">Upload custom sample sheet CSV</label>
+      <input
+        id="sample-sheet-csv-input"
+        ref="sampleSheetFileInput"
+        type="file"
+        accept=".csv"
+        hidden
+        @change="handleSampleSheetFileChange"
+      />
 
-      <div class="files-list mb-6" v-if="filesForTable.length > 0">
-        <div class="files-list-header text-body mb-4 border-b border-[#d9d9d9]">
+      <div
+        class="files-list mb-6"
+        v-if="filesForTable.length > 0"
+        role="region"
+        aria-label="Uploaded files"
+        aria-live="polite"
+      >
+        <div class="files-list-header text-body mb-4 border-b border-[#d9d9d9]" role="row">
           <div class="file-cell sample-id flex w-[30%] min-w-[240px]">Sample ID</div>
           <div class="file-cell flex w-[60%] min-w-[320px]">Sample File</div>
           <div class="file-cell flex w-[10%] min-w-[70px]"></div>
@@ -1084,14 +1106,22 @@
           >
             <div class="file-cell sample-id text-body flex w-[30%] min-w-[240px] items-center">
               <div v-if="!row.error" class="truncate">{{ row.sampleId }}</div>
-              <div v-else class="text-alert-danger-dark mr-1 truncate font-medium">(Upload Failed)</div>
+              <div v-else class="text-alert-danger-dark mr-1 truncate font-medium">
+                <span class="sr-only">Upload failed:</span>
+                (Upload Failed)
+              </div>
             </div>
             <div
               class="file-cell flex w-[60%] min-w-[320px] items-center"
               :style="{ color: row.progress === 100 && !row.error ? '#306239' : 'inherit' }"
             >
               <template v-if="row.error">
-                <UIcon name="i-heroicons-exclamation-triangle" class="text-alert-danger-dark mr-2" size="20" />
+                <UIcon
+                  name="i-heroicons-exclamation-triangle"
+                  class="text-alert-danger-dark mr-2"
+                  size="20"
+                  aria-hidden="true"
+                />
               </template>
               <div class="truncate">{{ row.fileName }}</div>
             </div>
@@ -1100,45 +1130,53 @@
               <!-- retry button -->
               <button
                 v-if="row.error"
-                class="flex items-center"
+                type="button"
+                class="focus-visible:outline-primary-500 flex items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                 :class="[
                   canRetryUpload(row) ? 'text-gray-900 hover:text-gray-700' : 'cursor-not-allowed text-gray-400',
                 ]"
+                :aria-label="`Retry upload for ${row.fileName}`"
                 @click="retryUpload(row)"
                 :disabled="!isOnline || !canRetryUpload(row)"
               >
-                <UIcon name="i-heroicons-arrow-path" size="20" />
+                <UIcon name="i-heroicons-arrow-path" size="20" aria-hidden="true" />
               </button>
 
               <!-- complete check -->
+              <span v-if="!row.error && row.progress === 100" class="sr-only">Upload complete</span>
               <UIcon
                 v-if="!row.error && row.progress === 100"
                 size="20"
                 name="i-heroicons-check"
                 class="text-alert-success-text"
+                aria-hidden="true"
               />
 
               <!-- cancel upload button -->
               <button
                 v-if="!row.error && row.progress && row.progress < 100"
-                class="flex items-center text-gray-500 hover:text-gray-700"
+                type="button"
+                class="focus-visible:outline-primary-500 flex items-center text-gray-500 hover:text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                :aria-label="`Cancel upload for ${row.fileName}`"
                 @click="cancelUpload(row.fileName)"
               >
-                <UIcon name="i-heroicons-x-mark" size="20" />
+                <UIcon name="i-heroicons-x-mark" size="20" aria-hidden="true" />
               </button>
 
               <!-- delete button -->
               <button
-                class="flex items-center"
+                type="button"
+                class="focus-visible:outline-primary-500 flex items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                 :disabled="!isOnline || uploadStatus === 'uploading'"
                 :class="[
                   isOnline && uploadStatus !== 'uploading'
                     ? 'text-alert-danger hover:text-alert-danger-dark'
                     : 'cursor-not-allowed text-gray-400',
                 ]"
+                :aria-label="`Remove ${row.fileName}`"
                 @click="removeFile(row)"
               >
-                <UIcon name="i-heroicons-trash" size="20" />
+                <UIcon name="i-heroicons-trash" size="20" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -1148,9 +1186,10 @@
 
     <div
       v-if="!isFromDataCollections && filesProblemAlertMessage"
+      role="alert"
       class="bg-alert-danger-muted text-alert-danger my-10 flex items-center gap-2 rounded-lg p-6"
     >
-      <UIcon class="text-2xl" name="i-heroicons-exclamation-triangle" />
+      <UIcon class="text-2xl" name="i-heroicons-exclamation-triangle" aria-hidden="true" />
       <div>{{ filesProblemAlertMessage }}</div>
     </div>
 

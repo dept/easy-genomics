@@ -162,8 +162,8 @@
 
 <template>
   <EGCard class="mb-6">
-    <EGText tag="small" class="mb-4">Step 04</EGText>
-    <EGText tag="h4" class="mb-0">Run Details</EGText>
+    <p class="text-muted mb-1 text-sm">Step 4 of 4</p>
+    <h2 class="text-heading mb-0 text-lg font-medium">Review and launch</h2>
     <UDivider class="py-4" />
     <section class="stroke-light flex flex-col bg-white">
       <dl>
@@ -184,7 +184,7 @@
   </EGCard>
   <EGCard>
     <div class="mb-4 flex items-center justify-between">
-      <EGText tag="h4" class="text-muted">Selected Workflow Parameters</EGText>
+      <h3 class="text-muted text-base font-medium">Selected Workflow Parameters</h3>
       <EGButton
         variant="secondary"
         :label="areAccordionsOpen ? 'Collapse All' : 'Expand All'"
