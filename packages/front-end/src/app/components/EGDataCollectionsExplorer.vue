@@ -391,19 +391,53 @@
   function onFileCardDragEnd(): void {
     emit('fileKeysDragEnd');
   }
+
+  const searchInputId = useId();
+
+  function fileItemAriaLabel(key: string, size?: number): string {
+    const name = fileName(key);
+    const selected = props.selectedKeys.includes(key);
+    const status = runCountForFileKey(key) > 0 ? 'Analyzed' : 'Not yet analyzed';
+    const parts = [selected ? 'Selected' : 'Not selected', `${status} sample`, name];
+    if (size !== undefined) parts.push(formatFileSize(size));
+    return parts.join(', ');
+  }
+
+  function onFileItemKeydown(e: KeyboardEvent, key: string): void {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      emit('toggleKey', key);
+    }
+  }
+
+  const sampleCountAnnouncement = computed(() => {
+    const n = props.visibleFiles.length;
+    const noun = n === 1 ? 'sample' : 'samples';
+    let text = `${n} ${noun} shown`;
+    if (props.selectedKeys.length) {
+      text += `, ${props.selectedKeys.length} selected`;
+    }
+    return text;
+  });
 </script>
 
 <template>
   <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-    <motion.div class="border-border-muted flex flex-wrap items-center gap-3 border-b px-4 py-3">
+    <div
+      class="border-border-muted flex flex-wrap items-center gap-3 border-b px-4 py-3"
+      role="toolbar"
+      aria-label="Sample explorer tools"
+    >
+      <label :for="searchInputId" class="sr-only">Search file names</label>
       <UInput
+        :id="searchInputId"
         :model-value="search"
         placeholder="Search file names…"
         class="max-w-xs"
         size="sm"
         @update:model-value="emit('update:search', $event)"
       />
-      <div class="border-border-muted flex shrink-0 rounded-lg border p-0.5">
+      <div class="border-border-muted flex shrink-0 rounded-lg border p-0.5" role="group" aria-label="View mode">
         <UButton
           size="xs"
           square
@@ -411,6 +445,7 @@
           :variant="explorerView === 'cards' ? 'soft' : 'ghost'"
           class="rounded-md"
           aria-label="Card view"
+          :aria-pressed="explorerView === 'cards'"
           @click="explorerView = 'cards'"
         />
         <UButton
@@ -420,6 +455,7 @@
           :variant="explorerView === 'table' ? 'soft' : 'ghost'"
           class="rounded-md"
           aria-label="Table view"
+          :aria-pressed="explorerView === 'table'"
           @click="explorerView = 'table'"
         />
       </div>
@@ -431,12 +467,13 @@
           @update:model-value="emit('update:fileTypeFilter', $event)"
         />
       </div>
-    </motion.div>
+    </div>
     <div class="border-border-muted flex flex-wrap items-center gap-2 border-b bg-gray-50 px-4 py-2">
-      <span class="text-xs font-semibold leading-snug text-gray-900">
-        {{ visibleFiles.length }} {{ visibleSampleNoun }}
+      <span class="text-xs font-semibold leading-snug text-gray-900" aria-live="polite" aria-atomic="true">
+        <span class="sr-only">{{ sampleCountAnnouncement }}</span>
+        <span aria-hidden="true">{{ visibleFiles.length }} {{ visibleSampleNoun }}</span>
       </span>
-      <motion.div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+      <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
         <EGDataCollectionsHiddenFileTypesPopover
           v-if="hiddenByFileTypeCount > 0"
           :hidden-count="hiddenByFileTypeCount"
@@ -459,9 +496,15 @@
             @click="emit('clearFilter', chip.chipId)"
           />
         </div>
-      </motion.div>
+      </div>
       <div class="ml-auto flex shrink-0">
-        <UButton v-if="selectedKeys.length" size="xs" variant="ghost" @click="emit('clearSelection')">
+        <UButton
+          v-if="selectedKeys.length"
+          size="xs"
+          variant="ghost"
+          :aria-label="`Deselect all ${selectedKeys.length} selected samples`"
+          @click="emit('clearSelection')"
+        >
           Deselect all ({{ selectedKeys.length }})
         </UButton>
         <UButton
@@ -469,6 +512,7 @@
           size="xs"
           variant="ghost"
           :disabled="!visibleFiles.length || loading"
+          :aria-label="`Select all ${visibleFiles.length} displayed samples`"
           @click="emit('selectAllDisplayed')"
         >
           Select all ({{ visibleFiles.length }})
@@ -481,7 +525,17 @@
       listing limit.
     </div>
 
-    <div ref="scrollEl" class="relative min-h-0 flex-1 overflow-auto p-2" @mousedown="onScrollHostMouseDown">
+    <div
+      ref="scrollEl"
+      class="relative min-h-0 flex-1 overflow-auto p-2"
+      role="region"
+      aria-label="Sample files"
+      @mousedown="onScrollHostMouseDown"
+    >
+      <p class="sr-only">
+        Drag on empty space to select multiple samples with the mouse. Use Enter or Space on a sample card or table row
+        to toggle selection.
+      </p>
       <div
         v-if="loading"
         class="absolute inset-0 z-20 flex min-h-[14rem] flex-col items-center justify-center gap-3 bg-white/90 p-6 backdrop-blur-[1px]"
@@ -491,11 +545,18 @@
         <UIcon name="i-heroicons-arrow-path" class="text-primary h-10 w-10 shrink-0 animate-spin" />
         <p class="text-muted max-w-sm text-center text-sm">Loading samples and tag data…</p>
       </div>
-      <div v-if="explorerView === 'cards'" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div
+        v-if="explorerView === 'cards'"
+        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+        role="list"
+        aria-label="Samples"
+        aria-multiselectable="true"
+      >
         <template v-for="(sec, secIdx) in fileSections" :key="sec.batchId ?? 'unbatched'">
           <div
             class="border-border-muted col-span-full flex items-start justify-between gap-3 border-b pb-2"
             :class="secIdx === 0 ? 'mt-0' : 'mt-6'"
+            role="presentation"
           >
             <h3 class="text-muted min-w-0 flex-1 whitespace-normal text-xs font-normal leading-snug tracking-wide">
               <span class="inline-flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -538,13 +599,18 @@
             :key="f.Key"
             data-file-card
             :data-key="f.Key"
+            role="listitem"
+            tabindex="0"
             draggable="true"
-            class="border-border-muted relative min-w-0 cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition"
+            class="border-border-muted focus-visible:ring-primary relative min-w-0 cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
             :class="{
               'bg-primary-muted ring-primary ring-2': selectedKeys.includes(f.Key),
               'z-[80]': analysisPopoverOpenKey === f.Key,
             }"
+            :aria-selected="selectedKeys.includes(f.Key)"
+            :aria-label="fileItemAriaLabel(f.Key, f.Size)"
             @click="emit('toggleKey', f.Key)"
+            @keydown="onFileItemKeydown($event, f.Key)"
             @dragstart="onCardDragStart($event, f.Key)"
             @dragend="onFileCardDragEnd"
           >
@@ -608,7 +674,11 @@
       </div>
 
       <div v-else class="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table class="w-full min-w-[56rem] border-collapse text-left text-sm">
+        <table class="w-full min-w-[56rem] border-collapse text-left text-sm" aria-label="Samples">
+          <caption class="sr-only">
+            Samples in data collections
+            <template v-if="selectedKeys.length">, {{ selectedKeys.length }} selected</template>
+          </caption>
           <thead>
             <tr class="border-border-muted bg-gray-50/90 text-xs uppercase tracking-wide text-gray-600">
               <th class="border-border-muted w-10 border-b px-3 py-2.5" scope="col" />
@@ -671,14 +741,18 @@
                 :key="f.Key"
                 data-file-card
                 :data-key="f.Key"
+                tabindex="0"
                 draggable="true"
-                class="border-border-muted cursor-pointer border-b transition last:border-b-0"
+                class="border-border-muted focus-visible:ring-primary cursor-pointer border-b transition last:border-b-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset"
                 :class="{
                   'bg-primary-muted ring-primary ring-2 ring-inset': selectedKeys.includes(f.Key),
                   'hover:bg-gray-50/80': !selectedKeys.includes(f.Key),
                   'relative z-[80]': analysisPopoverOpenKey === f.Key,
                 }"
+                :aria-selected="selectedKeys.includes(f.Key)"
+                :aria-label="fileItemAriaLabel(f.Key, f.Size)"
                 @click="emit('toggleKey', f.Key)"
+                @keydown="onFileItemKeydown($event, f.Key)"
                 @dragstart="onCardDragStart($event, f.Key)"
                 @dragend="onFileCardDragEnd"
               >

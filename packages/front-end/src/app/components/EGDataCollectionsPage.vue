@@ -1099,7 +1099,10 @@
     <div class="overflow-hidden rounded-xl border border-gray-200 bg-white">
       <div class="flex h-[calc(100dvh-12rem)] min-h-0 flex-col overflow-hidden">
         <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-          <div class="border-border-muted flex w-[280px] shrink-0 flex-col overflow-y-auto border-r bg-gray-50">
+          <nav
+            class="border-border-muted flex w-[280px] shrink-0 flex-col overflow-y-auto border-r bg-gray-50"
+            aria-label="Sample filters"
+          >
             <div class="border-border-muted border-b p-2">
               <button
                 type="button"
@@ -1159,7 +1162,7 @@
                   :min="EXPIRING_SOON_MIN_DAYS"
                   :max="EXPIRING_SOON_MAX_DAYS"
                   step="1"
-                  class="focus:border-primary w-16 rounded border border-gray-300 px-2 py-1 text-right text-xs tabular-nums focus:outline-none"
+                  class="focus:border-primary focus-visible:ring-primary w-16 rounded border border-gray-300 px-2 py-1 text-right text-xs tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
                   @click.stop
                 />
               </div>
@@ -1355,6 +1358,8 @@
                             class="h-7 w-7 rounded border-2"
                             :class="leftRailNewTagColor === c ? 'border-primary' : 'border-transparent'"
                             :style="{ background: c }"
+                            :aria-label="`Tag color ${c}`"
+                            :aria-pressed="leftRailNewTagColor === c"
                             @click="leftRailNewTagColor = c"
                           />
                         </div>
@@ -1376,46 +1381,50 @@
                 </div>
               </div>
             </div>
-          </div>
+          </nav>
 
-          <EGDataCollectionsExplorer
-            class="min-h-0 min-w-0 flex-1"
-            :lab-id="props.labId"
-            :lab-root="labRoot"
-            :s3-bucket="lab?.S3Bucket"
-            :visible-files="visibleFiles"
-            :key-to-tag-ids="keyToStandardTagIdsForExplorer"
-            :key-to-batch-tag-id="keyToBatchTagId"
-            :key-to-workflow-tag-ids="keyToWorkflowTagIdsEffective"
-            :key-to-run-usages="keyToRunUsages"
-            :key-to-is-permanent="keyToIsPermanent"
-            :batch-tags="batchTags"
-            :tags="tags"
-            :selected-keys="selectedKeys"
-            :loading="loading"
-            :search="search"
-            :listing-file-count="files.length"
-            :listing-truncated="listingTruncated"
-            :filter-chips="explorerFilterChips"
-            :file-type-filter="fileTypeFilterEnabled"
-            :file-type-counts="fileTypeCounts"
-            :hidden-by-file-type-count="hiddenByFileTypeCount"
-            :hidden-by-file-type-breakdown="hiddenByFileTypeBreakdown"
-            @update:search="search = $event"
-            @update:file-type-filter="fileTypeFilterEnabled = $event"
-            @update:selected-keys="selectedKeys = $event"
-            @toggle-key="toggleKey"
-            @select-all-displayed="selectAllDisplayed"
-            @clear-selection="selectedKeys = []"
-            @clear-filter="clearExplorerFilter($event)"
-            @file-keys-drag-end="clearTagDropHighlight"
-            @select-run-files="selectFilesForRun($event)"
-          />
+          <main class="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Sample files">
+            <EGDataCollectionsExplorer
+              class="min-h-0 min-w-0 flex-1"
+              :lab-id="props.labId"
+              :lab-root="labRoot"
+              :s3-bucket="lab?.S3Bucket"
+              :visible-files="visibleFiles"
+              :key-to-tag-ids="keyToStandardTagIdsForExplorer"
+              :key-to-batch-tag-id="keyToBatchTagId"
+              :key-to-workflow-tag-ids="keyToWorkflowTagIdsEffective"
+              :key-to-run-usages="keyToRunUsages"
+              :key-to-is-permanent="keyToIsPermanent"
+              :batch-tags="batchTags"
+              :tags="tags"
+              :selected-keys="selectedKeys"
+              :loading="loading"
+              :search="search"
+              :listing-file-count="files.length"
+              :listing-truncated="listingTruncated"
+              :filter-chips="explorerFilterChips"
+              :file-type-filter="fileTypeFilterEnabled"
+              :file-type-counts="fileTypeCounts"
+              :hidden-by-file-type-count="hiddenByFileTypeCount"
+              :hidden-by-file-type-breakdown="hiddenByFileTypeBreakdown"
+              @update:search="search = $event"
+              @update:file-type-filter="fileTypeFilterEnabled = $event"
+              @update:selected-keys="selectedKeys = $event"
+              @toggle-key="toggleKey"
+              @select-all-displayed="selectAllDisplayed"
+              @clear-selection="selectedKeys = []"
+              @clear-filter="clearExplorerFilter($event)"
+              @file-keys-drag-end="clearTagDropHighlight"
+              @select-run-files="selectFilesForRun($event)"
+            />
+          </main>
         </div>
 
-        <div class="border-border-muted shrink-0 border-t bg-gray-50">
+        <div class="border-border-muted shrink-0 border-t bg-gray-50" role="region" aria-label="Bulk tag actions">
           <div class="flex flex-wrap items-center gap-2 px-4 py-2">
-            <span v-if="hasSelection" class="text-muted text-xs">{{ selectedKeys.length }} file(s) selected</span>
+            <span v-if="hasSelection" class="text-muted text-xs" aria-live="polite" aria-atomic="true">
+              {{ selectedKeys.length }} file(s) selected
+            </span>
             <span v-else class="text-muted text-xs">Select files in the grid to add or remove tags in bulk.</span>
             <div v-if="hasSelection" class="ml-auto flex flex-wrap items-center gap-2">
               <UIcon
@@ -1447,6 +1456,8 @@
         v-if="bulkPanelOpen"
         ref="bulkPanelContentEl"
         class="border-border-muted relative border-t bg-white px-4 pb-4 pt-3"
+        role="region"
+        aria-label="Bulk tag editor"
       >
         <div
           v-if="bulkPanelBusy"
@@ -1540,6 +1551,8 @@
                     class="h-7 w-7 rounded border-2"
                     :class="inlineNewTagColor === c ? 'border-primary' : 'border-transparent'"
                     :style="{ background: c }"
+                    :aria-label="`Tag color ${c}`"
+                    :aria-pressed="inlineNewTagColor === c"
                     @click="inlineNewTagColor = c"
                   />
                 </div>

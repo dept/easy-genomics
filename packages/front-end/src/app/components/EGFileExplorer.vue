@@ -428,6 +428,23 @@
     return !isNaN(d.getTime());
   }
 
+  const searchStatusMessage = computed(() => {
+    const q = searchQuery.value.trim();
+    if (!q) return '';
+    if (isSearchLoading.value) return `Searching for "${q}"…`;
+    const n = searchResults.value.length;
+    if (n === 0) return `No results for "${q}"`;
+    const noun = n === 1 ? 'result' : 'results';
+    return `${n} search ${noun} for "${q}"`;
+  });
+
+  function onDirectoryKeydown(e: KeyboardEvent, row: FileTreeNode): void {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onRowClicked(row);
+    }
+  }
+
   const onRowClicked = useDebounceFn((item: FileTreeNode) => {
     if (searchQuery.value.trim()) {
       if (item.type === 'directory' && item.isSearchResult) {
@@ -672,27 +689,34 @@
 </script>
 
 <template>
-  <div>
-    <!-- Search input -->
+  <section aria-label="File explorer">
     <EGSearchInput
+      label="Search files in bucket"
       @input-event="(event: string) => (searchQuery = event)"
       placeholder="Search all files in bucket"
       class="mb-6 w-[408px]"
     />
 
-    <!-- Breadcrumbs -->
-    <div class="mb-6 flex min-h-[24px] flex-wrap">
-      <span
-        v-for="(crumb, index) in breadcrumbs"
-        :key="index"
-        @click="navigateTo(index)"
-        class="breadcrumb-item text-sm"
-        :class="{ 'text-black': index === breadcrumbs.length - 1, 'text-gray-500': index !== breadcrumbs.length - 1 }"
-      >
-        {{ crumb.name }}
-        <i v-if="index < breadcrumbs.length - 1" class="separator">/</i>
-      </span>
-    </div>
+    <p class="sr-only" aria-live="polite" aria-atomic="true">{{ searchStatusMessage }}</p>
+
+    <nav class="mb-6 min-h-[24px]" aria-label="Folder path">
+      <ol class="flex flex-wrap items-center gap-0">
+        <li v-for="(crumb, index) in breadcrumbs" :key="index" class="flex items-center text-sm">
+          <button
+            v-if="index < breadcrumbs.length - 1"
+            type="button"
+            class="focus-visible:ring-primary-500 text-gray-500 hover:text-gray-900 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+            @click="navigateTo(index)"
+          >
+            {{ crumb.name }}
+          </button>
+          <span v-else class="font-medium text-black" aria-current="page">{{ crumb.name }}</span>
+          <span v-if="index < breadcrumbs.length - 1" class="separator mx-1 text-gray-400" aria-hidden="true">/</span>
+        </li>
+      </ol>
+    </nav>
+
+    <div v-if="isRootLoading" class="sr-only" role="status" aria-live="polite">Loading folder contents…</div>
 
     <EGTable
       :row-click-action="onRowClicked"
@@ -704,17 +728,20 @@
     >
       <template #name-data="{ row }">
         <div class="flex items-center gap-2">
-          <span
+          <button
             v-if="row.type === 'directory' && (!searchQuery.trim() || row.isSearchResult)"
-            class="underline hover:no-underline"
-            @click="onRowClicked(row)"
+            type="button"
+            class="focus-visible:ring-primary-500 text-left underline hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+            :aria-label="`Open folder ${row.name}`"
+            @click.stop="onRowClicked(row)"
+            @keydown="onDirectoryKeydown($event, row)"
           >
             {{ row.name }}/
-          </span>
+          </button>
           <span v-else>
             {{ row.type === 'directory' ? `${row.name}/` : row.name }}
           </span>
-          <span v-if="row.isLoading" class="text-xs text-gray-500">(loading...)</span>
+          <span v-if="row.isLoading" class="text-xs text-gray-500" role="status">(loading…)</span>
         </div>
         <div v-if="row.isSearchResult && row.directoryPath" class="text-xs text-gray-500">{{ row.directoryPath }}/</div>
       </template>
@@ -773,22 +800,5 @@
         </div>
       </template>
     </EGTable>
-  </div>
+  </section>
 </template>
-
-<style scoped>
-  .breadcrumb-item {
-    cursor: pointer;
-    margin-right: 5px;
-    display: flex;
-    align-items: center;
-
-    &:last-child {
-      cursor: default;
-    }
-
-    .separator {
-      margin: 0 2px 0 3px;
-    }
-  }
-</style>

@@ -63,7 +63,12 @@
 
   const addUsersPanelId = 'lab-add-users-panel';
 
-  usePageTitle(() => (labName.value ? labName.value : 'Lab'));
+  usePageTitle(() => {
+    const base = labName.value ? labName.value : 'Lab';
+    const tab = tabItems.value[tabIndex.value];
+    if (!tab || tab.key === 'dashboard') return base;
+    return `${tab.label} — ${base}`;
+  });
 
   /** Pipeline Runs table footer; only when Settings → Run retention (months) is greater than zero. */
   const runRecordsRetentionNotice = computed((): string | undefined => {
@@ -765,7 +770,15 @@
   </div>
 
   <!-- Data Collections -->
-  <div v-if="activeTabKey === 'dataCollections'" class="mt-4">
+  <div
+    v-if="activeTabKey === 'dataCollections'"
+    role="tabpanel"
+    id="panel-dataCollections"
+    aria-labelledby="tab-dataCollections"
+    tabindex="0"
+    class="mt-4"
+  >
+    <h2 class="sr-only">Data collections</h2>
     <EGDataCollectionsPage :lab-id="labId" />
   </div>
 

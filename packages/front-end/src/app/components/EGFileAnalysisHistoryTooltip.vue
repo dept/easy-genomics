@@ -115,9 +115,10 @@
     @update:open="emit('update:open', $event)"
   >
     <!-- Card: circle (+ count when N>1) + trailing chevron; chevron hints hover reveals analysis history (parent is absolute left-0 top-0 on card). -->
-    <span
+    <button
       v-if="isCard"
-      class="inline-flex cursor-default items-center gap-1 rounded-tl-xl pb-1.5 pl-2 pr-1.5 pt-2 transition-colors hover:bg-gray-100 focus:outline-none"
+      type="button"
+      class="focus-visible:ring-primary-500 inline-flex cursor-default items-center gap-1 rounded-tl-xl pb-1.5 pl-2 pr-1.5 pt-2 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
       :aria-label="triggerAriaLabel"
       @mousedown.stop
       @click.stop
@@ -138,12 +139,13 @@
         {{ runCount }}
       </span>
       <UIcon name="i-heroicons-chevron-down" class="text-muted h-3 w-3 shrink-0" aria-hidden="true" />
-    </span>
+    </button>
 
     <!-- Table: dot + status text, no chip outline -->
-    <span
+    <button
       v-else
-      class="inline-flex max-w-full cursor-default items-center gap-1.5 text-[11px] font-medium leading-none focus:outline-none"
+      type="button"
+      class="focus-visible:ring-primary-500 inline-flex max-w-full cursor-default items-center gap-1.5 text-[11px] font-medium leading-none focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
       :aria-label="triggerAriaLabel"
       @mousedown.stop
       @click.stop
@@ -154,7 +156,7 @@
         aria-hidden="true"
       />
       <span :style="{ color: statusDescriptor.color }">{{ statusDescriptor.label }}</span>
-    </span>
+    </button>
 
     <template #panel="{ close }">
       <div class="flex flex-col" @mousedown.stop @click.stop>
@@ -187,9 +189,8 @@
               >
                 <button
                   type="button"
-                  class="bg-primary/10 text-primary hover:bg-primary/20 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition"
-                  aria-hidden="true"
-                  tabindex="-1"
+                  class="bg-primary/10 text-primary hover:bg-primary/20 focus-visible:ring-primary-500 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition focus:outline-none focus-visible:ring-2"
+                  :aria-label="`Open run ${run.RunName || run.RunId}`"
                   @click.stop="openRunPage(run)"
                 >
                   <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
