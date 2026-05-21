@@ -61,6 +61,10 @@
   const orgId = computed<string | null>(() => lab.value?.OrganizationId ?? null);
   const labName = computed<string>(() => lab.value?.Name || '');
 
+  const addUsersPanelId = 'lab-add-users-panel';
+
+  usePageTitle(() => (labName.value ? labName.value : 'Lab'));
+
   /** Pipeline Runs table footer; only when Settings → Run retention (months) is greater than zero. */
   const runRecordsRetentionNotice = computed((): string | undefined => {
     // ?? applies default-for-missing only; explicit 0 must stay 0 (footnote hidden).
@@ -700,7 +704,13 @@
 </script>
 
 <template>
-  <EGSidebarNav v-if="lab" :items="tabItems" :model-value="tabIndex" @update:model-value="handleTabChange" />
+  <EGSidebarNav
+    v-if="lab"
+    aria-label="Lab sections"
+    :items="tabItems"
+    :model-value="tabIndex"
+    @update:model-value="handleTabChange"
+  />
 
   <EGPageHeader
     v-if="activeTabKey !== 'dashboard'"
@@ -721,21 +731,36 @@
       v-if="!superuser && activeTabKey === 'users'"
       label="Add Lab Users"
       :disabled="!canAddUsers"
+      :aria-expanded="showAddUserModule"
+      :aria-controls="addUsersPanelId"
       @click="showAddUserModule = !showAddUserModule"
     />
-    <EGAddLabUsersModule
+    <div
       v-if="showAddUserModule && activeTabKey === 'users' && !!orgId"
-      @added-user-to-lab="handleUserAddedToLab()"
-      :org-id="orgId"
-      :lab-id="labId"
-      :lab-name="labName"
-      :lab-users="labUsers"
+      :id="addUsersPanelId"
+      role="region"
+      aria-label="Add users to lab"
       class="mt-2"
-    />
+    >
+      <EGAddLabUsersModule
+        @added-user-to-lab="handleUserAddedToLab()"
+        :org-id="orgId"
+        :lab-id="labId"
+        :lab-name="labName"
+        :lab-users="labUsers"
+      />
+    </div>
   </EGPageHeader>
 
   <!-- Dashboard tab -->
-  <div v-if="activeTabKey === 'dashboard'">
+  <div
+    v-if="activeTabKey === 'dashboard'"
+    role="tabpanel"
+    id="panel-dashboard"
+    aria-labelledby="tab-dashboard"
+    tabindex="0"
+  >
+    <h2 class="sr-only">Lab dashboard</h2>
     <EGDashboard :lab-id="labId" />
   </div>
 
@@ -745,11 +770,13 @@
   </div>
 
   <!-- Runs tab -->
-  <div v-if="activeTabKey === 'runs'">
+  <div v-if="activeTabKey === 'runs'" role="tabpanel" id="panel-runs" aria-labelledby="tab-runs" tabindex="0">
+    <h2 class="sr-only">Pipeline runs</h2>
     <div class="mb-6">
       <div class="flex flex-row items-center gap-4">
         <EGSearchInput
           @input-event="updateRunsSearchQuery"
+          label="Search runs"
           placeholder="Search runs"
           :disabled="useUiStore().anyRequestPending(['loadLabData', 'loadLabRuns'])"
           class="w-[408px]"
@@ -802,7 +829,12 @@
 
       <template #actions-data="{ row }">
         <div class="flex justify-end">
-          <EGActionButton :items="runsActionItems(row)" class="ml-2" @click="$event.stopPropagation()" />
+          <EGActionButton
+            menu-label="Run actions"
+            :items="runsActionItems(row)"
+            class="ml-2"
+            @click="$event.stopPropagation()"
+          />
         </div>
       </template>
 
@@ -816,7 +848,14 @@
   </div>
 
   <!-- Seqera Pipelines tab -->
-  <div v-if="activeTabKey === 'seqeraPipelines'">
+  <div
+    v-if="activeTabKey === 'seqeraPipelines'"
+    role="tabpanel"
+    id="panel-seqeraPipelines"
+    aria-labelledby="tab-seqeraPipelines"
+    tabindex="0"
+  >
+    <h2 class="sr-only">Seqera pipelines</h2>
     <EGTable
       :row-click-action="viewRunSeqeraPipeline"
       :table-data="seqeraPipelines"
@@ -836,7 +875,12 @@
 
       <template #actions-data="{ row }">
         <div class="flex justify-end">
-          <EGActionButton :items="seqeraPipelinesActionItems(row)" class="ml-2" @click="$event.stopPropagation()" />
+          <EGActionButton
+            menu-label="Pipeline actions"
+            :items="seqeraPipelinesActionItems(row)"
+            class="ml-2"
+            @click="$event.stopPropagation()"
+          />
         </div>
       </template>
 
@@ -849,7 +893,14 @@
   </div>
 
   <!-- HealthOmics Workflows tab -->
-  <div v-if="activeTabKey === 'omicsWorkflows'">
+  <div
+    v-if="activeTabKey === 'omicsWorkflows'"
+    role="tabpanel"
+    id="panel-omicsWorkflows"
+    aria-labelledby="tab-omicsWorkflows"
+    tabindex="0"
+  >
+    <h2 class="sr-only">HealthOmics workflows</h2>
     <EGTable
       :row-click-action="viewRunOmicsWorkflow"
       :table-data="omicsWorkflows"
@@ -869,7 +920,12 @@
 
       <template #actions-data="{ row: workflow }">
         <div class="flex justify-end">
-          <EGActionButton :items="omicsWorkflowsActionItems(workflow)" class="ml-2" @click="$event.stopPropagation()" />
+          <EGActionButton
+            menu-label="Workflow actions"
+            :items="omicsWorkflowsActionItems(workflow)"
+            class="ml-2"
+            @click="$event.stopPropagation()"
+          />
         </div>
       </template>
 
@@ -882,9 +938,11 @@
   </div>
 
   <!-- Lab Users tab -->
-  <div v-if="activeTabKey === 'users'">
+  <div v-if="activeTabKey === 'users'" role="tabpanel" id="panel-users" aria-labelledby="tab-users" tabindex="0">
+    <h2 class="sr-only">Lab users</h2>
     <EGSearchInput
       @input-event="updateSearchOutput"
+      label="Search users"
       placeholder="Search user"
       :disabled="useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'addUserToLab'])"
       class="my-6 w-[408px]"
@@ -936,7 +994,8 @@
   </div>
 
   <!-- Lab Details -->
-  <div v-if="activeTabKey === 'details'">
+  <div v-if="activeTabKey === 'details'" role="tabpanel" id="panel-details" aria-labelledby="tab-details" tabindex="0">
+    <h2 class="sr-only">Lab settings</h2>
     <EGFormLabDetails @updated="handleDetailsUpdated" />
   </div>
 

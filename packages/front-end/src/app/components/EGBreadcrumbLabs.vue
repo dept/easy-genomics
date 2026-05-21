@@ -44,11 +44,11 @@
     ]),
   );
 
-  function doSwitchLab(labId: string): void {
+  function doSwitchLab(targetLabId: string): void {
     // this is flexible enough to work in most different contexts; eg.
     // - normal user: /labs/[labId]
     // - superuser: /orgs/[orgId]/labs/[labId]
-    const newRoute = route.fullPath.replace(/\/labs\/.+/, `/labs/${labId}`);
+    const newRoute = route.fullPath.replace(/\/labs\/.+/, `/labs/${targetLabId}`);
     router.push(newRoute);
   }
 </script>
@@ -61,6 +61,9 @@
           variant="ghost"
           :trailing-icon="items.length > 0 ? 'i-heroicons-chevron-up-down' : undefined"
           color="black"
+          :aria-label="items.length > 0 ? `Lab: ${currentLab?.Name}. Switch lab` : `Lab: ${currentLab?.Name}`"
+          :aria-expanded="items.length > 0 ? isOpen : undefined"
+          :aria-haspopup="items.length > 0 ? 'menu' : undefined"
         >
           {{ currentLab?.Name }}
         </UButton>

@@ -74,5 +74,5 @@
 </script>
 
 <template>
-  <UBadge :ui="getConfig">{{ label }}</UBadge>
+  <UBadge :ui="getConfig" :aria-label="`Run status: ${label}`">{{ label }}</UBadge>
 </template>

@@ -26,6 +26,14 @@
   const getSelectedUserDisplayName = computed<string>(() => useUser().displayName(selectedUserNameDetails.value));
   const getSelectedUserInitials = computed<string>(() => useUser().initials(selectedUserNameDetails.value));
 
+  const orgAdminToggleId = useId();
+
+  usePageTitle(() =>
+    getSelectedUserDisplayName.value && getSelectedUserDisplayName.value !== '???'
+      ? `Edit access — ${getSelectedUserDisplayName.value}`
+      : 'Edit user access',
+  );
+
   const selectedUserOrgAdmin = computed<boolean | null>(
     () => selectedUser.value?.OrganizationAccess?.[props.orgId]?.OrganizationAdmin ?? null,
   );
@@ -285,23 +293,27 @@
           :inactive="selectedUser.OrganizationUserStatus !== 'Active'"
         />
       </div>
-      <div class="flex cursor-pointer items-center" @click="toggleOrgAdmin">
-        <span class="text-xs">Organization Admin</span>
+      <div class="flex items-center">
+        <label :id="orgAdminToggleId" class="text-xs" :for="`${orgAdminToggleId}-input`">Organization Admin</label>
         <UToggle
+          :id="`${orgAdminToggleId}-input`"
           class="ml-2"
           :model-value="!!selectedUserOrgAdmin"
           :disabled="useUiStore().anyRequestPending(['updateUser', 'toggleOrgAdmin'])"
+          :aria-labelledby="orgAdminToggleId"
           :ui="{
             base: 'test-org-admin-toggle',
           }"
+          @change="toggleOrgAdmin"
         />
       </div>
     </div>
   </div>
 
   <EGSearchInput
-    v-if="hasNoData"
+    v-if="!hasNoData"
     @input-event="updateSearchOutput"
+    label="Search labs"
     placeholder="Search All Labs"
     class="my-6 w-[408px]"
   />
@@ -354,7 +366,6 @@
         size="sm"
         :disabled="useUserStore().isSuperuser"
       />
-      <EGActionButton v-else-if="actionItems" :items="actionItems(row)" />
     </template>
   </EGTable>
 

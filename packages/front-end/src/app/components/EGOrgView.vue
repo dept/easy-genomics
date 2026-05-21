@@ -141,6 +141,7 @@
         {
           label: 'Remove From Org',
           class: 'text-alert-danger-dark',
+          isHighlighted: true,
           click: () => {
             userToRemoveId.value = user.UserId;
             removeUserModalPrimaryMessage.value = `Are you sure you want to remove ${user.displayName} from ${org.value.Name}?`;
@@ -159,7 +160,7 @@
   const filteredTableData = computed(() => {
     let data = orgUsersDetailsData.value;
 
-    if (searchOutput.value || hasNoData.value) {
+    if (searchOutput.value) {
       data = data.filter((user: OrgUser) => {
         const fullName = user.displayName.toLowerCase();
         const email = String(user.UserEmail).toLowerCase();
@@ -255,6 +256,10 @@
   // must be declared after store is set in fetchOrgData()
   const org = computed(() => useOrgsStore().orgs[props.orgId] || {});
 
+  const invitePanelId = 'org-invite-users-panel';
+
+  usePageTitle(() => (org.value.Name ? `${org.value.Name}` : 'Organization'));
+
   async function resend(userDetails: OrgUser, index: number) {
     const { OrganizationId, UserEmail } = userDetails;
 
@@ -334,7 +339,12 @@
 </script>
 
 <template>
-  <EGSidebarNav :items="tabItems" :model-value="tabIndex" @update:model-value="handleTabChange" />
+  <EGSidebarNav
+    aria-label="Organization sections"
+    :items="tabItems"
+    :model-value="tabIndex"
+    @update:model-value="handleTabChange"
+  />
 
   <EGPageHeader
     :title="org.Name"
@@ -348,15 +358,24 @@
     <EGButton
       v-if="activeTabKey === 'users'"
       label="Invite users"
+      :aria-expanded="showInviteModule"
+      :aria-controls="invitePanelId"
       @click="() => (showInviteModule = !showInviteModule)"
     />
-    <div class="mt-2 w-[500px]" v-if="showInviteModule && activeTabKey === 'users'">
+    <div
+      :id="invitePanelId"
+      class="mt-2 w-[500px]"
+      v-if="showInviteModule && activeTabKey === 'users'"
+      role="region"
+      aria-label="Invite users by email"
+    >
       <EGInviteModule @invite-success="refreshUserList($event)" :org-id="props.orgId" />
     </div>
   </EGPageHeader>
 
   <!-- Settings tab -->
-  <div v-if="activeTabKey === 'details'">
+  <div v-if="activeTabKey === 'details'" role="tabpanel" id="panel-details" aria-labelledby="tab-details" tabindex="0">
+    <h2 class="sr-only">Organization settings</h2>
     <EGFormOrgDetails
       :key="resetFormKey"
       @submit-form-org-details="onSubmit($event)"
@@ -367,16 +386,31 @@
   </div>
 
   <!-- All Labs tab (superuser) -->
-  <div v-if="activeTabKey === 'labs' && props.superuser">
+  <div
+    v-if="activeTabKey === 'labs' && props.superuser"
+    role="tabpanel"
+    id="panel-labs"
+    aria-labelledby="tab-labs"
+    tabindex="0"
+  >
+    <h2 class="sr-only">All labs</h2>
     <EGLabsList superuser :org-id="props.orgId" />
   </div>
 
-  <div v-if="activeTabKey === 'workflow-access' && showWorkflowAccessTab">
+  <div
+    v-if="activeTabKey === 'workflow-access' && showWorkflowAccessTab"
+    role="tabpanel"
+    id="panel-workflow-access"
+    aria-labelledby="tab-workflow-access"
+    tabindex="0"
+  >
+    <h2 class="sr-only">Workflow access</h2>
     <EGWorkflowLabAccessPage v-if="workflowAccessPanelMounted" :org-id="props.orgId" embedded />
   </div>
 
   <!-- All users tab -->
-  <div v-if="activeTabKey === 'users'">
+  <div v-if="activeTabKey === 'users'" role="tabpanel" id="panel-users" aria-labelledby="tab-users" tabindex="0">
+    <h2 class="sr-only">Organization users</h2>
     <EGEmptyDataCTA
       v-if="!isLoading && hasNoData"
       message="You don't have any users in this organization yet."
@@ -386,6 +420,7 @@
     <template v-if="!hasNoData">
       <EGSearchInput
         @input-event="updateSearchOutput"
+        label="Search users"
         placeholder="Search user"
         class="my-6 w-[408px]"
         :disabled="isLoading"
@@ -440,7 +475,12 @@
               :disabled="isButtonDisabled(index) || isButtonRequestPending(index)"
               :loading="isButtonRequestPending(index)"
             />
-            <EGActionButton @click="$event.stopPropagation()" :items="actionItems(row)" class="ml-2" />
+            <EGActionButton
+              menu-label="User actions"
+              @click="$event.stopPropagation()"
+              :items="actionItems(row)"
+              class="ml-2"
+            />
           </div>
         </template>
       </EGTable>

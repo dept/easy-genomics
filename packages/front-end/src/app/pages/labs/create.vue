@@ -7,6 +7,8 @@
   if (!useUserStore().canCreateLab()) {
     router.push({ path: '/labs' });
   }
+
+  usePageTitle('Create lab');
 </script>
 
 <template>
