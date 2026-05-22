@@ -7,6 +7,11 @@
   }>();
 
   const emit = defineEmits<{
+    /** Row click — select org and open Labs for that org (org admins) */
+    (event: 'select-org', org: Organization): void;
+    /** Action menu — open org management after switching context */
+    (event: 'manage-org', org: Organization): void;
+    /** @deprecated Use select-org / manage-org; kept for superuser admin list */
     (event: 'click-org', org: Organization): void;
   }>();
 
@@ -58,7 +63,7 @@
       [
         {
           label: 'View / Edit',
-          click: async () => viewOrg(org),
+          click: async () => manageOrg(org),
         },
       ],
     ];
@@ -79,8 +84,20 @@
     return items;
   }
 
-  function viewOrg(org: Organization) {
-    emit('click-org', org);
+  function selectOrg(org: Organization) {
+    if (props.superuser) {
+      emit('click-org', org);
+    } else {
+      emit('select-org', org);
+    }
+  }
+
+  function manageOrg(org: Organization) {
+    if (props.superuser) {
+      emit('click-org', org);
+    } else {
+      emit('manage-org', org);
+    }
   }
 
   // delete org stuff
@@ -120,7 +137,7 @@
   </EGPageHeader>
 
   <EGTable
-    :row-click-action="viewOrg"
+    :row-click-action="selectOrg"
     :table-data="orgsDisplayList"
     :columns="tableColumns"
     :is-loading="isLoading"
