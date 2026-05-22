@@ -13,6 +13,7 @@
     groupHiddenFilesByTypeLabel,
     type DataCollectionFileTypeFilter,
   } from '@FE/utils/data-collections-file-type';
+  import { exceedsBatchNameMaxLength, exceedsTagNameMaxLength } from '@FE/utils/data-collections-name-validation';
 
   const props = defineProps<{
     labId: string;
@@ -855,6 +856,7 @@
   async function createStandardTag(name: string, colorHex: string): Promise<{ TagId: string } | null> {
     const trimmed = name.trim();
     if (!trimmed) return null;
+    if (exceedsTagNameMaxLength(name)) return null;
     uiStore.setRequestPending('dataCollectionsMutate');
     try {
       const created = await $api.dataCollections.createTag({
@@ -886,6 +888,12 @@
   const showLeftRailCreateTag = ref(false);
   const leftRailNewTagName = ref('');
   const leftRailNewTagColor = ref('#5B4FD4');
+
+  const leftRailTagNameInvalid = computed(() => exceedsTagNameMaxLength(leftRailNewTagName.value));
+  const inlineTagNameInvalid = computed(() => exceedsTagNameMaxLength(inlineNewTagName.value));
+
+  const canCreateLeftRailTag = computed(() => !!leftRailNewTagName.value.trim() && !leftRailTagNameInvalid.value);
+  const canCreateInlineTag = computed(() => !!inlineNewTagName.value.trim() && !inlineTagNameInvalid.value);
 
   function cancelLeftRailCreateTag(): void {
     showLeftRailCreateTag.value = false;
@@ -989,6 +997,15 @@
   const changeBatchSelectedBatchId = ref<string | undefined>(undefined);
   const changeBatchNewName = ref('');
 
+  const changeBatchNewNameInvalid = computed(() => exceedsBatchNameMaxLength(changeBatchNewName.value));
+  const canApplyChangeBatchWithNewName = computed(
+    () => !!changeBatchNewName.value.trim() && !changeBatchNewNameInvalid.value,
+  );
+  const canApplyChangeBatch = computed(
+    () =>
+      canApplyChangeBatchWithNewName.value || (!!changeBatchSelectedBatchId.value && !changeBatchNewName.value.trim()),
+  );
+
   watch(changeBatchNewName, (v) => {
     if (v.trim()) changeBatchSelectedBatchId.value = undefined;
   });
@@ -1031,6 +1048,7 @@
     if (!lab.value?.S3Bucket || !selectedKeys.value.length) return;
     const keys = [...selectedKeys.value];
     const nn = changeBatchNewName.value.trim();
+    if (nn && exceedsBatchNameMaxLength(changeBatchNewName.value)) return;
     uiStore.setRequestPending('dataCollectionsMutate');
     try {
       if (nn) {
@@ -1318,7 +1336,15 @@
                     <div class="space-y-2">
                       <div>
                         <label class="text-muted mb-0.5 block text-xs font-medium">Tag name</label>
-                        <UInput v-model="leftRailNewTagName" placeholder="Tag name" size="sm" />
+                        <UInput
+                          v-model="leftRailNewTagName"
+                          placeholder="Tag name"
+                          size="sm"
+                          :color="leftRailTagNameInvalid ? 'red' : undefined"
+                        />
+                        <p v-if="leftRailTagNameInvalid" class="text-alert-danger-dark mt-1 text-xs">
+                          40 characters max
+                        </p>
                       </div>
                       <div>
                         <label class="text-muted mb-0.5 block text-xs font-medium">Tag color</label>
@@ -1339,7 +1365,7 @@
                         <UButton size="xs" variant="ghost" @click="cancelLeftRailCreateTag">Cancel</UButton>
                         <UButton
                           size="xs"
-                          :disabled="!leftRailNewTagName.trim()"
+                          :disabled="!canCreateLeftRailTag"
                           :loading="loading"
                           @click="createTagLeftRail"
                         >
@@ -1500,7 +1526,13 @@
                 + Create new tag
               </button>
               <div v-else class="space-y-2 rounded-lg border border-gray-200 bg-gray-50/80 p-3">
-                <UInput v-model="inlineNewTagName" placeholder="Tag name" size="sm" />
+                <UInput
+                  v-model="inlineNewTagName"
+                  placeholder="Tag name"
+                  size="sm"
+                  :color="inlineTagNameInvalid ? 'red' : undefined"
+                />
+                <p v-if="inlineTagNameInvalid" class="text-alert-danger-dark text-xs">40 characters max</p>
                 <div class="flex flex-wrap gap-1">
                   <button
                     v-for="c in presetColors"
@@ -1515,7 +1547,7 @@
                 <UInput v-model="inlineNewTagColor" placeholder="#RRGGBB" size="sm" />
                 <div class="flex gap-2">
                   <UButton size="xs" variant="ghost" @click="showInlineCreateTag = false">Close</UButton>
-                  <UButton size="xs" :disabled="!inlineNewTagName.trim()" :loading="loading" @click="createTagInline">
+                  <UButton size="xs" :disabled="!canCreateInlineTag" :loading="loading" @click="createTagInline">
                     Create
                   </UButton>
                 </div>
@@ -1642,9 +1674,13 @@
               placeholder="e.g. Nov-2024-FluPanel"
               size="sm"
               class="w-full"
+              :color="changeBatchNewNameInvalid ? 'red' : undefined"
               :disabled="bulkPanelBusy || !!changeBatchSelectedBatchId"
             />
-            <p class="text-muted mt-1.5 text-xs leading-snug">Leave blank to use the existing batch selected above.</p>
+            <p v-if="changeBatchNewNameInvalid" class="text-alert-danger-dark mt-1 text-xs">250 characters max</p>
+            <p v-else class="text-muted mt-1.5 text-xs leading-snug">
+              Leave blank to use the existing batch selected above.
+            </p>
           </div>
         </div>
 
@@ -1653,7 +1689,9 @@
           <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="clearBatchFromModal">
             Remove from batch
           </UButton>
-          <UButton size="sm" :loading="bulkPanelBusy" @click="applyChangeBatch">Move samples</UButton>
+          <UButton size="sm" :loading="bulkPanelBusy" :disabled="!canApplyChangeBatch" @click="applyChangeBatch">
+            Move samples
+          </UButton>
         </div>
       </UCard>
     </UModal>
