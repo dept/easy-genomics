@@ -6,36 +6,19 @@
   }>();
   const model = defineModel();
 
-  const { $api } = useNuxtApp();
   const $router = useRouter();
-
-  const userStore = useUserStore();
   const uiStore = useUiStore();
+  const { switchTo } = useSwitchOrganization();
 
   async function doSwitchOrg(): Promise<void> {
-    uiStore.setRequestPending('switchOrg');
+    if (!props.switchToOrgId) {
+      return;
+    }
 
     try {
-      userStore.mostRecentLab.LaboratoryId = null; // Reset
-
-      // update default org/lab in api
-      await $api.users.updateUserLastAccessInfo(userStore.currentUserDetails.id!, props.switchToOrgId, undefined);
-
-      // refresh values from api
-      await useAuth().getRefreshedToken();
-      await useUser().setCurrentUserDataFromToken();
-
+      await switchTo(props.switchToOrgId);
       $router.push('/');
-
-      // I hate this delay but there's a really screwy race condition otherwise
-      // it causes a bad bug where the new org will open to the previous org's lab, which shouldn't even be possible
-      setTimeout(() => {
-        uiStore.incrementRemountAppKey();
-        useToastStore().success('You have switched organizations');
-        uiStore.setRequestComplete('switchOrg');
-      }, 100);
     } catch (e) {
-      uiStore.setRequestComplete('switchOrg');
       throw e;
     }
   }
