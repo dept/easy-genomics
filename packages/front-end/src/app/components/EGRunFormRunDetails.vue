@@ -206,8 +206,8 @@
 <template>
   <UForm :schema="formStateSchema" :state="formState" :validate="validate" @submit="onSubmit">
     <EGCard>
-      <EGText tag="small" class="mb-4">Step 01</EGText>
-      <EGText tag="h4" class="mb-0">Run Details</EGText>
+      <p class="text-muted mb-1 text-sm">Step 1 of 4</p>
+      <h2 class="text-heading mb-0 text-lg font-medium">Run Details</h2>
       <UDivider class="py-4" />
       <EGFormGroup :label="pipelineOrWorkflow" name="pipelineName">
         <EGInput :model-value="props.pipelineOrWorkflowName" :disabled="true" />

@@ -389,8 +389,8 @@
   <div class="flex">
     <div class="mr-4 w-1/4">
       <EGCard>
-        <EGText tag="small" class="mb-4">Step 03</EGText>
-        <EGText tag="h4" class="mb-0">Edit Parameters</EGText>
+        <p class="text-muted mb-1 text-sm">Step 3 of 4</p>
+        <h2 class="text-heading mb-0 text-lg font-medium">Edit Parameters</h2>
       </EGCard>
     </div>
     <div class="w-3/4">

@@ -42,6 +42,8 @@
 
   const labName = computed<string>(() => labsStore.labs[labId].Name);
 
+  usePageTitle(() => (workflow.value?.name ? `Run workflow — ${workflow.value.name}` : 'Run workflow'));
+
   /** Must match EGRunFormRunDetails default sentinel for Omics workflow version */
   const OMICS_DEFAULT_WORKFLOW_VERSION = '__omics_default_version__';
 
@@ -223,32 +225,6 @@
     $router.push({ query: { omicsRunTempId: uuidv4() } });
   }
 
-  // Note: the UTabs :ui attribute has to be defined locally in this file - if it is imported from another file,
-  //  Tailwind won't pick up and include the classes used and styles will be missing.
-  // To keep the tab styling consistent throughout the app, any changes made here need to be duplicated to all other
-  //  UTabs that use an "EGTabsStyles" as input to the :ui attribute.
-  const EGTabsStyles = {
-    base: 'focus:outline-none',
-    list: {
-      base: '!flex rounded-none mb-6 mt-0',
-      padding: 'p-0',
-      height: 'h-14',
-      marker: {
-        background: '',
-        shadow: '',
-      },
-      tab: {
-        base: 'font-serif w-auto mr-3 rounded-xl border border-solid',
-        background: '',
-        active: 'text-white bg-primary border-primary',
-        inactive: 'font-serif text-text-body border-background-dark-grey',
-        height: '',
-        padding: 'px-5 py-2',
-        size: 'text-sm',
-      },
-    },
-  };
-
   /**
    * Set the enabled state of a step in the stepper
    * @param step
@@ -325,91 +301,74 @@
   />
 
   <template v-if="uiStore.isRequestPending('loadOmicsWorkflow') || !omicsRunTempId">
-    <EGLoadingSpinner />
+    <EGLoadingSpinner label="Loading workflow" />
   </template>
 
   <template v-else>
-    <UTabs :items="steps" :ui="EGTabsStyles" v-model="selectedStepIndex" :key="selectedStepIndex">
-      <!-- tab rendering -->
-      <template #default="{ item, index, selected }">
-        <div class="relative flex items-center gap-2 truncate">
-          <UIcon
-            v-if="selectedStepIndex > index || hasLaunched"
-            name="i-heroicons-check-20-solid"
-            class="text-primary h-4 w-4 flex-shrink-0"
-          />
-          <span :class="selectedStepIndex > index || hasLaunched ? 'text-primary' : ''">{{ item.label }}</span>
-          <span v-if="selected" class="bg-primary-500 dark:bg-primary-400 absolute -right-4 h-2 w-2 rounded-full" />
-        </div>
-      </template>
-
-      <!-- step rendering -->
-      <template #item="{ item, index }">
+    <EGWizardStepTabs
+      v-model="selectedStepIndex"
+      :items="steps"
+      :has-launched="hasLaunched"
+      aria-label="Run HealthOmics workflow steps"
+    >
+      <template #panel="{ item }">
         <div v-if="!hasLaunched">
-          <!-- Run Details -->
-          <template v-if="steps[selectedStepIndex].key === 'details'">
-            <EGRunFormRunDetails
-              platform="AWS HealthOmics"
-              :wip-run-temp-id="omicsRunTempId"
-              :pipeline-or-workflow-name="workflow?.name"
-              :pipeline-or-workflow-description="workflow?.description || ''"
-              :workflow-version-options="workflowVersionOptions"
-              @next-step="() => nextStep('upload')"
-              @step-validated="($event) => setStepEnabled('upload', $event)"
-            />
-          </template>
+          <EGRunFormRunDetails
+            v-if="item.key === 'details'"
+            platform="AWS HealthOmics"
+            :wip-run-temp-id="omicsRunTempId"
+            :pipeline-or-workflow-name="workflow?.name"
+            :pipeline-or-workflow-description="workflow?.description || ''"
+            :workflow-version-options="workflowVersionOptions"
+            @next-step="() => nextStep('upload')"
+            @step-validated="($event) => setStepEnabled('upload', $event)"
+          />
 
-          <!-- Upload Data -->
-          <template v-if="steps[selectedStepIndex].key === 'upload'">
-            <EGRunFormUploadData
-              :lab-id="labId"
-              :pipeline-or-workflow-name="workflow.name"
-              platform="AWS HealthOmics"
-              :wip-run-temp-id="omicsRunTempId"
-              @next-step="() => nextStep('parameters')"
-              @previous-step="() => previousStep()"
-              @step-validated="($event) => setStepEnabled('parameters', $event)"
-            />
-          </template>
+          <EGRunFormUploadData
+            v-else-if="item.key === 'upload'"
+            :lab-id="labId"
+            :pipeline-or-workflow-name="workflow.name"
+            platform="AWS HealthOmics"
+            :wip-run-temp-id="omicsRunTempId"
+            @next-step="() => nextStep('parameters')"
+            @previous-step="() => previousStep()"
+            @step-validated="($event) => setStepEnabled('parameters', $event)"
+          />
 
-          <!-- Edit Parameters -->
-          <template v-if="steps[selectedStepIndex].key === 'parameters'">
-            <EGRunWorkflowFormEditParameters
-              :params="wipOmicsRun?.params"
-              :schema="schema"
-              :lab-id="labId"
-              :workflow-id="workflowId"
-              :omics-run-temp-id="omicsRunTempId"
-              :has-saved-defaults="hasOmicsWorkflowSavedParameterDefaults"
-              @next-step="() => nextStep('review')"
-              @previous-step="() => previousStep()"
-              @defaults-cleared="onOmicsWorkflowDefaultsCleared"
-            />
-          </template>
+          <EGRunWorkflowFormEditParameters
+            v-else-if="item.key === 'parameters'"
+            :params="wipOmicsRun?.params"
+            :schema="schema"
+            :lab-id="labId"
+            :workflow-id="workflowId"
+            :omics-run-temp-id="omicsRunTempId"
+            :has-saved-defaults="hasOmicsWorkflowSavedParameterDefaults"
+            @next-step="() => nextStep('review')"
+            @previous-step="() => previousStep()"
+            @defaults-cleared="onOmicsWorkflowDefaultsCleared"
+          />
 
-          <!-- Review Pipeline -->
-          <template v-if="steps[selectedStepIndex].key === 'review'">
-            <EGRunWorkflowFormReview
-              :schema="schema"
-              :params="wipOmicsRun?.params"
-              :lab-id="labId"
-              :omics-run-temp-id="omicsRunTempId"
-              :s3-bucket="wipOmicsRun?.s3Bucket"
-              :s3-path="wipOmicsRun?.s3Path"
-              :run-name="wipOmicsRun?.runName"
-              :transaction-id="wipOmicsRun?.transactionId"
-              :workflow-id="workflowId"
-              :workflow-name="workflow.name"
-              :workflow-version-name="wipOmicsRun?.workflowVersionName"
-              @submit-launch-request="() => handleSubmitLaunchRequest()"
-              @submit-launch-request-error="() => handleSubmitLaunchRequestError()"
-              @has-launched="() => handleLaunchSuccess()"
-              @previous-tab="() => previousStep()"
-            />
-          </template>
+          <EGRunWorkflowFormReview
+            v-else-if="item.key === 'review'"
+            :schema="schema"
+            :params="wipOmicsRun?.params"
+            :lab-id="labId"
+            :omics-run-temp-id="omicsRunTempId"
+            :s3-bucket="wipOmicsRun?.s3Bucket"
+            :s3-path="wipOmicsRun?.s3Path"
+            :run-name="wipOmicsRun?.runName"
+            :transaction-id="wipOmicsRun?.transactionId"
+            :workflow-id="workflowId"
+            :workflow-name="workflow.name"
+            :workflow-version-name="wipOmicsRun?.workflowVersionName"
+            @submit-launch-request="() => handleSubmitLaunchRequest()"
+            @submit-launch-request-error="() => handleSubmitLaunchRequestError()"
+            @has-launched="() => handleLaunchSuccess()"
+            @previous-tab="() => previousStep()"
+          />
         </div>
       </template>
-    </UTabs>
+    </EGWizardStepTabs>
 
     <!-- post-launch rendering -->
     <template v-if="hasLaunched">

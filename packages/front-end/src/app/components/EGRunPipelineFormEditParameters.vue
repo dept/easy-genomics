@@ -156,24 +156,30 @@
   <div class="flex">
     <div class="mr-4 w-1/4">
       <EGCard>
-        <EGText tag="small" class="mb-4">Step 03</EGText>
-        <EGText tag="h4" class="mb-0">Edit Parameters</EGText>
+        <p class="text-muted mb-1 text-sm">Step 3 of 4</p>
+        <h2 class="text-heading mb-0 text-lg font-medium">Edit Parameters</h2>
         <UDivider class="py-4" />
-        <div
-          v-show="!checkIfAllSectionParametersHidden(section)"
-          v-for="(section, sectionIndex) in schemaDefinitions"
-          :key="`section-${sectionIndex}`"
-        >
-          <div
-            class="mb-4 cursor-pointer text-sm"
-            :class="{
-              'text-primary bg-primary-muted rounded-xl px-4 py-2 font-semibold': activeSection === section.title,
-            }"
-            @click="toggleSection(section.title)"
-          >
-            {{ section.title }}
-          </div>
-        </div>
+        <nav aria-label="Parameter sections">
+          <ul class="list-none p-0">
+            <li
+              v-show="!checkIfAllSectionParametersHidden(section)"
+              v-for="(section, sectionIndex) in schemaDefinitions"
+              :key="`section-${sectionIndex}`"
+            >
+              <button
+                type="button"
+                class="focus-visible:outline-primary-500 mb-4 w-full cursor-pointer rounded-xl px-4 py-2 text-left text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                :class="{
+                  'text-primary bg-primary-muted font-semibold': activeSection === section.title,
+                }"
+                :aria-current="activeSection === section.title ? 'true' : undefined"
+                @click="toggleSection(section.title)"
+              >
+                {{ section.title }}
+              </button>
+            </li>
+          </ul>
+        </nav>
       </EGCard>
     </div>
     <div class="w-3/4">
@@ -182,7 +188,7 @@
         :key="`section-${sectionIndex}`"
         v-show="activeSection === section.title"
       >
-        <EGText tag="h4" class="mb-4">{{ section.title }}</EGText>
+        <h3 class="text-heading mb-4 text-base font-medium">{{ section.title }}</h3>
 
         <div
           v-for="(section, sectionIndex) in Object.values(schemaDefinitions)"
