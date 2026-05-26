@@ -247,6 +247,43 @@ describe('request-top-level-bucket-objects Lambda', () => {
     );
   });
 
+  it('allows listing for legacy runs with only InputS3Url when OutputS3Url is missing', async () => {
+    mockValidateOrgAdmin.mockReturnValue(true);
+    mockQueryByLaboratoryId.mockResolvedValue({
+      ...mockLaboratory,
+      S3Bucket: 'current-lab-bucket',
+    });
+    mockGetLaboratoryRun.mockResolvedValue({
+      LaboratoryId: 'test-lab-id',
+      RunId: 'run-legacy',
+      InputS3Url: 's3://original-bucket/test-org-id/test-lab-id/runs/run-legacy/input',
+    });
+    mockListBucketObjectsV2.mockResolvedValue({
+      Contents: [{ Key: 'test-org-id/test-lab-id/runs/run-legacy/input/sample.fq.gz', Size: 1 }],
+      CommonPrefixes: [],
+      IsTruncated: false,
+    });
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'test-lab-id',
+        RunId: 'run-legacy',
+        S3Bucket: 'original-bucket',
+        S3Prefix: 'test-org-id/test-lab-id/runs/run-legacy/input',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockListBucketObjectsV2).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Bucket: 'original-bucket',
+        Prefix: 'test-org-id/test-lab-id/runs/run-legacy/input/',
+      }),
+    );
+  });
+
   it('defaults to the run OutputS3Url prefix when RunId is provided and S3Prefix is omitted', async () => {
     mockValidateOrgAdmin.mockReturnValue(true);
     mockQueryByLaboratoryId.mockResolvedValue(mockLaboratory);
