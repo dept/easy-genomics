@@ -38,6 +38,21 @@ export function getSampleIdFromRFileName(fileName: string, sampleIdSplitPattern?
   return fileName.substring(0, fileName.lastIndexOf('_R')) || null;
 }
 
+/**
+ * Sample id for grouping multi-lane paired reads in the data collections explorer.
+ * Matches <sample>(_L<digits>)?_R[12](_<set>)?.f(ast)?q[.gz] — case-insensitive on the
+ * R direction. The lane suffix is only consumed when it directly precedes _R[12], so
+ * sample names that happen to contain "_L<digits>_" elsewhere are preserved.
+ *
+ * Returns null when the filename is not a paired read (txt, html, fasta, index reads,
+ * etc.); the caller treats those as solo display groups.
+ */
+export function getSampleGroupId(fileName: string): string | null {
+  const nameNoExt = getFileNameWithoutExt(fileName);
+  const m = nameNoExt.match(/^(.+?)(?:_L\d+)?_R[12](?:_.*)?$/i);
+  return m ? m[1] : null;
+}
+
 function getSharedSampleIdFromPair(
   r1Name?: string,
   r2Name?: string,

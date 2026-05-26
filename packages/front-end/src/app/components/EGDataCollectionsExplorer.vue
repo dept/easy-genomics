@@ -7,8 +7,14 @@
     LaboratoryDataTag,
     LaboratoryRunUsageSummary,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
-  import type { DataCollectionFileTypeFilter, HiddenFileTypeBreakdownRow } from '@FE/utils/data-collections-file-type';
+  import type {
+    DataCollectionFileKind,
+    DataCollectionFileTypeFilter,
+    HiddenFileTypeBreakdownRow,
+  } from '@FE/utils/data-collections-file-type';
+  import { dataCollectionFileKind } from '@FE/utils/data-collections-file-type';
   import { formatFileSize } from '@FE/utils/file-size';
+  import { getSampleGroupId } from '@FE/utils/data-collections-to-sample-sheet';
 
   const props = defineProps<{
     /** Used to deep-link from the analysis history tooltip to a laboratory run detail page. */
@@ -57,7 +63,6 @@
     'update:search': [v: string];
     'update:fileTypeFilter': [value: DataCollectionFileTypeFilter];
     'update:selectedKeys': [keys: string[]];
-    toggleKey: [key: string];
     selectAllDisplayed: [];
     clearSelection: [];
     clearFilter: [chipId: string];
@@ -202,7 +207,7 @@
     () => !props.loading && props.listingFileCount > 0 && props.visibleFiles.length === 0,
   );
 
-  const visibleSampleNoun = computed(() => (props.visibleFiles.length === 1 ? 'sample' : 'samples'));
+  const visibleSampleNoun = computed(() => (visibleDisplayGroupCount.value === 1 ? 'sample' : 'samples'));
 
   const batchTagsResolved = computed(() => props.batchTags ?? []);
 
@@ -232,18 +237,227 @@
     base: '[@media(pointer:coarse)]:hidden min-h-0 h-auto max-h-[min(80vh,32rem)] overflow-y-auto overflow-x-hidden px-2.5 py-2 text-xs font-normal whitespace-normal break-all text-left relative',
   };
 
+  /**
+   * Display unit in the explorer grid / table. Multi-lane paired reads sharing a sample id
+   * (matched by `getSampleGroupId`) collapse into one group; everything else is a solo group
+   * keyed by its raw S3 Key.
+   */
+  type DisplayGroup = {
+    /** Stable group id — folder + sampleId for grouped reads, raw S3 key for solos. */
+    groupId: string;
+    /** Every S3 key in the group (1 for solos, ≥2 for paired-read groups). */
+    keys: string[];
+    files: { Key: string; Size?: number; LastModified?: string }[];
+    /** First key (key-sorted). Used for popover open-tracking, folder path, drag preview. */
+    primaryKey: string;
+    fileCount: number;
+    /** Display label: sampleId for grouped reads, basename for solos. */
+    label: string;
+    isGroup: boolean;
+  };
+
+  /** Folder portion of an S3 key (with trailing slash); '' for root-level keys. */
+  function folderPrefix(key: string): string {
+    const i = key.lastIndexOf('/');
+    return i >= 0 ? key.slice(0, i + 1) : '';
+  }
+
+  /**
+   * Group paired reads sharing a sample id within the same S3 folder. Non-paired files
+   * (txt, html, fasta, index reads, etc.) become solo groups.
+   */
+  function buildDisplayGroups(files: { Key: string; Size?: number; LastModified?: string }[]): DisplayGroup[] {
+    const groups = new Map<string, { sampleId: string; files: typeof files }>();
+    const solos: typeof files = [];
+    for (const f of files) {
+      const sampleId = getSampleGroupId(fileName(f.Key));
+      if (sampleId === null) {
+        solos.push(f);
+        continue;
+      }
+      const groupKey = folderPrefix(f.Key) + ' ' + sampleId;
+      const existing = groups.get(groupKey);
+      if (existing) {
+        existing.files.push(f);
+      } else {
+        groups.set(groupKey, { sampleId, files: [f] });
+      }
+    }
+    const result: DisplayGroup[] = [];
+    for (const [groupKey, { sampleId, files: gFiles }] of groups) {
+      const sorted = [...gFiles].sort((a, b) => a.Key.localeCompare(b.Key));
+      const keys = sorted.map((f) => f.Key);
+      result.push({
+        groupId: groupKey,
+        keys,
+        files: sorted,
+        primaryKey: keys[0],
+        fileCount: keys.length,
+        label: sampleId,
+        isGroup: keys.length > 1,
+      });
+    }
+    for (const f of solos) {
+      result.push({
+        groupId: f.Key,
+        keys: [f.Key],
+        files: [f],
+        primaryKey: f.Key,
+        fileCount: 1,
+        label: fileName(f.Key),
+        isGroup: false,
+      });
+    }
+    return result;
+  }
+
+  function isGroupSelected(g: DisplayGroup): boolean {
+    return g.keys.every((k) => props.selectedKeys.includes(k));
+  }
+
+  function isGroupPartiallySelected(g: DisplayGroup): boolean {
+    const sel = new Set(props.selectedKeys);
+    let some = false;
+    let all = true;
+    for (const k of g.keys) {
+      if (sel.has(k)) some = true;
+      else all = false;
+    }
+    return some && !all;
+  }
+
+  /** Atomic toggle: deselect all keys in the group if all are selected, otherwise add them all. */
+  function onGroupToggle(g: DisplayGroup): void {
+    const s = new Set(props.selectedKeys);
+    if (g.keys.every((k) => s.has(k))) {
+      for (const k of g.keys) s.delete(k);
+    } else {
+      for (const k of g.keys) s.add(k);
+    }
+    emit('update:selectedKeys', [...s]);
+  }
+
+  /** Run usages across every key in the group, deduped by RunId, sorted newest first. */
+  function groupRunUsages(g: DisplayGroup): LaboratoryRunUsageSummary[] {
+    const seen = new Set<string>();
+    const merged: LaboratoryRunUsageSummary[] = [];
+    for (const k of g.keys) {
+      const usages = props.keyToRunUsages?.[k] ?? [];
+      for (const u of usages) {
+        if (!seen.has(u.RunId)) {
+          seen.add(u.RunId);
+          merged.push(u);
+        }
+      }
+    }
+    merged.sort((a, b) => (b.RunCreatedAt || '').localeCompare(a.RunCreatedAt || ''));
+    return merged;
+  }
+
+  function groupHasAnyRunUsage(g: DisplayGroup): boolean {
+    for (const k of g.keys) {
+      if ((props.keyToRunUsages?.[k]?.length ?? 0) > 0) return true;
+    }
+    return false;
+  }
+
+  /** Union of standard tag ids across all keys in the group, dedup-by-first-seen. */
+  function groupStandardTagIds(g: DisplayGroup): string[] {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const k of g.keys) {
+      for (const tid of props.keyToTagIds[k] ?? []) {
+        if (!seen.has(tid)) {
+          seen.add(tid);
+          result.push(tid);
+        }
+      }
+    }
+    return result;
+  }
+
+  function groupStandardTagNames(g: DisplayGroup): string[] {
+    return groupStandardTagIds(g)
+      .map((id: string) => tagById(id)?.Name ?? id)
+      .filter((n: string) => !!n);
+  }
+
+  function isGroupAllPermanent(g: DisplayGroup): boolean {
+    return g.keys.every((k) => isFilePermanent(k));
+  }
+
+  function isGroupAnyPermanent(g: DisplayGroup): boolean {
+    return g.keys.some((k) => isFilePermanent(k));
+  }
+
+  function groupBatchId(g: DisplayGroup): string | undefined {
+    const primary = keyToBatchResolved.value[g.primaryKey];
+    if (primary) return primary;
+    for (const k of g.keys) {
+      const b = keyToBatchResolved.value[k];
+      if (b) return b;
+    }
+    return undefined;
+  }
+
+  function groupBatchName(g: DisplayGroup): string {
+    const bid = groupBatchId(g);
+    if (!bid) return '—';
+    const tag = batchTagsResolved.value.find((b: LaboratoryDataTag) => b.TagId === bid);
+    return tag?.Name ?? bid;
+  }
+
+  /** Earliest expiry across the group's run usages, or undefined when no usages have one. */
+  function groupSoonestExpiresAt(g: DisplayGroup): number | undefined {
+    let soonest: number | undefined;
+    for (const k of g.keys) {
+      const usages = props.keyToRunUsages?.[k] ?? [];
+      for (const u of usages) {
+        if (typeof u.ExpiresAt === 'number' && (soonest === undefined || u.ExpiresAt < soonest)) {
+          soonest = u.ExpiresAt;
+        }
+      }
+    }
+    return soonest;
+  }
+
+  function groupExpiresLabel(g: DisplayGroup): string {
+    if (isGroupAllPermanent(g)) return 'Never';
+    const epoch = groupSoonestExpiresAt(g);
+    if (epoch === undefined) return '—';
+    const now = Math.floor(Date.now() / 1000);
+    const diffDays = Math.round((epoch - now) / 86400);
+    if (diffDays <= 0) return 'Expired';
+    if (diffDays === 1) return 'in 1 day';
+    if (diffDays < 30) return `in ${diffDays} days`;
+    const months = Math.round(diffDays / 30);
+    return months <= 1 ? 'in ~1 month' : `in ~${months} months`;
+  }
+
+  /** Payload for the analysis tooltip's "Files (N)" section. */
+  function groupFilesForPopover(
+    g: DisplayGroup,
+  ): { Key: string; fileName: string; size?: number; fileKind: DataCollectionFileKind }[] {
+    return g.files.map((f) => ({
+      Key: f.Key,
+      fileName: fileName(f.Key),
+      size: f.Size,
+      fileKind: dataCollectionFileKind(f.Key),
+    }));
+  }
+
   function batchSectionHeaderParts(sec: {
     batchId: string | null;
     title: string;
-    files: readonly { Key: string }[];
+    groups: readonly DisplayGroup[];
   }): BatchSectionHeaderParts {
-    const n = sec.files.length;
+    const n = sec.groups.length;
     const sampleNoun = n === 1 ? 'sample' : 'samples';
     const titleBold = sec.title;
     let notYetAnalyzed = 0;
     let analyzed = 0;
-    for (const f of sec.files) {
-      if (runCountForFileKey(f.Key) > 0) analyzed += 1;
+    for (const g of sec.groups) {
+      if (groupHasAnyRunUsage(g)) analyzed += 1;
       else notYetAnalyzed += 1;
     }
     return {
@@ -255,34 +469,35 @@
     };
   }
 
-  /** Group visible files by batch for section headers (single scroll, not nested folders). */
+  /** Group visible files by batch, then collapse paired reads into DisplayGroups per section. */
   const fileSections = computed(() => {
     type Row = (typeof props.visibleFiles)[number];
     const nameById = new Map<string, string>(
       batchTagsResolved.value.map((t: LaboratoryDataTag) => [t.TagId, t.Name] as [string, string]),
     );
-    const groups = new Map<string | null, Row[]>();
+    const byBatch = new Map<string | null, Row[]>();
     for (const f of props.visibleFiles) {
       const bid = keyToBatchResolved.value[f.Key] ?? null;
-      if (!groups.has(bid)) groups.set(bid, []);
-      groups.get(bid)!.push(f);
+      if (!byBatch.has(bid)) byBatch.set(bid, []);
+      byBatch.get(bid)!.push(f);
     }
-    const batchEntries = [...groups.entries()].filter(([k]) => k !== null) as [string, Row[]][];
+    const batchEntries = [...byBatch.entries()].filter(([k]) => k !== null) as [string, Row[]][];
     batchEntries.sort((a, b) => {
       const na = nameById.get(a[0]) ?? a[0];
       const nb = nameById.get(b[0]) ?? b[0];
       return na.localeCompare(nb);
     });
-    const sections: { batchId: string | null; title: string; files: Row[] }[] = [];
-    const unbatched = groups.get(null);
+    const sections: { batchId: string | null; title: string; files: Row[]; groups: DisplayGroup[] }[] = [];
+    const unbatched = byBatch.get(null);
     if (unbatched?.length) {
-      sections.push({ batchId: null, title: 'Unbatched', files: unbatched });
+      sections.push({ batchId: null, title: 'Unbatched', files: unbatched, groups: buildDisplayGroups(unbatched) });
     }
     for (const [bid, files] of batchEntries) {
       sections.push({
         batchId: bid,
         title: nameById.get(bid) ?? bid,
         files,
+        groups: buildDisplayGroups(files),
       });
     }
     return sections.map((sec) => ({
@@ -290,6 +505,9 @@
       headerParts: batchSectionHeaderParts(sec),
     }));
   });
+
+  /** Total display-group count across all sections — used for the "X samples" header counter. */
+  const visibleDisplayGroupCount = computed(() => fileSections.value.reduce((n, sec) => n + sec.groups.length, 0));
 
   function batchDisplayName(key: string): string {
     const bid = keyToBatchResolved.value[key];
@@ -360,8 +578,12 @@
     scrollEl.value?.querySelectorAll('[data-file-card]').forEach((el) => {
       const h = el as HTMLElement;
       if (h.classList.contains('eg-data-collections-lasso-hit')) {
-        const id = h.dataset.key;
-        if (id) added.push(id);
+        // Each card carries every key in its display group (space-separated) so a single
+        // DOM hit pulls all paired-read files into the selection at once.
+        const raw = h.dataset.keys ?? h.dataset.key ?? '';
+        for (const k of raw.split(' ')) {
+          if (k) added.push(k);
+        }
       }
       h.classList.remove('eg-data-collections-lasso-hit');
     });
@@ -382,8 +604,11 @@
     window.removeEventListener('mouseup', onWindowMouseUp);
   });
 
-  function onCardDragStart(e: DragEvent, key: string): void {
-    const keys = props.selectedKeys.includes(key) ? [...props.selectedKeys] : [key];
+  function onCardDragStart(e: DragEvent, group: DisplayGroup): void {
+    // If the dragged group is fully selected, drag the whole current selection (existing
+    // multi-select behavior); otherwise drag exactly the keys in this group.
+    const groupSelected = group.keys.every((k) => props.selectedKeys.includes(k));
+    const keys = groupSelected ? [...props.selectedKeys] : [...group.keys];
     e.dataTransfer?.setData('application/x-eg-keys', JSON.stringify(keys));
     e.dataTransfer?.setData('text/plain', 'keys');
   }
@@ -434,7 +659,7 @@
     </motion.div>
     <div class="border-border-muted flex flex-wrap items-center gap-2 border-b bg-gray-50 px-4 py-2">
       <span class="text-xs font-semibold leading-snug text-gray-900">
-        {{ visibleFiles.length }} {{ visibleSampleNoun }}
+        {{ visibleDisplayGroupCount }} {{ visibleSampleNoun }}
       </span>
       <motion.div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
         <EGDataCollectionsHiddenFileTypesPopover
@@ -471,7 +696,7 @@
           :disabled="!visibleFiles.length || loading"
           @click="emit('selectAllDisplayed')"
         >
-          Select all ({{ visibleFiles.length }})
+          Select all ({{ visibleDisplayGroupCount }})
         </UButton>
       </div>
     </div>
@@ -534,61 +759,75 @@
             </button>
           </div>
           <div
-            v-for="f in sec.files"
-            :key="f.Key"
+            v-for="g in sec.groups"
+            :key="g.groupId"
             data-file-card
-            :data-key="f.Key"
+            :data-keys="g.keys.join(' ')"
             draggable="true"
             class="border-border-muted relative min-w-0 cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition"
             :class="{
-              'bg-primary-muted ring-primary ring-2': selectedKeys.includes(f.Key),
-              'z-[80]': analysisPopoverOpenKey === f.Key,
+              'bg-primary-muted ring-primary ring-2': isGroupSelected(g),
+              'z-[80]': analysisPopoverOpenKey === g.primaryKey,
             }"
-            @click="emit('toggleKey', f.Key)"
-            @dragstart="onCardDragStart($event, f.Key)"
+            @click="onGroupToggle(g)"
+            @dragstart="onCardDragStart($event, g)"
             @dragend="onFileCardDragEnd"
           >
             <div class="absolute right-2 top-2 flex items-center gap-1.5" @mousedown.stop @click.stop>
               <UIcon
-                v-if="isFilePermanent(f.Key)"
+                v-if="isGroupAnyPermanent(g)"
                 name="i-heroicons-lock-closed"
                 class="h-3.5 w-3.5 shrink-0 text-red-600"
-                title="This file is protected from auto-deletion when run retention expires."
-                aria-label="Protected from auto-deletion"
+                :title="
+                  isGroupAllPermanent(g)
+                    ? 'This sample is protected from auto-deletion when run retention expires.'
+                    : 'Some files in this sample are protected from auto-deletion when run retention expires.'
+                "
+                :aria-label="
+                  isGroupAllPermanent(g) ? 'Protected from auto-deletion' : 'Some files protected from auto-deletion'
+                "
               />
-              <UCheckbox :model-value="selectedKeys.includes(f.Key)" @update:model-value="emit('toggleKey', f.Key)" />
+              <UCheckbox
+                :model-value="isGroupSelected(g)"
+                :indeterminate="isGroupPartiallySelected(g)"
+                @update:model-value="onGroupToggle(g)"
+              />
             </div>
             <div class="absolute left-0 top-0 z-[1]" @mousedown.stop @click.stop>
               <EGFileAnalysisHistoryTooltip
                 :lab-id="labId"
-                :file-key="f.Key"
-                :file-name="fileName(f.Key)"
-                :batch-name="batchDisplayName(f.Key) === '—' ? undefined : batchDisplayName(f.Key)"
-                :standard-tag-names="standardTagNamesForFileKey(f.Key)"
-                :run-usages="runUsagesForFileKey(f.Key)"
+                :file-key="g.primaryKey"
+                :file-name="g.label"
+                :batch-name="groupBatchName(g) === '—' ? undefined : groupBatchName(g)"
+                :standard-tag-names="groupStandardTagNames(g)"
+                :run-usages="groupRunUsages(g)"
+                :group-files="g.isGroup ? groupFilesForPopover(g) : undefined"
                 variant="card"
                 @select-run-files="emit('selectRunFiles', $event)"
-                @update:open="onAnalysisPopoverOpen(f.Key, $event)"
+                @update:open="onAnalysisPopoverOpen(g.primaryKey, $event)"
               />
             </div>
             <UTooltip :open-delay="500" :ui="s3PathTooltipUi">
               <template #text>
-                {{ s3ObjectTooltip(f.Key) }}
+                {{ s3ObjectTooltip(g.primaryKey) }}
               </template>
               <div class="w-full min-w-0 pr-8">
                 <div class="mt-7 line-clamp-2 w-full min-w-0 break-all text-sm font-medium leading-snug">
-                  {{ fileName(f.Key) }}
+                  {{ g.label }}
                 </div>
-                <div v-if="folderPathUnderLab(f.Key)" class="text-muted mt-0.5 truncate text-[11px]">
-                  {{ folderPathUnderLab(f.Key) }}
+                <div v-if="folderPathUnderLab(g.primaryKey)" class="text-muted mt-0.5 truncate text-[11px]">
+                  {{ folderPathUnderLab(g.primaryKey) }}
                 </div>
               </div>
             </UTooltip>
-            <div class="text-muted mt-1 text-xs">{{ formatFileSize(f.Size) }}</div>
+            <div class="text-muted mt-1 text-xs">
+              <template v-if="g.isGroup">{{ g.fileCount }} files</template>
+              <template v-else>{{ formatFileSize(g.files[0].Size) }}</template>
+            </div>
             <div class="mt-2 flex min-h-[1.25rem] min-w-0 max-w-full flex-wrap gap-1">
-              <template v-if="standardTagIdsForFileKey(f.Key).length">
+              <template v-if="groupStandardTagIds(g).length">
                 <span
-                  v-for="tid in standardTagIdsForFileKey(f.Key)"
+                  v-for="tid in groupStandardTagIds(g)"
                   :key="tid"
                   class="inline-flex min-w-0 max-w-full overflow-hidden rounded-full px-2 py-0.5 text-[10px] font-medium"
                   :title="tagById(tid)?.Name || tid"
@@ -667,70 +906,81 @@
                 </td>
               </tr>
               <tr
-                v-for="f in sec.files"
-                :key="f.Key"
+                v-for="g in sec.groups"
+                :key="g.groupId"
                 data-file-card
-                :data-key="f.Key"
+                :data-keys="g.keys.join(' ')"
                 draggable="true"
                 class="border-border-muted cursor-pointer border-b transition last:border-b-0"
                 :class="{
-                  'bg-primary-muted ring-primary ring-2 ring-inset': selectedKeys.includes(f.Key),
-                  'hover:bg-gray-50/80': !selectedKeys.includes(f.Key),
-                  'relative z-[80]': analysisPopoverOpenKey === f.Key,
+                  'bg-primary-muted ring-primary ring-2 ring-inset': isGroupSelected(g),
+                  'hover:bg-gray-50/80': !isGroupSelected(g),
+                  'relative z-[80]': analysisPopoverOpenKey === g.primaryKey,
                 }"
-                @click="emit('toggleKey', f.Key)"
-                @dragstart="onCardDragStart($event, f.Key)"
+                @click="onGroupToggle(g)"
+                @dragstart="onCardDragStart($event, g)"
                 @dragend="onFileCardDragEnd"
               >
                 <td class="px-3 py-2 align-middle" @mousedown.stop @click.stop>
                   <UCheckbox
-                    :model-value="selectedKeys.includes(f.Key)"
-                    @update:model-value="emit('toggleKey', f.Key)"
+                    :model-value="isGroupSelected(g)"
+                    :indeterminate="isGroupPartiallySelected(g)"
+                    @update:model-value="onGroupToggle(g)"
                   />
                 </td>
                 <td class="min-w-0 max-w-[14rem] overflow-hidden px-3 py-2 align-middle">
                   <UTooltip :open-delay="500" :ui="s3PathTooltipUi">
                     <template #text>
-                      {{ s3ObjectTooltip(f.Key) }}
+                      {{ s3ObjectTooltip(g.primaryKey) }}
                     </template>
                     <div class="min-w-0">
                       <div class="flex min-w-0 items-center gap-1.5">
                         <UIcon
-                          v-if="isFilePermanent(f.Key)"
+                          v-if="isGroupAnyPermanent(g)"
                           name="i-heroicons-lock-closed"
                           class="h-3.5 w-3.5 shrink-0 text-red-600"
-                          title="This file is protected from auto-deletion when run retention expires."
-                          aria-label="Protected from auto-deletion"
+                          :title="
+                            isGroupAllPermanent(g)
+                              ? 'This sample is protected from auto-deletion when run retention expires.'
+                              : 'Some files in this sample are protected from auto-deletion when run retention expires.'
+                          "
+                          :aria-label="
+                            isGroupAllPermanent(g)
+                              ? 'Protected from auto-deletion'
+                              : 'Some files protected from auto-deletion'
+                          "
                         />
-                        <span class="truncate font-medium text-gray-900">{{ fileName(f.Key) }}</span>
+                        <span class="truncate font-medium text-gray-900">{{ g.label }}</span>
                       </div>
-                      <div v-if="folderPathUnderLab(f.Key)" class="text-muted truncate text-xs">
-                        {{ folderPathUnderLab(f.Key) }}
+                      <div v-if="g.isGroup" class="text-muted truncate text-xs">{{ g.fileCount }} files</div>
+                      <div v-else-if="folderPathUnderLab(g.primaryKey)" class="text-muted truncate text-xs">
+                        {{ folderPathUnderLab(g.primaryKey) }}
                       </div>
                     </div>
                   </UTooltip>
                 </td>
-                <td class="text-muted px-3 py-2 align-middle">{{ batchDisplayName(f.Key) }}</td>
+                <td class="text-muted px-3 py-2 align-middle">{{ groupBatchName(g) }}</td>
                 <td class="px-3 py-2 align-middle">
                   <span class="inline-flex w-fit max-w-full align-middle" @mousedown.stop @click.stop>
                     <EGFileAnalysisHistoryTooltip
                       :lab-id="labId"
-                      :file-key="f.Key"
-                      :file-name="fileName(f.Key)"
-                      :batch-name="batchDisplayName(f.Key) === '—' ? undefined : batchDisplayName(f.Key)"
-                      :standard-tag-names="standardTagNamesForFileKey(f.Key)"
-                      :run-usages="runUsagesForFileKey(f.Key)"
+                      :file-key="g.primaryKey"
+                      :file-name="g.label"
+                      :batch-name="groupBatchName(g) === '—' ? undefined : groupBatchName(g)"
+                      :standard-tag-names="groupStandardTagNames(g)"
+                      :run-usages="groupRunUsages(g)"
+                      :group-files="g.isGroup ? groupFilesForPopover(g) : undefined"
                       variant="table"
                       @select-run-files="emit('selectRunFiles', $event)"
-                      @update:open="onAnalysisPopoverOpen(f.Key, $event)"
+                      @update:open="onAnalysisPopoverOpen(g.primaryKey, $event)"
                     />
                   </span>
                 </td>
                 <td class="min-w-0 px-3 py-2 align-middle">
                   <div class="flex min-h-[1.25rem] min-w-0 max-w-full flex-wrap gap-1">
-                    <template v-if="standardTagIdsForFileKey(f.Key).length">
+                    <template v-if="groupStandardTagIds(g).length">
                       <span
-                        v-for="tid in standardTagIdsForFileKey(f.Key)"
+                        v-for="tid in groupStandardTagIds(g)"
                         :key="tid"
                         class="inline-flex min-w-0 max-w-full overflow-hidden rounded-full px-2 py-0.5 text-[10px] font-medium"
                         :title="tagById(tid)?.Name || tid"
@@ -748,13 +998,13 @@
                 </td>
                 <td class="text-muted px-3 py-2 align-middle">
                   <UIcon
-                    v-if="isFilePermanent(f.Key)"
+                    v-if="isGroupAllPermanent(g)"
                     name="i-heroicons-lock-closed"
                     class="inline-block h-3.5 w-3.5 text-red-600"
-                    title="This file is protected from auto-deletion when run retention expires. It does not expire with run retention."
+                    title="This sample is protected from auto-deletion when run retention expires. It does not expire with run retention."
                     aria-label="Protected from auto-deletion; does not expire with run retention"
                   />
-                  <span v-else class="tabular-nums">{{ formatExpiresLabel(f.Key) }}</span>
+                  <span v-else class="tabular-nums">{{ groupExpiresLabel(g) }}</span>
                 </td>
               </tr>
             </template>

@@ -766,13 +766,6 @@
     }
   }
 
-  function toggleKey(key: string): void {
-    const s = new Set(selectedKeys.value);
-    if (s.has(key)) s.delete(key);
-    else s.add(key);
-    selectedKeys.value = [...s];
-  }
-
   function selectAllDisplayed(): void {
     selectedKeys.value = visibleFiles.value.map((f) => f.Key);
   }
@@ -1405,7 +1398,6 @@
             @update:search="search = $event"
             @update:file-type-filter="fileTypeFilterEnabled = $event"
             @update:selected-keys="selectedKeys = $event"
-            @toggle-key="toggleKey"
             @select-all-displayed="selectAllDisplayed"
             @clear-selection="selectedKeys = []"
             @clear-filter="clearExplorerFilter($event)"

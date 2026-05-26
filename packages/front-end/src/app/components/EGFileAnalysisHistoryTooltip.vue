@@ -6,6 +6,8 @@
    */
   import { format } from 'date-fns';
   import type { LaboratoryRunUsageSummary } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
+  import type { DataCollectionFileKind } from '@FE/utils/data-collections-file-type';
+  import { formatFileSize } from '@FE/utils/file-size';
 
   const props = defineProps<{
     labId: string;
@@ -19,6 +21,12 @@
     runUsages: LaboratoryRunUsageSummary[];
     /** Card = dot (+ count when N>1) + trailing chevron; table = dot + status label. */
     variant?: 'card' | 'table';
+    /**
+     * When set with length > 1, the panel renders an extra "Files (N)" section between
+     * the header and "Analysis History" — used when the card/row represents a sample
+     * group (paired reads across one or more lanes). Single-file callers omit this.
+     */
+    groupFiles?: { Key: string; fileName: string; size?: number; fileKind: DataCollectionFileKind }[];
   }>();
 
   const emit = defineEmits<{
@@ -32,6 +40,16 @@
   const STATUS_COLOR_MULTIPLE = '#5B4FD4';
 
   const runCount = computed(() => props.runUsages.length);
+
+  /** True when the popover should show the group "Files (N)" section. */
+  const showGroupFiles = computed(() => !!props.groupFiles && props.groupFiles.length > 1);
+
+  /** Label for the file-kind pill in the Files section. */
+  function fileKindLabel(kind: DataCollectionFileKind): string {
+    if (kind === 'fastq') return 'FASTQ';
+    if (kind === 'fasta') return 'FASTA';
+    return 'Other';
+  }
 
   const statusDescriptor = computed(() => {
     if (runCount.value === 0) {
@@ -163,6 +181,35 @@
           <div v-if="subtitleParts.length" class="text-muted mt-0.5 break-words text-xs leading-snug">
             {{ subtitleParts.join(' \u00b7 ') }}
           </div>
+        </div>
+
+        <!-- Group files section: appears between header and analysis history when the trigger represents a multi-file sample group. -->
+        <div v-if="showGroupFiles" class="border-b border-gray-200 py-3">
+          <div class="px-4 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-700">
+            Files ({{ groupFiles!.length }})
+          </div>
+          <ul class="space-y-1">
+            <li v-for="gf in groupFiles" :key="gf.Key" class="flex items-center gap-2 px-4 py-1 text-xs">
+              <span
+                class="text-muted inline-flex shrink-0 items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium"
+              >
+                <span
+                  class="inline-block h-1.5 w-1.5 rounded-full"
+                  :class="{
+                    'bg-emerald-500': gf.fileKind === 'fastq',
+                    'bg-sky-500': gf.fileKind === 'fasta',
+                    'bg-gray-400': gf.fileKind === 'other',
+                  }"
+                  aria-hidden="true"
+                />
+                {{ fileKindLabel(gf.fileKind) }}
+              </span>
+              <span class="min-w-0 flex-1 break-all font-mono text-[11px] text-gray-900">{{ gf.fileName }}</span>
+              <span v-if="gf.size !== undefined" class="text-muted shrink-0 text-[11px] tabular-nums">
+                {{ formatFileSize(gf.size) }}
+              </span>
+            </li>
+          </ul>
         </div>
 
         <!-- Run list: section title inset from tooltip edge; rows keep tight right edge vs check column -->
