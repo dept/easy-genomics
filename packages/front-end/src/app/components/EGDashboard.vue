@@ -27,6 +27,9 @@
   const searchQuery = ref('');
   const searchFocused = ref(false);
   const overviewTimeFilter = ref<'7' | '30' | '90'>('30');
+  const searchInputId = 'dashboard-global-search';
+  const searchResultsListId = 'dashboard-global-search-results';
+  const overviewTimeFilterId = 'dashboard-overview-time-filter';
 
   interface SearchResult {
     type: 'run' | 'seqera-pipeline' | 'omics-workflow';
@@ -447,7 +450,11 @@
     <!-- Header: Title + Search -->
     <div class="mb-2 flex items-center justify-between">
       <div>
-        <button class="text-primary mb-2 flex items-center gap-1 text-sm font-medium" @click="navigateBack">
+        <button
+          class="text-primary mb-2 flex items-center gap-1 text-sm font-medium"
+          aria-label="Back to organization"
+          @click="navigateBack"
+        >
           <UIcon name="i-heroicons-arrow-left" class="h-4 w-4" />
           Back to organization
         </button>
@@ -455,11 +462,16 @@
       </div>
       <div class="relative w-[320px]">
         <UInput
+          :id="searchInputId"
           v-model="searchQuery"
           placeholder="Search Runs, Workflows, Results"
           icon="i-heroicons-magnifying-glass-20-solid"
           autocomplete="off"
           :trailing="true"
+          role="combobox"
+          :aria-expanded="showDropdown"
+          :aria-controls="showDropdown ? searchResultsListId : undefined"
+          aria-autocomplete="list"
           :ui="{
             placeholder: 'placeholder-text-muted',
             focus: 'outline-none border-0',
@@ -476,25 +488,33 @@
           class="absolute right-0 top-full z-50 mt-1 w-[420px] overflow-hidden rounded-xl border border-neutral-100 bg-white shadow-lg"
         >
           <div v-if="searchResults.length === 0" class="text-muted px-4 py-6 text-center text-sm">No results found</div>
-          <ul v-else class="max-h-[360px] overflow-y-auto">
+          <ul v-else :id="searchResultsListId" class="max-h-[360px] overflow-y-auto" role="listbox">
             <li
               v-for="result in searchResults"
               :key="`${result.type}-${result.id}`"
-              class="hover:bg-background-light-grey flex cursor-pointer items-center gap-3 border-b border-neutral-100 px-4 py-3 last:border-b-0"
-              @mousedown.prevent="selectSearchResult(result)"
+              role="none"
+              class="border-b border-neutral-100 last:border-b-0"
             >
-              <UIcon
-                :name="result.type === 'run' ? 'i-heroicons-clock' : 'i-heroicons-command-line'"
-                class="text-muted h-5 w-5 shrink-0"
-              />
-              <div class="min-w-0 flex-1">
-                <div class="text-body truncate text-sm font-medium">{{ result.name }}</div>
-                <div v-if="result.subtitle" class="text-muted truncate text-xs">{{ result.subtitle }}</div>
-              </div>
-              <div class="flex shrink-0 items-center gap-2">
-                <EGStatusChip v-if="result.status" :status="result.status" />
-                <span class="text-muted whitespace-nowrap text-xs">{{ resultTypeLabel(result.type) }}</span>
-              </div>
+              <button
+                type="button"
+                role="option"
+                class="hover:bg-background-light-grey flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left"
+                :aria-label="`${result.name}, ${resultTypeLabel(result.type)}`"
+                @mousedown.prevent="selectSearchResult(result)"
+              >
+                <UIcon
+                  :name="result.type === 'run' ? 'i-heroicons-clock' : 'i-heroicons-command-line'"
+                  class="text-muted h-5 w-5 shrink-0"
+                />
+                <div class="min-w-0 flex-1">
+                  <div class="text-body truncate text-sm font-medium">{{ result.name }}</div>
+                  <div v-if="result.subtitle" class="text-muted truncate text-xs">{{ result.subtitle }}</div>
+                </div>
+                <div class="flex shrink-0 items-center gap-2">
+                  <EGStatusChip v-if="result.status" :status="result.status" />
+                  <span class="text-muted whitespace-nowrap text-xs">{{ resultTypeLabel(result.type) }}</span>
+                </div>
+              </button>
             </li>
           </ul>
         </div>
@@ -506,6 +526,7 @@
       <div class="flex items-center justify-between">
         <EGText tag="h3" class="mb-0">Dashboard overview</EGText>
         <select
+          :id="overviewTimeFilterId"
           v-model="overviewTimeFilter"
           class="text-body rounded-lg border border-neutral-100 bg-white px-4 py-2 text-sm"
         >
