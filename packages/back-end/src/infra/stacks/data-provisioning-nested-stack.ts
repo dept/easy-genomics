@@ -68,7 +68,7 @@ export class DataProvisioningNestedStack extends NestedStack {
       if (s3BucketFullName && s3BucketFullName.length > 63) {
         throw new Error(`S3 Bucket Name: "${s3BucketFullName}" is too long`);
       }
-      this.s3Construct.createBucket(s3BucketFullName, this.props.envType);
+      this.s3Construct.createBucket(this.props.envType, s3BucketFullName);
 
       // Add seed data to DynamoDB Tables
       this.addDynamoDBSeedData<Organization>(
