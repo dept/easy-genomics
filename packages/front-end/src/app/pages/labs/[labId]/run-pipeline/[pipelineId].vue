@@ -25,6 +25,10 @@
     $router.push('/labs');
   }
 
+  onBeforeMount(async () => {
+    await useEnsureLabInActiveOrg(labId, '/labs');
+  });
+
   // set a new seqeraRunTempId if not provided
   if (!$route.query.seqeraRunTempId) {
     $router.push({ query: { seqeraRunTempId: uuidv4() } });

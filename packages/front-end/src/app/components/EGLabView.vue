@@ -59,6 +59,15 @@
   const orgId = computed<string | null>(() => lab.value?.OrganizationId ?? null);
   const labName = computed<string>(() => lab.value?.Name || '');
 
+  const hasRedirectedForOrgMismatch = ref(false);
+
+  function isLabInActiveOrg(): boolean {
+    if (props.superuser) return true;
+    if (!lab.value?.OrganizationId) return true; // can't validate yet
+    if (!userStore.currentOrgId) return true; // can't validate yet
+    return lab.value.OrganizationId === userStore.currentOrgId;
+  }
+
   /** Pipeline Runs table footer; only when Settings → Run retention (months) is greater than zero. */
   const runRecordsRetentionNotice = computed((): string | undefined => {
     // ?? applies default-for-missing only; explicit 0 must stay 0 (footnote hidden).
@@ -72,10 +81,25 @@
    */
   onBeforeMount(async () => {
     await loadLabData();
+
+    // If the user switched orgs (or deep-linked) and the lab belongs to a different org,
+    // redirect out of the lab context to avoid cross-org context leakage.
+    if (!isLabInActiveOrg() && !hasRedirectedForOrgMismatch.value) {
+      hasRedirectedForOrgMismatch.value = true;
+      await $router.replace('/labs');
+      return;
+    }
+
     await pollFetchLaboratoryRuns();
   });
 
   onMounted(async () => {
+    if (!isLabInActiveOrg() && !hasRedirectedForOrgMismatch.value) {
+      hasRedirectedForOrgMismatch.value = true;
+      await $router.replace('/labs');
+      return;
+    }
+
     setTabIndex();
     uiStore.setSidebarVisible(true);
 
@@ -640,6 +664,13 @@
 
   watch(lab, async (newLab) => {
     if (newLab === null) {
+      return;
+    }
+
+    // If org changes while on a lab route, immediately exit this lab.
+    if (!isLabInActiveOrg() && !hasRedirectedForOrgMismatch.value) {
+      hasRedirectedForOrgMismatch.value = true;
+      await $router.replace('/labs');
       return;
     }
 

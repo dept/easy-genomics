@@ -70,6 +70,7 @@
   }
 
   onBeforeMount(async () => {
+    await useEnsureLabInActiveOrg(labId, '/labs');
     await fetchLabRuns();
   });
 

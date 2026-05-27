@@ -23,6 +23,10 @@
     $router.push('/labs');
   }
 
+  onBeforeMount(async () => {
+    await useEnsureLabInActiveOrg(labId, '/labs');
+  });
+
   // set a new omicsRunTempId if not provided
   if (!$route.query.omicsRunTempId) {
     $router.push({ query: { omicsRunTempId: uuidv4() } });
