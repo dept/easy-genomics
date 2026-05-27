@@ -322,12 +322,16 @@
       <!-- File Manager -->
       <div v-if="item.key === 'fileManager'" class="space-y-3">
         <EGFileExplorer
+          v-if="s3Bucket && s3Prefix"
           :lab-id="labId"
           :run-id="labRunId"
           :s3-bucket="s3Bucket"
           :s3-prefix="s3Prefix"
           :start-path="outputPath"
         />
+        <p v-else-if="labRun && !isLoading" class="text-muted rounded-lg border border-dashed p-6 text-center text-sm">
+          No S3 location is recorded for this run, so files cannot be listed.
+        </p>
       </div>
     </template>
   </EGDetailTabs>
