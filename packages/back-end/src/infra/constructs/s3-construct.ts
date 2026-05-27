@@ -14,10 +14,11 @@ export class S3Construct extends Construct {
 
   public createBucket = (envType: string, envBucketName?: string): Bucket => {
     const removalPolicy = envType !== 'prod' ? RemovalPolicy.DESTROY : undefined; // Only for Non-Prod
-    const constructId = envBucketName ?? `bucket-${Math.floor(Math.random() * 10000)}`;
+    // Logical ID must not start with a digit (account-prefixed bucket names do).
+    const constructId = envBucketName ? 'lab-data-bucket' : `bucket-${Math.floor(Math.random() * 10000)}`;
 
     const bucket = new Bucket(this, constructId, {
-      bucketName: envType === 'prod' ? envBucketName : undefined,
+      bucketName: envBucketName,
       objectOwnership: ObjectOwnership.BUCKET_OWNER_ENFORCED,
       blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
       encryption: BucketEncryption.S3_MANAGED,

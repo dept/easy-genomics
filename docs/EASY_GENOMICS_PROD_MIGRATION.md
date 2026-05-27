@@ -865,20 +865,39 @@ Verify object counts and spot-check a few keys that older runs reference (sample
 aws s3 ls "s3://${NEW_LAB_BUCKET}/" --recursive --summarize --human-readable | tail -5
 ```
 
-**Historical run URLs:** copying objects preserves keys under the same prefix layout (`<org-id>/<lab-id>/…`), so
-`s3://${OLD_LAB_BUCKET}/…` paths often work after restore **only if** you either:
+**Historical run URLs:** copying objects preserves keys under the same prefix layout (`<org-id>/<lab-id>/…`). When
+`NEW_LAB_BUCKET` ≠ `OLD_LAB_BUCKET`, you must also update DynamoDB (step 3.5.1 below) so run records and laboratory
+`S3Bucket` fields reference the new host. If you retained `OLD_LAB_BUCKET` as an orphan (Phase 1.5.3), you can defer URI
+updates until after you copy objects and run 3.5.1.
 
-1. **Copy into `NEW_LAB_BUCKET` and update DynamoDB** — change `S3Bucket` on affected laboratories and replace the
-   bucket host in each stored `s3://` URI on `laboratory-run-table` rows (recommended when `NEW_LAB_BUCKET` ≠
-   `OLD_LAB_BUCKET`), or
-2. **Retained `OLD_LAB_BUCKET` as an orphan** (Phase 1.5.3) — leave run URLs unchanged until you migrate records.
+#### 3.5.1 Rewrite DynamoDB bucket references (when hosts differ)
 
-The application's File Manager and download APIs authorize against the bucket embedded in each run record; after
-restore, open an **older** lab run in the UI and confirm listed files download successfully.
+Use the maintenance script
+[`packages/back-end/scripts/migrate-lab-s3-bucket-refs.ts`](../packages/back-end/scripts/migrate-lab-s3-bucket-refs.ts)
+after the object sync above. It updates `Laboratory.S3Bucket` and rewrites `InputS3Url`, `OutputS3Url`, and
+`SampleSheetS3Url` on every `laboratory-run-table` row whose URI host matches `--oldBucket`.
 
-If `NEW_LAB_BUCKET` differs from `INTENDED_LAB_BUCKET`, that is expected when CDK assigns an auto-generated physical
-name. The seeded laboratory row may still show `INTENDED_LAB_BUCKET` in DynamoDB — confirm the live bucket via
-CloudFormation (above) and align `Laboratory.S3Bucket` if uploads fail.
+From `packages/back-end` with `.env.local` pointing at the target environment (`NAME_PREFIX`, `REGION`):
+
+```bash
+# Preview changes
+pnpm tsx scripts/migrate-lab-s3-bucket-refs.ts \
+  --oldBucket "${OLD_LAB_BUCKET}" \
+  --newBucket "${NEW_LAB_BUCKET}" \
+  --dry-run
+
+# Apply
+pnpm tsx scripts/migrate-lab-s3-bucket-refs.ts \
+  --oldBucket "${OLD_LAB_BUCKET}" \
+  --newBucket "${NEW_LAB_BUCKET}"
+```
+
+The application's File Manager and download APIs authorize against the bucket embedded in each run record; after 3.5 and
+3.5.1, open an **older** lab run in the UI and confirm listed files download successfully.
+
+New deployments use a stable physical bucket name `${AWS_ACCOUNT_ID}-${NAME_PREFIX}-lab-bucket` (see
+`S3Construct.createBucket` and `DataProvisioningNestedStack`). Environments migrated before that fix may still have had
+an auto-generated `OLD_LAB_BUCKET`; the script and sync steps above remain required for those envs.
 
 ---
 
@@ -1102,9 +1121,22 @@ Only run the above against environments you are certain you no longer need.
 
 ### Why the old bucket name often does not match `INTENDED_LAB_BUCKET`
 
-`DataProvisioningNestedStack` seeds DynamoDB with `S3Bucket: ${account}-${namePrefix}-lab-bucket`, but the CDK
-`S3Construct` may provision a **different physical bucket** depending on code version and construct arguments. Always
-discover the live bucket from CloudFormation (Phase 1.5.1) before backup.
+`DataProvisioningNestedStack` seeds DynamoDB with `S3Bucket: ${account}-${namePrefix}-lab-bucket`. Older deploys could
+still provision a **CloudFormation-generated** physical bucket when `createBucket` was called with reversed arguments or
+when `bucketName` was omitted for non-prod. Always discover the live bucket from CloudFormation (Phase 1.5.1) before
+backup. Current code passes `(envType, s3BucketFullName)` and sets `bucketName` for all environments when the name is
+supplied.
+
+### Bulk DynamoDB URI rewrite (script)
+
+| Step    | Command                                                                                                                |
+| ------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Dry run | `pnpm tsx scripts/migrate-lab-s3-bucket-refs.ts --oldBucket "$OLD_LAB_BUCKET" --newBucket "$NEW_LAB_BUCKET" --dry-run` |
+| Apply   | `pnpm tsx scripts/migrate-lab-s3-bucket-refs.ts --oldBucket "$OLD_LAB_BUCKET" --newBucket "$NEW_LAB_BUCKET"`           |
+
+Requires `NAME_PREFIX` and `REGION` in `packages/back-end/.env.local` (or the environment). The script scans
+`laboratory-table` and `laboratory-run-table`; it does not modify S3 objects — run Phase 3.5 `aws s3 sync` first so keys
+exist under `NEW_LAB_BUCKET`.
 
 ### What gets deleted, and when
 
@@ -1122,12 +1154,12 @@ discover the live bucket from CloudFormation (Phase 1.5.1) before backup.
 - [ ] Phase 2: CloudFormation shows `data-provisioning-nested-stack` deleted; old bucket gone
 - [ ] Phase 3.5: objects synced to `NEW_LAB_BUCKET`; spot-check keys for a pre-migration run
 - [ ] Phase 4.1.1: File Manager / download works for at least one pre-migration run
-- [ ] (If needed) `laboratory-run-table` / `laboratory-table` URIs updated to `NEW_LAB_BUCKET`
+- [ ] Phase 3.5.1: `migrate-lab-s3-bucket-refs.ts` dry-run + apply when `OLD_LAB_BUCKET` ≠ `NEW_LAB_BUCKET`
 
 ### Symptom: pre-migration runs show missing files after migration
 
 1. Confirm `OLD_LAB_BUCKET` no longer exists (`aws s3 ls`).
 2. Confirm whether Phase 1.5 backup exists and Phase 3.5 was run against `NEW_LAB_BUCKET`.
 3. Inspect a failing run's `SampleSheetS3Url` / `InputS3Url` — if the host is still `OLD_LAB_BUCKET`, either restore
-   into that name (only possible if you retained the orphan bucket) or copy objects to `NEW_LAB_BUCKET` **and** update
-   the stored URI to use the new host (same object key suffix).
+   into that name (only possible if you retained the orphan bucket) or copy objects to `NEW_LAB_BUCKET` **and** run
+   Phase 3.5.1 (`migrate-lab-s3-bucket-refs.ts`) to update the stored URI hosts (same object key suffix).
