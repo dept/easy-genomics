@@ -14,7 +14,7 @@
   } from '@FE/utils/data-collections-file-type';
   import { dataCollectionFileKind } from '@FE/utils/data-collections-file-type';
   import { formatFileSize } from '@FE/utils/file-size';
-  import { getSampleGroupId } from '@FE/utils/data-collections-to-sample-sheet';
+  import { getReadDirection, getSampleGroupId } from '@FE/utils/data-collections-to-sample-sheet';
 
   const props = defineProps<{
     /** Used to deep-link from the analysis history tooltip to a laboratory run detail page. */
@@ -380,6 +380,20 @@
     return groupStandardTagIds(g)
       .map((id: string) => tagById(id)?.Name ?? id)
       .filter((n: string) => !!n);
+  }
+
+  /** True when the group contains at least one R1 and one R2 file (a true paired-end sample). */
+  function isGroupPaired(g: DisplayGroup): boolean {
+    if (!g.isGroup) return false;
+    let hasR1 = false;
+    let hasR2 = false;
+    for (const f of g.files) {
+      const dir = getReadDirection(fileName(f.Key));
+      if (dir === 'R1') hasR1 = true;
+      else if (dir === 'R2') hasR2 = true;
+      if (hasR1 && hasR2) return true;
+    }
+    return false;
   }
 
   function isGroupAllPermanent(g: DisplayGroup): boolean {
@@ -820,6 +834,15 @@
                 </div>
               </div>
             </UTooltip>
+            <div v-if="isGroupPaired(g)" class="mt-1.5">
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700"
+                title="Paired-end reads (R1 + R2)"
+              >
+                <UIcon name="i-heroicons-link" class="h-3 w-3 shrink-0" aria-hidden="true" />
+                Paired
+              </span>
+            </div>
             <div class="text-muted mt-1 text-xs">
               <template v-if="g.isGroup">{{ g.fileCount }} files</template>
               <template v-else>{{ formatFileSize(g.files[0].Size) }}</template>

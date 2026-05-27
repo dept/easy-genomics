@@ -88,7 +88,7 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
   };
 
   public queryByLaboratoryId = async (laboratoryId: string): Promise<Laboratory> => {
-    const logRequestMessage = `Query Laboratory by LaboratoryId=${laboratoryId} request`;
+    const logRequestMessage = `11234Query Laboratory by LaboratoryId=${laboratoryId} request`;
     console.info(logRequestMessage);
 
     const response: QueryCommandOutput = await this.queryItems({
@@ -143,7 +143,7 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
   };
 
   public queryByOrganizationId = async (organizationId: string): Promise<Laboratory[]> => {
-    const logRequestMessage = `Query Laboratory by OrganizationId=${organizationId} request`;
+    const logRequestMessage = `123Query Laboratory by OrganizationId=${organizationId} request`;
     console.info(logRequestMessage);
 
     const response: QueryCommandOutput = await this.queryItems({
