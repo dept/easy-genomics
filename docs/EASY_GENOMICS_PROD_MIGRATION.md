@@ -119,11 +119,38 @@ is that the REST API **invoke URL will change** because the easy-genomics API Ga
 stack. The front-end must be redeployed with the new URL (either via `AWS_EASY_GENOMICS_API_URL` or, in envs that have
 it, via the `ApiDomainStack` custom domain).
 
-### S3 buckets (out of scope for this migration)
+### S3 lab upload buckets (stateful for non-prod; MUST be backed up and copied)
 
-Only the non-prod data-provisioning lab bucket is CDK-managed, and its `removalPolicy` is still `DESTROY`. If your lower
-environment has lab files in that bucket that you want to keep, back them up separately via `aws s3 sync` before
-Phase 2. Prod lab buckets are not managed by this stack and are unaffected.
+In **non-prod** environments (`dev`, `demo`, `pre-prod`), the shared laboratory upload bucket is created by
+`DataProvisioningNestedStack` in `packages/back-end/src/infra/stacks/data-provisioning-nested-stack.ts` with
+`RemovalPolicy.DESTROY` and `autoDeleteObjects: true` (see `packages/back-end/src/infra/constructs/s3-construct.ts`).
+Unlike the eight DynamoDB tables, **there is no `cdk import` path for this bucket** — it cannot be adopted into the new
+stack with its existing physical name.
+
+**What the split changes**
+
+| Layout     | Where `DataProvisioningNestedStack` lives                                      | Lab bucket                                     |
+| ---------- | ------------------------------------------------------------------------------ | ---------------------------------------------- |
+| Pre-split  | `OLD_STACK` (`*-main-back-end-stack`), sibling to `easy-genomics-nested-stack` | One physical bucket owned by that nested stack |
+| Post-split | `NEW_STACK` (`*-easy-genomics-api-stack`)                                      | A **new** bucket is created on Phase 3.2       |
+
+**Phase 2 deletes the old lab bucket.** Deploying the split-stack template to `OLD_STACK` removes
+`data-provisioning-nested-stack` from that stack (it is no longer declared on `BackEndStack`). CloudFormation deletes
+the nested stack and, for non-prod, **empties and destroys** the S3 bucket it owned. This happens in the same Phase 2
+deploy that detaches `easy-genomics-nested-stack`; the runbook's DynamoDB retain steps do **not** protect S3.
+
+**DynamoDB keeps old S3 URLs.** Imported tables retain historical `S3Bucket` values on laboratory records and full
+`s3://…` URIs on laboratory-run records (`InputS3Url`, `OutputS3Url`, `SampleSheetS3Url`, etc.) from before migration.
+Phase 3.2 seeding overwrites the **default** laboratory row's `S3Bucket` with the new bucket name, but it does **not**
+rewrite per-run URLs. Without copying objects into the new bucket (or updating those records), older runs will point at
+a bucket that no longer exists.
+
+**Prod** lab buckets are not managed by this CDK app and are unaffected by this runbook.
+
+**Operator requirement (non-prod):** complete
+[Phase 1.5 — Lab S3 backup and inventory](#15-lab-s3-backup-and-inventory-mandatory-for-non-prod) before Phase 2, then
+[Phase 3.5 — Restore lab objects into the new bucket](#35-restore-lab-objects-into-the-new-bucket-non-prod) after Phase
+3.2. See [Appendix D](#appendix-d--lab-s3-migration-reference) for discovery commands and troubleshooting.
 
 ### What does NOT move (preserved automatically)
 
@@ -155,6 +182,8 @@ export ENV_TYPE=dev                # dev | demo | pre-prod | prod
 export NAME_PREFIX="${ENV_TYPE}-${ENV_NAME}"
 export OLD_STACK="${NAME_PREFIX}-main-back-end-stack"
 export NEW_STACK="${NAME_PREFIX}-easy-genomics-api-stack"
+export AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+export INTENDED_LAB_BUCKET="${AWS_ACCOUNT_ID}-${NAME_PREFIX}-lab-bucket"
 
 export EG_TABLES=(
   "${NAME_PREFIX}-organization-table"
@@ -463,16 +492,99 @@ for t in "${EG_TABLES[@]}"; do
 done
 ```
 
-### 1.5 (Optional) Back up the non-prod data-provisioning lab bucket
+### 1.5 Lab S3 backup and inventory (mandatory for non-prod)
 
-Only applies if the environment has a `${account}-${NAME_PREFIX}-lab-bucket` and you care about its contents:
+Skip this section only for `ENV_TYPE=prod`. For every other environment, treat lab S3 migration as **required**, not
+optional — Phase 2 will destroy the old bucket even if you skip backup.
+
+#### 1.5.1 Discover the **physical** bucket name (do not assume `INTENDED_LAB_BUCKET`)
+
+The name written into seed data (`${AWS_ACCOUNT_ID}-${NAME_PREFIX}-lab-bucket`) is the **intended** stable name, but
+many environments still have a **CloudFormation-generated** physical bucket from an earlier deploy (for example
+`pre-prod-quality-main-bac-preprodqualitydataprovis-qnef7o7lyeju`). Always resolve the bucket from CloudFormation or
+from live laboratory / run records — never sync from `INTENDED_LAB_BUCKET` unless you have confirmed it exists and holds
+your data.
 
 ```bash
-aws s3 sync "s3://${AWS_ACCOUNT_ID}-${NAME_PREFIX}-lab-bucket" \
-           "./backups/${NAME_PREFIX}-lab-bucket-${TS}"
+# Nested stack logical ID on OLD_STACK (pre-split layout)
+DATA_PROV_NESTED=$(aws cloudformation describe-stack-resources \
+  --region "$AWS_REGION" \
+  --stack-name "$OLD_STACK" \
+  --query "StackResources[?LogicalResourceId=='data-provisioning-nested-stack'].PhysicalResourceId" \
+  --output text)
+
+# S3 bucket inside that nested stack
+OLD_LAB_BUCKET=$(aws cloudformation list-stack-resources \
+  --region "$AWS_REGION" \
+  --stack-name "$DATA_PROV_NESTED" \
+  --query "StackResourceSummaries[?ResourceType=='AWS::S3::Bucket'].PhysicalResourceId" \
+  --output text)
+
+echo "OLD_LAB_BUCKET=${OLD_LAB_BUCKET}"
+aws s3 ls "s3://${OLD_LAB_BUCKET}/" --summarize --human-readable
 ```
 
-Restore is symmetrical after Phase 3 once the new bucket exists.
+If `OLD_LAB_BUCKET` is empty, the environment may never have provisioned data-provisioning S3 (fresh env) — confirm with
+your team before proceeding.
+
+Cross-check against DynamoDB (optional but recommended — surfaces buckets referenced by historical runs):
+
+```bash
+aws dynamodb scan \
+  --region "$AWS_REGION" \
+  --table-name "${NAME_PREFIX}-laboratory-table" \
+  --projection-expression "LaboratoryId, S3Bucket" \
+  --output table
+
+# Sample distinct buckets from run records (adjust limit as needed)
+aws dynamodb scan \
+  --region "$AWS_REGION" \
+  --table-name "${NAME_PREFIX}-laboratory-run-table" \
+  --projection-expression "SampleSheetS3Url, InputS3Url, OutputS3Url" \
+  --max-items 20 \
+  --output json \
+  | jq -r '[.[].SampleSheetS3Url, .[].InputS3Url, .[].OutputS3Url][]? | select(startswith("s3://")) | split("/")[2]] | unique | .[]'
+```
+
+Record `OLD_LAB_BUCKET` and any additional bucket names from run URLs in the change ticket. If more than one bucket
+appears, back up **each** bucket that still holds data you need (unusual, but possible after manual lab configuration).
+
+#### 1.5.2 Back up objects locally (or to a durable staging bucket)
+
+```bash
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+export OLD_LAB_BUCKET   # from step 1.5.1
+
+aws s3 sync "s3://${OLD_LAB_BUCKET}/" \
+  "./backups/${NAME_PREFIX}-lab-bucket-${TS}/" \
+  --only-show-errors
+
+# Verify the backup is non-empty when the source had objects
+find "./backups/${NAME_PREFIX}-lab-bucket-${TS}" -type f | wc -l
+du -sh "./backups/${NAME_PREFIX}-lab-bucket-${TS}"
+```
+
+For large environments, sync to a **separate** S3 bucket in the same account (or cross-account) instead of local disk:
+
+```bash
+STAGING_BUCKET="your-org-migration-staging-${AWS_ACCOUNT_ID}"
+aws s3 sync "s3://${OLD_LAB_BUCKET}/" "s3://${STAGING_BUCKET}/${NAME_PREFIX}/${TS}/"
+```
+
+Do **not** delete the backup until Phase 3.5 restore is verified and Phase 4 S3 smoke tests pass.
+
+#### 1.5.3 (Optional) Retain the old bucket without copying yet
+
+If you need a safety net beyond a sync backup, you can detach the bucket from CloudFormation **before** Phase 2 so Phase
+2 does not delete it. This is advanced and only needed when backup size or restore time is a concern:
+
+1. In the AWS console (or CLI), note the bucket policy and encryption settings on `OLD_LAB_BUCKET`.
+2. Remove the `AWS::S3::Bucket` resource from stack management via **Stack actions → Delete resources from stack** on
+   `DATA_PROV_NESTED`, selecting only the bucket, **or** use the resource-retain workflow your org standardizes on.
+3. After Phase 2, the bucket remains as an orphaned bucket; copy objects to the new bucket in Phase 3.5, then delete the
+   orphan manually once no records reference it.
+
+Most teams should rely on **1.5.2 + 3.5** instead of retention; document whichever path you choose in the change ticket.
 
 ### 1.6 Switch back to the merged branch for the remaining phases
 
@@ -493,6 +605,10 @@ Phases 2–5 all run from `development` (the merged split code).
 
 Goal: remove the easy-genomics nested stack (and everything inside it) from `OLD_STACK` with `Retain` semantics so the
 physical tables survive as **orphaned AWS resources** — no longer tracked by CloudFormation but fully intact.
+
+**S3 warning:** this deploy also removes `data-provisioning-nested-stack` from `OLD_STACK`. In non-prod, that **deletes
+the old lab upload bucket** (`OLD_LAB_BUCKET` from Phase 1.5). There is no rollback for bucket contents after deletion
+unless you completed Phase 1.5. Do not start Phase 2 until lab S3 backup is verified.
 
 ### 2.1 Announce maintenance window
 
@@ -522,9 +638,18 @@ Watch the CloudFormation events. You should see:
 
 - `UPDATE_IN_PROGRESS` on `OLD_STACK`.
 - `DELETE_IN_PROGRESS` / `DELETE_COMPLETE` on the `easy-genomics-nested-stack` and its child resources.
+- `DELETE_IN_PROGRESS` / `DELETE_COMPLETE` on `data-provisioning-nested-stack` and its child resources (including the
+  lab S3 bucket in non-prod). **Expected** for the split; irreversible for bucket contents unless Phase 1.5 was
+  completed.
 - For each table, `DELETE_SKIPPED (DeletionPolicy: Retain)` — this is the desired signal, and it only happens because
   Phase 1 put `DeletionPolicy: Retain` into the deployed template.
 - Eventually `UPDATE_COMPLETE` on `OLD_STACK`.
+
+After `UPDATE_COMPLETE`, confirm the old lab bucket is gone (non-prod):
+
+```bash
+aws s3 ls "s3://${OLD_LAB_BUCKET}/" 2>&1 || echo "OLD_LAB_BUCKET no longer exists (expected after Phase 2)"
+```
 
 If any table shows `DELETE_IN_PROGRESS` instead of `DELETE_SKIPPED`, **halt immediately**: Phase 1 did not actually land
 the retain metadata. Deletion protection (Phase 0) will still reject the delete call and CloudFormation will roll back,
@@ -705,6 +830,56 @@ aws cloudformation describe-stacks --region "$AWS_REGION" --stack-name "$NEW_STA
 Record this value — you will feed it to the front-end in Phase 4 as `AWS_EASY_GENOMICS_API_URL` (or wire it behind the
 `ApiDomainStack` custom domain if enabled for the environment).
 
+### 3.5 Restore lab objects into the new bucket (non-prod)
+
+After Phase 3.2, resolve the **new** physical bucket from `NEW_STACK` (do not assume it matches `INTENDED_LAB_BUCKET`
+until verified):
+
+```bash
+NEW_DATA_PROV_NESTED=$(aws cloudformation describe-stack-resources \
+  --region "$AWS_REGION" \
+  --stack-name "$NEW_STACK" \
+  --query "StackResources[?LogicalResourceId=='data-provisioning-nested-stack'].PhysicalResourceId" \
+  --output text)
+
+NEW_LAB_BUCKET=$(aws cloudformation list-stack-resources \
+  --region "$AWS_REGION" \
+  --stack-name "$NEW_DATA_PROV_NESTED" \
+  --query "StackResourceSummaries[?ResourceType=='AWS::S3::Bucket'].PhysicalResourceId" \
+  --output text)
+
+echo "NEW_LAB_BUCKET=${NEW_LAB_BUCKET}"
+echo "INTENDED_LAB_BUCKET=${INTENDED_LAB_BUCKET}"
+```
+
+Restore from the Phase 1.5 backup (adjust paths if you used a staging bucket):
+
+```bash
+TS=<timestamp-from-phase-1.5>
+aws s3 sync "./backups/${NAME_PREFIX}-lab-bucket-${TS}/" "s3://${NEW_LAB_BUCKET}/" --only-show-errors
+```
+
+Verify object counts and spot-check a few keys that older runs reference (sample sheets, uploads):
+
+```bash
+aws s3 ls "s3://${NEW_LAB_BUCKET}/" --recursive --summarize --human-readable | tail -5
+```
+
+**Historical run URLs:** copying objects preserves keys under the same prefix layout (`<org-id>/<lab-id>/…`), so
+`s3://${OLD_LAB_BUCKET}/…` paths often work after restore **only if** you either:
+
+1. **Copy into `NEW_LAB_BUCKET` and update DynamoDB** — change `S3Bucket` on affected laboratories and replace the
+   bucket host in each stored `s3://` URI on `laboratory-run-table` rows (recommended when `NEW_LAB_BUCKET` ≠
+   `OLD_LAB_BUCKET`), or
+2. **Retained `OLD_LAB_BUCKET` as an orphan** (Phase 1.5.3) — leave run URLs unchanged until you migrate records.
+
+The application's File Manager and download APIs authorize against the bucket embedded in each run record; after
+restore, open an **older** lab run in the UI and confirm listed files download successfully.
+
+If `NEW_LAB_BUCKET` differs from `INTENDED_LAB_BUCKET`, that is expected when CDK assigns an auto-generated physical
+name. The seeded laboratory row may still show `INTENDED_LAB_BUCKET` in DynamoDB — confirm the live bucket via
+CloudFormation (above) and align `Laboratory.S3Bucket` if uploads fail.
+
 ---
 
 ## Phase 4 — Smoke-test and re-enable traffic
@@ -720,6 +895,18 @@ curl -H "Authorization: Bearer $COGNITO_TOKEN" \
 
 Expected: the list returned reflects existing data (organizations, labs, users, lab runs) — **not** an empty result. If
 it returns empty, the import didn't actually adopt the tables; go to the rollback procedure.
+
+### 4.1.1 Lab S3 smoke tests (non-prod)
+
+After Phase 3.5:
+
+1. Pick a **pre-migration** laboratory run that stored files under `OLD_LAB_BUCKET` (from your change ticket).
+2. In the UI, open that run's File Manager (or call the list-objects API with the run's `RunId`) and confirm objects
+   list and download without `NoSuchBucket` errors.
+3. Upload a small test file to the lab and confirm it lands under `NEW_LAB_BUCKET` (prefix layout unchanged).
+
+If (2) fails but the Phase 1.5 backup is intact, the objects were likely not synced or run records still reference the
+deleted bucket name — re-run Phase 3.5 and/or update `laboratory-run-table` URIs as described in Phase 3.5.
 
 ### 4.2 Front-end rollout
 
@@ -746,9 +933,13 @@ Traffic can resume. Monitor CloudWatch for 5xx on either API for ~30 min.
 
 1. Delete the on-demand backups from Phase 0.4 / Phase 1.4 only after a retention window you're comfortable with
    (recommend ≥ 7 days in non-prod, ≥ 30 days in prod).
-2. Keep PITR and deletion protection enabled permanently — they're now enforced by code in the new stack.
-3. Update any env-specific runbooks / SSM parameters / secret stores with the new API URL.
-4. Verify the next CI auto-deploy against this environment goes **green**. Once the migration is complete,
+2. Delete the **lab S3 sync backup** from Phase 1.5 only after Phase 4.1.1 passes and you no longer need to re-sync
+   (same retention window as DynamoDB backups is reasonable).
+3. If you retained an orphaned `OLD_LAB_BUCKET` (Phase 1.5.3), delete it only after all `laboratory-run-table` URIs and
+   laboratory `S3Bucket` fields no longer reference it.
+4. Keep PITR and deletion protection enabled permanently — they're now enforced by code in the new stack.
+5. Update any env-specific runbooks / SSM parameters / secret stores with the new API URL.
+6. Verify the next CI auto-deploy against this environment goes **green**. Once the migration is complete,
    `cdk deploy --all` is once again a safe no-op for both stacks on this environment.
 
 ---
@@ -778,6 +969,12 @@ If Phase 2 fails (old stack update rolls back):
 
 - `DeletionPolicy: Retain` (Phase 1) + deletion protection (Phase 0) means the tables are untouched.
 - Investigate the failure, fix, and re-run Phase 2.
+
+If Phase 2 **succeeds** but lab files are missing afterward (non-prod):
+
+- The old lab bucket was likely deleted during the `data-provisioning-nested-stack` removal. Restore from the Phase 1.5
+  backup via Phase 3.5. If run records still reference `OLD_LAB_BUCKET` in `s3://` URIs, copy objects to
+  `NEW_LAB_BUCKET` and update those URIs (see Phase 3.5 and Appendix D). PITR on DynamoDB does not restore S3 objects.
 
 If Phase 3.1 (`cdk import`) fails before completion:
 
@@ -898,3 +1095,39 @@ pnpm cdk destroy "${NEW_STACK}" "${OLD_STACK}"
 ```
 
 Only run the above against environments you are certain you no longer need.
+
+---
+
+## Appendix D — Lab S3 migration reference
+
+### Why the old bucket name often does not match `INTENDED_LAB_BUCKET`
+
+`DataProvisioningNestedStack` seeds DynamoDB with `S3Bucket: ${account}-${namePrefix}-lab-bucket`, but the CDK
+`S3Construct` may provision a **different physical bucket** depending on code version and construct arguments. Always
+discover the live bucket from CloudFormation (Phase 1.5.1) before backup.
+
+### What gets deleted, and when
+
+| Event                                                | Lab bucket in non-prod                                   |
+| ---------------------------------------------------- | -------------------------------------------------------- |
+| Phase 2 `cdk deploy` of `OLD_STACK` (split template) | Old bucket deleted with `data-provisioning-nested-stack` |
+| Phase 3.2 `cdk deploy` of `NEW_STACK`                | New bucket created (empty until Phase 3.5 sync)          |
+| DynamoDB `cdk import`                                | No effect on S3                                          |
+| Preflight-blocked CI deploy                          | No effect on S3                                          |
+
+### Minimum checklist (non-prod)
+
+- [ ] Phase 1.5.1: `OLD_LAB_BUCKET` recorded from CloudFormation (and cross-checked against run URIs if needed)
+- [ ] Phase 1.5.2: `aws s3 sync` backup verified non-empty (when source had data)
+- [ ] Phase 2: CloudFormation shows `data-provisioning-nested-stack` deleted; old bucket gone
+- [ ] Phase 3.5: objects synced to `NEW_LAB_BUCKET`; spot-check keys for a pre-migration run
+- [ ] Phase 4.1.1: File Manager / download works for at least one pre-migration run
+- [ ] (If needed) `laboratory-run-table` / `laboratory-table` URIs updated to `NEW_LAB_BUCKET`
+
+### Symptom: pre-migration runs show missing files after migration
+
+1. Confirm `OLD_LAB_BUCKET` no longer exists (`aws s3 ls`).
+2. Confirm whether Phase 1.5 backup exists and Phase 3.5 was run against `NEW_LAB_BUCKET`.
+3. Inspect a failing run's `SampleSheetS3Url` / `InputS3Url` — if the host is still `OLD_LAB_BUCKET`, either restore
+   into that name (only possible if you retained the orphan bucket) or copy objects to `NEW_LAB_BUCKET` **and** update
+   the stored URI to use the new host (same object key suffix).
