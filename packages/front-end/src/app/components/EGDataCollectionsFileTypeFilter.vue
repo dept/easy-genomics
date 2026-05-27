@@ -49,6 +49,7 @@
       color="gray"
       trailing-icon="i-heroicons-chevron-down"
       :class="{ 'ring-primary/30 ring-1': isFilterActive }"
+      :aria-label="`File type filter: ${triggerLabel}`"
       :aria-expanded="filterOpen"
       aria-haspopup="listbox"
     >
