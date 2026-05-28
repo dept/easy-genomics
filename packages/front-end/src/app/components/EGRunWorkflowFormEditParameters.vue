@@ -232,6 +232,7 @@
   // Auto-populate when component mounts, then enable param change detection
   onMounted(() => {
     autoPopulateRunName();
+    runStore.updateWipOmicsRunParams(props.omicsRunTempId, localProps.params);
     nextTick(() => {
       paramsReady = true;
     });
@@ -245,9 +246,6 @@
       }
     },
   );
-
-  // save the updated parameters to the store too
-  runStore.updateWipOmicsRunParams(props.omicsRunTempId, localProps.params);
 
   function getPersistableDefaultParams(params: Record<string, unknown>): Record<string, unknown> {
     const ignoredFields = new Set(['input', 'output', 'outdir']);
@@ -351,11 +349,10 @@
   watch(
     () => localProps.params,
     (val) => {
-      if (val) runStore.updateWipOmicsRunParams(props.omicsRunTempId, val);
+      if (!paramsReady || !val) return;
 
-      if (paramsReady) {
-        shouldSaveAsDefaults.value = false;
-      }
+      runStore.updateWipOmicsRunParams(props.omicsRunTempId, val);
+      shouldSaveAsDefaults.value = false;
 
       // Re-validate fields that already have errors so they clear when fixed
       for (const fieldName of Object.keys(fieldErrors)) {

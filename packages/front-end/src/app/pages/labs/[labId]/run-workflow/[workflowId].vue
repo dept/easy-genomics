@@ -56,6 +56,9 @@
 
   const wipOmicsRun = computed<WipRun | null>(() => runStore.wipOmicsRuns[omicsRunTempId.value] || null);
 
+  /** Only mount the active wizard step so parameter defaults are not written before upload completes. */
+  const activeStepKey = computed(() => steps.value[selectedStepIndex.value]?.key);
+
   const workflow = computed<ReadWorkflow | null>(() => omicsWorkflowsStore.workflows[workflowId] || null);
 
   const schema = computed<Record<string, WorkflowParameter> | null>(() => workflow.value?.parameterTemplate ?? null);
@@ -181,8 +184,10 @@
 
     const existingWip = runStore.wipOmicsRuns[omicsRunTempId.value];
     const paramsToApply = { ...workflowDefaultParams };
-    if (existingWip?.sampleSheetS3Url && existingWip?.params?.input) {
+    if (existingWip?.params?.input) {
       paramsToApply.input = existingWip.params.input;
+    }
+    if (existingWip?.params?.outdir) {
       paramsToApply.outdir = existingWip.params.outdir;
     }
     runStore.updateWipOmicsRunParams(omicsRunTempId.value, paramsToApply);
@@ -314,7 +319,7 @@
       <template #panel="{ item }">
         <div v-if="!hasLaunched">
           <EGRunFormRunDetails
-            v-if="item.key === 'details'"
+            v-if="item.key === 'details' && activeStepKey === 'details'"
             platform="AWS HealthOmics"
             :wip-run-temp-id="omicsRunTempId"
             :pipeline-or-workflow-name="workflow?.name"
@@ -325,7 +330,7 @@
           />
 
           <EGRunFormUploadData
-            v-else-if="item.key === 'upload'"
+            v-else-if="item.key === 'upload' && activeStepKey === 'upload'"
             :lab-id="labId"
             :pipeline-or-workflow-name="workflow.name"
             platform="AWS HealthOmics"
@@ -336,8 +341,9 @@
           />
 
           <EGRunWorkflowFormEditParameters
-            v-else-if="item.key === 'parameters'"
-            :params="wipOmicsRun?.params"
+            v-else-if="item.key === 'parameters' && activeStepKey === 'parameters'"
+            :key="`${omicsRunTempId}-${wipOmicsRun?.sampleSheetS3Url ?? ''}`"
+            :params="wipOmicsRun?.params ?? {}"
             :schema="schema"
             :lab-id="labId"
             :workflow-id="workflowId"
@@ -349,7 +355,7 @@
           />
 
           <EGRunWorkflowFormReview
-            v-else-if="item.key === 'review'"
+            v-else-if="item.key === 'review' && activeStepKey === 'review'"
             :schema="schema"
             :params="wipOmicsRun?.params"
             :lab-id="labId"
