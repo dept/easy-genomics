@@ -410,6 +410,8 @@ backEndApp.addScripts({
   ['invoke-process-handler']: 'tsx src/local-server/invoke-process-handler.ts',
   ['backfill-omics-run-tags']: 'tsx scripts/backfill-omics-run-tags.ts',
   ['backfill-omics-run-tags:dry-run']: 'tsx scripts/backfill-omics-run-tags.ts --dry-run',
+  ['migrate-lab-s3-bucket-refs']: 'tsx scripts/migrate-lab-s3-bucket-refs.ts',
+  ['migrate-lab-s3-bucket-refs:dry-run']: 'tsx scripts/migrate-lab-s3-bucket-refs.ts --dry-run',
 });
 
 if (backEndApp.eslint) {
