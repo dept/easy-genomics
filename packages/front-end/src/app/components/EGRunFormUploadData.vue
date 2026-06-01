@@ -17,6 +17,14 @@
     extractS3KeysFromCsv,
     validateSampleSheetFile,
   } from '@FE/utils/sample-sheet-utils';
+  import {
+    getSampleIdFromRFileName as getSampleIdFromKeyFileName,
+    buildUploadedFilePairsFromKeys,
+  } from '@FE/utils/data-collections-to-sample-sheet';
+  import { useLaboratoryDataCollections } from '@FE/composables/useLaboratoryDataCollections';
+  import { mergeInputFileKeys } from '@FE/utils/run-input-file-keys';
+  import { regenerateSampleSheetFromKeys, type RunInputSource } from '@FE/utils/run-upload-sample-sheet';
+  import type { RunSelectedRow } from '@FE/components/EGRunSelectedDataTable.vue';
   import { useToastStore } from '@FE/stores';
   import { useNetwork } from '@vueuse/core';
   import { RunType } from '@easy-genomics/shared-lib/src/app/types/base-entity';
@@ -37,6 +45,7 @@
     progress?: number;
     location?: string;
     url?: string;
+    s3Key?: string;
     error?: string;
   };
 
@@ -76,6 +85,17 @@
   const sampleSheetValidationError = ref<string | null>(null);
   const sampleIdSplitPattern = ref(userStore.currentUserDetails.sampleIdSplitPattern ?? '');
   const showAdvancedOptions = ref(!!sampleIdSplitPattern.value);
+
+  const openSourcePanel = ref<'upload' | 'library'>('upload');
+  const runInputSources = ref<Record<string, RunInputSource>>({});
+
+  const labIdRef = toRef(() => props.labId);
+  const {
+    tags: laboratoryTags,
+    keyToTagIds,
+    standardTagIdsForFileKey,
+    addTagsToFilesInChunks,
+  } = useLaboratoryDataCollections(labIdRef, { pickerMode: true });
 
   // Track ongoing upload requests
   const uploadControllers = ref<{ [key: string]: AbortController }>({});
@@ -117,16 +137,22 @@
 
   const hasSampleSheetUrl = computed<boolean>(() => !!wipRun.value.sampleSheetS3Url);
 
-  /** Files were selected on Data Collections; sample sheet was generated without browser upload. */
-  const isFromDataCollections = computed<boolean>(() => {
-    const hasPreSeededSheet = !!wipRun.value.sampleSheetS3Url;
-    const hasInputKeys = (wipRun.value.inputFileKeys?.length ?? 0) > 0;
-    const noUploadedFiles = !wipRun.value.files?.length;
-    return hasPreSeededSheet && hasInputKeys && noUploadedFiles;
-  });
+  function initRunInputSourcesFromWipRun(): void {
+    for (const key of wipRun.value.inputFileKeys ?? []) {
+      if (!runInputSources.value[key]) {
+        runInputSources.value[key] = 'library';
+      }
+    }
+  }
 
-  const dataCollectionsFileBasenames = computed<string[]>(() =>
-    (wipRun.value.inputFileKeys ?? []).map((key) => key.split('/').pop() || key).sort((a, b) => a.localeCompare(b)),
+  initRunInputSourcesFromWipRun();
+
+  watch(
+    () => wipRun.value.inputFileKeys,
+    () => {
+      initRunInputSourcesFromWipRun();
+    },
+    { deep: true },
   );
 
   const haveUnmatchedFiles = computed<boolean>(() =>
@@ -142,11 +168,22 @@
     return filePairs.value.every((pair) => pair.r1File);
   });
 
+  const combinedInputKeys = computed(() => wipRun.value.inputFileKeys ?? []);
+
+  const pairingValidation = computed(() => {
+    const keys = combinedInputKeys.value;
+    if (!keys.length) return { ok: false as const, message: 'No files selected.' };
+    const bucket = labsStore.labs[props.labId]?.S3Bucket;
+    if (!bucket) return { ok: false as const, message: 'Laboratory bucket is not configured.' };
+    return buildUploadedFilePairsFromKeys(keys, bucket, undefined, sampleIdSplitPattern.value || null);
+  });
+
   const canProceedToNextStep = computed<boolean>(() => {
-    // Check both conditions:
-    // 1. All existing files are uploaded successfully
-    // 2. All pairs are complete (have both R1 and R2)
-    return areAllFilesUploaded.value && areAllPairsComplete.value && hasSampleSheetUrl.value;
+    const hasInputs = combinedInputKeys.value.length > 0 || files.value.length > 0;
+    if (!hasInputs) return false;
+    return (
+      areAllFilesUploaded.value && areAllPairsComplete.value && hasSampleSheetUrl.value && pairingValidation.value.ok
+    );
   });
 
   // overall upload status for all files
@@ -169,30 +206,177 @@
       !wipRun.value.sampleSheetS3Url, // no sample sheet yet
   );
 
-  const filesForTable = computed(() => {
-    const files: { sampleId: string; fileName: string; progress: number; error?: string }[] = [];
+  const selectedRows = computed<RunSelectedRow[]>(() => {
+    const rows: RunSelectedRow[] = [];
+    const keysOnRun = new Set(combinedInputKeys.value);
 
-    filePairs.value.forEach((filePair: FilePair) => {
-      if (filePair.r1File) {
-        files.push({
+    for (const filePair of filePairs.value) {
+      for (const fd of [filePair.r1File, filePair.r2File]) {
+        if (!fd) continue;
+        const s3Key = fd.s3Key ?? `pending:${fd.name}`;
+        const onRun = fd.s3Key ? keysOnRun.has(fd.s3Key) : true;
+        if (!onRun && fd.progress === 100) continue;
+
+        rows.push({
+          s3Key,
           sampleId: filePair.sampleId,
-          fileName: filePair.r1File.name,
-          progress: filePair.r1File.progress || 0,
-          error: filePair.r1File.error,
+          fileName: fd.name,
+          source: fd.s3Key ? (runInputSources.value[fd.s3Key] ?? 'upload') : 'upload',
+          tagIds: fd.s3Key ? (keyToTagIds.value[fd.s3Key] ?? []) : [],
+          progress: fd.progress,
+          error: fd.error,
+          uploadInProgress: fd.progress !== undefined && fd.progress < 100,
         });
       }
-      if (filePair.r2File) {
-        files.push({
-          sampleId: filePair.sampleId,
-          fileName: filePair.r2File.name,
-          progress: filePair.r2File.progress || 0,
-          error: filePair.r2File.error,
-        });
-      }
-    });
+    }
 
-    return files;
+    for (const key of combinedInputKeys.value) {
+      if (rows.some((r) => r.s3Key === key)) continue;
+      const fileName = key.split('/').pop() || key;
+      rows.push({
+        s3Key: key,
+        sampleId:
+          getSampleIdFromKeyFileName(fileName, sampleIdSplitPattern.value || null) || getFileNameWithoutExt(fileName),
+        fileName,
+        source: runInputSources.value[key] ?? 'library',
+        tagIds: standardTagIdsForFileKey(key),
+      });
+    }
+
+    return rows.sort((a, b) => a.fileName.localeCompare(b.fileName));
   });
+
+  function toggleSourcePanel(panel: 'upload' | 'library'): void {
+    openSourcePanel.value = panel;
+  }
+
+  function isSourcePanelOpen(panel: 'upload' | 'library'): boolean {
+    return openSourcePanel.value === panel;
+  }
+
+  async function applySampleSheetResult(keys: string[]): Promise<boolean> {
+    const bucket = labsStore.labs[props.labId]?.S3Bucket;
+    if (!bucket || !wipRun.value.transactionId) {
+      toastStore.error('Run is not initialised or laboratory bucket is missing.');
+      return false;
+    }
+
+    if (!keys.length) {
+      wipRunUpdateFunction.value(props.wipRunTempId, {
+        inputFileKeys: [],
+      });
+      removeStoredSampleSheetInfo();
+      return true;
+    }
+
+    uiStore.setRequestPending('generateSampleSheet');
+    try {
+      const result = await regenerateSampleSheetFromKeys({
+        labId: props.labId,
+        transactionId: wipRun.value.transactionId,
+        platform: props.platform,
+        runName: wipRun.value.runName || 'run',
+        s3Bucket: bucket,
+        keys,
+        sampleIdSplitPattern: sampleIdSplitPattern.value || null,
+        getSampleSheetCsv: (pairs) => getSampleSheetCsv(pairs),
+      });
+
+      if (!result.ok) {
+        toastStore.error(result.pairing.message);
+        return false;
+      }
+
+      for (const key of result.inputFileKeys) {
+        if (
+          !runInputSources.value[key] &&
+          files.value.some((f) => f.s3Key === key || f.name === key.split('/').pop())
+        ) {
+          runInputSources.value[key] = 'upload';
+        }
+      }
+
+      const { S3Url, Bucket, Path } = result.sampleSheet.SampleSheetInfo;
+      wipRunUpdateFunction.value(props.wipRunTempId, {
+        sampleSheetS3Url: S3Url,
+        s3Bucket: Bucket,
+        s3Path: Path,
+        inputFileKeys: result.inputFileKeys,
+      });
+      wipRunUpdateParamsFunction.value(props.wipRunTempId, {
+        input: S3Url,
+        outdir: `s3://${Bucket}/${Path}/results`,
+      });
+      return true;
+    } finally {
+      uiStore.setRequestComplete('generateSampleSheet');
+    }
+  }
+
+  async function handleAddFromLibrary(newKeys: string[]): Promise<void> {
+    const merged = mergeInputFileKeys(combinedInputKeys.value, newKeys);
+    for (const key of newKeys) {
+      runInputSources.value[key] = 'library';
+    }
+    const ok = await applySampleSheetResult(merged);
+    if (ok) {
+      toastStore.success(`Added ${newKeys.length} file(s) to run`);
+    }
+  }
+
+  async function clearAllRunData(): Promise<void> {
+    setFiles([]);
+    runInputSources.value = {};
+    wipRunUpdateFunction.value(props.wipRunTempId, { inputFileKeys: [] });
+    removeStoredSampleSheetInfo();
+  }
+
+  async function removeSelectedRow(row: RunSelectedRow): Promise<void> {
+    if (row.s3Key.startsWith('pending:')) {
+      const fileName = row.s3Key.slice('pending:'.length);
+      removeFile({ sampleId: row.sampleId, fileName });
+      return;
+    }
+
+    const key = row.s3Key;
+    delete runInputSources.value[key];
+
+    if (row.source === 'upload') {
+      const baseName = row.fileName;
+      const filePair = filePairs.value.find(
+        (p) =>
+          p.r1File?.name === baseName ||
+          p.r2File?.name === baseName ||
+          p.r1File?.s3Key === key ||
+          p.r2File?.s3Key === key,
+      );
+      if (filePair) {
+        if (filePair.r1File?.s3Key === key || filePair.r1File?.name === baseName) filePair.r1File = undefined;
+        if (filePair.r2File?.s3Key === key || filePair.r2File?.name === baseName) filePair.r2File = undefined;
+        if (!filePair.r1File && !filePair.r2File) {
+          setFiles(filePairs.value.filter((p) => p.sampleId !== filePair.sampleId));
+        } else {
+          setFiles([...filePairs.value]);
+        }
+      }
+    }
+
+    const remaining = combinedInputKeys.value.filter((k) => k !== key);
+    if (remaining.length) {
+      await applySampleSheetResult(remaining);
+    } else {
+      await clearAllRunData();
+    }
+  }
+
+  async function onUpdateRowTags(payload: {
+    s3Key: string;
+    addTagIds: string[];
+    removeTagIds: string[];
+  }): Promise<void> {
+    if (payload.s3Key.startsWith('pending:')) return;
+    await addTagsToFilesInChunks([payload.s3Key], payload.addTagIds, payload.removeTagIds);
+  }
 
   const isDropzoneEnabled = computed(() => uploadStatus.value !== 'uploading');
 
@@ -539,38 +723,28 @@
   }
 
   async function saveSampleSheetInfo() {
-    uiStore.setRequestPending('generateSampleSheet');
+    const uploadManifest = await getUploadFilesManifest(files.value);
+    const uploadedFilePairs: UploadedFilePairInfo[] = getUploadedFilePairs(uploadManifest);
 
-    try {
-      // get manifest of all files
-      const uploadManifest = await getUploadFilesManifest(files.value);
-
-      const uploadedFilePairs: UploadedFilePairInfo[] = getUploadedFilePairs(uploadManifest);
-      // get sample sheet info
-      const sampleSheetResponse: SampleSheetResponse = await getSampleSheetCsv(uploadedFilePairs);
-
-      // save to wip run
-      const { S3Url, Bucket, Path } = sampleSheetResponse.SampleSheetInfo;
-
-      // Track every uploaded input file key so we can record file -> workflow associations
-      // when this run is launched. R1/R2 may be undefined for single-end pairs.
-      const inputFileKeys: string[] = uploadedFilePairs
-        .flatMap((pair) => [pair.R1?.Key, pair.R2?.Key])
-        .filter((k): k is string => typeof k === 'string' && k.length > 0);
-
-      wipRunUpdateFunction.value(props.wipRunTempId, {
-        sampleSheetS3Url: S3Url,
-        s3Bucket: Bucket,
-        s3Path: Path,
-        inputFileKeys,
-      });
-      wipRunUpdateParamsFunction.value(props.wipRunTempId, {
-        input: S3Url,
-        outdir: `s3://${Bucket}/${Path}/results`,
-      });
-    } finally {
-      uiStore.setRequestComplete('generateSampleSheet');
+    for (const pair of uploadedFilePairs) {
+      for (const info of [pair.R1, pair.R2]) {
+        if (!info?.Key) continue;
+        const baseName = info.Key.split('/').pop();
+        const fd = files.value.find((f) => f.name === baseName);
+        if (fd) {
+          fd.s3Key = info.Key;
+          runInputSources.value[info.Key] = 'upload';
+        }
+      }
     }
+
+    const uploadKeys = uploadedFilePairs
+      .flatMap((pair) => [pair.R1?.Key, pair.R2?.Key])
+      .filter((k): k is string => typeof k === 'string' && k.length > 0);
+
+    const libraryKeys = combinedInputKeys.value.filter((k) => runInputSources.value[k] === 'library');
+    const merged = mergeInputFileKeys(libraryKeys, uploadKeys);
+    await applySampleSheetResult(merged);
   }
 
   function getUploadedFilePairs(uploadManifest: FileUploadManifest): UploadedFilePairInfo[] {
@@ -968,279 +1142,216 @@
 <template>
   <EGCard>
     <p class="text-muted mb-1 text-sm">Step 2 of 4</p>
-    <h2 class="text-heading mb-4 text-lg font-medium">Upload Data</h2>
+    <h2 class="text-heading mb-1 text-lg font-medium">Add Data</h2>
+    <p class="text-muted mb-6 text-sm">Select data sources to add to this run</p>
 
-    <template v-if="isFromDataCollections">
-      <p class="text-muted mb-4 text-sm">
-        {{ dataCollectionsFileBasenames.length }} file(s) from Data Collections are included in this run. A sample sheet
-        has already been generated.
-      </p>
-      <div class="mb-4 max-h-48 overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
-        <ul class="space-y-1 text-sm">
-          <li v-for="name in dataCollectionsFileBasenames" :key="name" class="truncate font-mono text-xs">
-            {{ name }}
-          </li>
-        </ul>
-      </div>
-      <UDivider class="py-4" />
-    </template>
-
-    <template v-else>
-      <p class="text-muted mt-1 text-xs font-normal tracking-tight">
-        Any similar files with the suffix _R1 or _R2 will be combined as paired-end data samples. Max file size is 5GB.
-        <button
-          type="button"
-          class="text-primary focus-visible:outline-primary-500 ml-1 underline hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-          :aria-expanded="showAdvancedOptions"
-          aria-controls="upload-advanced-options"
-          @click="showAdvancedOptions = !showAdvancedOptions"
-        >
-          {{ showAdvancedOptions ? 'Collapse advanced options' : 'View advanced options' }}
-        </button>
-      </p>
-
-      <div v-if="showAdvancedOptions" id="upload-advanced-options" class="mt-4">
-        <UDivider />
-        <label for="sample-id-split-pattern" class="text-body mb-1 mt-4 block text-sm font-medium">
-          Sample ID split pattern
-        </label>
-        <UInput id="sample-id-split-pattern" v-model="sampleIdSplitPattern" class="w-64" />
-        <p class="text-muted mb-4 mt-1 text-xs">
-          Enter the character or pattern that appears after the Sample ID in your file names (e.g. _S, _L001, etc.).
+    <div class="border-border-muted overflow-hidden rounded-xl border">
+      <div class="border-border-muted border-b px-7 py-5">
+        <h3 class="text-heading text-base font-semibold">Select or Upload Data</h3>
+        <p class="text-muted mt-1 text-xs">
+          Upload new files, or select from previously uploaded samples. You can use both.
         </p>
       </div>
 
-      <UDivider class="py-4" />
-      <div
-        class="py-4"
-        @drop.prevent="handleDroppedFiles"
-        :class="{ 'pointer-events-none opacity-50': !isDropzoneEnabled }"
-      >
-        <label id="dropzone-label" class="sr-only">Upload sequencing files (.fastq, .gz)</label>
-        <div
-          id="dropzone"
-          role="region"
-          aria-labelledby="dropzone-label"
-          @dragenter.prevent="setDropzoneActive(true)"
-          @dragleave.prevent="setDropzoneActive(false)"
-          @dragover.prevent
-          @drop.prevent="setDropzoneActive(false)"
+      <!-- Upload panel header -->
+      <div class="border-border-muted border-b">
+        <button
+          type="button"
+          class="flex w-full items-center gap-4 px-7 py-4 text-left transition hover:bg-gray-50/80"
+          :aria-expanded="isSourcePanelOpen('upload')"
+          @click="toggleSourcePanel('upload')"
         >
-          <div
-            :class="
-              cn(
-                'ring-primary-500 text-body flex w-full items-center justify-center rounded-lg py-8 ring-2 ring-offset-1 transition-colors duration-200',
-                {
-                  'bg-alert-success-muted ring-alert-success font-semibold ring-offset-2': isDropzoneActive,
-                },
-              )
-            "
-          >
-            <div class="flex items-center justify-center">
-              <div>
-                <span :class="cn('visible', { 'invisible': isDropzoneActive })">Drag and&nbsp;</span>
-                <span v-if="isDropzoneActive">Drop</span>
-                <span v-else>drop</span>
-                your files
-                <span :class="cn('visible', { 'invisible': isDropzoneActive })">here or</span>
-              </div>
-              <input
-                accept=".gz,.fastq"
-                ref="chooseFilesButton"
-                type="file"
-                id="dropzoneFiles"
-                aria-labelledby="dropzone-label"
-                @change="handleFileInputChange"
-                hidden
-                multiple
-              />
-              <EGButton
-                :disabled="!isDropzoneEnabled"
-                :class="cn('visible ml-4', { 'invisible': isDropzoneActive })"
-                @click="chooseFiles"
-                label="Choose Files"
-                size="sm"
-              />
-            </div>
+          <div class="bg-primary-muted flex h-9 w-9 shrink-0 items-center justify-center rounded-lg">
+            <UIcon name="i-heroicons-arrow-up-tray" class="text-primary h-5 w-5" />
           </div>
-        </div>
-      </div>
-
-      <!-- Hidden CSV file input for custom sample sheet -->
-      <label for="sample-sheet-csv-input" class="sr-only">Upload custom sample sheet CSV</label>
-      <input
-        id="sample-sheet-csv-input"
-        ref="sampleSheetFileInput"
-        type="file"
-        accept=".csv"
-        hidden
-        @change="handleSampleSheetFileChange"
-      />
-
-      <div
-        class="files-list mb-6"
-        v-if="filesForTable.length > 0"
-        role="region"
-        aria-label="Uploaded files"
-        aria-live="polite"
-      >
-        <div class="files-list-header text-body mb-4 border-b border-[#d9d9d9]" role="row">
-          <div class="file-cell sample-id flex w-[30%] min-w-[240px]">Sample ID</div>
-          <div class="file-cell flex w-[60%] min-w-[320px]">Sample File</div>
-          <div class="file-cell flex w-[10%] min-w-[70px]"></div>
-        </div>
-        <div class="files-list-body">
-          <div
-            v-for="(row, index) in filesForTable"
-            :key="row.fileName"
-            class="file-row"
-            :style="{
-              background: row.error
-                ? '#FFF2F0'
-                : row.progress === 100
-                  ? '#E2FBE8'
-                  : row.progress !== undefined && row.progress > 0
-                    ? `linear-gradient(to right, #E2FBE8 ${row.progress}%, transparent ${Math.min(row.progress + 10, 100)}%), #f7f7f7`
-                    : '#f7f7f7',
-            }"
-          >
-            <div class="file-cell sample-id text-body flex w-[30%] min-w-[240px] items-center">
-              <div v-if="!row.error" class="truncate">{{ row.sampleId }}</div>
-              <div v-else class="text-alert-danger-dark mr-1 truncate font-medium">
-                <span class="sr-only">Upload failed:</span>
-                (Upload Failed)
-              </div>
-            </div>
-            <div
-              class="file-cell flex w-[60%] min-w-[320px] items-center"
-              :style="{ color: row.progress === 100 && !row.error ? '#306239' : 'inherit' }"
+          <div class="min-w-0 flex-1">
+            <p class="text-body text-sm font-semibold">Upload New Files</p>
+            <p class="text-muted text-xs">Upload FASTQ files from your computer</p>
+          </div>
+          <UIcon
+            name="i-heroicons-chevron-down"
+            class="text-muted h-5 w-5 shrink-0 transition"
+            :class="{ 'rotate-180': isSourcePanelOpen('upload') }"
+          />
+        </button>
+        <div v-show="isSourcePanelOpen('upload')" class="border-border-muted border-t px-7 pb-6 pt-2">
+          <p class="text-muted mt-1 text-xs font-normal tracking-tight">
+            Any similar files with the suffix _R1 or _R2 will be combined as paired-end data samples. Max file size is
+            5GB.
+            <button
+              type="button"
+              class="text-primary focus-visible:outline-primary-500 ml-1 underline hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+              :aria-expanded="showAdvancedOptions"
+              aria-controls="upload-advanced-options"
+              @click="showAdvancedOptions = !showAdvancedOptions"
             >
-              <template v-if="row.error">
-                <UIcon
-                  name="i-heroicons-exclamation-triangle"
-                  class="text-alert-danger-dark mr-2"
-                  size="20"
-                  aria-hidden="true"
-                />
-              </template>
-              <div class="truncate">{{ row.fileName }}</div>
+              {{ showAdvancedOptions ? 'Collapse advanced options' : 'View advanced options' }}
+            </button>
+          </p>
+
+          <div v-if="showAdvancedOptions" id="upload-advanced-options" class="mt-4">
+            <UDivider />
+            <label for="sample-id-split-pattern" class="text-body mb-1 mt-4 block text-sm font-medium">
+              Sample ID split pattern
+            </label>
+            <UInput id="sample-id-split-pattern" v-model="sampleIdSplitPattern" class="w-64" />
+            <p class="text-muted mb-4 mt-1 text-xs">
+              Enter the character or pattern that appears after the Sample ID in your file names (e.g. _S, _L001, etc.).
+            </p>
+          </div>
+
+          <div
+            class="py-4"
+            @drop.prevent="handleDroppedFiles"
+            :class="{ 'pointer-events-none opacity-50': !isDropzoneEnabled }"
+          >
+            <label id="dropzone-label" class="sr-only">Upload sequencing files (.fastq, .gz)</label>
+            <div
+              id="dropzone"
+              role="region"
+              aria-labelledby="dropzone-label"
+              @dragenter.prevent="setDropzoneActive(true)"
+              @dragleave.prevent="setDropzoneActive(false)"
+              @dragover.prevent
+              @drop.prevent="setDropzoneActive(false)"
+            >
+              <div
+                :class="
+                  cn(
+                    'ring-primary-500 text-body flex w-full items-center justify-center rounded-lg py-8 ring-2 ring-offset-1 transition-colors duration-200',
+                    {
+                      'bg-alert-success-muted ring-alert-success font-semibold ring-offset-2': isDropzoneActive,
+                    },
+                  )
+                "
+              >
+                <div class="flex items-center justify-center">
+                  <div>
+                    <span :class="cn('visible', { 'invisible': isDropzoneActive })">Drag and&nbsp;</span>
+                    <span v-if="isDropzoneActive">Drop</span>
+                    <span v-else>drop</span>
+                    your files
+                    <span :class="cn('visible', { 'invisible': isDropzoneActive })">here or</span>
+                  </div>
+                  <input
+                    accept=".gz,.fastq"
+                    ref="chooseFilesButton"
+                    type="file"
+                    id="dropzoneFiles"
+                    aria-labelledby="dropzone-label"
+                    @change="handleFileInputChange"
+                    hidden
+                    multiple
+                  />
+                  <EGButton
+                    :disabled="!isDropzoneEnabled"
+                    :class="cn('visible ml-4', { 'invisible': isDropzoneActive })"
+                    @click="chooseFiles"
+                    label="Choose Files"
+                    size="sm"
+                  />
+                </div>
+              </div>
             </div>
+          </div>
 
-            <div class="file-cell flex w-[10%] min-w-[70px] items-center justify-end gap-4">
-              <!-- retry button -->
-              <button
-                v-if="row.error"
-                type="button"
-                class="focus-visible:outline-primary-500 flex items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-                :class="[
-                  canRetryUpload(row) ? 'text-gray-900 hover:text-gray-700' : 'cursor-not-allowed text-gray-400',
-                ]"
-                :aria-label="`Retry upload for ${row.fileName}`"
-                @click="retryUpload(row)"
-                :disabled="!isOnline || !canRetryUpload(row)"
-              >
-                <UIcon name="i-heroicons-arrow-path" size="20" aria-hidden="true" />
-              </button>
+          <label for="sample-sheet-csv-input" class="sr-only">Upload custom sample sheet CSV</label>
+          <input
+            id="sample-sheet-csv-input"
+            ref="sampleSheetFileInput"
+            type="file"
+            accept=".csv"
+            hidden
+            @change="handleSampleSheetFileChange"
+          />
 
-              <!-- complete check -->
-              <span v-if="!row.error && row.progress === 100" class="sr-only">Upload complete</span>
-              <UIcon
-                v-if="!row.error && row.progress === 100"
-                size="20"
-                name="i-heroicons-check"
-                class="text-alert-success-text"
-                aria-hidden="true"
-              />
+          <div
+            v-if="filesProblemAlertMessage"
+            role="alert"
+            class="bg-alert-danger-muted text-alert-danger mb-4 flex items-center gap-2 rounded-lg p-4 text-sm"
+          >
+            <UIcon class="text-xl" name="i-heroicons-exclamation-triangle" aria-hidden="true" />
+            <div>{{ filesProblemAlertMessage }}</div>
+          </div>
 
-              <!-- cancel upload button -->
-              <button
-                v-if="!row.error && row.progress && row.progress < 100"
-                type="button"
-                class="focus-visible:outline-primary-500 flex items-center text-gray-500 hover:text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-                :aria-label="`Cancel upload for ${row.fileName}`"
-                @click="cancelUpload(row.fileName)"
-              >
-                <UIcon name="i-heroicons-x-mark" size="20" aria-hidden="true" />
-              </button>
-
-              <!-- delete button -->
-              <button
-                type="button"
-                class="focus-visible:outline-primary-500 flex items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-                :disabled="!isOnline || uploadStatus === 'uploading'"
-                :class="[
-                  isOnline && uploadStatus !== 'uploading'
-                    ? 'text-alert-danger hover:text-alert-danger-dark'
-                    : 'cursor-not-allowed text-gray-400',
-                ]"
-                :aria-label="`Remove ${row.fileName}`"
-                @click="removeFile(row)"
-              >
-                <UIcon name="i-heroicons-trash" size="20" aria-hidden="true" />
-              </button>
-            </div>
+          <div class="flex justify-end">
+            <EGButton
+              @click="startUploadProcess"
+              :disabled="isUploadButtonDisabled"
+              :loading="uploadStatus === 'uploading'"
+              label="Upload Files"
+            />
           </div>
         </div>
       </div>
-    </template>
 
-    <div
-      v-if="!isFromDataCollections && filesProblemAlertMessage"
-      role="alert"
-      class="bg-alert-danger-muted text-alert-danger my-10 flex items-center gap-2 rounded-lg p-6"
-    >
-      <UIcon class="text-2xl" name="i-heroicons-exclamation-triangle" aria-hidden="true" />
-      <div>{{ filesProblemAlertMessage }}</div>
-    </div>
-
-    <EGS3SampleSheetBar
-      v-if="wipRun.sampleSheetS3Url || uiStore.isRequestPending('generateSampleSheet')"
-      :disabled="uploadStatus === 'uploading'"
-      :url="wipRun.sampleSheetS3Url"
-      :lab-id="props.labId"
-      :lab-name="labName"
-      :pipeline-or-workflow-name="props.pipelineOrWorkflowName"
-      :platform="platform"
-      :run-name="wipRun.runName"
-      :display-label="true"
-    />
-
-    <div v-if="!isFromDataCollections" class="flex items-center justify-between pt-4">
-      <EGButton
-        variant="secondary"
-        label="Upload Sample Sheet"
-        icon="i-heroicons-arrow-up-tray"
-        :loading="isUploadingSampleSheet"
-        :disabled="isUploadingSampleSheet"
-        @click="sampleSheetFileInput?.click()"
-      />
-      <p v-if="sampleSheetValidationError" class="text-alert-danger mt-2 max-w-xl text-sm">
-        {{ sampleSheetValidationError }}
-      </p>
-
-      <div class="flex gap-4">
-        <EGButton
-          v-if="showGenerateSampleSheetButton"
-          @click="saveSampleSheetInfo"
-          :loading="uiStore.isRequestPending('generateSampleSheet')"
-          label="Generate Sample Sheet"
-          variant="secondary"
-        />
-
-        <EGButton
-          @click="startUploadProcess"
-          :disabled="isUploadButtonDisabled"
-          :loading="uploadStatus === 'uploading'"
-          label="Upload Files"
-        />
+      <!-- Library panel -->
+      <div>
+        <button
+          type="button"
+          class="flex w-full items-center gap-4 px-7 py-4 text-left transition hover:bg-gray-50/80"
+          :aria-expanded="isSourcePanelOpen('library')"
+          @click="toggleSourcePanel('library')"
+        >
+          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50">
+            <UIcon name="i-heroicons-folder" class="h-5 w-5 text-emerald-600" />
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="text-body text-sm font-semibold">Previously Uploaded</p>
+            <p class="text-muted text-xs">Browse samples already in your lab. Filter by tag or search by file name.</p>
+          </div>
+          <UIcon
+            name="i-heroicons-chevron-down"
+            class="text-muted h-5 w-5 shrink-0 transition"
+            :class="{ 'rotate-180': isSourcePanelOpen('library') }"
+          />
+        </button>
+        <div v-show="isSourcePanelOpen('library')" class="border-border-muted border-t px-7 pb-6 pt-4">
+          <EGRunDataCollectionsPicker
+            :lab-id="props.labId"
+            :added-keys="combinedInputKeys"
+            @add-to-run="handleAddFromLibrary"
+          />
+        </div>
       </div>
     </div>
   </EGCard>
 
+  <EGRunSelectedDataTable
+    :rows="selectedRows"
+    :tags="laboratoryTags"
+    :disabled="uploadStatus === 'uploading'"
+    :is-uploading-sample-sheet="isUploadingSampleSheet"
+    :show-generate-sample-sheet="showGenerateSampleSheetButton"
+    :generate-sample-sheet-loading="uiStore.isRequestPending('generateSampleSheet')"
+    @remove="removeSelectedRow"
+    @clear-all="clearAllRunData"
+    @upload-sample-sheet="sampleSheetFileInput?.click()"
+    @generate-sample-sheet="saveSampleSheetInfo"
+    @update-tags="onUpdateRowTags"
+  />
+
+  <p v-if="sampleSheetValidationError" class="text-alert-danger mt-2 max-w-xl px-1 text-sm">
+    {{ sampleSheetValidationError }}
+  </p>
+
+  <EGS3SampleSheetBar
+    v-if="wipRun.sampleSheetS3Url || uiStore.isRequestPending('generateSampleSheet')"
+    class="mt-4"
+    :disabled="uploadStatus === 'uploading'"
+    :url="wipRun.sampleSheetS3Url"
+    :lab-id="props.labId"
+    :lab-name="labName"
+    :pipeline-or-workflow-name="props.pipelineOrWorkflowName"
+    :platform="platform"
+    :run-name="wipRun.runName"
+    :display-label="true"
+  />
+
   <div class="mt-6 flex justify-between">
     <EGButton :size="ButtonSizeEnum.enum.sm" variant="secondary" label="Previous step" @click="emit('previous-step')" />
     <EGButton
-      v-if="filePairs.length || hasSampleSheetUrl"
+      v-if="selectedRows.length || hasSampleSheetUrl"
       :size="ButtonSizeEnum.enum.sm"
       variant="primary"
       label="Next step"

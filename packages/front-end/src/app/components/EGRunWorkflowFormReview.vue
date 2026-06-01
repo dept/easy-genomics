@@ -8,8 +8,8 @@
 
     labId: string;
     omicsRunTempId: string;
-    s3Bucket: string;
-    s3Path: string;
+    s3Bucket?: string;
+    s3Path?: string;
     runName: string;
     transactionId: string;
     workflowId: string;

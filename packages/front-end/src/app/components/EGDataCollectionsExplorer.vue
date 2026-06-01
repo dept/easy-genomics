@@ -51,6 +51,14 @@
     fileTypeCounts: { fastq: number; fasta: number; other: number };
     hiddenByFileTypeCount: number;
     hiddenByFileTypeBreakdown: HiddenFileTypeBreakdownRow[];
+    /** Lock explorer to table layout and hide the cards/table toggle. */
+    tableOnly?: boolean;
+    /** Hide the FASTQ/FASTA/other file-type filter control. */
+    hideFileTypeFilter?: boolean;
+    /** S3 keys already on the run — shown as Added and not selectable. */
+    disabledKeys?: string[];
+    /** Disable drag-to-tag from file rows. */
+    disableDrag?: boolean;
   }>();
 
   const emit = defineEmits<{
@@ -70,7 +78,18 @@
   const filterChipsResolved = computed(() => props.filterChips ?? []);
 
   /** Cards grid vs tabular explorer layout. */
-  const explorerView = ref<'cards' | 'table'>('cards');
+  const explorerView = ref<'cards' | 'table'>(props.tableOnly ? 'table' : 'cards');
+
+  const disabledKeySet = computed(() => new Set(props.disabledKeys ?? []));
+
+  function isKeyDisabled(key: string): boolean {
+    return disabledKeySet.value.has(key);
+  }
+
+  function safeToggleKey(key: string): void {
+    if (isKeyDisabled(key)) return;
+    emit('toggleKey', key);
+  }
 
   const fileTypeFilterOpen = ref(false);
 
@@ -305,7 +324,8 @@
 
   /** Selects all files in the section, or clears them from the selection if already fully selected. */
   function toggleBatchSection(sec: { files: readonly { Key: string }[] }): void {
-    const keys = sec.files.map((f) => f.Key);
+    const keys = sec.files.map((f) => f.Key).filter((k) => !isKeyDisabled(k));
+    if (!keys.length) return;
     if (batchSectionFullySelected(sec)) {
       const remove = new Set(keys);
       emit(
@@ -383,6 +403,10 @@
   });
 
   function onCardDragStart(e: DragEvent, key: string): void {
+    if (props.disableDrag || isKeyDisabled(key)) {
+      e.preventDefault();
+      return;
+    }
     const keys = props.selectedKeys.includes(key) ? [...props.selectedKeys] : [key];
     e.dataTransfer?.setData('application/x-eg-keys', JSON.stringify(keys));
     e.dataTransfer?.setData('text/plain', 'keys');
@@ -406,7 +430,7 @@
   function onFileItemKeydown(e: KeyboardEvent, key: string): void {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      emit('toggleKey', key);
+      safeToggleKey(key);
     }
   }
 
@@ -437,7 +461,12 @@
         size="sm"
         @update:model-value="emit('update:search', $event)"
       />
-      <div class="border-border-muted flex shrink-0 rounded-lg border p-0.5" role="group" aria-label="View mode">
+      <div
+        v-if="!tableOnly"
+        class="border-border-muted flex shrink-0 rounded-lg border p-0.5"
+        role="group"
+        aria-label="View mode"
+      >
         <UButton
           size="xs"
           square
@@ -459,7 +488,7 @@
           @click="explorerView = 'table'"
         />
       </div>
-      <div class="ml-auto shrink-0">
+      <div v-if="!hideFileTypeFilter" class="ml-auto shrink-0">
         <EGDataCollectionsFileTypeFilter
           v-model:open="fileTypeFilterOpen"
           :model-value="fileTypeFilter"
@@ -609,7 +638,7 @@
             }"
             :aria-selected="selectedKeys.includes(f.Key)"
             :aria-label="fileItemAriaLabel(f.Key, f.Size)"
-            @click="emit('toggleKey', f.Key)"
+            @click="safeToggleKey(f.Key)"
             @keydown="onFileItemKeydown($event, f.Key)"
             @dragstart="onCardDragStart($event, f.Key)"
             @dragend="onFileCardDragEnd"
@@ -622,7 +651,7 @@
                 title="This file is protected from auto-deletion when run retention expires."
                 aria-label="Protected from auto-deletion"
               />
-              <UCheckbox :model-value="selectedKeys.includes(f.Key)" @update:model-value="emit('toggleKey', f.Key)" />
+              <UCheckbox :model-value="selectedKeys.includes(f.Key)" @update:model-value="safeToggleKey(f.Key)" />
             </div>
             <div class="absolute left-0 top-0 z-[1]" @mousedown.stop @click.stop>
               <EGFileAnalysisHistoryTooltip
@@ -742,16 +771,18 @@
                 data-file-card
                 :data-key="f.Key"
                 tabindex="0"
-                draggable="true"
-                class="border-border-muted focus-visible:ring-primary cursor-pointer border-b transition last:border-b-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset"
+                :draggable="!disableDrag && !isKeyDisabled(f.Key)"
+                class="border-border-muted focus-visible:ring-primary border-b transition last:border-b-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset"
                 :class="{
                   'bg-primary-muted ring-primary ring-2 ring-inset': selectedKeys.includes(f.Key),
-                  'hover:bg-gray-50/80': !selectedKeys.includes(f.Key),
+                  'hover:bg-gray-50/80': !selectedKeys.includes(f.Key) && !isKeyDisabled(f.Key),
                   'relative z-[80]': analysisPopoverOpenKey === f.Key,
+                  'cursor-pointer': !isKeyDisabled(f.Key),
+                  'cursor-default opacity-50': isKeyDisabled(f.Key),
                 }"
                 :aria-selected="selectedKeys.includes(f.Key)"
                 :aria-label="fileItemAriaLabel(f.Key, f.Size)"
-                @click="emit('toggleKey', f.Key)"
+                @click="safeToggleKey(f.Key)"
                 @keydown="onFileItemKeydown($event, f.Key)"
                 @dragstart="onCardDragStart($event, f.Key)"
                 @dragend="onFileCardDragEnd"
@@ -759,7 +790,8 @@
                 <td class="px-3 py-2 align-middle" @mousedown.stop @click.stop>
                   <UCheckbox
                     :model-value="selectedKeys.includes(f.Key)"
-                    @update:model-value="emit('toggleKey', f.Key)"
+                    :disabled="isKeyDisabled(f.Key)"
+                    @update:model-value="safeToggleKey(f.Key)"
                   />
                 </td>
                 <td class="min-w-0 max-w-[14rem] overflow-hidden px-3 py-2 align-middle">
@@ -821,14 +853,17 @@
                   </div>
                 </td>
                 <td class="text-muted px-3 py-2 align-middle">
-                  <UIcon
-                    v-if="isFilePermanent(f.Key)"
-                    name="i-heroicons-lock-closed"
-                    class="inline-block h-3.5 w-3.5 text-red-600"
-                    title="This file is protected from auto-deletion when run retention expires. It does not expire with run retention."
-                    aria-label="Protected from auto-deletion; does not expire with run retention"
-                  />
-                  <span v-else class="tabular-nums">{{ formatExpiresLabel(f.Key) }}</span>
+                  <span v-if="isKeyDisabled(f.Key)" class="text-primary text-xs font-medium">Added</span>
+                  <template v-else>
+                    <UIcon
+                      v-if="isFilePermanent(f.Key)"
+                      name="i-heroicons-lock-closed"
+                      class="inline-block h-3.5 w-3.5 text-red-600"
+                      title="This file is protected from auto-deletion when run retention expires. It does not expire with run retention."
+                      aria-label="Protected from auto-deletion; does not expire with run retention"
+                    />
+                    <span v-else class="tabular-nums">{{ formatExpiresLabel(f.Key) }}</span>
+                  </template>
                 </td>
               </tr>
             </template>

@@ -35,7 +35,7 @@
   const selectedStepIndex = ref(0);
   const steps = ref([
     { disabled: false, key: 'details', label: 'Run Details' },
-    { disabled: true, key: 'upload', label: 'Upload Data' },
+    { disabled: true, key: 'upload', label: 'Add Data' },
     { disabled: true, key: 'parameters', label: 'Edit Parameters' },
     { disabled: true, key: 'review', label: 'Review Pipeline' },
   ]);
@@ -192,7 +192,7 @@
     uiStore.setRequestComplete('loadOmicsWorkflow');
   }
 
-  /** When opened from Data Collections with a pre-built sample sheet, skip to parameter configuration. */
+  /** When opened from Data Collections with a pre-built sample sheet, land on Add Data for review. */
   function applyDataCollectionsPrepopulation(): void {
     if ($route.query.from !== 'data-collections') return;
 
@@ -200,11 +200,7 @@
     if (!wip?.sampleSheetS3Url || !wip?.runName) return;
 
     setStepEnabled('upload', true);
-    setStepEnabled('parameters', true);
-    const parametersIndex = steps.value.findIndex((step) => step.key === 'parameters');
-    if (parametersIndex >= 0) {
-      selectedStepIndex.value = parametersIndex;
-    }
+    setStepEnabled('parameters', false);
   }
 
   function resetParams() {

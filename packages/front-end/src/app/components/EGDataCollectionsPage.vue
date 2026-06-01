@@ -14,6 +14,7 @@
     type DataCollectionFileTypeFilter,
   } from '@FE/utils/data-collections-file-type';
   import { exceedsBatchNameMaxLength, exceedsTagNameMaxLength } from '@FE/utils/data-collections-name-validation';
+  import { useLaboratoryDataCollections } from '@FE/composables/useLaboratoryDataCollections';
 
   const props = defineProps<{
     labId: string;
@@ -24,35 +25,21 @@
   const toast = useToastStore();
   const uiStore = useUiStore();
 
-  const lab = computed<Laboratory | null>(() => labsStore.labs[props.labId] ?? null);
-  const labRoot = computed(() => (lab.value ? `${lab.value.OrganizationId}/${lab.value.LaboratoryId}/` : ''));
+  const labIdRef = toRef(() => props.labId);
+  const dc = useLaboratoryDataCollections(labIdRef);
 
-  const tags = ref<LaboratoryDataTag[]>([]);
-  const keyToTagIds = ref<Record<string, string[]>>({});
-  /** Batch assignment per object key (tag ids with Kind batch are tracked separately from TagIds). */
-  const keyToBatchTagId = ref<Record<string, string | undefined>>({});
-  /**
-   * Workflow tag ids associated with each file key. Populated alongside keyToTagIds so the
-   * explorer can render an Analyzed/Not yet analyzed status and the left-rail Workflows
-   * filter section can drive visibility.
-   */
-  const keyToWorkflowTagIds = ref<Record<string, string[]>>({});
-  /**
-   * Whether each file carries the lab's system-managed permanent tag. Sourced from the
-   * `IsPermanent` field on `FileTagAssignment` so the UI doesn't need to cross-reference
-   * `tags.value` to know. Files marked Permanent are never auto-deleted by the run-retention
-   * cleanup job and are excluded from the "Expiring soon" filter.
-   */
-  const keyToIsPermanent = ref<Record<string, boolean>>({});
-  /**
-   * Per-file laboratory run usage history, sorted newest first by `RunCreatedAt` (see
-   * `listFileTags` on the back end). Drives the per-file Analysis History tooltip and the
-   * orange/green/indigo status dot. Empty array means the file has never been used in a run.
-   */
-  const keyToRunUsages = ref<Record<string, LaboratoryRunUsageSummary[]>>({});
-  const files = ref<{ Key: string; Size?: number; LastModified?: string }[]>([]);
-  const listingTruncated = ref(false);
-  const selectedKeys = ref<string[]>([]);
+  const lab = dc.lab;
+  const labRoot = dc.labRoot;
+
+  const tags = dc.tags;
+  const keyToTagIds = dc.keyToTagIds;
+  const keyToBatchTagId = dc.keyToBatchTagId;
+  const keyToWorkflowTagIds = dc.keyToWorkflowTagIds;
+  const keyToIsPermanent = dc.keyToIsPermanent;
+  const keyToRunUsages = dc.keyToRunUsages;
+  const files = dc.files;
+  const listingTruncated = dc.listingTruncated;
+  const selectedKeys = dc.selectedKeys;
 
   /**
    * Scope rail filter: at most one of all | not-yet-analyzed | expiring-soon | workflow template | workflow version.
@@ -65,7 +52,7 @@
     | { kind: 'workflow-template'; templateKey: string }
     | { kind: 'workflow-version'; tagId: string };
 
-  const scopeFilter = ref<ScopeFilter>({ kind: 'all' });
+  const scopeFilter = dc.scopeFilter as Ref<ScopeFilter>;
 
   /**
    * User-adjustable threshold (in days) for the "Expiring soon" filter. A file is "expiring
@@ -88,27 +75,9 @@
       return EXPIRING_SOON_DEFAULT_DAYS;
     }
   }
-  const expiringSoonThresholdDays = ref<number>(readPersistedExpiringSoonDays(props.labId));
-  watch(expiringSoonThresholdDays, (next) => {
-    if (typeof window === 'undefined') return;
-    try {
-      const clamped = Math.min(EXPIRING_SOON_MAX_DAYS, Math.max(EXPIRING_SOON_MIN_DAYS, Math.floor(Number(next) || 0)));
-      if (clamped !== next) expiringSoonThresholdDays.value = clamped;
-      window.localStorage?.setItem(`eg.dataCollections.${props.labId}.expiringSoonDays`, String(clamped));
-    } catch {
-      // localStorage unavailable (private mode, quota); state still lives in-memory.
-    }
-  });
-  watch(
-    () => props.labId,
-    (next) => {
-      expiringSoonThresholdDays.value = readPersistedExpiringSoonDays(next);
-    },
-  );
-  /** Tags section: untagged is mutually exclusive with selecting specific standard tags. */
-  const tagsFilterUntagged = ref(false);
-  /** Multiple standard tags combine with OR (file matches if it has any selected tag). */
-  const tagsFilterTagIds = ref<string[]>([]);
+  const expiringSoonThresholdDays = dc.expiringSoonThresholdDays;
+  const tagsFilterUntagged = dc.tagsFilterUntagged;
+  const tagsFilterTagIds = dc.tagsFilterTagIds;
   /** Per-template open/close state for the workflows left-rail accordion. */
   const expandedWorkflowTemplates = ref<Record<string, boolean>>({});
   /** Whether the long-list "Show more" toggle is open for the workflow templates. */
@@ -116,14 +85,8 @@
   /** Left-rail Workflows / Tags blocks start expanded. */
   const tagsSectionExpanded = ref(true);
   const workflowsSectionExpanded = ref(true);
-  const search = ref('');
-
-  /** File-type filter: default FASTQ only (see plan). */
-  const fileTypeFilterEnabled = ref<DataCollectionFileTypeFilter>({
-    fastq: true,
-    fasta: false,
-    other: false,
-  });
+  const search = dc.search;
+  const fileTypeFilterEnabled = dc.fileTypeFilterEnabled;
 
   const KEYS_CHUNK = 100;
 
@@ -137,9 +100,7 @@
   const inlineNewTagName = ref('');
   const inlineNewTagColor = ref('#5B4FD4');
 
-  const loading = computed(() =>
-    uiStore.anyRequestPending(['dataCollectionsList', 'dataCollectionsTags', 'dataCollectionsMutate']),
-  );
+  const loading = dc.loading;
 
   /** True while a bulk tag apply/remove is running through API + listing refresh (for disabling panel actions). */
   const bulkPanelBusy = computed(() => uiStore.isRequestPending('dataCollectionsMutate'));
@@ -160,88 +121,14 @@
   }
   const bulkPanelOpen = computed(() => bulkPanelMode.value !== 'closed');
 
-  function tagById(id: string): LaboratoryDataTag | undefined {
-    return tags.value.find((t) => t.TagId === id);
-  }
-
-  /** True for workflow tags — Kind may be omitted in some API payloads; platform + external id is definitive. */
-  function isWorkflowLaboratoryTag(t: LaboratoryDataTag | undefined): boolean {
-    if (!t) return false;
-    if (t.Kind === 'workflow') return true;
-    return !!(t.Platform && t.WorkflowExternalId);
-  }
-
-  /** Singleton permanent tag for this lab (lazy-created server-side on first listTags). */
-  const permanentTag = computed<LaboratoryDataTag | undefined>(() => tags.value.find((t) => t.Kind === 'permanent'));
-  const permanentTagId = computed<string | undefined>(() => permanentTag.value?.TagId);
-
-  function isFilePermanent(key: string): boolean {
-    if (keyToIsPermanent.value[key]) return true;
-    const pid = permanentTagId.value;
-    if (!pid) return false;
-    // Fall back to the raw TagIds list when `IsPermanent` was missing from the API payload
-    // (defensive — older list-file-tags responses may not project the field).
-    return (keyToTagIds.value[key] || []).includes(pid);
-  }
-
-  /**
-   * Workflow tag ids for a file: prefer API `WorkflowTagIds`, else infer from raw `TagIds` using
-   * tag metadata (needed when list-file-tags mis-buckets or tags load after file assignments).
-   */
-  function workflowTagIdsForFileKey(key: string): string[] {
-    const fromApi = keyToWorkflowTagIds.value[key] ?? [];
-    const raw = keyToTagIds.value[key] ?? [];
-    const merged = new Set<string>(fromApi);
-    if (tags.value.length) {
-      for (const tid of raw) {
-        if (isWorkflowLaboratoryTag(tagById(tid))) {
-          merged.add(tid);
-        }
-      }
-    }
-    return [...merged];
-  }
-
-  const keyToWorkflowTagIdsEffective = computed(() => {
-    const m: Record<string, string[]> = {};
-    for (const f of files.value) {
-      m[f.Key] = workflowTagIdsForFileKey(f.Key);
-    }
-    return m;
-  });
-
-  /**
-   * Tag ids that belong in the generic (user) tag pill row. The API splits workflow ids into
-   * `WorkflowTagIds`, but mis-partitioning or missing `Kind` on list-tags must not show workflow
-   * chips in the standard row. The permanent tag is rendered as a dedicated lock affordance
-   * elsewhere and is also excluded from this list.
-   */
-  function standardTagIdsForFileKey(key: string): string[] {
-    const wf = new Set(workflowTagIdsForFileKey(key));
-    const pid = permanentTagId.value;
-    return (keyToTagIds.value[key] || []).filter((tid: string) => {
-      if (wf.has(tid)) return false;
-      if (isWorkflowLaboratoryTag(tagById(tid))) return false;
-      if (pid && tid === pid) return false;
-      const tag = tagById(tid);
-      if (tag?.Kind === 'permanent') return false;
-      return true;
-    });
-  }
-
-  const keyToStandardTagIdsForExplorer = computed(() => {
-    const m: Record<string, string[]> = {};
-    for (const f of files.value) {
-      m[f.Key] = standardTagIdsForFileKey(f.Key);
-    }
-    return m;
-  });
-
-  const standardTags = computed(() =>
-    tags.value.filter(
-      (t) => (t.Kind ?? 'standard') === 'standard' && t.Kind !== 'permanent' && !isWorkflowLaboratoryTag(t),
-    ),
-  );
+  const tagById = dc.tagById;
+  const permanentTag = dc.permanentTag;
+  const permanentTagId = dc.permanentTagId;
+  const isFilePermanent = dc.isFilePermanent;
+  const keyToWorkflowTagIdsEffective = dc.keyToWorkflowTagIdsEffective;
+  const standardTagIdsForFileKey = dc.standardTagIdsForFileKey;
+  const keyToStandardTagIdsForExplorer = dc.keyToStandardTagIdsForExplorer;
+  const standardTags = dc.standardTags;
 
   /** Standard tags plus the system Permanent tag for the bulk add/remove tray only (left rail still omits Permanent). */
   const bulkPanelAssignableTags = computed(() => {
@@ -250,54 +137,10 @@
     return p ? [...std, p] : std;
   });
 
-  const batchTags = computed(() => tags.value.filter((t) => (t.Kind ?? 'standard') === 'batch'));
+  const batchTags = dc.batchTags;
+  const workflowTags = dc.workflowTags;
 
-  const workflowTags = computed(() => tags.value.filter((t) => isWorkflowLaboratoryTag(t)));
-
-  /**
-   * Group workflow tags by (Platform, WorkflowExternalId) so the user sees one row per
-   * workflow template in the left rail, with the individual versions exposed when the row
-   * is expanded. The default version (empty WorkflowVersionName) is rendered as "default".
-   */
-  type WorkflowTemplate = {
-    key: string;
-    platform: string;
-    externalId: string;
-    name: string;
-    color: string;
-    fileCount: number;
-    versions: { tag: LaboratoryDataTag; label: string }[];
-  };
-  const workflowTemplates = computed<WorkflowTemplate[]>(() => {
-    const grouped = new Map<string, WorkflowTemplate>();
-    for (const t of workflowTags.value) {
-      const platform = t.Platform ?? '';
-      const externalId = t.WorkflowExternalId ?? t.TagId;
-      const key = `${platform}#${externalId}`;
-      const existing = grouped.get(key);
-      const versionLabel = t.WorkflowVersionName?.trim() ? t.WorkflowVersionName.trim() : 'default';
-      if (existing) {
-        existing.fileCount += t.FileCount ?? 0;
-        existing.versions.push({ tag: t, label: versionLabel });
-      } else {
-        grouped.set(key, {
-          key,
-          platform,
-          externalId,
-          name: t.Name,
-          color: t.ColorHex,
-          fileCount: t.FileCount ?? 0,
-          versions: [{ tag: t, label: versionLabel }],
-        });
-      }
-    }
-    const list = [...grouped.values()];
-    for (const tmpl of list) {
-      tmpl.versions.sort((a, b) => a.label.localeCompare(b.label));
-    }
-    list.sort((a, b) => b.fileCount - a.fileCount || a.name.localeCompare(b.name));
-    return list;
-  });
+  const workflowTemplates = dc.workflowTemplates;
 
   /**
    * Soft cap for the workflows left-rail before the "Show more" toggle kicks in. Picked to
@@ -470,205 +313,21 @@
     return `${analyzed} of ${total}`;
   });
 
-  async function loadTags(): Promise<void> {
-    uiStore.setRequestPending('dataCollectionsTags');
-    try {
-      const res = await $api.dataCollections.listTags(props.labId);
-      tags.value = res.Tags;
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      toast.error(`Failed to load tags: ${msg}`);
-    } finally {
-      uiStore.setRequestComplete('dataCollectionsTags');
-    }
-  }
-
-  async function loadListing(): Promise<void> {
-    if (!lab.value?.S3Bucket) return;
-    uiStore.setRequestPending('dataCollectionsList');
-    try {
-      const res = await $api.dataCollections.requestLaboratoryBucketObjects({
-        LaboratoryId: props.labId,
-        MaxTotalKeys: 25_000,
-      });
-      const nextTruncated = !!res.ListingTruncated;
-      const nextFiles = (res.Contents || []).filter((c) => !c.Key.endsWith('/'));
-      const keys = nextFiles.map((f) => f.Key);
-      const map: Record<string, string[]> = {};
-      const batchMap: Record<string, string | undefined> = {};
-      const workflowMap: Record<string, string[]> = {};
-      const permanentMap: Record<string, boolean> = {};
-      const runUsagesMap: Record<string, LaboratoryRunUsageSummary[]> = {};
-      if (keys.length) {
-        for (let i = 0; i < keys.length; i += KEYS_CHUNK) {
-          const chunk = keys.slice(i, i + KEYS_CHUNK);
-          const tr = await $api.dataCollections.requestListFileTags({
-            LaboratoryId: props.labId,
-            S3Bucket: lab.value.S3Bucket,
-            Keys: chunk,
-          });
-          for (const f of tr.Files) {
-            map[f.Key] = f.TagIds;
-            batchMap[f.Key] = f.BatchTagId;
-            workflowMap[f.Key] = f.WorkflowTagIds ?? [];
-            permanentMap[f.Key] = !!f.IsPermanent;
-            runUsagesMap[f.Key] = f.LaboratoryRunUsages ?? [];
-          }
-        }
-      }
-      listingTruncated.value = nextTruncated;
-      files.value = nextFiles;
-      keyToTagIds.value = map;
-      keyToBatchTagId.value = batchMap;
-      keyToWorkflowTagIds.value = workflowMap;
-      keyToIsPermanent.value = permanentMap;
-      keyToRunUsages.value = runUsagesMap;
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      toast.error(`Failed to load files: ${msg}`);
-    } finally {
-      uiStore.setRequestComplete('dataCollectionsList');
-    }
-  }
-
-  watch(
-    () => [props.labId, lab.value?.S3Bucket],
-    async () => {
-      if (!lab.value?.S3Bucket) return;
-      await loadTags();
-      await loadListing();
-    },
-    { immediate: true },
-  );
-
-  /** Same first step as `visibleFiles` — used for sidebar chips so counts follow search. */
-  const filesMatchingSearch = computed(() => {
-    let list = files.value;
-    const q = search.value.trim().toLowerCase();
-    if (q) list = list.filter((f) => f.Key.toLowerCase().includes(q));
-    return list;
-  });
-
-  /** Number of laboratory runs that have used the given file as input. */
-  function runCountForFileKey(key: string): number {
-    return keyToRunUsages.value[key]?.length ?? 0;
-  }
-
-  function isFileExpiringSoon(key: string): boolean {
-    return isExpiringSoon({
-      isPermanent: isFilePermanent(key),
-      usages: keyToRunUsages.value[key],
-      thresholdDays: expiringSoonThresholdDays.value,
-      nowEpoch: Math.floor(Date.now() / 1000),
-    });
-  }
-
-  const filesBeforeFileTypeFilter = computed(() => {
-    let list = filesMatchingSearch.value;
-    const sf = scopeFilter.value;
-    switch (sf.kind) {
-      case 'all':
-        break;
-      case 'not-analyzed':
-        // Run-history-based: a file is "not yet analyzed" iff it has zero recorded run usages.
-        list = list.filter((f) => runCountForFileKey(f.Key) === 0);
-        break;
-      case 'expiring-soon':
-        list = list.filter((f) => isFileExpiringSoon(f.Key));
-        break;
-      case 'workflow-template': {
-        const tmpl = workflowTemplates.value.find((t) => t.key === sf.templateKey);
-        const versionTagIds = new Set((tmpl?.versions || []).map((v) => v.tag.TagId));
-        list = list.filter((f) =>
-          (keyToWorkflowTagIdsEffective.value[f.Key] || []).some((id) => versionTagIds.has(id)),
-        );
-        break;
-      }
-      case 'workflow-version':
-        list = list.filter((f) => (keyToWorkflowTagIdsEffective.value[f.Key] || []).includes(sf.tagId));
-        break;
-    }
-    if (tagsFilterUntagged.value) {
-      list = list.filter((f) => !standardTagIdsForFileKey(f.Key).length && !isFilePermanent(f.Key));
-    } else if (tagsFilterTagIds.value.length > 0) {
-      const selected = new Set(tagsFilterTagIds.value);
-      const pid = permanentTagId.value;
-      list = list.filter(
-        (f) =>
-          standardTagIdsForFileKey(f.Key).some((tid: string) => selected.has(tid)) ||
-          (!!pid && selected.has(pid) && isFilePermanent(f.Key)),
-      );
-    }
-    return list;
-  });
-
-  const enabledFileTypes = computed(() => enabledFileTypeKinds(fileTypeFilterEnabled.value));
-
-  const visibleFiles = computed(() => {
-    const kinds = enabledFileTypes.value;
-    return filesBeforeFileTypeFilter.value.filter((f) => fileMatchesFileTypeFilter(f.Key, kinds));
-  });
-
-  const fileTypeCounts = computed(() => {
-    const counts = { fastq: 0, fasta: 0, other: 0 };
-    for (const f of filesMatchingSearch.value) {
-      counts[dataCollectionFileKind(f.Key)] += 1;
-    }
-    return counts;
-  });
-
-  const hiddenByFileTypeCount = computed(() => {
-    const before = filesBeforeFileTypeFilter.value.length;
-    return before - visibleFiles.value.length;
-  });
-
-  const hiddenByFileTypeBreakdown = computed(() => {
-    const kinds = enabledFileTypes.value;
-    const hidden = filesBeforeFileTypeFilter.value.filter((f) => !fileMatchesFileTypeFilter(f.Key, kinds));
-    return groupHiddenFilesByTypeLabel(hidden);
-  });
-
-  /** Count for "All samples" chip — all loaded files matching search (same universe as no filter). */
-  const allSamplesChipCount = computed(() => filesMatchingSearch.value.length);
-
-  const notAnalyzedChipCount = computed(
-    () => filesMatchingSearch.value.filter((f) => runCountForFileKey(f.Key) === 0).length,
-  );
-
-  const expiringSoonChipCount = computed(
-    () => filesMatchingSearch.value.filter((f) => isFileExpiringSoon(f.Key)).length,
-  );
-
-  /** Per standard-tag file counts among `filesMatchingSearch` (matches `case 'tag'` in `visibleFiles`). */
-  const standardTagIdToChipCount = computed((): Record<string, number> => {
-    const tagIds = new Set<string>(standardTags.value.map((t: LaboratoryDataTag) => t.TagId));
-    const counts = new Map<string, number>();
-    for (const id of tagIds) counts.set(id, 0);
-    for (const f of filesMatchingSearch.value) {
-      for (const tid of standardTagIdsForFileKey(f.Key)) {
-        if (tagIds.has(tid)) counts.set(tid, (counts.get(tid) ?? 0) + 1);
-      }
-    }
-    const out: Record<string, number> = {};
-    for (const [k, v] of counts) out[k] = v;
-    return out;
-  });
-
-  /** Listed files (current search scope) that carry the Permanent tag — drives left-rail Permanent filter visibility. */
-  const permanentTaggedFileCountInSearch = computed(
-    () => filesMatchingSearch.value.filter((f) => isFilePermanent(f.Key)).length,
-  );
-
-  /**
-   * Left-rail tag filters: all standard tags, plus Permanent only when at least one file in the
-   * current listing/search has it (same universe as chip counts).
-   */
-  const leftRailTagFilterTags = computed(() => {
-    const std = standardTags.value;
-    const p = permanentTag.value;
-    if (!p || permanentTaggedFileCountInSearch.value === 0) return std;
-    return [...std, p];
-  });
+  const loadTags = dc.loadTags;
+  const loadListing = dc.loadListing;
+  const filesMatchingSearch = dc.filesMatchingSearch;
+  const runCountForFileKey = dc.runCountForFileKey;
+  const visibleFiles = dc.visibleFiles;
+  const fileTypeCounts = dc.fileTypeCounts;
+  const hiddenByFileTypeCount = dc.hiddenByFileTypeCount;
+  const hiddenByFileTypeBreakdown = dc.hiddenByFileTypeBreakdown;
+  const allSamplesChipCount = dc.allSamplesChipCount;
+  const notAnalyzedChipCount = dc.notAnalyzedChipCount;
+  const expiringSoonChipCount = dc.expiringSoonChipCount;
+  const standardTagIdToChipCount = dc.standardTagIdToChipCount;
+  const permanentTaggedFileCountInSearch = dc.permanentTaggedFileCountInSearch;
+  const leftRailTagFilterTags = dc.leftRailTagFilterTags;
+  const untaggedChipCount = dc.untaggedChipCount;
 
   watch(permanentTaggedFileCountInSearch, (n) => {
     const pid = permanentTagId.value;
@@ -676,11 +335,6 @@
       tagsFilterTagIds.value = tagsFilterTagIds.value.filter((id) => id !== pid);
     }
   });
-
-  /** Files with no standard tags, among search results (same universe as tag filter chips). */
-  const untaggedChipCount = computed(
-    () => filesMatchingSearch.value.filter((f) => !standardTagIdsForFileKey(f.Key).length).length,
-  );
 
   /** Explorer dismiss chips — ids must stay in sync with `clearExplorerFilter`. */
   const CHIP_SCOPE_NOT_ANALYZED = 'chip-scope-not-analyzed';
@@ -765,27 +419,9 @@
     }
   }
 
-  function toggleKey(key: string): void {
-    const s = new Set(selectedKeys.value);
-    if (s.has(key)) s.delete(key);
-    else s.add(key);
-    selectedKeys.value = [...s];
-  }
-
-  function selectAllDisplayed(): void {
-    selectedKeys.value = visibleFiles.value.map((f) => f.Key);
-  }
-
-  /**
-   * Replace the current selection with the input file keys recorded for a given run, restricted
-   * to keys that are present in the loaded listing. Keys not currently visible (e.g. deleted from
-   * S3 since the run, or outside this listing's page) are silently dropped so we never select
-   * ghost rows.
-   */
-  function selectFilesForRun(payload: { runId: string; inputFileKeys: string[] }): void {
-    const loadedKeys = new Set(files.value.map((f) => f.Key));
-    selectedKeys.value = payload.inputFileKeys.filter((k) => loadedKeys.has(k));
-  }
+  const toggleKey = dc.toggleKey;
+  const selectAllDisplayed = dc.selectAllDisplayed;
+  const selectFilesForRun = dc.selectFilesForRun;
 
   function resetBulkPanelDraft(): void {
     bulkAddTagIds.value = [];
@@ -834,20 +470,7 @@
     bulkRemoveTagIds.value = [...s];
   }
 
-  async function addTagsToFilesInChunks(keys: string[], addTagIds: string[], removeTagIds: string[]): Promise<void> {
-    if (!lab.value?.S3Bucket) return;
-    const bucket = lab.value.S3Bucket;
-    for (let i = 0; i < keys.length; i += KEYS_CHUNK) {
-      const chunk = keys.slice(i, i + KEYS_CHUNK);
-      await $api.dataCollections.addTagsToFiles({
-        LaboratoryId: props.labId,
-        S3Bucket: bucket,
-        Keys: chunk,
-        AddTagIds: addTagIds.length ? addTagIds : undefined,
-        RemoveTagIds: removeTagIds.length ? removeTagIds : undefined,
-      });
-    }
-  }
+  const addTagsToFilesInChunks = dc.addTagsToFilesInChunks;
 
   const presetColors = ['#5B4FD4', '#85B7EB', '#F09595', '#97C459', '#ED93B1', '#EF9F27', '#B4B2A9'];
 
