@@ -1,7 +1,7 @@
 process.env.NAME_PREFIX = 'unit-test';
 
-import { LaboratoryNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { marshall } from '@aws-sdk/util-dynamodb';
+import { LaboratoryNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { Context, DynamoDBStreamEvent } from 'aws-lambda';
 
 const mockRemove: jest.Mock = jest.fn().mockResolvedValue(undefined);
