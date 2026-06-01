@@ -6,6 +6,7 @@
     DescribePipelineSchemaResponse,
     Pipeline as SeqeraPipeline,
   } from '@/packages/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
+  import { ensureLabInActiveOrg } from '@FE/utils/ensure-lab-in-active-org';
 
   const { $api } = useNuxtApp();
   const $router = useRouter();
@@ -26,7 +27,9 @@
   }
 
   onBeforeMount(async () => {
-    await useEnsureLabInActiveOrg(labId, '/labs');
+    if (await ensureLabInActiveOrg({ labId })) {
+      return;
+    }
   });
 
   // set a new seqeraRunTempId if not provided

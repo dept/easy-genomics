@@ -16,6 +16,7 @@
   import { WorkflowListItem as OmicsWorkflow } from '@aws-sdk/client-omics';
   import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
   import { TableSort } from './EGTable.vue';
+  import { ensureLabInActiveOrg } from '@FE/utils/ensure-lab-in-active-org';
 
   const props = defineProps<{
     superuser?: boolean;
@@ -59,13 +60,21 @@
   const orgId = computed<string | null>(() => lab.value?.OrganizationId ?? null);
   const labName = computed<string>(() => lab.value?.Name || '');
 
+  /** Prevents duplicate redirects when multiple watchers or lifecycle hooks fire. */
   const hasRedirectedForOrgMismatch = ref(false);
 
-  function isLabInActiveOrg(): boolean {
-    if (props.superuser) return true;
-    if (!lab.value?.OrganizationId) return true; // can't validate yet
-    if (!userStore.currentOrgId) return true; // can't validate yet
-    return lab.value.OrganizationId === userStore.currentOrgId;
+  async function redirectIfLabOrgMismatch(): Promise<boolean> {
+    if (hasRedirectedForOrgMismatch.value) {
+      return true;
+    }
+    const redirected = await ensureLabInActiveOrg({
+      labId: props.labId,
+      superuser: props.superuser,
+    });
+    if (redirected) {
+      hasRedirectedForOrgMismatch.value = true;
+    }
+    return redirected;
   }
 
   /** Pipeline Runs table footer; only when Settings → Run retention (months) is greater than zero. */
@@ -82,11 +91,7 @@
   onBeforeMount(async () => {
     await loadLabData();
 
-    // If the user switched orgs (or deep-linked) and the lab belongs to a different org,
-    // redirect out of the lab context to avoid cross-org context leakage.
-    if (!isLabInActiveOrg() && !hasRedirectedForOrgMismatch.value) {
-      hasRedirectedForOrgMismatch.value = true;
-      await $router.replace('/labs');
+    if (await redirectIfLabOrgMismatch()) {
       return;
     }
 
@@ -94,12 +99,6 @@
   });
 
   onMounted(async () => {
-    if (!isLabInActiveOrg() && !hasRedirectedForOrgMismatch.value) {
-      hasRedirectedForOrgMismatch.value = true;
-      await $router.replace('/labs');
-      return;
-    }
-
     setTabIndex();
     uiStore.setSidebarVisible(true);
 
@@ -658,7 +657,18 @@
     () => props.labId,
     () => {
       hasRefreshedLabForNullToken.value = false;
+      hasRedirectedForOrgMismatch.value = false;
       lastProcessedLabRef.value = null;
+    },
+  );
+
+  watch(
+    () => userStore.currentOrgId,
+    async () => {
+      if (props.superuser || uiStore.isRequestPending('loadLabData')) {
+        return;
+      }
+      await redirectIfLabOrgMismatch();
     },
   );
 
@@ -667,10 +677,11 @@
       return;
     }
 
-    // If org changes while on a lab route, immediately exit this lab.
-    if (!isLabInActiveOrg() && !hasRedirectedForOrgMismatch.value) {
-      hasRedirectedForOrgMismatch.value = true;
-      await $router.replace('/labs');
+    if (!props.superuser && uiStore.isRequestPending('loadLabData')) {
+      return;
+    }
+
+    if (await redirectIfLabOrgMismatch()) {
       return;
     }
 
