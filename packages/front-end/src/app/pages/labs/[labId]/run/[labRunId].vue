@@ -1,8 +1,11 @@
 <script setup lang="ts">
   import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
   import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-  import { WorkflowProgressResponse } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
-  import { RunTask } from '@aws-sdk/client-omics';
+  import {
+    WorkflowProgressResponse,
+    Workflow,
+  } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
+  import { RunTask, GetRunResponse } from '@aws-sdk/client-omics';
   import { useLabsStore, useRunStore, useUiStore } from '@FE/stores';
 
   const $route = useRoute();
@@ -73,8 +76,12 @@
 
   // Task-level progress for FAILED/RUNNING Seqera runs
   const seqeraProgress = ref<WorkflowProgressResponse | null>(null);
+  // Full workflow detail for FAILED Seqera runs (errorMessage, errorReport)
+  const seqeraRunDetail = ref<Workflow | null>(null);
   // Task-level data for FAILED Omics runs
   const omicsFailedTasks = ref<RunTask[]>([]);
+  // Full run detail for FAILED Omics runs (failureReason, statusMessage)
+  const omicsRunDetail = ref<GetRunResponse | null>(null);
 
   onBeforeMount(async () => {
     await fetchLabRuns();
@@ -99,18 +106,58 @@
         seqeraProgress.value = await $api.seqeraRuns.getWorkflowProgress(labId, run.ExternalRunId);
       } catch (error) {
         console.error('Failed to fetch Seqera workflow progress:', error);
+        useToastStore().error('Could not load Seqera task progress for this run.');
+      }
+      if (run.Status === 'FAILED') {
+        try {
+          seqeraRunDetail.value = await $api.seqeraRuns.get(labId, run.ExternalRunId);
+        } catch (error) {
+          console.error('Failed to fetch Seqera workflow detail:', error);
+          useToastStore().error('Could not load Seqera failure details for this run.');
+        }
       }
     }
 
     if (run.Platform === 'AWS HealthOmics' && run.Status === 'FAILED') {
       try {
         const omicsRun = await $api.omicsRuns.get(labId, run.ExternalRunId);
+        omicsRunDetail.value = omicsRun;
         omicsFailedTasks.value = (omicsRun.tasks ?? []).filter((t: RunTask) => t.status === 'FAILED');
       } catch (error) {
         console.error('Failed to fetch Omics run task details:', error);
+        useToastStore().error('Could not load HealthOmics failure details for this run.');
       }
     }
   }
+
+  const omicsFailureReason = computed<string | null>(
+    () =>
+      omicsRunDetail.value?.failureReason ?? omicsRunDetail.value?.statusMessage ?? labRun.value?.FailureReason ?? null,
+  );
+
+  const seqeraFailureReason = computed<string | null>(
+    () => seqeraRunDetail.value?.errorMessage ?? labRun.value?.FailureReason ?? null,
+  );
+
+  const seqeraErrorReport = computed<string | null>(() => seqeraRunDetail.value?.errorReport ?? null);
+
+  // Classification block surfaces FailureOwner / FailureSummary / FailureAction populated by the
+  // backend classifier (deterministic lookup for documented HealthOmics codes, LLM for ambiguous
+  // ones and all Seqera errors). Shown above the platform-specific failure-reason banner.
+  const failureClassificationVisible = computed<boolean>(() => !!labRun.value?.FailureOwner);
+  const failureOwnerBadgeClass = computed<string>(() => {
+    switch (labRun.value?.FailureOwner) {
+      case 'Lab':
+        return 'bg-amber-100 text-amber-900 border-amber-200';
+      case 'Bioinformatician':
+        return 'bg-red-100 text-red-900 border-red-200';
+      case 'AWS':
+        return 'bg-blue-100 text-blue-900 border-blue-200';
+      case 'Ambiguous':
+      default:
+        return 'bg-gray-100 text-gray-900 border-gray-200';
+    }
+  });
 
   const tabItems = computed(() => [
     { key: 'runDetails', label: 'Run Details' },
@@ -280,41 +327,83 @@
           </dl>
         </section>
 
+        <!-- Failure classification (owner + summary + suggested action). Populated asynchronously
+             by the classifier Lambda when a run reaches FAILED; absent on older rows or while the
+             classifier is still working. -->
+        <section
+          v-if="failureClassificationVisible"
+          class="stroke-light flex flex-col rounded-none rounded-b-2xl border border-solid bg-white p-6 max-md:px-5"
+        >
+          <h3 class="mb-4 text-sm font-medium text-black">Failure analysis</h3>
+          <div class="space-y-2">
+            <div class="flex items-center gap-3">
+              <span
+                class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium"
+                :class="failureOwnerBadgeClass"
+              >
+                Owner: {{ labRun?.FailureOwner }}
+              </span>
+              <span v-if="labRun?.FailureClassifiedBy === 'llm'" class="text-muted text-xs italic">
+                AI-assisted classification — verify before acting
+              </span>
+            </div>
+            <p v-if="labRun?.FailureSummary" class="text-sm text-black">{{ labRun.FailureSummary }}</p>
+            <p v-if="labRun?.FailureAction" class="text-muted text-sm">
+              <span class="font-medium text-black">What to do next:</span>
+              {{ labRun.FailureAction }}
+            </p>
+          </div>
+        </section>
+
         <!-- Seqera task-level progress for FAILED or RUNNING runs -->
         <section
-          v-if="labRun?.Platform === 'Seqera Cloud' && seqeraProgress?.progress"
+          v-if="labRun?.Platform === 'Seqera Cloud' && (seqeraFailureReason || seqeraProgress?.progress)"
           class="stroke-light flex flex-col rounded-none rounded-b-2xl border border-solid bg-white p-6 max-md:px-5"
         >
           <h3 class="mb-4 text-sm font-medium text-black">Task Breakdown</h3>
-          <div class="mb-4 flex gap-6 text-sm">
-            <span class="text-green-700">
-              Succeeded: {{ seqeraProgress.progress.workflowProgress?.succeedCountFmt ?? '0' }}
-            </span>
-            <span class="text-red-700">
-              Failed: {{ seqeraProgress.progress.workflowProgress?.failedCountFmt ?? '0' }}
-            </span>
-            <span class="text-muted">
-              Running: {{ seqeraProgress.progress.workflowProgress?.runningCountFmt ?? '0' }}
-            </span>
+          <div v-if="seqeraFailureReason" class="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm">
+            <p class="font-medium text-red-800">Failure reason</p>
+            <p class="text-red-700">{{ seqeraFailureReason }}</p>
+            <details v-if="seqeraErrorReport" class="mt-2">
+              <summary class="cursor-pointer text-xs text-red-600">Show full error report</summary>
+              <pre class="mt-2 whitespace-pre-wrap break-all text-xs text-red-600">{{ seqeraErrorReport }}</pre>
+            </details>
           </div>
-          <div v-if="seqeraProgress.progress.processesProgress?.length" class="space-y-2">
-            <div
-              v-for="proc in seqeraProgress.progress.processesProgress?.filter((p) => p.failed > 0)"
-              :key="proc.process"
-              class="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm"
-            >
-              <p class="font-medium text-red-800">{{ proc.process }}</p>
-              <p class="text-red-600">{{ proc.failed }} task(s) failed</p>
+          <template v-if="seqeraProgress?.progress">
+            <div class="mb-4 flex gap-6 text-sm">
+              <span class="text-green-700">
+                Succeeded: {{ seqeraProgress.progress.workflowProgress?.succeedCountFmt ?? '0' }}
+              </span>
+              <span class="text-red-700">
+                Failed: {{ seqeraProgress.progress.workflowProgress?.failedCountFmt ?? '0' }}
+              </span>
+              <span class="text-muted">
+                Running: {{ seqeraProgress.progress.workflowProgress?.runningCountFmt ?? '0' }}
+              </span>
             </div>
-          </div>
+            <div v-if="seqeraProgress.progress.processesProgress?.length" class="space-y-2">
+              <div
+                v-for="proc in seqeraProgress.progress.processesProgress?.filter((p) => p.failed > 0)"
+                :key="proc.process"
+                class="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm"
+              >
+                <p class="font-medium text-red-800">{{ proc.process }}</p>
+                <p class="text-red-600">{{ proc.failed }} task(s) failed</p>
+              </div>
+            </div>
+          </template>
         </section>
 
         <!-- Omics task-level failures for FAILED runs -->
         <section
-          v-if="labRun?.Platform === 'AWS HealthOmics' && omicsFailedTasks.length"
+          v-if="labRun?.Platform === 'AWS HealthOmics' && (omicsFailureReason || omicsFailedTasks.length)"
           class="stroke-light flex flex-col rounded-none rounded-b-2xl border border-solid bg-white p-6 max-md:px-5"
         >
           <h3 class="mb-4 text-sm font-medium text-black">Failed Tasks</h3>
+          <div v-if="omicsFailureReason" class="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm">
+            <p class="font-medium text-red-800">Failure reason</p>
+            <p class="text-red-700">{{ omicsFailureReason }}</p>
+          </div>
           <div class="space-y-2">
             <div
               v-for="task in omicsFailedTasks"

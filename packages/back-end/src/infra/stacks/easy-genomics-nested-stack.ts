@@ -59,6 +59,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
         ['laboratory-deletion-topic']: <TopicDetails>{ fifo: true, enforceSSL: true },
         ['user-deletion-topic']: <TopicDetails>{ fifo: true, enforceSSL: true },
         ['laboratory-run-update-topic']: <TopicDetails>{ fifo: true, enforceSSL: true },
+        ['laboratory-run-failure-classification-topic']: <TopicDetails>{ fifo: true, enforceSSL: true },
         ['user-invite-topic']: <TopicDetails>{ fifo: true, enforceSSL: true },
         ['folder-download-topic']: <TopicDetails>{ fifo: true, enforceSSL: true },
       },
@@ -94,6 +95,16 @@ export class EasyGenomicsNestedStack extends NestedStack {
           retentionPeriod: Duration.days(1),
           visibilityTimeout: Duration.minutes(15),
           snsTopics: [this.sns.snsTopics.get('laboratory-run-update-topic')],
+          enforceSSL: true,
+        },
+        // Failure classification consumer. Visibility timeout is generous (5 min) to
+        // accommodate Bedrock invocation latency and occasional throttling without
+        // double-processing the same record.
+        ['laboratory-run-failure-classification-queue']: <QueueDetails>{
+          fifo: true,
+          retentionPeriod: Duration.days(1),
+          visibilityTimeout: Duration.minutes(5),
+          snsTopics: [this.sns.snsTopics.get('laboratory-run-failure-classification-topic')],
           enforceSSL: true,
         },
         ['user-invite-queue']: <QueueDetails>{
@@ -276,6 +287,26 @@ export class EasyGenomicsNestedStack extends NestedStack {
           environment: {
             SEQERA_API_BASE_URL: this.props.seqeraApiBaseUrl,
             SNS_LABORATORY_RUN_UPDATE_TOPIC: this.sns.snsTopics.get('laboratory-run-update-topic')?.topicArn || '',
+            SNS_LABORATORY_RUN_FAILURE_CLASSIFICATION_TOPIC:
+              this.sns.snsTopics.get('laboratory-run-failure-classification-topic')?.topicArn || '',
+          },
+        },
+        // Async classifier consumer for FAILED runs. Idempotent (skips runs that already
+        // have FailureOwner set). Timeout is sized for Bedrock invocation latency; the
+        // batchSize stays at 1 so a single slow LLM call cannot block a batch of records.
+        '/easy-genomics/laboratory/run/process-classify-laboratory-run-failure': {
+          events: [
+            new SqsEventSource(this.sqs.sqsQueues.get('laboratory-run-failure-classification-queue')!, {
+              batchSize: 1,
+            }),
+          ],
+          timeoutSeconds: 60,
+          memorySizeMb: 512,
+          environment: {
+            // Per-lab BYOK: provider, model, and API key all live on the Laboratory
+            // record / SSM. The only env var we still pass is the Bedrock region
+            // fallback, used when a lab picks Bedrock without setting a region.
+            BEDROCK_REGION: this.props.env.region ?? '',
           },
         },
         // DynamoDB Stream subscriber on the laboratory-run table. Handles REMOVE events
@@ -623,6 +654,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
         resources: [
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/nf-access-token`,
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/github-access-token`,
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-healthomics`,
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-seqera`,
         ],
         actions: ['ssm:PutParameter'],
         effect: Effect.ALLOW,
@@ -642,6 +675,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
         resources: [
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/nf-access-token`,
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/github-access-token`,
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-healthomics`,
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-seqera`,
         ],
         actions: ['ssm:GetParameter'],
         effect: Effect.ALLOW,
@@ -701,6 +736,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
         resources: [
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/nf-access-token`,
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/github-access-token`,
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-healthomics`,
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-seqera`,
         ],
         actions: ['ssm:GetParameter', 'ssm:PutParameter'],
         effect: Effect.ALLOW,
@@ -743,6 +780,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
         resources: [
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/nf-access-token`,
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/github-access-token`,
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-healthomics`,
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-seqera`,
         ],
         actions: ['ssm:DeleteParameter'],
         effect: Effect.ALLOW,
@@ -1197,6 +1236,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
+        resources: [`${this.sns.snsTopics.get('laboratory-run-failure-classification-topic')?.topicArn || ''}`],
+        actions: ['sns:Publish'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:run/*`],
         actions: ['omics:GetRun'],
         effect: Effect.ALLOW,
@@ -1209,6 +1253,47 @@ export class EasyGenomicsNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
       dataTaggingUsagePropagationStatement,
+    ]);
+
+    // /easy-genomics/laboratory/run/process-classify-laboratory-run-failure
+    // Reads the parent Laboratory row to honour the per-lab HealthOmicsLlmEnabled
+    // / SeqeraLlmEnabled toggles, then reads + writes its own row in the
+    // laboratory-run table to attach FailureOwner / FailureSummary / FailureAction.
+    // Bedrock InvokeModel is scoped to the configured foundation model when set;
+    // the SQS event source provides ReceiveMessage / DeleteMessage automatically.
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/run/process-classify-laboratory-run-failure', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
+        ],
+        actions: ['dynamodb:Query', 'dynamodb:UpdateItem'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        // Each lab picks its own Bedrock model id; we can't pin a single ARN here.
+        // Bedrock foundation-model ARNs have no account part by design.
+        resources: [`arn:aws:bedrock:${this.props.env.region!}::foundation-model/*`],
+        actions: ['bedrock:InvokeModel'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        // Per-lab BYOK API key (for openai / anthropic providers). SecureString.
+        resources: [
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-healthomics`,
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-seqera`,
+        ],
+        actions: ['ssm:GetParameter'],
+        effect: Effect.ALLOW,
+      }),
     ]);
 
     // /easy-genomics/laboratory/run/process-laboratory-run-stream

@@ -33,6 +33,10 @@ const RunRetentionMonthsSchema = z
   .min(0, 'Run retention must be 0 or greater')
   .max(120, 'Run retention must be 120 months or less');
 
+const LlmProviderSchema = z.enum(['bedrock', 'openai', 'anthropic']);
+const LlmModelIdSchema = z.string().trim().max(256, 'Model ID must be no more than 256 characters');
+const LlmApiKeySchema = z.string().trim().min(1, 'API key cannot be empty');
+
 // Just the fields required for read-only display
 const LabDetailsSchema = z.object({
   Name: LabNameSchema,
@@ -45,6 +49,16 @@ const LabDetailsSchema = z.object({
   NextFlowTowerWorkspaceId: NextFlowTowerWorkspaceIdSchema,
   NextFlowTowerApiBaseUrl: NextFlowTowerApiBaseUrlSchema,
   AwsHealthOmicsEnabled: z.boolean(),
+  // BYOK provider selection per integration. Setting a provider IS the enable
+  // signal — there is no separate toggle. HealthOmics and Seqera can use
+  // different providers/models/keys (e.g. cheap model for Seqera, accurate
+  // model for HealthOmics ambiguous cases).
+  HealthOmicsLlmProvider: LlmProviderSchema.optional(),
+  HealthOmicsLlmModelId: LlmModelIdSchema.optional(),
+  HealthOmicsLlmApiKey: LlmApiKeySchema.optional(),
+  SeqeraLlmProvider: LlmProviderSchema.optional(),
+  SeqeraLlmModelId: LlmModelIdSchema.optional(),
+  SeqeraLlmApiKey: LlmApiKeySchema.optional(),
 });
 type LabDetails = z.infer<typeof LabDetailsSchema>;
 
@@ -62,6 +76,9 @@ export {
   LabDetailsFormModes,
   LabDetailsSchema,
   LabNameSchema,
+  LlmApiKeySchema,
+  LlmModelIdSchema,
+  LlmProviderSchema,
   NextFlowTowerApiBaseUrlSchema,
   NextFlowTowerAccessTokenSchema,
   GitHubAccessTokenSchema,

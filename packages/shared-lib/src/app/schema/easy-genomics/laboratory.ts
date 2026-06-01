@@ -18,6 +18,18 @@ export const LaboratorySchema = z
      */
     RunRetentionMonths: z.number().int().min(0).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
+    /**
+     * BYOK provider selection per integration. Setting a provider IS the enable
+     * signal — when set, ambiguous HealthOmics failures (WORKFLOW_RUN_FAILED,
+     * generic RUN_TASK_FAILED) and free-text Seqera errors are sent to the
+     * configured LLM for owner attribution. The deterministic HealthOmics
+     * lookup table runs regardless. Bedrock uses the platform Lambda IAM;
+     * OpenAI / Anthropic need a key stored separately in SSM SecureString.
+     */
+    HealthOmicsLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+    HealthOmicsLlmModelId: z.string().optional(),
+    SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+    SeqeraLlmModelId: z.string().optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
@@ -40,6 +52,13 @@ export const CreateLaboratorySchema = z
     NextFlowTowerWorkspaceId: z.string().optional(),
     RunRetentionMonths: z.number().int().min(0).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
+    HealthOmicsLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+    HealthOmicsLlmModelId: z.string().optional(),
+    SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+    SeqeraLlmModelId: z.string().optional(),
+    /** Write-only on Create / Update. Persisted to SSM SecureString, never echoed back. */
+    HealthOmicsLlmApiKey: z.string().optional(),
+    SeqeraLlmApiKey: z.string().optional(),
   })
   .strict();
 export type CreateLaboratory = z.infer<typeof CreateLaboratorySchema>;
@@ -60,6 +79,13 @@ export const ReadLaboratorySchema = z
     HasGitHubAccessToken: z.boolean().optional(), // Return boolean indicator instead of actual GitHubAccessToken
     RunRetentionMonths: z.number().int().min(0).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
+    HealthOmicsLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+    HealthOmicsLlmModelId: z.string().optional(),
+    SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+    SeqeraLlmModelId: z.string().optional(),
+    /** Boolean indicators. The actual keys live in SSM and are never returned. */
+    HasHealthOmicsLlmApiKey: z.boolean().optional(),
+    HasSeqeraLlmApiKey: z.boolean().optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
@@ -88,5 +114,12 @@ export const UpdateLaboratorySchema = z.object({
   NextFlowTowerWorkspaceId: z.string().optional(),
   RunRetentionMonths: z.number().int().min(0).optional(),
   EnableNewWorkflowsByDefault: z.boolean().optional(),
+  HealthOmicsLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+  HealthOmicsLlmModelId: z.string().optional(),
+  SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+  SeqeraLlmModelId: z.string().optional(),
+  /** Write-only on Update. Persisted to SSM SecureString. */
+  HealthOmicsLlmApiKey: z.string().optional(),
+  SeqeraLlmApiKey: z.string().optional(),
 });
 export type UpdateLaboratory = z.infer<typeof UpdateLaboratorySchema>;

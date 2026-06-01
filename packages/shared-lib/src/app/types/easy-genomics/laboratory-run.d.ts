@@ -83,4 +83,33 @@ export interface LaboratoryRun extends BaseAttributes {
    * which is bumped by unrelated background updates (retention, tags, etc.).
    */
   RunDurationSeconds?: number;
+
+  /**
+   * Top-level failure reason reported by the platform when the run reached FAILED state.
+   * Sourced from HealthOmics `failureReason` / `statusMessage` or Seqera `workflow.errorMessage`.
+   * Absent on runs that failed before this field was introduced.
+   */
+  FailureReason?: string;
+
+  /**
+   * Party responsible for resolving the failure. Populated asynchronously by the
+   * failure-classification pipeline after a FAILED transition.
+   * - `Lab` — user-provided inputs or data (sample sheet, S3 paths, file size)
+   * - `Bioinformatician` — workflow definition, container image, or resource config
+   * - `AWS` — transient AWS-side issue; retry recommended
+   * - `Ambiguous` — could not be confidently attributed; needs CloudWatch investigation
+   */
+  FailureOwner?: 'Bioinformatician' | 'Lab' | 'AWS' | 'Ambiguous';
+
+  /** One-line human-readable summary of the failure suitable for inline display. */
+  FailureSummary?: string;
+
+  /** Imperative-voice suggested next step (e.g. "Increase memory allocation"). */
+  FailureAction?: string;
+
+  /**
+   * Provenance of the classification: `lookup` = deterministic table hit (high confidence),
+   * `llm` = produced by the configured LLM provider (display "AI-assisted" disclaimer).
+   */
+  FailureClassifiedBy?: 'lookup' | 'llm';
 }

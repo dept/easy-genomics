@@ -121,6 +121,27 @@ export const handler: Handler = async (
       });
     }
 
+    // Update BYOK LLM API keys per integration if new values were supplied.
+    // Absent on requests that only flip toggles, so existing keys are preserved.
+    if (request.HealthOmicsLlmApiKey) {
+      await ssmService.putParameter({
+        Name: `/easy-genomics/organization/${existing.OrganizationId}/laboratory/${existing.LaboratoryId}/llm-api-key-healthomics`,
+        Description: `Easy Genomics Laboratory ${existing.LaboratoryId} HealthOmics BYOK LLM API key`,
+        Value: request.HealthOmicsLlmApiKey,
+        Type: 'SecureString',
+        Overwrite: true,
+      });
+    }
+    if (request.SeqeraLlmApiKey) {
+      await ssmService.putParameter({
+        Name: `/easy-genomics/organization/${existing.OrganizationId}/laboratory/${existing.LaboratoryId}/llm-api-key-seqera`,
+        Description: `Easy Genomics Laboratory ${existing.LaboratoryId} Seqera BYOK LLM API key`,
+        Value: request.SeqeraLlmApiKey,
+        Type: 'SecureString',
+        Overwrite: true,
+      });
+    }
+
     return buildResponse(200, JSON.stringify(response), event);
   } catch (err: any) {
     console.error(err);

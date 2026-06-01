@@ -100,6 +100,28 @@ export const handler: Handler = async (
       });
     }
 
+    // Store BYOK LLM API keys in SSM per integration. Bedrock doesn't need a key
+    // (uses platform Lambda IAM); openai / anthropic do. HealthOmics and Seqera
+    // use independent keys so a lab can mix providers across integrations.
+    if (request.HealthOmicsLlmApiKey) {
+      await ssmService.putParameter({
+        Name: `/easy-genomics/organization/${organization.OrganizationId}/laboratory/${laboratoryId}/llm-api-key-healthomics`,
+        Description: `Easy Genomics Laboratory ${laboratoryId} HealthOmics BYOK LLM API key`,
+        Value: request.HealthOmicsLlmApiKey,
+        Type: 'SecureString',
+        Overwrite: false,
+      });
+    }
+    if (request.SeqeraLlmApiKey) {
+      await ssmService.putParameter({
+        Name: `/easy-genomics/organization/${organization.OrganizationId}/laboratory/${laboratoryId}/llm-api-key-seqera`,
+        Description: `Easy Genomics Laboratory ${laboratoryId} Seqera BYOK LLM API key`,
+        Value: request.SeqeraLlmApiKey,
+        Type: 'SecureString',
+        Overwrite: false,
+      });
+    }
+
     if (request.GitHubAccessToken) {
       await ssmService.putParameter({
         Name: `/easy-genomics/organization/${organization.OrganizationId}/laboratory/${laboratoryId}/github-access-token`,

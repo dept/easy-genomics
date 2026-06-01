@@ -65,8 +65,14 @@
     NextFlowTowerAccessToken: '',
     GitHubAccessToken: '',
     NextFlowTowerWorkspaceId: '',
-    NextFlowTowerApiBaseUrl: orgsStore.orgs[userStore.currentOrgId || ''].NextFlowTowerApiBaseUrl || '',
+    NextFlowTowerApiBaseUrl: orgsStore.orgs[userStore.currentOrgId || '']?.NextFlowTowerApiBaseUrl || '',
     AwsHealthOmicsEnabled: false,
+    HealthOmicsLlmProvider: undefined,
+    HealthOmicsLlmModelId: '',
+    HealthOmicsLlmApiKey: '',
+    SeqeraLlmProvider: undefined,
+    SeqeraLlmModelId: '',
+    SeqeraLlmApiKey: '',
   };
 
   const state = ref({ ...defaultState } as Laboratory);
@@ -91,6 +97,63 @@
   // the password field display state
   const isEditingNextFlowTowerAccessToken = ref(false);
   const isEditingGitHubAccessToken = ref(false);
+
+  // BYOK provider dropdown options + per-provider hints/placeholders for the
+  // Model ID input. The leading `null` option lets users reset back to "no
+  // provider" — USelect's placeholder is only shown when the value is empty,
+  // so without an explicit reset option the dropdown becomes one-way.
+  const llmProviderOptions = [
+    { value: null, label: 'None — disable AI analysis' },
+    { value: 'bedrock', label: 'Amazon Bedrock (uses platform IAM, no key required)' },
+    { value: 'openai', label: 'OpenAI' },
+    { value: 'anthropic', label: 'Anthropic' },
+  ];
+  function modelIdPlaceholderFor(provider: string | undefined): string {
+    switch (provider) {
+      case 'bedrock':
+        return 'e.g. anthropic.claude-haiku-4-5-20251001';
+      case 'openai':
+        return 'e.g. gpt-4o-mini';
+      case 'anthropic':
+        return 'e.g. claude-haiku-4-5-20251001';
+      default:
+        return '';
+    }
+  }
+  /**
+   * USelect's "reset to none" option uses `null` as the value, but the backend
+   * Zod schemas only accept `string | undefined`. Normalize before submitting
+   * so the safeParse doesn't reject `LlmProvider: null`. Same applies to model
+   * id / api key empties when a provider was unset.
+   */
+  function withNormalizedLlmFields<T extends Record<string, unknown>>(input: T): T {
+    const fields = [
+      'HealthOmicsLlmProvider',
+      'HealthOmicsLlmModelId',
+      'HealthOmicsLlmApiKey',
+      'SeqeraLlmProvider',
+      'SeqeraLlmModelId',
+      'SeqeraLlmApiKey',
+    ] as const;
+    const next = { ...input } as Record<string, unknown>;
+    for (const key of fields) {
+      if (next[key] === null || next[key] === '') next[key] = undefined;
+    }
+    return next as T;
+  }
+
+  function modelIdHintFor(provider: string | undefined): string {
+    switch (provider) {
+      case 'bedrock':
+        return 'Foundation model identifier used by Bedrock InvokeModel.';
+      case 'openai':
+        return 'Model name as it appears in the OpenAI dashboard.';
+      case 'anthropic':
+        return 'Model name from the Anthropic API documentation.';
+      default:
+        return '';
+    }
+  }
 
   /**
    * Switches the form input fields disabled/hidden states based on the form mode.
@@ -192,6 +255,10 @@
           ...labDetails,
           // ?? only: RunRetentionMonths 0 (never delete) must not become 6.
           RunRetentionMonths: labDetails.RunRetentionMonths ?? 6,
+          // BYOK: server never echoes back the keys — only Has*LlmApiKey indicators.
+          // Initialize the password inputs to empty so they don't show stale data.
+          HealthOmicsLlmApiKey: '',
+          SeqeraLlmApiKey: '',
         };
         state.value = { ...state.value, ...withRetentionDefault };
         // Store the unedited lab details to support the cancel button in Edit mode
@@ -383,11 +450,11 @@
   async function handleCreateLab() {
     useUiStore().setRequestPending('createLab');
 
-    const lab: CreateLaboratory = {
+    const lab: CreateLaboratory = withNormalizedLlmFields({
       ...state.value,
       OrganizationId: useUserStore().currentOrgId,
       Status: 'Active',
-    };
+    });
 
     const parseResult = CreateLaboratorySchema.safeParse(lab);
     if (!parseResult.success) {
@@ -413,7 +480,7 @@
   // e.g, LaboratoryId or CreatedAt
   async function handleUpdateLabDetails() {
     useUiStore().setRequestPending('updateLab');
-    const parseResult = UpdateLaboratorySchema.safeParse(state.value);
+    const parseResult = UpdateLaboratorySchema.safeParse(withNormalizedLlmFields(state.value));
 
     if (!parseResult.success) {
       const message = 'Update lab failed to parse lab details';
@@ -509,6 +576,12 @@
     'NextFlowTowerWorkspaceId',
     'NextFlowTowerAccessToken',
     'GitHubAccessToken',
+    'HealthOmicsLlmProvider',
+    'HealthOmicsLlmModelId',
+    'HealthOmicsLlmApiKey',
+    'SeqeraLlmProvider',
+    'SeqeraLlmModelId',
+    'SeqeraLlmApiKey',
   ] as const;
 
   type LabEditCompareKey = (typeof LAB_DETAILS_EDIT_COMPARE_KEYS)[number];
@@ -522,8 +595,21 @@
       };
       return norm(a) !== norm(b);
     }
-    if (key === 'NextFlowTowerAccessToken' || key === 'GitHubAccessToken' || key === 'Description') {
+    if (
+      key === 'NextFlowTowerAccessToken' ||
+      key === 'GitHubAccessToken' ||
+      key === 'Description' ||
+      key === 'HealthOmicsLlmApiKey' ||
+      key === 'SeqeraLlmApiKey' ||
+      key === 'HealthOmicsLlmModelId' ||
+      key === 'SeqeraLlmModelId'
+    ) {
       const norm = (v: unknown) => (v === undefined || v === null || v === '' ? '' : v);
+      return norm(a) !== norm(b);
+    }
+    if (key === 'HealthOmicsLlmProvider' || key === 'SeqeraLlmProvider') {
+      // Empty / undefined means "no provider selected"; treat them equivalently.
+      const norm = (v: unknown) => (v === undefined || v === null || v === '' ? '_unset_' : v);
       return norm(a) !== norm(b);
     }
     return a !== b;
@@ -718,6 +804,134 @@
           :disabled="!isEditing || isSubmittingFormData"
         />
       </EGFormGroup>
+
+      <!-- AI Failure Analysis: BYOK per integration. HealthOmics and Seqera each get
+           their own provider/model/key + enable toggle. The deterministic HealthOmics
+           lookup table runs regardless; the LLM is only used as a fallback for
+           ambiguous HealthOmics codes (WORKFLOW_RUN_FAILED etc.) and free-text
+           Seqera errors. -->
+      <template v-if="state.AwsHealthOmicsEnabled || state.NextFlowTowerEnabled">
+        <hr class="mb-6" />
+        <p class="mb-3 text-sm font-medium text-black">AI Failure Analysis</p>
+        <p class="text-muted mb-4 text-xs">
+          When a run fails, classify the cause by responsible party using an LLM. Documented HealthOmics error codes are
+          always classified using a built-in lookup; the LLM is used only for ambiguous HealthOmics codes and free-text
+          Seqera errors. Each integration can use a different provider — for example a cheaper model for high-volume
+          Seqera traffic, a more accurate model for HealthOmics ambiguous cases.
+        </p>
+
+        <!-- HealthOmics sub-section -->
+        <div v-if="state.AwsHealthOmicsEnabled" class="mb-6 rounded border border-gray-200 p-4">
+          <p class="mb-3 text-sm font-medium text-black">HealthOmics</p>
+
+          <EGFormGroup label="LLM Provider" name="HealthOmicsLlmProvider" eager-validation>
+            <USelect
+              v-model="state.HealthOmicsLlmProvider"
+              :options="llmProviderOptions"
+              value-attribute="value"
+              option-attribute="label"
+              placeholder="None — disable AI analysis for HealthOmics"
+              :disabled="!isEditing || isSubmittingFormData"
+            />
+          </EGFormGroup>
+
+          <EGFormGroup
+            v-if="state.HealthOmicsLlmProvider"
+            label="Model ID"
+            name="HealthOmicsLlmModelId"
+            eager-validation
+            :hint="modelIdHintFor(state.HealthOmicsLlmProvider)"
+          >
+            <EGInput
+              v-model="state.HealthOmicsLlmModelId"
+              :placeholder="modelIdPlaceholderFor(state.HealthOmicsLlmProvider)"
+              :disabled="!isEditing || isSubmittingFormData"
+            />
+          </EGFormGroup>
+
+          <EGFormGroup
+            v-if="
+              isEditing && (state.HealthOmicsLlmProvider === 'openai' || state.HealthOmicsLlmProvider === 'anthropic')
+            "
+            label="API Key"
+            name="HealthOmicsLlmApiKey"
+            eager-validation
+            :required="formMode === LabDetailsFormModeEnum.enum.Create || !uneditedLabDetails?.HasHealthOmicsLlmApiKey"
+          >
+            <div v-if="uneditedLabDetails?.HasHealthOmicsLlmApiKey" class="mb-2 flex items-center gap-2">
+              <UBadge size="sm" class="bg-alert-danger-muted text-alert-danger rounded-xl border-0 ring-0">
+                KEY SAVED
+              </UBadge>
+              <p class="text-alert-danger-dark text-xs font-medium">
+                Saving a new value will replace the existing key.
+              </p>
+            </div>
+            <EGPasswordInput
+              v-model="state.HealthOmicsLlmApiKey"
+              :select-on-focus="true"
+              :password="true"
+              placeholder="Paste your provider API key. A previously set key is never shown."
+              :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
+              :disabled="!isEditing || isSubmittingFormData"
+            />
+          </EGFormGroup>
+        </div>
+
+        <!-- Seqera sub-section -->
+        <div v-if="state.NextFlowTowerEnabled" class="mb-6 rounded border border-gray-200 p-4">
+          <p class="mb-3 text-sm font-medium text-black">Seqera</p>
+
+          <EGFormGroup label="LLM Provider" name="SeqeraLlmProvider" eager-validation>
+            <USelect
+              v-model="state.SeqeraLlmProvider"
+              :options="llmProviderOptions"
+              value-attribute="value"
+              option-attribute="label"
+              placeholder="None — disable AI analysis for Seqera"
+              :disabled="!isEditing || isSubmittingFormData"
+            />
+          </EGFormGroup>
+
+          <EGFormGroup
+            v-if="state.SeqeraLlmProvider"
+            label="Model ID"
+            name="SeqeraLlmModelId"
+            eager-validation
+            :hint="modelIdHintFor(state.SeqeraLlmProvider)"
+          >
+            <EGInput
+              v-model="state.SeqeraLlmModelId"
+              :placeholder="modelIdPlaceholderFor(state.SeqeraLlmProvider)"
+              :disabled="!isEditing || isSubmittingFormData"
+            />
+          </EGFormGroup>
+
+          <EGFormGroup
+            v-if="isEditing && (state.SeqeraLlmProvider === 'openai' || state.SeqeraLlmProvider === 'anthropic')"
+            label="API Key"
+            name="SeqeraLlmApiKey"
+            eager-validation
+            :required="formMode === LabDetailsFormModeEnum.enum.Create || !uneditedLabDetails?.HasSeqeraLlmApiKey"
+          >
+            <div v-if="uneditedLabDetails?.HasSeqeraLlmApiKey" class="mb-2 flex items-center gap-2">
+              <UBadge size="sm" class="bg-alert-danger-muted text-alert-danger rounded-xl border-0 ring-0">
+                KEY SAVED
+              </UBadge>
+              <p class="text-alert-danger-dark text-xs font-medium">
+                Saving a new value will replace the existing key.
+              </p>
+            </div>
+            <EGPasswordInput
+              v-model="state.SeqeraLlmApiKey"
+              :select-on-focus="true"
+              :password="true"
+              placeholder="Paste your provider API key. A previously set key is never shown."
+              :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
+              :disabled="!isEditing || isSubmittingFormData"
+            />
+          </EGFormGroup>
+        </div>
+      </template>
     </EGCard>
 
     <!-- Form Buttons: Create Mode -->

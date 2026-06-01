@@ -122,6 +122,11 @@
       "type": "runtime"
     },
     {
+      "name": "@aws-sdk/client-bedrock-runtime",
+      "version": "3.782.0",
+      "type": "runtime"
+    },
+    {
       "name": "@aws-sdk/client-cloudformation",
       "version": "^3.786.0",
       "type": "runtime"
