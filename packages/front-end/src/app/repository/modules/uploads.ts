@@ -9,8 +9,9 @@ import {
 import HttpFactory from '@FE/repository/factory';
 
 class UploadsModule extends HttpFactory {
-  async getSampleSheetCsv(req: SampleSheetRequest): Promise<SampleSheetResponse> {
-    const res = await this.call<SampleSheetResponse>('POST', '/upload/create-file-upload-sample-sheet', req);
+  async getSampleSheetCsv(req: SampleSheetRequest, validate = false): Promise<SampleSheetResponse> {
+    const query = validate ? '?validate=true' : '';
+    const res = await this.call<SampleSheetResponse>('POST', `/upload/create-file-upload-sample-sheet${query}`, req);
 
     if (!res) {
       throw new Error('Failed to create file upload sample sheet');

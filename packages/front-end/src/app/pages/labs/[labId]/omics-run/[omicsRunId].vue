@@ -11,7 +11,6 @@
   const omicsRunId = $route.params.omicsRunId as string;
   const tabIndex = ref(0);
 
-  // check permissions to be on this page
   if (!useUserStore().canViewLab(labId)) {
     $router.push('/labs');
   }
@@ -29,8 +28,7 @@
 
   const omicsRun = computed<OmicsRun | null>(() => runStore.omicsRuns[labId][omicsRunId]);
 
-  // re: `as unknown as string` below: the schema for these time variables specifies `Date | undefined`, but we are
-  // receiving strings - this must be a mistake somewhere but for now we're casting them to the actual type
+  usePageTitle(() => (omicsRun.value?.name ? omicsRun.value.name : 'HealthOmics run'));
 
   const createdDateTime = computed(() => {
     const createdDate = getDate(omicsRun.value?.creationTime as unknown as string);
@@ -48,45 +46,22 @@
     return stoppedDate && stoppedTime ? `${stoppedTime} ⋅ ${stoppedDate}` : '—';
   });
 
-  // set tabIndex according to query param
   onMounted(() => {
     const queryTab = $route.query.tab as string;
     const queryTabMatchIndex = tabItems.value.findIndex((tab) => tab.label === queryTab);
     tabIndex.value = queryTabMatchIndex !== -1 ? queryTabMatchIndex : 0;
   });
 
-  // load this particular run into the cache in case it wasn't already loaded by the lab page
   onBeforeMount(async () => await runStore.loadSingleOmicsRun(labId, omicsRunId));
 
   watch(tabIndex, (index) => {
     if (index === 1) useToastStore().info('Viewing HealthOmics Run results is not yet implemented');
   });
 
-  // Note: the UTabs :ui attribute has to be defined locally in this file - if it is imported from another file,
-  //  Tailwind won't pick up and include the classes used and styles will be missing.
-  // To keep the tab styling consistent throughout the app, any changes made here need to be duplicated to all other
-  //  UTabs that use an "EGTabsStyles" as input to the :ui attribute.
-  const EGTabsStyles = {
-    base: 'focus:outline-none',
-    list: {
-      base: '!flex rounded-none mb-6 mt-0',
-      padding: 'p-0',
-      height: 'h-14',
-      marker: {
-        background: '',
-        shadow: '',
-      },
-      tab: {
-        base: 'font-serif w-auto mr-3 rounded-xl border border-solid',
-        background: '',
-        active: 'text-white bg-primary border-primary',
-        inactive: 'font-serif text-text-body border-background-dark-grey',
-        height: '',
-        padding: 'px-5 py-2',
-        size: 'text-sm',
-      },
-    },
-  };
+  function handleTabChange(newIndex: number) {
+    tabIndex.value = newIndex;
+    $router.push({ query: { ...$router.currentRoute.query, tab: tabItems.value[newIndex].label } });
+  }
 </script>
 
 <template>
@@ -96,26 +71,28 @@
     :back-action="() => $router.push(`/labs/${labId}`)"
     :is-loading="useUiStore().isRequestPending('loadOmicsRun')"
     :skeleton-config="{ titleLines: 2, descriptionLines: 1 }"
+    show-org-breadcrumb
+    show-lab-breadcrumb
   />
 
-  <UTabs
-    :ui="EGTabsStyles"
+  <EGDetailTabs
     :model-value="tabIndex"
     :items="tabItems"
-    @update:model-value="
-      (newIndex) => {
-        $router.push({ query: { ...$router.currentRoute.query, tab: tabItems[newIndex].label } });
-        tabIndex = newIndex;
-      }
-    "
+    aria-label="HealthOmics run sections"
+    @update:model-value="handleTabChange"
   >
-    <template #item="{ item }">
-      <div v-if="item.key === 'fileManager'" class="space-y-3"></div>
+    <template #default="{ item }">
+      <div v-if="item.key === 'fileManager'" class="space-y-3">
+        <p class="text-muted text-sm" role="status">
+          Viewing HealthOmics run results in the file manager is not yet implemented.
+        </p>
+      </div>
 
       <div v-if="item.key === 'runDetails'" class="space-y-3">
         <section
           class="stroke-light flex flex-col rounded-none rounded-b-2xl border border-solid bg-white p-6 pt-0 max-md:px-5"
         >
+          <h2 class="sr-only">Run details</h2>
           <dl class="mt-4">
             <div class="flex border-b p-4 text-sm">
               <dt class="w-[200px] font-medium text-black">Run Status</dt>
@@ -141,5 +118,5 @@
         </section>
       </div>
     </template>
-  </UTabs>
+  </EGDetailTabs>
 </template>

@@ -39,7 +39,7 @@
         </div>
       </div>
       <div class="align ml-5 flex w-4/12 flex-col max-md:ml-0 max-md:w-[338px]">
-        <img loading="lazy" :src="imageSrc" class="w-full grow max-md:mt-10 max-md:max-w-full" />
+        <img loading="lazy" :src="imageSrc" alt="" class="w-full grow max-md:mt-10 max-md:max-w-full" />
       </div>
     </div>
   </section>

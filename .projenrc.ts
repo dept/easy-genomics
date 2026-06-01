@@ -416,6 +416,8 @@ backEndApp.addScripts({
     'tsx scripts/backfill-workflow-run-history-and-usages.ts --dry-run',
   ['seed-workflow-tagging-test-runs']: 'tsx scripts/seed-workflow-tagging-test-runs.ts',
   ['seed-workflow-tagging-test-runs:dry-run']: 'tsx scripts/seed-workflow-tagging-test-runs.ts --dry-run',
+  ['migrate-lab-s3-bucket-refs']: 'tsx scripts/migrate-lab-s3-bucket-refs.ts',
+  ['migrate-lab-s3-bucket-refs:dry-run']: 'tsx scripts/migrate-lab-s3-bucket-refs.ts --dry-run',
 });
 
 if (backEndApp.eslint) {

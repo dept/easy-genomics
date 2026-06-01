@@ -1,13 +1,12 @@
 <script setup lang="ts">
   import { getDate, getTime } from '@FE/utils/date-time';
-  import { useLabsStore, useRunStore } from '@FE/stores';
+  import { useRunStore } from '@FE/stores';
   import { useDebounceFn } from '@vueuse/core';
 
   const { $api } = useNuxtApp();
   const $router = useRouter();
   const $route = useRoute();
   const runStore = useRunStore();
-  const labsStore = useLabsStore();
 
   const labId = $route.params.labId as string;
   const seqeraRunId = $route.params.seqeraRunId as string;
@@ -15,19 +14,28 @@
   const seqeraRunReports = ref([]);
   const tabIndex = ref(0);
 
-  // Permission Check
   if (!useUserStore().canViewLab(labId)) {
     $router.push('/labs');
   }
 
   const labRunId = computed<string | null>(() => runStore.labRunByExternalId(seqeraRunId)?.RunId ?? null);
-  const s3Bucket = computed<string>(() => labsStore.labs[labId]?.S3Bucket ?? '');
-  const s3Prefix = computed<string>(() => `${useUserStore().currentOrgId}/${labId}/next-flow/${labRunId.value ?? ''}`);
+  const labRun = computed(() => (labRunId.value ? (runStore.labRuns[labRunId.value] ?? null) : null));
+  const effectiveRootS3Url = computed<string | null>(
+    () => labRun.value?.OutputS3Url ?? labRun.value?.InputS3Url ?? null,
+  );
+  const s3Bucket = computed<string | null>(
+    () => effectiveRootS3Url.value?.match(/(?<=^s3:\/\/)([a-z0-9][a-z0-9-]{1,61}[a-z0-9])(?=\/*)/g)?.toString() ?? null,
+  );
+  const s3Prefix = computed<string | null>(
+    () => effectiveRootS3Url.value?.match(/(?<=^s3:\/\/[a-z0-9][a-z0-9-]{1,61}[a-z0-9]\/)(.*)/g)?.toString() ?? null,
+  );
   const tabItems = computed(() => [
     { key: 'runDetails', label: 'Run Details' },
     { key: 'fileManager', label: 'File Manager' },
   ]);
   const seqeraRun = computed(() => runStore.seqeraRuns[labId]?.[seqeraRunId] || null);
+
+  usePageTitle(() => (seqeraRun.value?.runName ? seqeraRun.value.runName : 'Seqera run'));
 
   const createdDateTime = computed(() => formatDateTime(seqeraRun.value?.dateCreated));
   const startedDateTime = computed(() => formatDateTime(seqeraRun.value?.start));
@@ -44,7 +52,6 @@
     if (matchedIndex !== -1) {
       tabIndex.value = matchedIndex;
     } else {
-      // Default to first tab if invalid
       tabIndex.value = 0;
       updateQueryParams({ tab: tabItems.value[0]?.label });
     }
@@ -67,32 +74,6 @@
     (newTab) => validateAndSetTabIndex(newTab as string),
   );
 
-  // Note: the UTabs :ui attribute has to be defined locally in this file - if it is imported from another file,
-  //  Tailwind won't pick up and include the classes used and styles will be missing.
-  // To keep the tab styling consistent throughout the app, any changes made here need to be duplicated to all other
-  //  UTabs that use an "EGTabsStyles" as input to the :ui attribute.
-  const EGTabsStyles = {
-    base: 'focus:outline-none',
-    list: {
-      base: '!flex rounded-none mb-6 mt-0',
-      padding: 'p-0',
-      height: 'h-14',
-      marker: {
-        background: '',
-        shadow: '',
-      },
-      tab: {
-        base: 'font-serif w-auto mr-3 rounded-xl border border-solid',
-        background: '',
-        active: 'text-white bg-primary border-primary',
-        inactive: 'font-serif text-text-body border-background-dark-grey',
-        height: '',
-        padding: 'px-5 py-2',
-        size: 'text-sm',
-      },
-    },
-  };
-
   async function loadRunReports() {
     useUiStore().setRequestPending('loadRunReports');
     try {
@@ -107,7 +88,6 @@
     await runStore.loadLabRunsForLab(labId);
   }
 
-  // load this particular run into the cache in case it wasn't already loaded by the lab page
   async function fetchSeqeraRun(): Promise<void> {
     await runStore.loadSingleSeqeraRun(labId, seqeraRunId);
   }
@@ -126,23 +106,34 @@
     :back-action="() => $router.push(`/labs/${labId}`)"
     :is-loading="useUiStore().isRequestPending('loadSeqeraRun')"
     :skeleton-config="{ titleLines: 2, descriptionLines: 1 }"
+    show-org-breadcrumb
+    show-lab-breadcrumb
   />
 
-  <UTabs :ui="EGTabsStyles" v-model="tabIndex" :items="tabItems" @update:model-value="handleTabChange">
-    <template #item="{ item }">
+  <EGDetailTabs
+    :model-value="tabIndex"
+    :items="tabItems"
+    aria-label="Seqera run sections"
+    @update:model-value="handleTabChange"
+  >
+    <template #default="{ item }">
       <div v-show="item.key === 'fileManager'" class="space-y-3">
         <EGFileExplorer
-          v-if="labRunId && s3Bucket"
+          v-if="labRunId && s3Bucket && s3Prefix"
           :lab-id="labId"
           :run-id="labRunId"
           :s3-bucket="s3Bucket"
           :s3-prefix="s3Prefix"
         />
+        <p v-else-if="labRun" class="text-muted rounded-lg border border-dashed p-6 text-center text-sm">
+          No S3 location is recorded for this run, so files cannot be listed.
+        </p>
       </div>
       <div v-if="item.key === 'runDetails'" class="space-y-3">
         <section
           class="stroke-light flex flex-col rounded-none rounded-b-2xl border border-solid bg-white p-6 pt-0 max-md:px-5"
         >
+          <h2 class="sr-only">Run details</h2>
           <dl class="mt-4 space-y-4">
             <div class="flex border-b p-4 text-sm">
               <dt class="w-[200px] font-medium text-black">Run Status</dt>
@@ -166,5 +157,5 @@
         </section>
       </div>
     </template>
-  </UTabs>
+  </EGDetailTabs>
 </template>

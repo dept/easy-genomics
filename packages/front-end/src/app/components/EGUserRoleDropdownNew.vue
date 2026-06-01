@@ -19,8 +19,9 @@
 
   const emit = defineEmits(['remove-user-from-lab', 'assign-lab-role']);
 
-  const { assignedRole } = props.user;
+  const { assignedRole, displayName } = props.user;
   const roles = Object.values(LaboratoryRolesEnumSchema.enum).map((role) => role);
+  const isOpen = ref(false);
 
   const items: Array<Array<Object>> = roles.map((role: LaboratoryRolesEnum) => {
     return [
@@ -36,18 +37,41 @@
       {
         label: 'Remove From Lab',
         class: 'text-alert-danger-dark',
+        isHighlighted: true,
         click: () => emit('remove-user-from-lab', { user: props.user }),
       },
     ]);
   }
+
+  const menuLabel = computed(() => `Lab role for ${displayName}, currently ${assignedRole}`);
 </script>
 
 <template>
   <div class="flex w-full justify-end">
-    <UDropdown class="UDropdown" :items="items">
-      <UButton :disabled="disabled" variant="ghost" color="gray" icon="i-heroicons-chevron-down" trailing>
+    <UDropdown v-model:open="isOpen" class="UDropdown" :items="items">
+      <UButton
+        :disabled="disabled"
+        variant="ghost"
+        color="gray"
+        icon="i-heroicons-chevron-down"
+        trailing
+        :aria-label="menuLabel"
+        :aria-expanded="isOpen"
+        aria-haspopup="menu"
+      >
         {{ assignedRole }}
       </UButton>
+      <template #item="{ item }">
+        <span class="flex items-center gap-2 truncate" :class="{ 'is-highlighted': item.isHighlighted }">
+          <UIcon
+            v-if="item.isHighlighted"
+            name="i-heroicons-exclamation-triangle"
+            class="h-4 w-4 shrink-0"
+            aria-hidden="true"
+          />
+          {{ item.label }}
+        </span>
+      </template>
     </UDropdown>
   </div>
 </template>
@@ -56,6 +80,11 @@
   .UDropdown {
     .p-1 {
       padding: 8px 12px;
+    }
+
+    .is-highlighted {
+      color: #ef5c45;
+      font-weight: 500;
     }
 
     .active {

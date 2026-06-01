@@ -1,11 +1,10 @@
-import { ListObjectsV2CommandOutput, _Object } from '@aws-sdk/client-s3';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { RequestLaboratoryBucketObjectsSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/data-collections/request-laboratory-bucket-objects';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { DataCollectionService } from '@BE/services/easy-genomics/data-collection-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { S3Service } from '@BE/services/s3-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
@@ -14,11 +13,7 @@ import {
 } from '@BE/utils/auth-utils';
 
 const laboratoryService = new LaboratoryService();
-const s3Service = new S3Service();
-
-function isFileObjectKey(key: string | undefined): boolean {
-  return !!key && !key.endsWith('/');
-}
+const dataCollectionService = new DataCollectionService();
 
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -58,78 +53,16 @@ export const handler: Handler = async (
     }
 
     const pageSize = Math.min(body.MaxKeys ?? 1000, 1000);
-    const recursive = body.Recursive === true;
+    const maxTotalKeys = Math.min(body.MaxTotalKeys ?? 15_000, 50000);
+    const maxTransactionFolders = Math.min(body.MaxTransactionFolders ?? 10_000, 50000);
 
-    let allContents: _Object[] = [];
-    let allCommonPrefixes: { Prefix: string }[] = [];
-    let isTruncated = true;
-    let continuationToken: string | undefined = undefined;
-    let listingTruncated = false;
-
-    if (!recursive) {
-      while (isTruncated) {
-        const response: ListObjectsV2CommandOutput = await s3Service.listBucketObjectsV2({
-          Bucket: s3Bucket,
-          Prefix: normalizedPrefix,
-          Delimiter: '/',
-          MaxKeys: pageSize,
-          ContinuationToken: continuationToken,
-        });
-
-        if (response.Contents) {
-          allContents = allContents.concat(response.Contents);
-        }
-
-        if (response.CommonPrefixes) {
-          allCommonPrefixes = allCommonPrefixes.concat(response.CommonPrefixes);
-        }
-
-        isTruncated = !!response.IsTruncated;
-        continuationToken = response.NextContinuationToken;
-      }
-    } else {
-      const maxTotalKeys = Math.min(body.MaxTotalKeys ?? 15000, 50000);
-      isTruncated = true;
-      continuationToken = undefined;
-
-      while (isTruncated && allContents.length < maxTotalKeys) {
-        const remaining = maxTotalKeys - allContents.length;
-        const requestMax = Math.max(1, Math.min(pageSize, remaining));
-
-        const response: ListObjectsV2CommandOutput = await s3Service.listBucketObjectsV2({
-          Bucket: s3Bucket,
-          Prefix: normalizedPrefix,
-          MaxKeys: requestMax,
-          ContinuationToken: continuationToken,
-        });
-
-        for (const obj of response.Contents || []) {
-          if (!isFileObjectKey(obj.Key)) {
-            continue;
-          }
-          if (allContents.length >= maxTotalKeys) {
-            listingTruncated = true;
-            break;
-          }
-          allContents.push(obj);
-        }
-
-        const s3More = !!response.IsTruncated;
-        continuationToken = response.NextContinuationToken;
-        if (listingTruncated) {
-          isTruncated = false;
-          break;
-        }
-        isTruncated = s3More;
-        if (!s3More) {
-          break;
-        }
-        if (allContents.length >= maxTotalKeys) {
-          listingTruncated = true;
-          break;
-        }
-      }
-    }
+    const { contents: allContents, listingTruncated } = await dataCollectionService.listTransactionInputs({
+      bucket: s3Bucket,
+      labPrefix: normalizedPrefix,
+      pageSize,
+      maxTotalKeys,
+      maxTransactionFolders,
+    });
 
     return buildResponse(
       200,
@@ -142,11 +75,10 @@ export const handler: Handler = async (
           totalRetryDelay: 0,
         },
         Contents: allContents,
-        CommonPrefixes: allCommonPrefixes,
-        IsTruncated: recursive ? listingTruncated : false,
+        CommonPrefixes: [],
+        IsTruncated: listingTruncated,
         S3Bucket: s3Bucket,
         ResolvedPrefix: normalizedPrefix,
-        Recursive: recursive,
         ListingTruncated: listingTruncated,
         ReturnedKeyCount: allContents.length,
       }),

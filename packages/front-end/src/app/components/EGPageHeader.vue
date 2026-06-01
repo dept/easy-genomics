@@ -35,19 +35,27 @@
       <div class="mb-4 flex flex-row items-center gap-6">
         <EGBack v-if="showBack" :label="backButtonLabel" :back-action="backAction" />
 
-        <div class="font-schibsted text-muted flex flex-row items-center gap-4 text-sm">
-          <EGBreadcrumbOrgs v-if="showOrgBreadcrumb" />
+        <nav v-if="showOrgBreadcrumb || showLabBreadcrumb || breadcrumbs.length" aria-label="Breadcrumb">
+          <ol class="font-schibsted text-muted flex list-none flex-row flex-wrap items-center gap-4 p-0 text-sm">
+            <li v-if="showOrgBreadcrumb">
+              <EGBreadcrumbOrgs />
+            </li>
 
-          <template v-if="showLabBreadcrumb">
-            <div>/</div>
-            <EGBreadcrumbLabs />
-          </template>
+            <template v-if="showLabBreadcrumb">
+              <li aria-hidden="true">/</li>
+              <li>
+                <EGBreadcrumbLabs />
+              </li>
+            </template>
 
-          <template v-if="breadcrumbs" v-for="crumb in breadcrumbs">
-            <div>/</div>
-            <div>{{ crumb }}</div>
-          </template>
-        </div>
+            <template v-for="(crumb, crumbIndex) in breadcrumbs" :key="crumbIndex">
+              <li aria-hidden="true">/</li>
+              <li>
+                <span :aria-current="crumbIndex === breadcrumbs.length - 1 ? 'page' : undefined">{{ crumb }}</span>
+              </li>
+            </template>
+          </ol>
+        </nav>
       </div>
 
       <EGAdminAlert v-if="useUserStore().isSuperuser" class="mb-4" />

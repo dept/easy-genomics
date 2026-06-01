@@ -3,6 +3,8 @@
 
   const userStore = useUserStore();
   const labsStore = useLabsStore();
+
+  usePageTitle('Labs');
 </script>
 
 <template>

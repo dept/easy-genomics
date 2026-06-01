@@ -9,7 +9,7 @@
       orgId: string;
     }>(),
     {
-      placeholder: 'Enter Email',
+      placeholder: 'Enter email address',
       disabled: false,
     },
   );
@@ -21,6 +21,7 @@
   const isFormDisabled = ref(true);
   const state = ref({ email: '' });
   const { invite } = useUser();
+  const emailInputId = useId();
 
   async function onSubmit() {
     try {
@@ -48,7 +49,19 @@
   <EGCard :padding="4">
     <UForm :schema="formSchema" :state="state" @submit="onSubmit">
       <div class="flex w-full items-center justify-center space-x-2">
-        <EGInput v-model="state.email" :placeholder="placeholder" :clearable="true" class="w-full" />
+        <div class="w-full grow">
+          <label :for="emailInputId" class="sr-only">Email address</label>
+          <EGInput
+            :id="emailInputId"
+            v-model="state.email"
+            name="inviteEmail"
+            type="email"
+            autocomplete="email"
+            :placeholder="placeholder"
+            :clearable="true"
+            :disabled="disabled"
+          />
+        </div>
         <EGButton
           label="Invite"
           type="submit"

@@ -185,6 +185,8 @@
     !labRun.value?.Platform ? null : platformToPipelineOrWorkflow(labRun.value.Platform),
   );
 
+  usePageTitle(() => (labRun.value?.RunName ? labRun.value.RunName : 'Run details'));
+
   async function downloadSampleSheet(): Promise<void> {
     const sampleSheetUrl = labRun.value?.SampleSheetS3Url;
     if (!sampleSheetUrl) {
@@ -206,32 +208,6 @@
   const rowStyle = 'flex border-b p-6 text-sm';
   const rowLabelStyle = 'w-[200px] font-medium text-black';
   const rowContentStyle = 'text-muted text-left';
-
-  // Note: the UTabs :ui attribute has to be defined locally in this file - if it is imported from another file,
-  //  Tailwind won't pick up and include the classes used and styles will be missing.
-  // To keep the tab styling consistent throughout the app, any changes made here need to be duplicated to all other
-  //  UTabs that use an "EGTabsStyles" as input to the :ui attribute.
-  const EGTabsStyles = {
-    base: 'focus:outline-none',
-    list: {
-      base: '!flex rounded-none mb-6 mt-0',
-      padding: 'p-0',
-      height: 'h-14',
-      marker: {
-        background: '',
-        shadow: '',
-      },
-      tab: {
-        base: 'font-serif w-auto mr-3 rounded-xl border border-solid',
-        background: '',
-        active: 'text-white bg-primary border-primary',
-        inactive: 'font-serif text-text-body border-background-dark-grey',
-        height: '',
-        padding: 'px-5 py-2',
-        size: 'text-sm',
-      },
-    },
-  };
 </script>
 
 <template>
@@ -247,14 +223,20 @@
     :breadcrumbs="[labRun?.RunName]"
   />
 
-  <UTabs :ui="EGTabsStyles" v-model="tabIndex" :items="tabItems" @update:model-value="handleTabChange">
-    <template #item="{ item }">
+  <EGDetailTabs
+    :model-value="tabIndex"
+    :items="tabItems"
+    aria-label="Laboratory run sections"
+    @update:model-value="handleTabChange"
+  >
+    <template #default="{ item }">
       <!-- Run Details -->
       <div v-if="item.key === 'runDetails'" class="space-y-3">
         <section
           v-if="labRun"
           class="stroke-light flex flex-col rounded-none rounded-b-2xl border border-solid bg-white p-6 pt-0 max-md:px-5"
         >
+          <h2 class="sr-only">Run details</h2>
           <dl class="mt-4 space-y-0">
             <div :class="rowStyle">
               <dt :class="rowLabelStyle">Run Name</dt>
@@ -370,24 +352,30 @@
             </details>
           </div>
           <template v-if="seqeraProgress?.progress">
-            <div class="mb-4 flex gap-6 text-sm">
-              <span class="text-green-700">
-                Succeeded: {{ seqeraProgress.progress.workflowProgress?.succeedCountFmt ?? '0' }}
-              </span>
-              <span class="text-red-700">
-                Failed: {{ seqeraProgress.progress.workflowProgress?.failedCountFmt ?? '0' }}
-              </span>
-              <span class="text-muted">
-                Running: {{ seqeraProgress.progress.workflowProgress?.runningCountFmt ?? '0' }}
-              </span>
-            </div>
+            <ul class="mb-4 flex flex-wrap gap-6 text-sm" aria-label="Task counts by status">
+              <li>
+                <span class="font-medium text-green-700">Succeeded:</span>
+                {{ seqeraProgress.progress.workflowProgress?.succeedCountFmt ?? '0' }}
+              </li>
+              <li>
+                <span class="font-medium text-red-700">Failed:</span>
+                {{ seqeraProgress.progress.workflowProgress?.failedCountFmt ?? '0' }}
+              </li>
+              <li>
+                <span class="text-body font-medium">Running:</span>
+                {{ seqeraProgress.progress.workflowProgress?.runningCountFmt ?? '0' }}
+              </li>
+            </ul>
             <div v-if="seqeraProgress.progress.processesProgress?.length" class="space-y-2">
               <div
                 v-for="proc in seqeraProgress.progress.processesProgress?.filter((p) => p.failed > 0)"
                 :key="proc.process"
                 class="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm"
               >
-                <p class="font-medium text-red-800">{{ proc.process }}</p>
+                <p class="font-medium text-red-800">
+                  <span class="sr-only">Failed process:</span>
+                  {{ proc.process }}
+                </p>
                 <p class="text-red-600">{{ proc.failed }} task(s) failed</p>
               </div>
             </div>
@@ -410,7 +398,10 @@
               :key="task.taskId"
               class="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm"
             >
-              <p class="font-medium text-red-800">Task {{ task.taskId }} — {{ task.name }}</p>
+              <p class="font-medium text-red-800">
+                <span class="sr-only">Failed task:</span>
+                Task {{ task.taskId }} — {{ task.name }}
+              </p>
               <p v-if="task.statusMessage" class="text-red-600">{{ task.statusMessage }}</p>
             </div>
           </div>
@@ -420,13 +411,17 @@
       <!-- File Manager -->
       <div v-if="item.key === 'fileManager'" class="space-y-3">
         <EGFileExplorer
+          v-if="s3Bucket && s3Prefix"
           :lab-id="labId"
           :run-id="labRunId"
           :s3-bucket="s3Bucket"
           :s3-prefix="s3Prefix"
           :start-path="outputPath"
         />
+        <p v-else-if="labRun && !isLoading" class="text-muted rounded-lg border border-dashed p-6 text-center text-sm">
+          No S3 location is recorded for this run, so files cannot be listed.
+        </p>
       </div>
     </template>
-  </UTabs>
+  </EGDetailTabs>
 </template>

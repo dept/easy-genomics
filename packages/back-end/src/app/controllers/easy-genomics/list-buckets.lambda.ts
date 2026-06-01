@@ -1,5 +1,5 @@
 import { Bucket, GetBucketTaggingCommandOutput, ListBucketsCommandOutput, Tag } from '@aws-sdk/client-s3';
-import { buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { S3Bucket } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/s3-bucket';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { S3Service } from '../../services/s3-service';
@@ -52,10 +52,6 @@ export const handler: Handler = async (
       throw new Error(`Unable to list Buckets: ${JSON.stringify(response)}`);
     }
   } catch (err: any) {
-    console.error(err);
-    return {
-      statusCode: 400,
-      body: `Error: ${err.message}`,
-    };
+    return buildErrorResponse(err, event);
   }
 };

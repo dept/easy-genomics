@@ -9,10 +9,10 @@ import HttpFactory from '@FE/repository/factory';
 export type RequestLaboratoryBucketObjectsBody = {
   LaboratoryId: string;
   RelativePrefix?: string;
-  /** When true, returns all file objects under the prefix (flat), paginated until MaxTotalKeys. */
-  Recursive?: boolean;
-  /** Cap for recursive listing (default 15000, max 50000). */
+  /** Cap on file objects returned (default 15000, max 50000). */
   MaxTotalKeys?: number;
+  /** Cap on transaction folders walked (default 10000, max 50000). */
+  MaxTransactionFolders?: number;
   MaxKeys?: number;
 };
 
@@ -22,8 +22,7 @@ export type LaboratoryBucketObjectsResponse = {
   IsTruncated: boolean;
   S3Bucket: string;
   ResolvedPrefix: string;
-  Recursive?: boolean;
-  /** True when recursive listing stopped early because {@link MaxTotalKeys} was reached. */
+  /** True when listing stopped early because a cap was reached. */
   ListingTruncated?: boolean;
   ReturnedKeyCount?: number;
 };

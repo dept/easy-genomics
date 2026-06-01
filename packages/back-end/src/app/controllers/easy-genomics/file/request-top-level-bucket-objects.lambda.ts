@@ -95,18 +95,20 @@ export const handler: Handler = async (
       throw new InvalidRequestError('S3 bucket mismatch between S3Bucket and S3Prefix URI');
     }
 
-    // If a RunId is provided, authorize the requested S3 prefix against the run OutputS3Url (supports custom output dirs).
+    // If a RunId is provided, authorize against the run's stored S3 root (OutputS3Url, or InputS3Url for
+    // legacy runs). Mirrors the run detail File Manager, which prefers OutputS3Url then InputS3Url.
     // Otherwise, fall back to the original lab-owned prefix constraint.
     let normalizedPrefix = s3Prefix.endsWith('/') ? s3Prefix : `${s3Prefix}/`;
     if (request.RunId) {
       const run = await laboratoryRunService.get(laboratoryId, request.RunId);
-      const outputFromUri = run.OutputS3Url ? parseS3Uri(run.OutputS3Url) : null;
-      const outputBucket = outputFromUri?.bucket || laboratory.S3Bucket || requestBucket;
-      const outputPrefix = outputFromUri?.prefix || run.OutputS3Url || '';
+      const effectiveRunRootUrl = run.OutputS3Url || run.InputS3Url;
+      const rootFromUri = effectiveRunRootUrl ? parseS3Uri(effectiveRunRootUrl) : null;
+      const outputBucket = rootFromUri?.bucket || requestBucket || laboratory.S3Bucket || '';
+      const outputPrefix = rootFromUri?.prefix ?? '';
       const normalizedOutputPrefix = outputPrefix.endsWith('/') ? outputPrefix : `${outputPrefix}/`;
 
       if (!normalizedOutputPrefix || normalizedOutputPrefix === '/') {
-        throw new InvalidRequestError('Invalid OutputS3Url for run');
+        throw new InvalidRequestError('Invalid S3 location for run');
       }
 
       // Bucket must match the run output bucket

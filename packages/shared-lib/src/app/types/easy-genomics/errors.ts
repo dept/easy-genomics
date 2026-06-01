@@ -2,6 +2,7 @@ export type ErrorCodeKeys =
   | 'EG-101'
   | 'EG-102'
   | 'EG-103'
+  | 'EG-104'
   | 'EG-110'
   | 'EG-201'
   | 'EG-202'
@@ -26,11 +27,15 @@ export type ErrorCodeKeys =
   | 'EG-314'
   | 'EG-315'
   | 'EG-316'
+  | 'EG-322'
+  | 'EG-323'
   | 'EG-401'
   | 'EG-402'
   | 'EG-403'
   | 'EG-404'
-  | 'EG-405';
+  | 'EG-405'
+  | 'EG-503'
+  | 'EG-600';
 
 export type ErrorMessages = {
   [key in ErrorCodeKeys]: string;

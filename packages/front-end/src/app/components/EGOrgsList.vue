@@ -15,6 +15,8 @@
 
   const orgsStore = useOrgsStore();
 
+  usePageTitle('Organizations');
+
   onBeforeMount(loadOrgs);
 
   // table data stuff
@@ -49,7 +51,7 @@
     },
     {
       key: 'actions',
-      label: '',
+      label: 'Actions',
     },
   ];
 
@@ -68,6 +70,7 @@
         {
           label: 'Remove',
           class: 'text-alert-danger-dark',
+          isHighlighted: true,
           click: () => {
             orgToRemove.value = org;
             isRemoveOrgDialogOpen.value = true;
@@ -126,6 +129,7 @@
     :is-loading="isLoading"
     :action-items="actionItems"
     :show-pagination="!isLoading"
+    no-results-msg="No organizations found"
   />
 
   <EGDialog

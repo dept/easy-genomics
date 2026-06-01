@@ -62,7 +62,7 @@
       />
     </div>
 
-    <UForm :schema="ProfileDetailsSchema" :state="state" @submit="onSubmit">
+    <UForm :schema="ProfileDetailsSchema" :state="state" @submit="onSubmit" aria-label="Edit profile details">
       <EGFormGroup label="First Name" name="firstName" eager-validation required>
         <EGInput v-model="state.firstName" required :disabled="uiStore.isRequestPending('editProfileDetails')" />
       </EGFormGroup>
@@ -72,7 +72,7 @@
       </EGFormGroup>
 
       <div class="flex flex-row items-center justify-between">
-        <a href="/forgot-password" class="text-primary underline">Reset password</a>
+        <NuxtLink to="/forgot-password" class="text-primary underline">Reset password</NuxtLink>
         <EGButton type="submit" label="Save Changes" :disabled="!allowSubmit" />
       </div>
     </UForm>

@@ -323,6 +323,8 @@
               :key="lab.LaboratoryId"
               type="button"
               class="box-border flex w-full min-w-0 max-w-full items-center gap-2 rounded-xl border px-3 py-2 text-left font-serif text-sm transition-colors"
+              :aria-pressed="selectedLabId === lab.LaboratoryId"
+              :aria-label="`Select laboratory ${lab.Name}`"
               :class="
                 selectedLabId === lab.LaboratoryId
                   ? 'bg-primary-muted text-primary-dark border-transparent'
@@ -368,6 +370,7 @@
             </div>
             <UToggle
               :model-value="pendingEnableNewByDefault[selectedLabId] === true"
+              :aria-label="`Enable new workflows by default for ${selectedLab.Name}`"
               @update:model-value="setEnableNewWorkflowsForSelectedLab"
             />
           </div>
@@ -406,6 +409,7 @@
                   <td class="py-3">
                     <UToggle
                       :model-value="pendingKeys.has(accessKey(selectedLabId, row))"
+                      :aria-label="`Toggle access for ${row.name} (${row.platform})`"
                       @update:model-value="(v: boolean) => setGranted(selectedLabId!, row, v)"
                     />
                   </td>

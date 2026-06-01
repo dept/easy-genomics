@@ -7,10 +7,14 @@
     LaboratoryDataTag,
     LaboratoryRunUsageSummary,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
+  import type { DataCollectionFileTypeFilter, HiddenFileTypeBreakdownRow } from '@FE/utils/data-collections-file-type';
+  import { formatFileSize } from '@FE/utils/file-size';
 
   const props = defineProps<{
     /** Used to deep-link from the analysis history tooltip to a laboratory run detail page. */
     labId: string;
+    /** When set, path tooltips use `s3://bucket/key` instead of the raw key only. */
+    s3Bucket?: string;
     labRoot: string;
     visibleFiles: { Key: string; Size?: number; LastModified?: string }[];
     keyToTagIds: Record<string, string[]>;
@@ -39,20 +43,26 @@
     search: string;
     /** Files returned for the current S3 prefix (before search / tag filters in the parent). */
     listingFileCount: number;
-    /** Recursive listing stopped at MaxTotalKeys; more objects exist in S3. */
+    /** Listing stopped at MaxTotalKeys or MaxTransactionFolders; more objects may exist in S3. */
     listingTruncated?: boolean;
     /** Active filter chips (scope + tags); each chip can be dismissed independently in the explorer header. */
     filterChips?: { chipId: string; label: string }[];
+    fileTypeFilter: DataCollectionFileTypeFilter;
+    fileTypeCounts: { fastq: number; fasta: number; other: number };
+    hiddenByFileTypeCount: number;
+    hiddenByFileTypeBreakdown: HiddenFileTypeBreakdownRow[];
   }>();
 
   const emit = defineEmits<{
     'update:search': [v: string];
+    'update:fileTypeFilter': [value: DataCollectionFileTypeFilter];
     'update:selectedKeys': [keys: string[]];
     toggleKey: [key: string];
     selectAllDisplayed: [];
     clearSelection: [];
     clearFilter: [chipId: string];
-    removeTagFromFile: [payload: { key: string; tagId: string }];
+    /** Fired when a file-card drag ends (including cancel) so parents can clear drop-target UI. */
+    fileKeysDragEnd: [];
     /** Tooltip emits this when the user clicks the check button on a run row. */
     selectRunFiles: [payload: { runId: string; inputFileKeys: string[] }];
   }>();
@@ -61,6 +71,14 @@
 
   /** Cards grid vs tabular explorer layout. */
   const explorerView = ref<'cards' | 'table'>('cards');
+
+  const fileTypeFilterOpen = ref(false);
+
+  function onOpenFileTypeFilterFromHiddenChip(): void {
+    nextTick(() => {
+      fileTypeFilterOpen.value = true;
+    });
+  }
 
   const scrollEl = ref<HTMLElement | null>(null);
   const lassoActive = ref(false);
@@ -73,8 +91,6 @@
   });
   let lx0 = 0;
   let ly0 = 0;
-  let dragTagId: string | null = null;
-  let dragSourceKey: string | null = null;
 
   /** While a file’s analysis popover is open, that card/row is stacked above siblings so other files’ dots do not show through the panel. */
   const analysisPopoverOpenKey = ref<string | null>(null);
@@ -138,6 +154,13 @@
     return months <= 1 ? 'in ~1 month' : `in ~${months} months`;
   }
 
+  /** Full object location for hover tooltips (truncated paths in the grid). */
+  function s3ObjectTooltip(key: string): string {
+    const b = props.s3Bucket?.trim();
+    if (b) return `s3://${b}/${key}`;
+    return key;
+  }
+
   /** Folder path under the lab root (for flat recursive listings). */
   function folderPathUnderLab(key: string): string {
     const root = props.labRoot;
@@ -196,6 +219,18 @@
 
   const BATCH_HEADER_DOT_NOT_ANALYZED = '#EF9F27';
   const BATCH_HEADER_DOT_ANALYZED = '#2DB48F';
+
+  /**
+   * Nuxt UI v2 tooltip theme defaults: `max-w-xs`, fixed `h-6`, and `truncate` on the content box
+   * (see `node_modules/@nuxt/ui/dist/runtime/ui.config/overlays/tooltip.js`). That clips long S3
+   * URIs; widen the popper and allow wrapped multi-line text with vertical scroll if needed.
+   */
+  const s3PathTooltipUi = {
+    /** Default `inline-flex` keeps min-content width — long filenames overflow the card grid cell. */
+    wrapper: 'relative block w-full min-w-0 max-w-full',
+    width: 'max-w-[min(92vw,52rem)]',
+    base: '[@media(pointer:coarse)]:hidden min-h-0 h-auto max-h-[min(80vh,32rem)] overflow-y-auto overflow-x-hidden px-2.5 py-2 text-xs font-normal whitespace-normal break-all text-left relative',
+  };
 
   function batchSectionHeaderParts(sec: {
     batchId: string | null;
@@ -348,51 +383,61 @@
   });
 
   function onCardDragStart(e: DragEvent, key: string): void {
-    dragTagId = null;
-    dragSourceKey = null;
     const keys = props.selectedKeys.includes(key) ? [...props.selectedKeys] : [key];
     e.dataTransfer?.setData('application/x-eg-keys', JSON.stringify(keys));
     e.dataTransfer?.setData('text/plain', 'keys');
   }
 
-  function onPillDragStart(e: DragEvent, tagId: string, key: string): void {
-    e.stopPropagation();
-    dragTagId = tagId;
-    dragSourceKey = key;
-    e.dataTransfer?.setData('text/plain', 'tag');
+  function onFileCardDragEnd(): void {
+    emit('fileKeysDragEnd');
   }
 
-  function onCardDragOver(e: DragEvent): void {
-    if (!dragTagId) return;
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).classList.add('outline', 'outline-2', 'outline-red-400');
+  const searchInputId = useId();
+
+  function fileItemAriaLabel(key: string, size?: number): string {
+    const name = fileName(key);
+    const selected = props.selectedKeys.includes(key);
+    const status = runCountForFileKey(key) > 0 ? 'Analyzed' : 'Not yet analyzed';
+    const parts = [selected ? 'Selected' : 'Not selected', `${status} sample`, name];
+    if (size !== undefined) parts.push(formatFileSize(size));
+    return parts.join(', ');
   }
 
-  function onCardDragLeave(e: DragEvent): void {
-    (e.currentTarget as HTMLElement).classList.remove('outline', 'outline-2', 'outline-red-400');
+  function onFileItemKeydown(e: KeyboardEvent, key: string): void {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      emit('toggleKey', key);
+    }
   }
 
-  function onCardDrop(e: DragEvent): void {
-    (e.currentTarget as HTMLElement).classList.remove('outline', 'outline-2', 'outline-red-400');
-    if (!dragTagId || !dragSourceKey) return;
-    e.preventDefault();
-    emit('removeTagFromFile', { key: dragSourceKey, tagId: dragTagId });
-    dragTagId = null;
-    dragSourceKey = null;
-  }
+  const sampleCountAnnouncement = computed(() => {
+    const n = props.visibleFiles.length;
+    const noun = n === 1 ? 'sample' : 'samples';
+    let text = `${n} ${noun} shown`;
+    if (props.selectedKeys.length) {
+      text += `, ${props.selectedKeys.length} selected`;
+    }
+    return text;
+  });
 </script>
 
 <template>
-  <div class="flex min-w-0 flex-1 flex-col">
-    <div class="border-border-muted flex flex-wrap items-center gap-3 border-b px-4 py-3">
+  <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div
+      class="border-border-muted flex flex-wrap items-center gap-3 border-b px-4 py-3"
+      role="toolbar"
+      aria-label="Sample explorer tools"
+    >
+      <label :for="searchInputId" class="sr-only">Search file names</label>
       <UInput
+        :id="searchInputId"
         :model-value="search"
         placeholder="Search file names…"
         class="max-w-xs"
         size="sm"
         @update:model-value="emit('update:search', $event)"
       />
-      <div class="border-border-muted flex shrink-0 rounded-lg border p-0.5">
+      <div class="border-border-muted flex shrink-0 rounded-lg border p-0.5" role="group" aria-label="View mode">
         <UButton
           size="xs"
           square
@@ -400,6 +445,7 @@
           :variant="explorerView === 'cards' ? 'soft' : 'ghost'"
           class="rounded-md"
           aria-label="Card view"
+          :aria-pressed="explorerView === 'cards'"
           @click="explorerView = 'cards'"
         />
         <UButton
@@ -409,15 +455,31 @@
           :variant="explorerView === 'table' ? 'soft' : 'ghost'"
           class="rounded-md"
           aria-label="Table view"
+          :aria-pressed="explorerView === 'table'"
           @click="explorerView = 'table'"
+        />
+      </div>
+      <div class="ml-auto shrink-0">
+        <EGDataCollectionsFileTypeFilter
+          v-model:open="fileTypeFilterOpen"
+          :model-value="fileTypeFilter"
+          :counts="fileTypeCounts"
+          @update:model-value="emit('update:fileTypeFilter', $event)"
         />
       </div>
     </div>
     <div class="border-border-muted flex flex-wrap items-center gap-2 border-b bg-gray-50 px-4 py-2">
-      <span class="text-xs font-semibold leading-snug text-gray-900">
-        {{ visibleFiles.length }} {{ visibleSampleNoun }}
+      <span class="text-xs font-semibold leading-snug text-gray-900" aria-live="polite" aria-atomic="true">
+        <span class="sr-only">{{ sampleCountAnnouncement }}</span>
+        <span aria-hidden="true">{{ visibleFiles.length }} {{ visibleSampleNoun }}</span>
       </span>
       <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+        <EGDataCollectionsHiddenFileTypesPopover
+          v-if="hiddenByFileTypeCount > 0"
+          :hidden-count="hiddenByFileTypeCount"
+          :breakdown="hiddenByFileTypeBreakdown"
+          @open-file-type-filter="onOpenFileTypeFilterFromHiddenChip"
+        />
         <div
           v-for="chip in filterChipsResolved"
           :key="chip.chipId"
@@ -436,7 +498,13 @@
         </div>
       </div>
       <div class="ml-auto flex shrink-0">
-        <UButton v-if="selectedKeys.length" size="xs" variant="ghost" @click="emit('clearSelection')">
+        <UButton
+          v-if="selectedKeys.length"
+          size="xs"
+          variant="ghost"
+          :aria-label="`Deselect all ${selectedKeys.length} selected samples`"
+          @click="emit('clearSelection')"
+        >
           Deselect all ({{ selectedKeys.length }})
         </UButton>
         <UButton
@@ -444,6 +512,7 @@
           size="xs"
           variant="ghost"
           :disabled="!visibleFiles.length || loading"
+          :aria-label="`Select all ${visibleFiles.length} displayed samples`"
           @click="emit('selectAllDisplayed')"
         >
           Select all ({{ visibleFiles.length }})
@@ -456,7 +525,17 @@
       listing limit.
     </div>
 
-    <div ref="scrollEl" class="relative flex-1 overflow-auto p-2" @mousedown="onScrollHostMouseDown">
+    <div
+      ref="scrollEl"
+      class="relative min-h-0 flex-1 overflow-auto p-2"
+      role="region"
+      aria-label="Sample files"
+      @mousedown="onScrollHostMouseDown"
+    >
+      <p class="sr-only">
+        Drag on empty space to select multiple samples with the mouse. Use Enter or Space on a sample card or table row
+        to toggle selection.
+      </p>
       <div
         v-if="loading"
         class="absolute inset-0 z-20 flex min-h-[14rem] flex-col items-center justify-center gap-3 bg-white/90 p-6 backdrop-blur-[1px]"
@@ -466,11 +545,18 @@
         <UIcon name="i-heroicons-arrow-path" class="text-primary h-10 w-10 shrink-0 animate-spin" />
         <p class="text-muted max-w-sm text-center text-sm">Loading samples and tag data…</p>
       </div>
-      <div v-if="explorerView === 'cards'" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div
+        v-if="explorerView === 'cards'"
+        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+        role="list"
+        aria-label="Samples"
+        aria-multiselectable="true"
+      >
         <template v-for="(sec, secIdx) in fileSections" :key="sec.batchId ?? 'unbatched'">
           <div
             class="border-border-muted col-span-full flex items-start justify-between gap-3 border-b pb-2"
             :class="secIdx === 0 ? 'mt-0' : 'mt-6'"
+            role="presentation"
           >
             <h3 class="text-muted min-w-0 flex-1 whitespace-normal text-xs font-normal leading-snug tracking-wide">
               <span class="inline-flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -513,17 +599,20 @@
             :key="f.Key"
             data-file-card
             :data-key="f.Key"
+            role="listitem"
+            tabindex="0"
             draggable="true"
-            class="border-border-muted relative cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition"
+            class="border-border-muted focus-visible:ring-primary relative min-w-0 cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
             :class="{
               'bg-primary-muted ring-primary ring-2': selectedKeys.includes(f.Key),
               'z-[80]': analysisPopoverOpenKey === f.Key,
             }"
+            :aria-selected="selectedKeys.includes(f.Key)"
+            :aria-label="fileItemAriaLabel(f.Key, f.Size)"
             @click="emit('toggleKey', f.Key)"
+            @keydown="onFileItemKeydown($event, f.Key)"
             @dragstart="onCardDragStart($event, f.Key)"
-            @dragover="onCardDragOver"
-            @dragleave="onCardDragLeave"
-            @drop="onCardDrop($event)"
+            @dragend="onFileCardDragEnd"
           >
             <div class="absolute right-2 top-2 flex items-center gap-1.5" @mousedown.stop @click.stop>
               <UIcon
@@ -548,26 +637,34 @@
                 @update:open="onAnalysisPopoverOpen(f.Key, $event)"
               />
             </div>
-            <div class="mt-7 pr-8 text-sm font-medium leading-snug">{{ fileName(f.Key) }}</div>
-            <div v-if="folderPathUnderLab(f.Key)" class="text-muted mt-0.5 truncate text-[11px]">
-              {{ folderPathUnderLab(f.Key) }}
-            </div>
-            <div class="text-muted mt-1 text-xs">{{ f.Size != null ? `${f.Size} bytes` : '' }}</div>
-            <div class="mt-2 flex min-h-[1.25rem] flex-wrap gap-1">
+            <UTooltip :open-delay="500" :ui="s3PathTooltipUi">
+              <template #text>
+                {{ s3ObjectTooltip(f.Key) }}
+              </template>
+              <div class="w-full min-w-0 pr-8">
+                <div class="mt-7 line-clamp-2 w-full min-w-0 break-all text-sm font-medium leading-snug">
+                  {{ fileName(f.Key) }}
+                </div>
+                <div v-if="folderPathUnderLab(f.Key)" class="text-muted mt-0.5 truncate text-[11px]">
+                  {{ folderPathUnderLab(f.Key) }}
+                </div>
+              </div>
+            </UTooltip>
+            <div class="text-muted mt-1 text-xs">{{ formatFileSize(f.Size) }}</div>
+            <div class="mt-2 flex min-h-[1.25rem] min-w-0 max-w-full flex-wrap gap-1">
               <template v-if="standardTagIdsForFileKey(f.Key).length">
                 <span
                   v-for="tid in standardTagIdsForFileKey(f.Key)"
                   :key="tid"
-                  class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                  draggable="true"
+                  class="inline-flex min-w-0 max-w-full overflow-hidden rounded-full px-2 py-0.5 text-[10px] font-medium"
+                  :title="tagById(tid)?.Name || tid"
                   :style="{
                     background: tagById(tid)?.ColorHex || '#e2e2e8',
                     color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
                   }"
-                  @dragstart="onPillDragStart($event, tid, f.Key)"
                   @click.stop
                 >
-                  {{ tagById(tid)?.Name || tid }}
+                  <span class="min-w-0 truncate">{{ tagById(tid)?.Name || tid }}</span>
                 </span>
               </template>
               <span v-else class="text-muted text-[10px] italic">No tags</span>
@@ -577,11 +674,17 @@
       </div>
 
       <div v-else class="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table class="w-full min-w-[56rem] border-collapse text-left text-sm">
+        <table class="w-full min-w-[56rem] border-collapse text-left text-sm" aria-label="Samples">
+          <caption class="sr-only">
+            Samples in data collections
+            <template v-if="selectedKeys.length">, {{ selectedKeys.length }} selected</template>
+          </caption>
           <thead>
             <tr class="border-border-muted bg-gray-50/90 text-xs uppercase tracking-wide text-gray-600">
               <th class="border-border-muted w-10 border-b px-3 py-2.5" scope="col" />
-              <th class="border-border-muted border-b px-3 py-2.5 font-semibold" scope="col">Sample ID</th>
+              <th class="border-border-muted min-w-0 max-w-[14rem] border-b px-3 py-2.5 font-semibold" scope="col">
+                Sample ID
+              </th>
               <th class="border-border-muted border-b px-3 py-2.5 font-semibold" scope="col">Batch</th>
               <th class="border-border-muted border-b px-3 py-2.5 font-semibold" scope="col">Status</th>
               <th class="border-border-muted border-b px-3 py-2.5 font-semibold" scope="col">Tags</th>
@@ -638,18 +741,20 @@
                 :key="f.Key"
                 data-file-card
                 :data-key="f.Key"
+                tabindex="0"
                 draggable="true"
-                class="border-border-muted cursor-pointer border-b transition last:border-b-0"
+                class="border-border-muted focus-visible:ring-primary cursor-pointer border-b transition last:border-b-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset"
                 :class="{
                   'bg-primary-muted ring-primary ring-2 ring-inset': selectedKeys.includes(f.Key),
                   'hover:bg-gray-50/80': !selectedKeys.includes(f.Key),
                   'relative z-[80]': analysisPopoverOpenKey === f.Key,
                 }"
+                :aria-selected="selectedKeys.includes(f.Key)"
+                :aria-label="fileItemAriaLabel(f.Key, f.Size)"
                 @click="emit('toggleKey', f.Key)"
+                @keydown="onFileItemKeydown($event, f.Key)"
                 @dragstart="onCardDragStart($event, f.Key)"
-                @dragover="onCardDragOver"
-                @dragleave="onCardDragLeave"
-                @drop="onCardDrop($event)"
+                @dragend="onFileCardDragEnd"
               >
                 <td class="px-3 py-2 align-middle" @mousedown.stop @click.stop>
                   <UCheckbox
@@ -657,20 +762,27 @@
                     @update:model-value="emit('toggleKey', f.Key)"
                   />
                 </td>
-                <td class="max-w-[14rem] px-3 py-2 align-middle">
-                  <div class="flex items-center gap-1.5">
-                    <UIcon
-                      v-if="isFilePermanent(f.Key)"
-                      name="i-heroicons-lock-closed"
-                      class="h-3.5 w-3.5 shrink-0 text-red-600"
-                      title="This file is protected from auto-deletion when run retention expires."
-                      aria-label="Protected from auto-deletion"
-                    />
-                    <span class="truncate font-medium text-gray-900">{{ fileName(f.Key) }}</span>
-                  </div>
-                  <div v-if="folderPathUnderLab(f.Key)" class="text-muted truncate text-xs">
-                    {{ folderPathUnderLab(f.Key) }}
-                  </div>
+                <td class="min-w-0 max-w-[14rem] overflow-hidden px-3 py-2 align-middle">
+                  <UTooltip :open-delay="500" :ui="s3PathTooltipUi">
+                    <template #text>
+                      {{ s3ObjectTooltip(f.Key) }}
+                    </template>
+                    <div class="min-w-0">
+                      <div class="flex min-w-0 items-center gap-1.5">
+                        <UIcon
+                          v-if="isFilePermanent(f.Key)"
+                          name="i-heroicons-lock-closed"
+                          class="h-3.5 w-3.5 shrink-0 text-red-600"
+                          title="This file is protected from auto-deletion when run retention expires."
+                          aria-label="Protected from auto-deletion"
+                        />
+                        <span class="truncate font-medium text-gray-900">{{ fileName(f.Key) }}</span>
+                      </div>
+                      <div v-if="folderPathUnderLab(f.Key)" class="text-muted truncate text-xs">
+                        {{ folderPathUnderLab(f.Key) }}
+                      </div>
+                    </div>
+                  </UTooltip>
                 </td>
                 <td class="text-muted px-3 py-2 align-middle">{{ batchDisplayName(f.Key) }}</td>
                 <td class="px-3 py-2 align-middle">
@@ -688,22 +800,21 @@
                     />
                   </span>
                 </td>
-                <td class="px-3 py-2 align-middle">
-                  <div class="flex min-h-[1.25rem] flex-wrap gap-1">
+                <td class="min-w-0 px-3 py-2 align-middle">
+                  <div class="flex min-h-[1.25rem] min-w-0 max-w-full flex-wrap gap-1">
                     <template v-if="standardTagIdsForFileKey(f.Key).length">
                       <span
                         v-for="tid in standardTagIdsForFileKey(f.Key)"
                         :key="tid"
-                        class="inline-flex cursor-grab items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                        draggable="true"
+                        class="inline-flex min-w-0 max-w-full overflow-hidden rounded-full px-2 py-0.5 text-[10px] font-medium"
+                        :title="tagById(tid)?.Name || tid"
                         :style="{
                           background: tagById(tid)?.ColorHex || '#e2e2e8',
                           color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
                         }"
-                        @dragstart="onPillDragStart($event, tid, f.Key)"
                         @click.stop
                       >
-                        {{ tagById(tid)?.Name || tid }}
+                        <span class="min-w-0 truncate">{{ tagById(tid)?.Name || tid }}</span>
                       </span>
                     </template>
                     <span v-else class="text-muted text-[10px] italic">No tags</span>

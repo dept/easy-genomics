@@ -27,6 +27,14 @@
   });
 
   const tableData = ref<TableData | null>(null);
+  const loadError = ref<string | null>(null);
+
+  const pageTitle = computed(() => {
+    const runName = tableData.value?.metadata.runName;
+    return runName ? `Sample sheet — ${runName}` : 'Sample sheet';
+  });
+
+  usePageTitle(pageTitle);
 
   onMounted(async () => {
     try {
@@ -65,45 +73,56 @@
       };
     } catch (error) {
       console.error('Error:', error);
+      loadError.value = 'Unable to load sample sheet. Close this tab and try again from the run.';
     }
   });
 </script>
 
 <template>
   <div class="sample-sheet">
-    <template v-if="tableData">
-      <EGText tag="h3" class="mb-4">Sample Sheet</EGText>
-      <div class="mb-8 space-y-1">
-        <EGText tag="p">
-          <strong>Laboratory:</strong>
-          {{ tableData.metadata.labName }}
-        </EGText>
-        <EGText tag="p">
-          <strong>Platform:</strong>
-          {{ tableData.metadata.platform }}
-        </EGText>
-        <EGText tag="p">
-          <strong>Pipeline:</strong>
-          {{ tableData.metadata.pipelineOrWorkflowName }}
-        </EGText>
-        <EGText tag="p">
-          <strong>Run name:</strong>
-          {{ tableData.metadata.runName }}
-        </EGText>
+    <div v-if="loadError" role="alert" class="text-alert-danger">{{ loadError }}</div>
+
+    <template v-else-if="tableData">
+      <h1 class="text-heading mb-4 text-2xl font-semibold">Sample Sheet</h1>
+      <dl class="mb-8 space-y-1">
+        <div class="flex gap-2 text-sm">
+          <dt class="font-medium">Laboratory</dt>
+          <dd>{{ tableData.metadata.labName }}</dd>
+        </div>
+        <div class="flex gap-2 text-sm">
+          <dt class="font-medium">Platform</dt>
+          <dd>{{ tableData.metadata.platform }}</dd>
+        </div>
+        <div class="flex gap-2 text-sm">
+          <dt class="font-medium">Pipeline</dt>
+          <dd>{{ tableData.metadata.pipelineOrWorkflowName }}</dd>
+        </div>
+        <div class="flex gap-2 text-sm">
+          <dt class="font-medium">Run name</dt>
+          <dd>{{ tableData.metadata.runName }}</dd>
+        </div>
+      </dl>
+
+      <div class="overflow-x-auto">
+        <table :aria-label="`Sample sheet data for run ${tableData.metadata.runName}`">
+          <caption class="sr-only">
+            Sample sheet with {{ tableData.data.length }} rows and {{ tableData.headers.length }} columns
+          </caption>
+          <thead>
+            <tr>
+              <th v-for="header in tableData.headers" :key="header" scope="col">{{ header }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(row, index) in tableData.data" :key="index">
+              <td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th v-for="header in tableData.headers" :key="header">{{ header }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(row, index) in tableData.data" :key="index">
-            <td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}</td>
-          </tr>
-        </tbody>
-      </table>
     </template>
+
+    <div v-else role="status" aria-live="polite" class="text-muted">Loading sample sheet…</div>
   </div>
 </template>
 
