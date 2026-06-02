@@ -3,8 +3,18 @@ import { useRuntimeConfig } from 'nuxt/app';
 const { getToken, getRefreshedToken } = useAuth();
 
 class HttpFactory {
+  // `BASE_API_URL` points at the AWS HealthOmics + NF-Tower REST API (what the
+  // main back-end stack owns). `EASY_GENOMICS_API_URL`, when set, points at the
+  // dedicated easy-genomics REST API that was split into its own stack.
+  //
+  // In single-URL (legacy) deployments `EASY_GENOMICS_API_URL` is unset and
+  // easy-genomics traffic still flows through `BASE_API_URL + /easy-genomics`.
+  // In split deployments `EASY_GENOMICS_API_URL` is set directly to the
+  // easy-genomics API invoke URL (or its custom domain), which already serves
+  // `/easy-genomics/...` routes, so the path prefix stays the same.
   private baseApiUrl = useRuntimeConfig().public.BASE_API_URL;
-  private defaultApiUrl = `${this.baseApiUrl}/easy-genomics`;
+  private easyGenomicsApiUrl = useRuntimeConfig().public.EASY_GENOMICS_API_URL;
+  private defaultApiUrl = `${this.easyGenomicsApiUrl || this.baseApiUrl}/easy-genomics`;
   private nfTowerApiUrl = `${this.baseApiUrl}/nf-tower`;
   private omicsApiUrl = `${this.baseApiUrl}/aws-healthomics`;
 

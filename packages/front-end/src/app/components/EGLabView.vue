@@ -15,7 +15,6 @@
   import { Pipeline as SeqeraPipeline } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
   import { WorkflowListItem as OmicsWorkflow } from '@aws-sdk/client-omics';
   import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
-  import { FavouriteWorkflow } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
   import { TableSort } from './EGTable.vue';
 
   const props = defineProps<{
@@ -39,7 +38,6 @@
   const { stringSortCompare } = useSort();
 
   const labUsers = ref<LabUser[]>([]);
-  const favouriteWorkflows = ref<FavouriteWorkflow[]>([]);
   const seqeraPipelines = computed<SeqeraPipeline[]>(() => seqeraPipelinesStore.pipelinesForLab(props.labId));
   const omicsWorkflows = computed<OmicsWorkflow[]>(() => omicsWorkflowsStore.workflowsForLab(props.labId));
   const canAddUsers = computed<boolean>(() => userStore.canAddLabUsers(props.labId));
@@ -99,10 +97,10 @@
 
   const tabItems = computed<{ key: string; label: string; icon: string; dividerBefore?: boolean }[]>(() => {
     const dashboardTab = { key: 'dashboard', label: 'Dashboard', icon: 'i-heroicons-squares-2x2' };
-    const runsTab = { key: 'runs', label: 'Runs', icon: 'i-heroicons-clock' };
-    const seqeraPipelinesTab = { key: 'seqeraPipelines', label: 'Seqera Workflows', icon: 'i-heroicons-command-line' };
+    const runsTab = { key: 'runs', label: 'Pipeline Runs', icon: 'i-heroicons-clock' };
+    const seqeraPipelinesTab = { key: 'seqeraPipelines', label: 'Seqera Pipelines', icon: 'i-heroicons-command-line' };
     const omicsWorkflowsTab = { key: 'omicsWorkflows', label: 'HealthOmics Workflows', icon: 'i-heroicons-beaker' };
-    const usersTab = { key: 'users', label: 'Lab Users', icon: 'i-heroicons-users' };
+    const usersTab = { key: 'users', label: 'Users', icon: 'i-heroicons-users' };
     const detailsTab = { key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth' };
 
     const seqeraAvailable = lab.value?.NextFlowTowerEnabled && !missingPAT.value;
@@ -136,8 +134,38 @@
   });
 
   function setTabIndex() {
-    const tabMatchIndex = tabItems.value.findIndex((tab) => tab.label === props.initialTab);
-    tabIndex.value = tabMatchIndex !== -1 ? tabMatchIndex : 0;
+    const requestedTab = (props.initialTab ?? '').trim().toLowerCase();
+
+    const tabLabelAliases: Record<string, string[]> = {
+      dashboard: ['dashboard'],
+      runs: ['pipeline runs', 'lab runs', 'runs'],
+      seqeraPipelines: ['seqera pipelines', 'seqera workflows'],
+      omicsWorkflows: ['healthomics workflows'],
+      users: ['users', 'lab users'],
+      details: ['settings'],
+    };
+
+    if (requestedTab) {
+      const tabMatchIndex = tabItems.value.findIndex((tab) => {
+        const aliases = tabLabelAliases[tab.key] ?? [tab.label.toLowerCase()];
+        return aliases.includes(requestedTab);
+      });
+
+      if (tabMatchIndex !== -1) {
+        tabIndex.value = tabMatchIndex;
+        return;
+      }
+    }
+
+    if (!props.superuser) {
+      const dashboardIndex = tabItems.value.findIndex((tab) => tab.key === 'dashboard');
+      if (dashboardIndex !== -1) {
+        tabIndex.value = dashboardIndex;
+        return;
+      }
+    }
+
+    tabIndex.value = 0;
   }
 
   function handleTabChange(newIndex: number) {
@@ -354,44 +382,12 @@
   const omicsWorkflowsTableColumns = [
     { key: 'Name', label: 'Name' },
     { key: 'description', label: 'Description' },
-    { key: 'favourite', label: 'Favourite' },
-    { key: 'run', label: 'Run' },
+    { key: 'actions', label: 'Actions' },
   ];
 
-  function isWorkflowFavourited(workflowId: string): boolean {
-    return favouriteWorkflows.value.some((w) => w.WorkflowId === workflowId && w.LaboratoryId === props.labId);
-  }
-
-  async function toggleFavouriteWorkflow(workflow: OmicsWorkflow) {
-    const workflowId = workflow.id ?? '';
-    const isFav = isWorkflowFavourited(workflowId);
-
-    let updated: FavouriteWorkflow[];
-    if (isFav) {
-      updated = favouriteWorkflows.value.filter(
-        (w) => !(w.WorkflowId === workflowId && w.LaboratoryId === props.labId),
-      );
-    } else {
-      const newFav: FavouriteWorkflow = {
-        WorkflowId: workflowId,
-        WorkflowName: workflow.name ?? '',
-        Description: workflow.description ?? undefined,
-        Platform: 'AWS HealthOmics',
-        LaboratoryId: props.labId,
-      };
-      updated = [...favouriteWorkflows.value, newFav];
-    }
-
-    try {
-      await $api.users.updateUser(userStore.currentUserDetails.id!, { FavouriteWorkflows: updated });
-      favouriteWorkflows.value = updated;
-      useToastStore().success(isFav ? 'Workflow removed from favourites' : 'Workflow added to favourites');
-    } catch {
-      useToastStore().error(
-        isFav ? 'Failed to remove workflow from favourites' : 'Failed to add workflow to favourites',
-      );
-    }
-  }
+  const omicsWorkflowsActionItems = (workflow: any) => [
+    [{ label: 'Run', click: () => viewRunOmicsWorkflow(workflow) }],
+  ];
 
   function viewRunOmicsWorkflow(workflow: OmicsWorkflow) {
     $router.push({
@@ -557,15 +553,6 @@
     }
   }
 
-  async function loadFavouriteWorkflows(): Promise<void> {
-    try {
-      const user = await $api.users.getUser();
-      favouriteWorkflows.value = user.FavouriteWorkflows ?? [];
-    } catch (error) {
-      console.error('Error loading favourite workflows', error);
-    }
-  }
-
   // this anticipates these store values being needed on run click
   async function getSeqeraRuns(): Promise<void> {
     useUiStore().setRequestPending('getSeqeraRuns');
@@ -665,11 +652,10 @@
     const promises = [getLabUsers()];
 
     if (props.superuser) {
+      // superuser doesn't view pipelines/workflows or runs so just fetch the users
       await Promise.all(promises);
       return;
     }
-
-    promises.push(loadFavouriteWorkflows());
 
     if (newLab.NextFlowTowerEnabled) {
       if (newLab.HasNextFlowTowerAccessToken == null) {
@@ -844,33 +830,12 @@
   <!-- HealthOmics Workflows tab -->
   <div v-if="activeTabKey === 'omicsWorkflows'">
     <EGTable
-      narrow-run-and-favourite-columns
+      :row-click-action="viewRunOmicsWorkflow"
       :table-data="omicsWorkflows"
       :columns="omicsWorkflowsTableColumns"
       :is-loading="useUiStore().anyRequestPending(['loadLabData', 'getOmicsWorkflows'])"
       :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'getOmicsWorkflows'])"
     >
-      <template #favourite-data="{ row: workflow }">
-        <button
-          type="button"
-          class="text-primary hover:text-primary-dark hover:bg-primary-muted flex items-center justify-center rounded-full p-1 transition-all duration-150 hover:scale-110"
-          :aria-label="
-            isWorkflowFavourited(workflow.id ?? '') ? 'Remove workflow from favourites' : 'Add workflow to favourites'
-          "
-          :title="
-            isWorkflowFavourited(workflow.id ?? '') ? 'Remove workflow from favourites' : 'Add workflow to favourites'
-          "
-          @click.stop="toggleFavouriteWorkflow(workflow)"
-        >
-          <UIcon
-            :name="isWorkflowFavourited(workflow.id ?? '') ? 'i-heroicons-star-solid' : 'i-heroicons-star'"
-            class="h-6 w-6"
-            :class="isWorkflowFavourited(workflow.id ?? '') ? 'text-primary' : 'text-primary/45 hover:text-primary'"
-            aria-hidden="true"
-          />
-        </button>
-      </template>
-
       <template #Name-data="{ row: workflow }">
         <div class="flex items-center">
           {{ workflow?.name }}
@@ -881,16 +846,10 @@
         {{ workflow?.description }}
       </template>
 
-      <template #run-data="{ row: workflow }">
-        <button
-          type="button"
-          class="text-primary hover:text-primary-dark hover:bg-primary-muted flex items-center justify-center rounded-full p-1 transition-all duration-150 hover:scale-110"
-          aria-label="Run workflow"
-          title="Run workflow"
-          @click.stop="viewRunOmicsWorkflow(workflow)"
-        >
-          <UIcon name="i-heroicons-play-circle" class="h-6 w-6" aria-hidden="true" />
-        </button>
+      <template #actions-data="{ row: workflow }">
+        <div class="flex justify-end">
+          <EGActionButton :items="omicsWorkflowsActionItems(workflow)" class="ml-2" @click="$event.stopPropagation()" />
+        </div>
       </template>
 
       <template #empty-state>

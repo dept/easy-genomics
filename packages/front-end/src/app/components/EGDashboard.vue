@@ -441,7 +441,7 @@
       <div>
         <button class="text-primary mb-2 flex items-center gap-1 text-sm font-medium" @click="navigateBack">
           <UIcon name="i-heroicons-arrow-left" class="h-4 w-4" />
-          Back to organisation
+          Back to organization
         </button>
         <EGText tag="h1" class="mb-0">Laboratory of {{ labName }}</EGText>
       </div>

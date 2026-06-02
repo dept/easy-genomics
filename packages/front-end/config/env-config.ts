@@ -7,6 +7,7 @@ import {
 
 interface EnvConfig {
   appDomainName: string | undefined;
+  easyGenomicsApiUrl: string | undefined;
   sysAdminEmail: string | undefined;
   sysAdminPassword: string | undefined;
   orgAdminEmail: string | undefined;
@@ -26,6 +27,7 @@ interface EnvConfig {
  */
 function getConfigurationSettings(): EnvConfig {
   let appDomainName: string | undefined;
+  let easyGenomicsApiUrl: string | undefined;
   let orgAdminEmail: string | undefined;
   let orgAdminPassword: string | undefined;
   let sysAdminEmail: string | undefined;
@@ -42,6 +44,7 @@ function getConfigurationSettings(): EnvConfig {
   if (process.env.CI === 'true') {
     // CI/CD Pipeline uses ENV parameters
     appDomainName = process.env.APP_DOMAIN_NAME;
+    easyGenomicsApiUrl = process.env.AWS_EASY_GENOMICS_API_URL;
     orgAdminEmail = process.env.ORG_ADMIN_EMAIL;
     orgAdminPassword = process.env.ORG_ADMIN_PASSWORD;
     sysAdminEmail = process.env.SYSTEM_ADMIN_EMAIL;
@@ -83,6 +86,7 @@ function getConfigurationSettings(): EnvConfig {
     }
 
     appDomainName = envConfig['app-domain-name'];
+    easyGenomicsApiUrl = envConfig['aws-easy-genomics-api-url'];
     sysAdminEmail = envConfig['back-end']['sys-admin-email'];
     sysAdminPassword = envConfig['back-end']['sys-admin-password'];
     orgAdminEmail = envConfig['back-end']['org-admin-email'];
@@ -99,6 +103,7 @@ function getConfigurationSettings(): EnvConfig {
 
   return {
     appDomainName,
+    easyGenomicsApiUrl,
     sysAdminEmail,
     sysAdminPassword,
     orgAdminEmail,

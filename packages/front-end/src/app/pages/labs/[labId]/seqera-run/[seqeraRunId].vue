@@ -1,13 +1,12 @@
 <script setup lang="ts">
   import { getDate, getTime } from '@FE/utils/date-time';
-  import { useLabsStore, useRunStore } from '@FE/stores';
+  import { useRunStore } from '@FE/stores';
   import { useDebounceFn } from '@vueuse/core';
 
   const { $api } = useNuxtApp();
   const $router = useRouter();
   const $route = useRoute();
   const runStore = useRunStore();
-  const labsStore = useLabsStore();
 
   const labId = $route.params.labId as string;
   const seqeraRunId = $route.params.seqeraRunId as string;
@@ -21,8 +20,16 @@
   }
 
   const labRunId = computed<string | null>(() => runStore.labRunByExternalId(seqeraRunId)?.RunId ?? null);
-  const s3Bucket = computed<string>(() => labsStore.labs[labId]?.S3Bucket ?? '');
-  const s3Prefix = computed<string>(() => `${useUserStore().currentOrgId}/${labId}/next-flow/${labRunId.value ?? ''}`);
+  const labRun = computed(() => (labRunId.value ? (runStore.labRuns[labRunId.value] ?? null) : null));
+  const effectiveRootS3Url = computed<string | null>(
+    () => labRun.value?.OutputS3Url ?? labRun.value?.InputS3Url ?? null,
+  );
+  const s3Bucket = computed<string | null>(
+    () => effectiveRootS3Url.value?.match(/(?<=^s3:\/\/)([a-z0-9][a-z0-9-]{1,61}[a-z0-9])(?=\/*)/g)?.toString() ?? null,
+  );
+  const s3Prefix = computed<string | null>(
+    () => effectiveRootS3Url.value?.match(/(?<=^s3:\/\/[a-z0-9][a-z0-9-]{1,61}[a-z0-9]\/)(.*)/g)?.toString() ?? null,
+  );
   const tabItems = computed(() => [
     { key: 'runDetails', label: 'Run Details' },
     { key: 'fileManager', label: 'File Manager' },
@@ -132,12 +139,15 @@
     <template #item="{ item }">
       <div v-show="item.key === 'fileManager'" class="space-y-3">
         <EGFileExplorer
-          v-if="labRunId && s3Bucket"
+          v-if="labRunId && s3Bucket && s3Prefix"
           :lab-id="labId"
           :run-id="labRunId"
           :s3-bucket="s3Bucket"
           :s3-prefix="s3Prefix"
         />
+        <p v-else-if="labRun" class="text-muted rounded-lg border border-dashed p-6 text-center text-sm">
+          No S3 location is recorded for this run, so files cannot be listed.
+        </p>
       </div>
       <div v-if="item.key === 'runDetails'" class="space-y-3">
         <section

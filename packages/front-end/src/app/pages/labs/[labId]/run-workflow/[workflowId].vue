@@ -3,7 +3,6 @@
   import { useRunStore } from '@FE/stores';
   import { ButtonVariantEnum } from '@FE/types/buttons';
   import { WorkflowParameter } from '@aws-sdk/client-omics';
-  import { WorkflowSchemaResponse } from '@FE/repository/modules/omics-workflows';
   import { v4 as uuidv4 } from 'uuid';
 
   const { $api } = useNuxtApp();
@@ -32,7 +31,6 @@
   const hasLaunched = ref<boolean>(false);
   const exitConfirmed = ref<boolean>(false);
   const nextRoute = ref<string | null>(null);
-  const hasSavedDefaults = ref<boolean>(false);
 
   const selectedStepIndex = ref(0);
   const steps = ref([
@@ -51,15 +49,14 @@
 
   const workflowVersionOptions = ref<{ value: string; label: string }[] | undefined>(undefined);
 
+  /** True when the user record still has OmicsWorkflowDefaultParams for this workflow (drives the save-defaults checkbox). */
+  const hasOmicsWorkflowSavedParameterDefaults = ref(false);
+
   const wipOmicsRun = computed<WipRun | null>(() => runStore.wipOmicsRuns[omicsRunTempId.value] || null);
 
   const workflow = computed<ReadWorkflow | null>(() => omicsWorkflowsStore.workflows[workflowId] || null);
 
   const schema = computed<Record<string, WorkflowParameter> | null>(() => workflow.value?.parameterTemplate ?? null);
-
-  // nf-core JSON Schema fetched from GitHub via the workflow-schema DynamoDB cache.
-  // Optional — some workflows may not have a github-repo-url tag.
-  const nfSchema = ref<object | null>(null);
 
   watch(
     omicsRunTempId,
@@ -119,7 +116,6 @@
 
     // reset state refs
     hasLaunched.value = false;
-    nfSchema.value = null;
     selectedStepIndex.value = 0;
 
     steps.value.forEach((step) => (step.disabled = true));
@@ -146,15 +142,6 @@
     } catch {
       workflowVersionOptions.value = undefined;
     }
-    // Fetch nf-core JSON Schema from the workflow-schema cache (non-blocking).
-    // The schema enriches the parameterTemplate with types, defaults, enum options, and help text.
-    const schemaResponse: WorkflowSchemaResponse | null = await $api.omicsWorkflows
-      .getSchema(labId, workflowId)
-      .catch((err) => {
-        console.warn('[run-workflow] Could not fetch workflow schema:', err);
-        return null;
-      });
-    nfSchema.value = schemaResponse?.Schema ?? null;
 
     // Identify AWS HealthOmics workflow schema required parameters
     const paramsRequired: string[] = Object.entries(omicsWorkflow.parameterTemplate)
@@ -168,20 +155,21 @@
       })
       .filter((_) => _ != undefined);
 
-    // fetch user defaults for this workflow (if any)
+    // fetch user defaults for this workflow (if any), scoped to current parameter template keys
     const userId = userStore.currentUserDetails.id;
-    let workflowDefaultParams: Record<string, any> = {};
+    let workflowDefaultParams: Record<string, unknown> = {};
+    let rawSavedDefaults: Record<string, unknown> = {};
     if (userId) {
       const user = await $api.users.getUser();
-      const rawDefaults = user.OmicsWorkflowDefaultParams?.[workflowId] || {};
+      rawSavedDefaults = user.OmicsWorkflowDefaultParams?.[workflowId] ?? {};
       workflowDefaultParams = Object.fromEntries(
-        Object.entries(rawDefaults).filter(([paramName]) =>
+        Object.entries(rawSavedDefaults).filter(([paramName]) =>
           Object.prototype.hasOwnProperty.call(omicsWorkflow.parameterTemplate, paramName),
         ),
       );
     }
-
-    hasSavedDefaults.value = Object.keys(workflowDefaultParams).length > 0;
+    hasOmicsWorkflowSavedParameterDefaults.value =
+      typeof rawSavedDefaults === 'object' && Object.keys(rawSavedDefaults).length > 0;
 
     // initialize wip run in store
     runStore.updateWipOmicsRun(omicsRunTempId.value, {
@@ -195,6 +183,10 @@
 
   function resetParams() {
     runStore.updateWipOmicsRun(omicsRunTempId.value, { params: {} });
+  }
+
+  function onOmicsWorkflowDefaultsCleared() {
+    hasOmicsWorkflowSavedParameterDefaults.value = false;
   }
 
   /**
@@ -361,14 +353,13 @@
             <EGRunWorkflowFormEditParameters
               :params="wipOmicsRun?.params"
               :schema="schema"
-              :nf-schema="nfSchema"
               :lab-id="labId"
               :workflow-id="workflowId"
               :omics-run-temp-id="omicsRunTempId"
-              :has-saved-defaults="hasSavedDefaults"
+              :has-saved-defaults="hasOmicsWorkflowSavedParameterDefaults"
               @next-step="() => nextStep('review')"
               @previous-step="() => previousStep()"
-              @defaults-cleared="hasSavedDefaults = false"
+              @defaults-cleared="onOmicsWorkflowDefaultsCleared"
             />
           </template>
 

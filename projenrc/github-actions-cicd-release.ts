@@ -65,6 +65,7 @@ export class GithubActionsCICDRelease extends Component {
         steps: [
           ...this.bootstrapSteps(),
           ...this.configureAwsCredentials(),
+          this.deriveApiUrlsStep(),
           {
             name: 'Run CI/CD Build & Deploy Front-End',
             run: 'pnpm cicd-build-deploy-front-end',
@@ -87,6 +88,8 @@ export class GithubActionsCICDRelease extends Component {
         },
         steps: [
           ...this.bootstrapSteps(),
+          ...this.configureAwsCredentials(),
+          this.deriveApiUrlsStep(),
           {
             name: 'Clear Playwright Cache',
             run: 'rm -rf /home/runner/.cache/ms-playwright',
@@ -182,7 +185,7 @@ export class GithubActionsCICDRelease extends Component {
       },
       {
         name: 'Install dependencies',
-        run: 'pnpm install',
+        run: 'pnpm install --frozen-lockfile',
       },
       // This determines the sha of the last successful build on the main branch
       // (known as the base sha) and adds to env vars along with the current (head) sha.
@@ -212,5 +215,62 @@ export class GithubActionsCICDRelease extends Component {
         },
       },
     ];
+  }
+
+  /**
+   * Derive split-stack API URLs from CloudFormation outputs.
+   *
+   * `AWS_API_GATEWAY_URL` must come from the shared "main-back-end" stack
+   * because it owns `/nf-tower` and `/aws-healthomics`.
+   *
+   * `AWS_EASY_GENOMICS_API_URL` comes from the dedicated easy-genomics stack.
+   * This output can be absent in pre-migration environments, in which case we
+   * leave the var unset and the UI falls back to
+   * `${AWS_API_GATEWAY_URL}/easy-genomics`.
+   */
+  private deriveApiUrlsStep(): github.workflows.JobStep {
+    return {
+      name: 'Derive API URLs from stack outputs',
+      // Note: projen's `JobStep` typing doesn't currently expose `shell`, but
+      // GitHub Actions supports it and we want bash strict mode semantics.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...({ shell: 'bash' } as any),
+      run: [
+        'set -euo pipefail',
+        'MAIN_STACK_NAME="${ENV_TYPE}-${ENV_NAME}-main-back-end-stack"',
+        'EASY_STACK_NAME="${ENV_TYPE}-${ENV_NAME}-easy-genomics-api-stack"',
+        '',
+        // Main back-end stack is required in all environments.
+        'BASE_URL="$(aws cloudformation describe-stacks \\',
+        '  --region "$AWS_REGION" \\',
+        '  --stack-name "$MAIN_STACK_NAME" \\',
+        "  --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayRestApiUrl`].OutputValue' \\",
+        '  --output text)"',
+        '',
+        'if [ -z "${BASE_URL:-}" ] || [ "${BASE_URL:-}" = "None" ]; then',
+        '  echo "Unable to derive AWS_API_GATEWAY_URL from stack output ApiGatewayRestApiUrl in $MAIN_STACK_NAME" >&2',
+        '  exit 1',
+        'fi',
+        '',
+        'BASE_URL="${BASE_URL%/}"',
+        'echo "AWS_API_GATEWAY_URL=$BASE_URL" >> "$GITHUB_ENV"',
+        'echo "Derived AWS_API_GATEWAY_URL=$BASE_URL"',
+        '',
+        // If the easy-genomics stack does not exist yet, treat as optional.
+        'EG_URL="$(aws cloudformation describe-stacks \\',
+        '  --region "$AWS_REGION" \\',
+        '  --stack-name "$EASY_STACK_NAME" \\',
+        "  --query 'Stacks[0].Outputs[?OutputKey==`EasyGenomicsApiUrl`].OutputValue' \\",
+        '  --output text 2>/dev/null || true)"',
+        '',
+        'if [ -n "${EG_URL:-}" ] && [ "${EG_URL:-}" != "None" ]; then',
+        '  EG_URL="${EG_URL%/}"',
+        '  echo "AWS_EASY_GENOMICS_API_URL=$EG_URL" >> "$GITHUB_ENV"',
+        '  echo "Derived AWS_EASY_GENOMICS_API_URL=$EG_URL"',
+        'else',
+        '  echo "Easy Genomics API output not found in $EASY_STACK_NAME; leaving AWS_EASY_GENOMICS_API_URL unset."',
+        'fi',
+      ].join('\n'),
+    };
   }
 }

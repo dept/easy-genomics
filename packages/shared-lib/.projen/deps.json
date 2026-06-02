@@ -79,15 +79,11 @@
     },
     {
       "name": "@aws-sdk/client-omics",
-      "version": "^3.1019.0",
+      "version": "^3.1014.0",
       "type": "runtime"
     },
     {
       "name": "@aws-sdk/client-s3",
-      "type": "runtime"
-    },
-    {
-      "name": "@nestjs/config",
       "type": "runtime"
     },
     {
@@ -104,6 +100,10 @@
     },
     {
       "name": "js-yaml",
+      "type": "runtime"
+    },
+    {
+      "name": "strnum",
       "type": "runtime"
     },
     {
