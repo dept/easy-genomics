@@ -5,6 +5,7 @@
   import { ButtonVariantEnum } from '@FE/types/buttons';
   import { WorkflowParameter } from '@aws-sdk/client-omics';
   import { v4 as uuidv4 } from 'uuid';
+  import { ensureLabInActiveOrg } from '@FE/utils/ensure-lab-in-active-org';
 
   const { $api } = useNuxtApp();
   const $router = useRouter();
@@ -23,6 +24,12 @@
   if (!userStore.canViewLab(labId)) {
     $router.push('/labs');
   }
+
+  onBeforeMount(async () => {
+    if (await ensureLabInActiveOrg({ labId })) {
+      return;
+    }
+  });
 
   // set a new omicsRunTempId if not provided
   if (!$route.query.omicsRunTempId) {
