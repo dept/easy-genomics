@@ -79,7 +79,7 @@
  *     --resource-mapping "cdk.out/${NEW_STACK}.import-mapping.json" \\
  *     --require-approval any-change
  *
- * See `docs/EASY_GENOMICS_PROD_MIGRATION.md` Phase 3.1 for the full
+ * See `docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md` Phase 3.1 for the full
  * runbook this script supports.
  */
 

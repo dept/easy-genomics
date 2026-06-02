@@ -33,7 +33,7 @@ import {
  *  easy-genomics tables were created inside `EasyGenomicsNestedStack`,
  *  `cdk import "${this.stackName}"` would never offer them as adoption
  *  candidates and the documented migration runbook
- *  (`docs/EASY_GENOMICS_PROD_MIGRATION.md`) would silently fail to adopt
+ *  (`docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md`) would silently fail to adopt
  *  any tables. Hosting the tables at the parent stack scope keeps them in
  *  this top-level template where the importer can see them.
  *
@@ -47,7 +47,7 @@ import {
  *    `dynamodb-construct.ts`). A naive `cdk deploy --all` will fail because
  *    the retained tables still hold the fixed physical names that the new
  *    stack wants to create. The supported migration path is documented in
- *    `docs/EASY_GENOMICS_PROD_MIGRATION.md` (retain → detach → `cdk import`).
+ *    `docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md` (retain → detach → `cdk import`).
  *    That runbook is intentionally environment-agnostic so the prod rollout
  *    is a rehearsed repeat of non-prod rollouts.
  */

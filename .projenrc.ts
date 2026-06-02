@@ -392,7 +392,7 @@ backEndApp.addScripts({
   // stack-split migration. Missing tables (fresh / greenfield deploys)
   // are skipped, so there is no bypass flag; the guard is always on.
   // See `scripts/preflight-deletion-protection.ts` and
-  // `docs/EASY_GENOMICS_PROD_MIGRATION.md`.
+  // `docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md`.
   ['preflight-deletion-protection']: 'tsx scripts/preflight-deletion-protection.ts',
   // NOTE: `--all` is required now that the back-end synthesizes multiple
   // top-level stacks (`*-main-back-end-stack`, `*-easy-genomics-api-stack`,
