@@ -341,6 +341,9 @@
 <template>
   <EGSidebarNav
     aria-label="Organization sections"
+    variant="dark"
+    callout-title="Admin view"
+    callout-description="You're managing organization-level settings, not a single lab."
     :items="tabItems"
     :model-value="tabIndex"
     @update:model-value="handleTabChange"
