@@ -39,13 +39,16 @@ sub-components for logical separation to make it easier to maintain and enhance:
 
 Full documentation lives in [`docs/`](./docs/), organised by audience:
 
-- **[Getting Started](./docs/getting-started/)** — prerequisites, installation, and your first workflow run.
+- **[Getting Started](./docs/getting-started/)** — prerequisites, installation, and
+  **[your first workflow run](./docs/getting-started/first-workflow-run.md)**.
 - **[Deployment](./docs/deployment/)** — AWS setup, `easy-genomics.yaml` configuration, upgrading, and
   **[production deployment](./docs/deployment/production.md)**.
 - **[Development](./docs/development/)** — local back-end development, contributing conventions, and architecture.
 - **[Operations](./docs/operations/)** — troubleshooting and migration runbooks.
 
-New to Easy Genomics? Start with **[docs/getting-started/prerequisites.md](./docs/getting-started/prerequisites.md)**.
+New to Easy Genomics? Start with **[docs/getting-started/prerequisites.md](./docs/getting-started/prerequisites.md)**,
+then deploy with **[install.md](./docs/getting-started/install.md)** and run your first workflow with
+**[first-workflow-run.md](./docs/getting-started/first-workflow-run.md)**.
 
 ## License
 
