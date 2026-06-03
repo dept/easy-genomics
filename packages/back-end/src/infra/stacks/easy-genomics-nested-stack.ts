@@ -23,7 +23,7 @@ import { EasyGenomicsNestedStackProps } from '../types/back-end-stack';
  * `props.dynamoDBTables` so that:
  *   1. `cdk import` (which only walks a single template per invocation) can
  *      adopt the tables during the documented split-stack migration. See
- *      `docs/EASY_GENOMICS_PROD_MIGRATION.md`.
+ *      `docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md`.
  *   2. The same `Map<string, Table>` reference is shared in-process with
  *      `DataProvisioningNestedStack` without needing CloudFormation exports.
  *

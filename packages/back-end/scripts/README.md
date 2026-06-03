@@ -139,7 +139,7 @@ LAB_ID=<uuid> RETENTION_MONTHS=<int> pnpm run recompute-laboratory-run-retention
 ## `build-import-mapping.ts`
 
 **Purpose:** Generates the `--resource-mapping` JSON file consumed by `cdk import` during the easy-genomics split-stack
-migration (`docs/EASY_GENOMICS_PROD_MIGRATION.md`, Phase 3.1). Reads
+migration (`docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md`, Phase 3.1). Reads
 `cdk.out/${namePrefix}-easy-genomics-api-stack.template.json` (produced by `pnpm cdk synth`), discovers every
 `AWS::DynamoDB::Table` resource, and writes a `LogicalResourceId → { TableName }` map. Fails closed if any of the eight
 expected easy-genomics tables are missing from the synthesized template, so an incomplete or wrong-stack mapping cannot

@@ -69,7 +69,7 @@ export class DynamoConstruct extends Construct {
     //      equally valuable in non-prod (accidental drop, runaway test).
     //
     // Trade-off: `cdk destroy` will orphan these tables. Fresh sandbox envs
-    // need a manual cleanup step (see `docs/EASY_GENOMICS_PROD_MIGRATION.md`
+    // need a manual cleanup step (see `docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md`
     // "Cleanup / destroy" appendix).
     const removalPolicy = RemovalPolicy.RETAIN;
 
