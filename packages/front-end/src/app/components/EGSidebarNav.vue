@@ -6,20 +6,32 @@
     dividerBefore?: boolean;
   }
 
-  withDefaults(
+  const props = withDefaults(
     defineProps<{
       items: SidebarNavItem[];
       modelValue: number;
       ariaLabel?: string;
+      /** Visual treatment of the sidebar. Use 'dark' for org-admin areas to differentiate them from the light lab workspace. */
+      variant?: 'light' | 'dark';
+      /** Optional callout heading shown above the nav (e.g. "Admin view"). */
+      calloutTitle?: string;
+      /** Optional callout body shown beneath the callout title. */
+      calloutDescription?: string;
+      /** Icon shown inside the callout badge. */
+      calloutIcon?: string;
     }>(),
     {
       ariaLabel: 'Section navigation',
+      variant: 'light',
+      calloutIcon: 'i-heroicons-building-office-2',
     },
   );
 
   const emit = defineEmits<{
     'update:modelValue': [index: number];
   }>();
+
+  const isDark = computed(() => props.variant === 'dark');
 
   function tabId(key: string) {
     return `tab-${key}`;
@@ -31,10 +43,27 @@
 </script>
 
 <template>
-  <nav class="sidebar-nav bg-white" :aria-label="ariaLabel">
+  <nav class="sidebar-nav" :class="isDark ? 'sidebar-nav--dark' : 'bg-white'" :aria-label="ariaLabel">
+    <div v-if="calloutTitle" class="sidebar-callout mb-6 flex items-start gap-3 rounded-lg p-3" role="note">
+      <span class="sidebar-callout__badge flex h-7 w-7 shrink-0 items-center justify-center rounded-md">
+        <UIcon :name="calloutIcon" class="h-4 w-4" aria-hidden="true" />
+      </span>
+      <span class="flex flex-col gap-1">
+        <span class="sidebar-callout__title font-serif text-sm font-semibold">{{ calloutTitle }}</span>
+        <span v-if="calloutDescription" class="sidebar-callout__description font-serif text-xs leading-snug">
+          {{ calloutDescription }}
+        </span>
+      </span>
+    </div>
+
     <div role="tablist" aria-orientation="vertical" class="flex flex-col">
       <template v-for="(item, index) in items" :key="item.key">
-        <div v-if="item.dividerBefore" class="border-background-dark-grey my-3 border-t" role="presentation" />
+        <div
+          v-if="item.dividerBefore"
+          class="my-3 border-t"
+          :class="isDark ? 'border-white/10' : 'border-background-dark-grey'"
+          role="presentation"
+        />
         <button
           type="button"
           role="tab"
@@ -43,11 +72,15 @@
           :aria-selected="modelValue === index"
           @click="emit('update:modelValue', index)"
           class="focus-visible:outline-primary-500 flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left font-serif text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-          :class="[
-            modelValue === index
-              ? 'bg-primary-muted text-primary-dark border-primary-dark border-l-2 pl-[14px] font-semibold'
-              : 'text-body hover:bg-background-light-grey border-l-2 border-transparent pl-[14px]',
-          ]"
+          :class="
+            isDark
+              ? [modelValue === index ? 'sidebar-tab--dark-active font-semibold' : 'sidebar-tab--dark']
+              : [
+                  modelValue === index
+                    ? 'bg-primary-muted text-primary-dark font-semibold'
+                    : 'text-body hover:bg-background-light-grey',
+                ]
+          "
         >
           <UIcon v-if="item.icon" :name="item.icon" class="h-5 w-5 shrink-0" aria-hidden="true" />
           <span>{{ item.label }}</span>
@@ -68,5 +101,44 @@
     min-height: calc(100vh - var(--header-height));
     border-right: 1px solid #e5e5e5;
     border-top: 1px solid #e5e5e5;
+  }
+
+  // Dark treatment used by the org-admin area to read as a distinct place from the light lab workspace.
+  .sidebar-nav--dark {
+    background-color: #1b1a29;
+    border-right-color: #1b1a29;
+    border-top-color: #1b1a29;
+  }
+
+  .sidebar-callout {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+
+    &__badge {
+      background-color: #5524e0; // primary
+      color: #ffffff;
+    }
+
+    &__title {
+      color: #ffffff;
+    }
+
+    &__description {
+      color: #9b9aa8;
+    }
+  }
+
+  .sidebar-tab--dark {
+    color: #c5c4d0;
+
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.06);
+    }
+  }
+
+  .sidebar-tab--dark-active {
+    background-color: rgba(255, 255, 255, 0.08);
+    border-color: #9687fe; // primaryCol-400
+    color: #ffffff;
   }
 </style>
