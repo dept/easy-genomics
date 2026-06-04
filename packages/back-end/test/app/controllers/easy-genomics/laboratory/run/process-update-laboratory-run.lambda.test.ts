@@ -432,7 +432,7 @@ describe('process-update-laboratory-run.lambda', () => {
     await expect(processStatusCheckEvent('UPDATE', { RunId: 'run-err' } as any)).rejects.toThrow('lookup failed');
   });
 
-  it('getAWSHealthOmicsStatus returns failureReason when present', async () => {
+  it('getAWSHealthOmicsStatus returns failureReason and statusMessage as separate fields', async () => {
     mockGetRun.mockResolvedValue({
       status: 'FAILED',
       failureReason: 'ECR_PERMISSION_ERROR',
@@ -443,9 +443,10 @@ describe('process-update-laboratory-run.lambda', () => {
 
     expect(snapshot.status).toBe('FAILED');
     expect(snapshot.failureReason).toBe('ECR_PERMISSION_ERROR');
+    expect(snapshot.statusMessage).toBe('Cannot access ECR image (human-readable)');
   });
 
-  it('getAWSHealthOmicsStatus falls back to statusMessage when failureReason is missing', async () => {
+  it('getAWSHealthOmicsStatus keeps statusMessage distinct and does not collapse it into failureReason', async () => {
     mockGetRun.mockResolvedValue({
       status: 'FAILED',
       statusMessage: 'Engine failure — see CloudWatch',
@@ -453,15 +454,17 @@ describe('process-update-laboratory-run.lambda', () => {
 
     const snapshot = await getAWSHealthOmicsStatus({ RunId: 'run-1', ExternalRunId: 'ext-1' } as any);
 
-    expect(snapshot.failureReason).toBe('Engine failure — see CloudWatch');
+    expect(snapshot.failureReason).toBeUndefined();
+    expect(snapshot.statusMessage).toBe('Engine failure — see CloudWatch');
   });
 
-  it('getAWSHealthOmicsStatus leaves failureReason undefined when neither field is present', async () => {
+  it('getAWSHealthOmicsStatus leaves both failure fields undefined when neither is present', async () => {
     mockGetRun.mockResolvedValue({ status: 'SUCCEEDED' } as any);
 
     const snapshot = await getAWSHealthOmicsStatus({ RunId: 'run-1', ExternalRunId: 'ext-1' } as any);
 
     expect(snapshot.failureReason).toBeUndefined();
+    expect(snapshot.statusMessage).toBeUndefined();
   });
 
   it('getSeqeraCloudStatus returns failureReason from workflow.errorMessage', async () => {
@@ -481,6 +484,7 @@ describe('process-update-laboratory-run.lambda', () => {
       workflow: {
         status: 'FAILED',
         errorMessage: 'Process samplesheet_check failed with exit code 1',
+        errorReport: 'Caused by:\n  Process `samplesheet_check` terminated with an error exit status (1)',
       },
     });
 
@@ -492,6 +496,9 @@ describe('process-update-laboratory-run.lambda', () => {
 
     expect(snapshot.status).toBe('FAILED');
     expect(snapshot.failureReason).toBe('Process samplesheet_check failed with exit code 1');
+    expect(snapshot.errorReport).toBe(
+      'Caused by:\n  Process `samplesheet_check` terminated with an error exit status (1)',
+    );
   });
 
   it('processStatusCheckEvent persists FailureReason on FAILED transition for HealthOmics', async () => {
@@ -507,6 +514,7 @@ describe('process-update-laboratory-run.lambda', () => {
     mockGetRun.mockResolvedValue({
       status: 'FAILED',
       failureReason: 'OUT_OF_MEMORY_ERROR',
+      statusMessage: 'Task nf-core/rnaseq:FASTQC ran out of memory — see CloudWatch',
     } as any);
 
     mockUpdateRun.mockResolvedValue({ RunId: 'run-1', Status: 'FAILED' });
@@ -517,6 +525,7 @@ describe('process-update-laboratory-run.lambda', () => {
       expect.objectContaining({
         Status: 'FAILED',
         FailureReason: 'OUT_OF_MEMORY_ERROR',
+        FailureStatusMessage: 'Task nf-core/rnaseq:FASTQC ran out of memory — see CloudWatch',
       }),
     );
   });
@@ -544,7 +553,11 @@ describe('process-update-laboratory-run.lambda', () => {
     mockGetParameter.mockResolvedValue(ssmResponse);
 
     (httpRequest as jest.Mock).mockResolvedValue({
-      workflow: { status: 'FAILED', errorMessage: 'Sample sheet parsing failed' },
+      workflow: {
+        status: 'FAILED',
+        errorMessage: 'Sample sheet parsing failed',
+        errorReport: 'Caused by:\n  Missing required column "sample" in samplesheet.csv',
+      },
     });
 
     mockUpdateRun.mockResolvedValue({ RunId: 'run-1', Status: 'FAILED' });
@@ -555,6 +568,7 @@ describe('process-update-laboratory-run.lambda', () => {
       expect.objectContaining({
         Status: 'FAILED',
         FailureReason: 'Sample sheet parsing failed',
+        FailureErrorReport: 'Caused by:\n  Missing required column "sample" in samplesheet.csv',
       }),
     );
   });

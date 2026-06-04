@@ -64,6 +64,17 @@ export const LaboratoryRunSchema = z
      */
     FailureReason: z.string().optional(),
     /**
+     * HealthOmics human-readable `statusMessage` (often carries the failing task name
+     * and a CloudWatch log link). Kept separate from the machine-code `FailureReason`
+     * so the classifier receives both signals.
+     */
+    FailureStatusMessage: z.string().optional(),
+    /**
+     * Seqera `workflow.errorReport` — the richer Nextflow stack-trace / error detail,
+     * distinct from the one-line `workflow.errorMessage` stored in `FailureReason`.
+     */
+    FailureErrorReport: z.string().optional(),
+    /**
      * Party responsible for resolving a failure: Lab user (input/data), Bioinformatician
      * (workflow definition), AWS (transient, retry), or Ambiguous (needs investigation).
      * Populated asynchronously by the classification pipeline after a FAILED transition.
@@ -110,6 +121,8 @@ export const ReadLaboratoryRunSchema = z
     ExpiresAt: z.number().optional(),
     RunDurationSeconds: z.number().nonnegative().optional(),
     FailureReason: z.string().optional(),
+    FailureStatusMessage: z.string().optional(),
+    FailureErrorReport: z.string().optional(),
     FailureOwner: z.enum(['Bioinformatician', 'Lab', 'AWS', 'Ambiguous']).optional(),
     FailureSummary: z.string().optional(),
     FailureAction: z.string().optional(),

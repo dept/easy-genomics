@@ -120,6 +120,10 @@ type PlatformRunSnapshot = {
   status: string;
   durationSeconds?: number;
   failureReason?: string;
+  // Human-readable failure detail kept separate from the machine-code `failureReason`:
+  // HealthOmics surfaces it as `statusMessage`, Seqera as `workflow.errorReport`.
+  statusMessage?: string;
+  errorReport?: string;
 };
 
 function toMsIfPresent(value: Date | string | undefined): number | undefined {
@@ -221,6 +225,12 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         ...(newStatusNormalized === 'FAILED' && snapshot.failureReason && existingRun.FailureReason == null
           ? { FailureReason: snapshot.failureReason }
           : {}),
+        ...(newStatusNormalized === 'FAILED' && snapshot.statusMessage && existingRun.FailureReason == null
+          ? { FailureStatusMessage: snapshot.statusMessage }
+          : {}),
+        ...(newStatusNormalized === 'FAILED' && snapshot.errorReport && existingRun.FailureReason == null
+          ? { FailureErrorReport: snapshot.errorReport }
+          : {}),
         ModifiedAt: now.toISOString(),
         ModifiedBy: 'Status Check',
       });
@@ -277,7 +287,8 @@ export async function getAWSHealthOmicsStatus(laboratoryRun: LaboratoryRun): Pro
   return {
     status: response.status || 'UNKNOWN',
     durationSeconds,
-    failureReason: response.failureReason ?? response.statusMessage,
+    failureReason: response.failureReason,
+    statusMessage: response.statusMessage,
   };
 }
 
@@ -334,5 +345,6 @@ export async function getSeqeraCloudStatus(laboratoryRun: LaboratoryRun): Promis
     status: workflow?.status || 'UNKNOWN',
     durationSeconds,
     failureReason: workflow?.errorMessage,
+    errorReport: workflow?.errorReport,
   };
 }

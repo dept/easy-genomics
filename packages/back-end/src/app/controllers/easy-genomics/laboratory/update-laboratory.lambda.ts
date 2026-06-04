@@ -76,6 +76,12 @@ export const handler: Handler = async (
           NextFlowTowerWorkspaceId: request.NextFlowTowerWorkspaceId,
           RunRetentionMonths: request.RunRetentionMonths,
           EnableNewWorkflowsByDefault: request.EnableNewWorkflowsByDefault ?? existing.EnableNewWorkflowsByDefault,
+          // Map LLM settings directly from the request (not `?? existing`) so selecting
+          // "None" (sent as undefined) clears the field via the full-item PUT overwrite.
+          HealthOmicsLlmProvider: request.HealthOmicsLlmProvider,
+          HealthOmicsLlmModelId: request.HealthOmicsLlmModelId,
+          SeqeraLlmProvider: request.SeqeraLlmProvider,
+          SeqeraLlmModelId: request.SeqeraLlmModelId,
           ModifiedAt: new Date().toISOString(),
           ModifiedBy: userId,
         },

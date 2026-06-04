@@ -139,6 +139,46 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
     expect(config.apiKey).toBe('sk-seqera-key');
   });
 
+  it('passes the HealthOmics statusMessage as distinct context, not a duplicate of FailureReason', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Platform: 'AWS HealthOmics',
+      Status: 'FAILED',
+      FailureReason: 'WORKFLOW_RUN_FAILED',
+      FailureStatusMessage: 'Task RNASEQ:FASTQC failed — see /aws/omics/run/123 logs',
+    });
+    mockClassify.mockResolvedValue({ owner: 'Ambiguous', summary: 's', action: 'a' });
+
+    await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
+
+    const input = mockClassify.mock.calls[0][0];
+    expect(input.failureReason).toBe('WORKFLOW_RUN_FAILED');
+    expect(input.statusMessage).toBe('Task RNASEQ:FASTQC failed — see /aws/omics/run/123 logs');
+    expect(input.errorMessage).toBeUndefined();
+    expect(input.errorReport).toBeUndefined();
+  });
+
+  it('passes the Seqera errorReport as distinct context alongside the errorMessage', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Platform: 'Seqera Cloud',
+      Status: 'FAILED',
+      FailureReason: 'Process SAMPLESHEET_CHECK failed',
+      FailureErrorReport: 'Caused by:\n  Missing required column "sample"',
+    });
+    mockClassify.mockResolvedValue({ owner: 'Lab', summary: 's', action: 'a' });
+
+    await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
+
+    const input = mockClassify.mock.calls[0][0];
+    expect(input.errorMessage).toBe('Process SAMPLESHEET_CHECK failed');
+    expect(input.errorReport).toBe('Caused by:\n  Missing required column "sample"');
+    expect(input.failureReason).toBeUndefined();
+    expect(input.statusMessage).toBeUndefined();
+  });
+
   it('reads HealthOmics-scoped SSM key when HealthOmics is configured with OpenAI', async () => {
     mockQueryByLaboratoryId.mockResolvedValue({
       ...labMixedProviders,

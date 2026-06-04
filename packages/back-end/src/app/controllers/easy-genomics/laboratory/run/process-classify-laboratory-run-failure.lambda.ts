@@ -124,8 +124,9 @@ async function resolveClassification(
   const input: ClassificationInput = {
     platform: run.Platform,
     failureReason: run.Platform === 'AWS HealthOmics' ? run.FailureReason : undefined,
-    statusMessage: run.Platform === 'AWS HealthOmics' ? run.FailureReason : undefined,
+    statusMessage: run.Platform === 'AWS HealthOmics' ? run.FailureStatusMessage : undefined,
     errorMessage: run.Platform === 'Seqera Cloud' ? run.FailureReason : undefined,
+    errorReport: run.Platform === 'Seqera Cloud' ? run.FailureErrorReport : undefined,
     workflowName: run.WorkflowName,
   };
 

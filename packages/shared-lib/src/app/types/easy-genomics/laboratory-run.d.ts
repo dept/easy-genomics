@@ -85,11 +85,25 @@ export interface LaboratoryRun extends BaseAttributes {
   RunDurationSeconds?: number;
 
   /**
-   * Top-level failure reason reported by the platform when the run reached FAILED state.
-   * Sourced from HealthOmics `failureReason` / `statusMessage` or Seqera `workflow.errorMessage`.
+   * Top-level machine-code failure reason reported by the platform when the run reached
+   * FAILED state. Sourced from HealthOmics `failureReason` or Seqera `workflow.errorMessage`.
+   * The human-readable detail lives in `FailureStatusMessage` / `FailureErrorReport`.
    * Absent on runs that failed before this field was introduced.
    */
   FailureReason?: string;
+
+  /**
+   * HealthOmics human-readable `statusMessage` (often carries the failing task name and a
+   * CloudWatch log link). Kept separate from the machine-code `FailureReason` so the
+   * classifier receives both signals.
+   */
+  FailureStatusMessage?: string;
+
+  /**
+   * Seqera `workflow.errorReport` — the richer Nextflow stack-trace / error detail,
+   * distinct from the one-line `workflow.errorMessage` stored in `FailureReason`.
+   */
+  FailureErrorReport?: string;
 
   /**
    * Party responsible for resolving the failure. Populated asynchronously by the

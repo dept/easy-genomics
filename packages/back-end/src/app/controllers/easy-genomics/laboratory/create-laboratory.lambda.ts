@@ -76,6 +76,10 @@ export const handler: Handler = async (
         NextFlowTowerEnabled: request.NextFlowTowerEnabled ?? organization.NextFlowTowerEnabled ?? false,
         NextFlowTowerApiBaseUrl: request.NextFlowTowerApiBaseUrl,
         NextFlowTowerWorkspaceId: request.NextFlowTowerWorkspaceId,
+        HealthOmicsLlmProvider: request.HealthOmicsLlmProvider,
+        HealthOmicsLlmModelId: request.HealthOmicsLlmModelId,
+        SeqeraLlmProvider: request.SeqeraLlmProvider,
+        SeqeraLlmModelId: request.SeqeraLlmModelId,
         CreatedAt: new Date().toISOString(),
         CreatedBy: currentUserId,
       })
