@@ -17,12 +17,27 @@
       noResultsMsg?: string;
       canSelect?: boolean;
       rowClasses?: (row: any) => string;
+      labelledBy?: string;
     }>(),
     {
       showPagination: true,
       noResultsMsg: 'No results found',
     },
   );
+
+  function onRowKeydown(event: KeyboardEvent, row: any) {
+    if (!props.rowClickAction) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      props.rowClickAction(row);
+    }
+  }
+
+  function rowAriaLabel(row: any): string | undefined {
+    if (!props.rowClickAction) return undefined;
+    const name = row?.RunName ?? row?.WorkflowName ?? row?.name;
+    return name ? `View details for ${name}` : 'View details';
+  }
 
   const sort = defineModel<TableSort>('sort');
 
@@ -65,8 +80,10 @@
 </script>
 
 <template>
-  <UCard class="rounded-2xl border-none shadow-none" :ui="{ body: 'p-0' }">
+  <UCard class="rounded-2xl border-none shadow-none" :ui="{ body: 'p-0' }" :aria-busy="isLoading">
+    <div v-if="isLoading" class="sr-only" role="status">Loading table data…</div>
     <UTable
+      :aria-labelledby="labelledBy"
       :ui="{
         tr: {
           active: ` ${rowClickAction ? 'hover:bg-gray-50 cursor-pointer' : 'hover:bg-white cursor-default'}`,
@@ -88,7 +105,17 @@
       </template>
 
       <template #default="{ row }">
-        <tr :class="props.rowClasses ? props.rowClasses(row) : ''">
+        <tr
+          :class="[
+            props.rowClasses ? props.rowClasses(row) : '',
+            rowClickAction
+              ? 'focus-visible:outline-primary-500 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px]'
+              : '',
+          ]"
+          :tabindex="rowClickAction ? 0 : undefined"
+          :aria-label="rowAriaLabel(row)"
+          @keydown="rowClickAction ? onRowKeydown($event, row) : undefined"
+        >
           <td v-for="(column, index) in columns" :key="index">
             <slot :name="column.key + '-data'" :row="row">{{ row[column.key] }}</slot>
           </td>

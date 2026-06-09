@@ -57,19 +57,36 @@
     tabRefs.value[index]?.focus();
   }
 
+  function focusPanel(index: number) {
+    const key = props.items[index]?.key;
+    if (!key) return;
+    nextTick(() => {
+      document.getElementById(panelId(key))?.focus();
+    });
+  }
+
+  function onTabClick(index: number) {
+    select(index);
+    focusPanel(index);
+  }
+
   // Implements the WAI-ARIA Authoring Practices "tabs with automatic activation"
   // keyboard interaction for a vertically-oriented tablist: Up/Down move between
   // tabs (wrapping), Home/End jump to the first/last tab. Moving focus also
   // selects the tab so the matching panel is revealed.
   function onKeydown(event: KeyboardEvent, index: number) {
     const lastIndex = props.items.length - 1;
+    if (lastIndex < 0) return;
+
     let nextIndex: number | null = null;
 
     switch (event.key) {
       case 'ArrowDown':
+      case 'ArrowRight':
         nextIndex = index === lastIndex ? 0 : index + 1;
         break;
       case 'ArrowUp':
+      case 'ArrowLeft':
         nextIndex = index === 0 ? lastIndex : index - 1;
         break;
       case 'Home':
@@ -83,7 +100,9 @@
     }
 
     event.preventDefault();
-    select(nextIndex);
+    if (nextIndex !== props.modelValue) {
+      select(nextIndex);
+    }
     focusTab(nextIndex);
   }
 </script>
@@ -118,7 +137,7 @@
           :aria-controls="panelId(item.key)"
           :aria-selected="modelValue === index"
           :tabindex="modelValue === index ? 0 : -1"
-          @click="select(index)"
+          @click="onTabClick(index)"
           @keydown="onKeydown($event, index)"
           class="focus-visible:outline-primary-500 flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left font-serif text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           :class="

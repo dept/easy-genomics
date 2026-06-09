@@ -796,8 +796,8 @@
     id="panel-dashboard"
     aria-labelledby="tab-dashboard"
     tabindex="0"
+    class="outline-none focus:outline-none"
   >
-    <h2 class="sr-only">Lab dashboard</h2>
     <EGDashboard :lab-id="labId" />
   </div>
 
