@@ -5,6 +5,8 @@ All notable changes to Easy Genomics are documented in this file.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
 
+> For step-by-step upgrade instructions, see [docs/deployment/upgrading.md](./docs/deployment/upgrading.md).
+
 ## [Unreleased] — Back-End API stack split
 
 > **DATA-LOSS HAZARD for existing deployments.** See
