@@ -1,8 +1,37 @@
 # Contributing
 
-> **Note:** This page holds the contribution conventions and test/audit commands relocated from the root `README.md`.
-> The full contributing guide — including the AI Coding Principles from `CLAUDE.md`, PR review expectations, and the
-> testing requirements from `TESTING.md` — is owned by DOCS-05 and will expand this page.
+How to contribute to Easy Genomics — for human and AI contributors alike. This page covers claiming work, the coding
+principles every change must follow, branch/commit conventions, testing expectations, and the pull-request flow.
+
+## Before you start
+
+Work is tracked as JIRA tickets identified by an `EG-XXX` code (the same code that goes into your branch name and
+commits — see [Branch Naming convention](#branch-naming-convention)).
+
+1. **Claim the ticket.** Assign the JIRA ticket to yourself (or create one) before writing code, so the work isn't
+   duplicated. External contributors without JIRA access should open a GitHub issue describing the change first and wait
+   for a maintainer to confirm before starting.
+2. **Reference `EG-XXX`** in your branch name and commit messages so the work is traceable.
+
+## AI Coding Principles
+
+Every change — whether written by a human or with AI assistance — must follow the **AI Coding Principles** and
+**Architecture Rules** defined in `CLAUDE.md` at the repo root. `CLAUDE.md` is the authoritative source; the summary
+below is a pointer, not a replacement — read it before contributing.
+
+- **Write for humans first** — descriptive names, explicit over clever, comment _why_ (not _what_).
+- **Be specific and consistent** — match the naming, structure, and patterns already in the codebase; don't invent new
+  ones where an established one fits.
+- **DRY** — reuse the shared utilities, services, and Zod schemas in `packages/shared-lib` and the domain services
+  before writing anything new.
+- **KISS** — the simplest solution that fully satisfies the requirement; Lambda handlers stay thin (≤ ~50 lines),
+  business logic lives in services.
+- **SOLID** — single-responsibility services, extend via new files, handlers depend on service abstractions (never AWS
+  SDK clients directly).
+- **Minimise noise** — read only what you need, show diffs not whole files, keep changes small.
+
+Error handling follows the typed-error rules in `ERROR_HANDLING.md` (repo root): use the typed error classes and
+`buildErrorResponse(err, event)`; never throw bare `Error`s or swallow failures silently.
 
 ## Test Runners
 
@@ -125,3 +154,29 @@ or
 
 [easy-genomics/packages/front-end]$ pnpm run cdk-audit
 ```
+
+## Testing expectations
+
+Testing standards are defined in `CLAUDE.md` (**Testing Standards**); `TESTING.md` at the repo root is the running
+manual test log. For any change:
+
+- **New happy paths need an end-to-end test.** E2E tests run against a fully deployed `quality` environment with
+  Playwright + Chromium (`pnpm run test-e2e` — see [Test Runners](#test-runners) above). Don't mock AWS services; the
+  suite makes real calls.
+- **New error paths** should at minimum be manually tested and logged in `TESTING.md`.
+- **Unit tests** (where they exist) live alongside the source file they test — follow the existing naming pattern in
+  that package.
+
+## Pull requests
+
+1. **Fill in the PR template.** Opening a PR pre-populates
+   [`.github/pull_request_template.md`](../../.github/pull_request_template.md): a descriptive **Title**, the **Type of
+   Change**, a **Description** with context and linked `EG-XXX`/issue, the **Testing** you performed, the **Impact**,
+   and the **Checklist**.
+2. **Review the diff.** Run the **PR Review Prompt** in `CLAUDE.md` against the diff between your branch and the target
+   branch. It focuses on the four things that block a merge: potential bugs, performance, security, and correctness —
+   not style nits.
+3. **Sign off** with the outcome: ✅ approved, or ☑️ issues found (with the issues listed). Address any ☑️ findings and
+   re-test before requesting a human review.
+
+Keep PRs focused: one ticket, the minimal change to satisfy it, no unrelated refactoring.
