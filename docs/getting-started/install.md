@@ -11,7 +11,7 @@ the [Prerequisites and Preparation](./prerequisites.md) first.
 
 - AWS credential setup → [../deployment/aws-setup.md](../deployment/aws-setup.md)
 - `easy-genomics.yaml` configuration → [../deployment/configuration.md](../deployment/configuration.md)
-- Production deployment → [../deployment/](../deployment/) (see `production.md`, owned by DOCS-02)
+- Production deployment → [../deployment/production.md](../deployment/production.md)
 
 ## Obtain the source code and install dependencies
 
