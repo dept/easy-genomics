@@ -40,8 +40,8 @@ sub-components for logical separation to make it easier to maintain and enhance:
 Full documentation lives in [`docs/`](./docs/), organised by audience:
 
 - **[Getting Started](./docs/getting-started/)** — prerequisites, installation, and your first workflow run.
-- **[Deployment](./docs/deployment/)** — AWS setup, `easy-genomics.yaml` configuration, upgrading, and production
-  deployment.
+- **[Deployment](./docs/deployment/)** — AWS setup, `easy-genomics.yaml` configuration, upgrading, and
+  **[production deployment](./docs/deployment/production.md)**.
 - **[Development](./docs/development/)** — local back-end development, contributing conventions, and architecture.
 - **[Operations](./docs/operations/)** — troubleshooting and migration runbooks.
 
