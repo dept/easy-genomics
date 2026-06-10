@@ -1,0 +1,3587 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Easy Genomics — Data Collections · interactive prototype</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-size: 13px;
+        background: #fff;
+        color: #1a1a2e;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+      }
+      .mono {
+        font-family: 'SF Mono', Menlo, Consolas, monospace;
+      }
+
+      /* Topbar */
+      .topbar {
+        background: #fff;
+        border-bottom: 1px solid #e8e8ec;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 20px;
+        height: 52px;
+        flex-shrink: 0;
+      }
+      .topbar-logo {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #1a1a2e;
+      }
+      .topbar-right {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .topbar-role {
+        font-size: 12px;
+        color: #888;
+      }
+      .avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #5b4fd4;
+        color: #fff;
+        font-size: 11px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* Topbar controls */
+      .tb-toggle {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 11.5px;
+        color: #888;
+        cursor: pointer;
+        user-select: none;
+      }
+      .tb-switch {
+        width: 30px;
+        height: 17px;
+        border-radius: 9px;
+        background: #ccc;
+        position: relative;
+        transition: background 0.15s;
+        flex-shrink: 0;
+      }
+      .tb-switch::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        background: #fff;
+        transition: left 0.15s;
+      }
+      .tb-toggle.on .tb-switch {
+        background: #5b4fd4;
+      }
+      .tb-toggle.on .tb-switch::after {
+        left: 15px;
+      }
+      .tour-btn {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        height: 32px;
+        padding: 0 13px;
+        border-radius: 7px;
+        border: 1px solid #afa9ec;
+        background: #eeedfe;
+        color: #3c3489;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      .tour-btn:hover {
+        background: #e2e0fb;
+      }
+      .tour-btn .pulse {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #5b4fd4;
+        animation: tpulse 1.3s infinite;
+      }
+      @keyframes tpulse {
+        0%,
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.3;
+          transform: scale(1.6);
+        }
+      }
+
+      /* Shell */
+      .page-shell {
+        display: grid;
+        grid-template-columns: 200px 1fr;
+        flex: 1;
+        min-height: 0;
+      }
+      .sidebar {
+        background: #fff;
+        border-right: 1px solid #e8e8ec;
+        padding: 14px 10px;
+      }
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        border-radius: 7px;
+        cursor: pointer;
+        color: #555;
+        font-size: 13px;
+        margin-bottom: 2px;
+        user-select: none;
+      }
+      .nav-item:hover {
+        background: #f0f0f5;
+      }
+      .nav-item.active {
+        background: #eeedfe;
+        color: #3c3489;
+        font-weight: 500;
+      }
+      .nav-item.muted {
+        color: #bbb;
+      }
+      .nav-div {
+        height: 1px;
+        background: #e8e8ec;
+        margin: 10px 6px;
+      }
+      .page-content {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        padding: 22px 30px 0;
+        flex: 1;
+        min-height: 0;
+      }
+
+      /* Views */
+      .view {
+        display: none;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+      .view.active {
+        display: flex;
+      }
+      .page-back {
+        font-size: 12px;
+        color: #888;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+        margin-bottom: 12px;
+        width: fit-content;
+        flex-shrink: 0;
+      }
+      .page-back:hover {
+        color: #5b4fd4;
+      }
+      .page-title {
+        font-size: 26px;
+        font-weight: 500;
+        color: #1a1a2e;
+        margin-bottom: 4px;
+        flex-shrink: 0;
+      }
+      .page-sub {
+        font-size: 13px;
+        color: #888;
+        margin-bottom: 12px;
+        line-height: 1.5;
+        flex-shrink: 0;
+      }
+
+      /* Tabs */
+      .tab-bar {
+        display: flex;
+        gap: 0;
+        border-bottom: 1px solid #e8e8ec;
+        flex-shrink: 0;
+        margin-bottom: 14px;
+      }
+      .tab {
+        padding: 8px 16px;
+        font-size: 13px;
+        color: #888;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        font-weight: 500;
+        margin-bottom: -1px;
+        user-select: none;
+      }
+      .tab.active {
+        color: #3c3489;
+        border-bottom-color: #5b4fd4;
+      }
+      .tab:hover {
+        color: #555;
+      }
+
+      /* Clickable funnel / flow map */
+      .funnel {
+        display: flex;
+        align-items: stretch;
+        background: #fff;
+        border: 1px solid #e8e8ec;
+        border-radius: 10px;
+        padding: 8px;
+        margin-bottom: 14px;
+        flex-shrink: 0;
+      }
+      .fn-step {
+        flex: 1;
+        padding: 8px 14px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        cursor: pointer;
+        border-radius: 7px;
+        transition: background 0.12s;
+      }
+      .fn-step:hover {
+        background: #fafafe;
+      }
+      .fn-step:not(:last-child) {
+        border-right: 1px solid #f0f0f4;
+      }
+      .fn-step-lbl {
+        font-size: 9px;
+        font-weight: 600;
+        color: #aaa;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 4px;
+      }
+      .fn-step-name {
+        font-size: 12.5px;
+        font-weight: 500;
+        color: #1a1a2e;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .fn-step-name .fn-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+      }
+
+      /* Wizard stepper */
+      .wizard-stepper {
+        display: flex;
+        background: #fafafa;
+        border-bottom: 1px solid #e8e8ec;
+        flex-shrink: 0;
+      }
+      .wstep {
+        flex: 1;
+        padding: 12px 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-right: 1px solid #f0f0f4;
+        cursor: pointer;
+        min-width: 0;
+      }
+      .wstep:last-child {
+        border-right: none;
+      }
+      .wstep .wstep-num {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: #f0f0f4;
+        color: #888;
+        font-size: 10.5px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .wstep.done .wstep-num {
+        background: #cecbf6;
+        color: #3c3489;
+      }
+      .wstep.active .wstep-num {
+        background: #5b4fd4;
+        color: #fff;
+      }
+      .wstep .wstep-body {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        flex: 1;
+      }
+      .wstep .wstep-lbl {
+        font-size: 9px;
+        font-weight: 600;
+        color: #aaa;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+      }
+      .wstep .wstep-val {
+        font-size: 12px;
+        font-weight: 500;
+        color: #888;
+        margin-top: 1px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .wstep.done .wstep-val,
+      .wstep.active .wstep-val {
+        color: #1a1a2e;
+      }
+      .wstep.active {
+        background: #fff;
+      }
+
+      /* Wizard panels */
+      .wizpanel {
+        display: none;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+      .wizpanel.active {
+        display: flex;
+      }
+
+      /* Inline row actions */
+      .list-table tr.data-row .row-actions {
+        display: none;
+        gap: 10px;
+        font-size: 11px;
+        color: #5b4fd4;
+      }
+      .list-table tr.data-row:hover .row-actions {
+        display: inline-flex;
+      }
+      .list-table tr.data-row.always-show .row-actions {
+        display: inline-flex;
+      }
+      .row-actions a {
+        cursor: pointer;
+        font-weight: 500;
+      }
+      .row-actions a:hover {
+        text-decoration: underline;
+      }
+      .row-actions a.danger {
+        color: #ba7517;
+      }
+
+      /* Workspace */
+      .workspace {
+        background: #fff;
+        border: 1px solid #e8e8ec;
+        border-radius: 12px 12px 0 0;
+        overflow: hidden;
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .workspace.split {
+        display: grid;
+        grid-template-columns: 380px 1fr;
+      }
+
+      /* Toolbar */
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 18px;
+        border-bottom: 1px solid #e8e8ec;
+        flex-shrink: 0;
+      }
+      .search-wrap {
+        position: relative;
+        display: flex;
+        align-items: center;
+        flex: 1;
+        max-width: 320px;
+      }
+      .search-wrap svg {
+        position: absolute;
+        left: 9px;
+        width: 13px;
+        height: 13px;
+        color: #aaa;
+      }
+      .search-in {
+        font-size: 12px;
+        padding: 0 10px 0 29px;
+        border-radius: 7px;
+        border: 1px solid #e2e2e8;
+        background: #f8f8fb;
+        color: #1a1a2e;
+        width: 100%;
+        outline: none;
+        height: 34px;
+      }
+      .search-in:focus {
+        border-color: #7f77dd;
+        background: #fff;
+      }
+      .tbtn {
+        height: 34px;
+        font-size: 12px;
+        font-weight: 500;
+        padding: 0 14px;
+        border-radius: 7px;
+        cursor: pointer;
+        border: 1px solid #e2e2e8;
+        background: #fff;
+        color: #444;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+      }
+      .tbtn:hover {
+        background: #f5f5f8;
+      }
+      .tbtn-primary {
+        background: #5b4fd4;
+        color: #fff;
+        border-color: #5b4fd4;
+      }
+      .tbtn-primary:hover {
+        background: #4a3fc0;
+      }
+      .tbtn-active {
+        background: #eeedfe;
+        color: #3c3489;
+        border-color: #afa9ec;
+      }
+
+      /* Tables */
+      .content-scroll {
+        flex: 1;
+        overflow-y: auto;
+      }
+      .list-table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .list-table th {
+        font-size: 11px;
+        font-weight: 500;
+        color: #aaa;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 9px 18px;
+        text-align: left;
+        border-bottom: 1px solid #e8e8ec;
+        background: #fafafa;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+      .list-table td {
+        padding: 11px 18px;
+        border-bottom: 1px solid #f0f0f4;
+        vertical-align: middle;
+        font-size: 12px;
+        color: #333;
+      }
+      .list-table tr.data-row {
+        cursor: default;
+      }
+      .list-table tr.data-row:hover td {
+        background: #fafbff;
+      }
+      .list-table tr.row-selected td {
+        background: #fafafe !important;
+      }
+      .row-title {
+        font-size: 12.5px;
+        font-weight: 500;
+        color: #1a1a2e;
+      }
+      .row-meta {
+        font-size: 11px;
+        color: #aaa;
+        margin-top: 2px;
+      }
+      .row-mono {
+        font-family: 'SF Mono', Menlo, Consolas, monospace;
+        font-size: 11px;
+        color: #555;
+      }
+
+      /* Checkbox */
+      .cbx {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border-radius: 3px;
+        border: 1.5px solid #ccc;
+        background: #fff;
+        cursor: pointer;
+        vertical-align: middle;
+        position: relative;
+      }
+      .cbx:hover {
+        border-color: #7f77dd;
+      }
+      .cbx.on,
+      tr.row-selected .cbx {
+        background: #5b4fd4;
+        border-color: #5b4fd4;
+      }
+      .cbx.on::after,
+      tr.row-selected .cbx::after {
+        content: '✓';
+        position: absolute;
+        top: -2px;
+        left: 1.5px;
+        font-size: 10px;
+        color: #fff;
+      }
+
+      /* Status pills */
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 10px;
+        font-weight: 500;
+        padding: 2px 8px;
+        border-radius: 10px;
+      }
+      .status-pill .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+      }
+      .status-pill.paired {
+        background: #e3f7f2;
+        color: #1a6b54;
+      }
+      .status-pill.paired .dot {
+        background: #2db48f;
+      }
+      .status-pill.single {
+        background: #eeedfe;
+        color: #3c3489;
+      }
+      .status-pill.single .dot {
+        background: #5b4fd4;
+      }
+      .status-pill.warn {
+        background: #fdefd2;
+        color: #633806;
+      }
+      .status-pill.warn .dot {
+        background: #ef9f27;
+      }
+      .status-pill.muted {
+        background: #f0f0f4;
+        color: #888;
+      }
+      .status-pill.muted .dot {
+        background: #aaa;
+      }
+
+      .tag-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 10px;
+        font-weight: 500;
+        padding: 2px 8px;
+        border-radius: 10px;
+      }
+      .tag-pill.covid {
+        background: #fcebeb;
+        color: #791f1f;
+      }
+      .tag-pill.flu {
+        background: #eaf3de;
+        color: #3b6d11;
+      }
+      .tag-pill.mrsa {
+        background: #faeeda;
+        color: #633806;
+      }
+      .tag-pill.neutral {
+        background: #f0f0f4;
+        color: #555;
+      }
+
+      /* Bottom bar */
+      .bottom-bar {
+        background: #fff;
+        border-top: 1px solid #e8e8ec;
+        padding: 0 28px;
+        flex-shrink: 0;
+      }
+      .bottom-bar-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 52px;
+      }
+      .bb-sel-count {
+        font-size: 12px;
+        color: #888;
+      }
+      .bb-sel-count strong {
+        color: #1a1a2e;
+        font-weight: 500;
+      }
+      .bulk-actions {
+        display: flex;
+        gap: 7px;
+        align-items: center;
+      }
+      .bb-btn {
+        height: 34px;
+        font-size: 12px;
+        font-weight: 500;
+        padding: 0 14px;
+        border-radius: 7px;
+        cursor: pointer;
+        border: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .bb-ghost {
+        background: transparent;
+        color: #555;
+        border: 1px solid #e2e2e8;
+      }
+      .bb-ghost:hover {
+        background: #f5f5f8;
+      }
+      .bb-solid {
+        background: #5b4fd4;
+        color: #fff;
+      }
+      .bb-solid:hover {
+        background: #4a3fc0;
+      }
+      .bb-run-wf {
+        background: #1a1a2e;
+        color: #fff;
+      }
+      .bb-run-wf:hover {
+        background: #2d2d4a;
+      }
+      .btn-disabled {
+        opacity: 0.4;
+        pointer-events: none;
+      }
+
+      /* Import — source picker */
+      .imp-section {
+        padding: 18px 28px;
+        border-bottom: 1px solid #f0f0f4;
+      }
+      .imp-section h3 {
+        font-size: 13px;
+        font-weight: 500;
+        color: #1a1a2e;
+        margin-bottom: 4px;
+      }
+      .imp-section .imp-help {
+        font-size: 11.5px;
+        color: #888;
+        margin-bottom: 14px;
+        line-height: 1.5;
+      }
+      .source-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+      .source-card {
+        border: 1.5px solid #e2e2e8;
+        border-radius: 8px;
+        padding: 14px;
+        cursor: pointer;
+        background: #fff;
+        transition: border-color 0.1s;
+      }
+      .source-card.active {
+        border-color: #5b4fd4;
+        background: #fafafe;
+      }
+      .source-card.disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+        background: #fafafa;
+      }
+      .source-card-head {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin-bottom: 8px;
+      }
+      .source-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 7px;
+        background: #eeedfe;
+        color: #5b4fd4;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .source-icon svg {
+        width: 15px;
+        height: 15px;
+      }
+      .source-card.disabled .source-icon {
+        background: #f0f0f4;
+        color: #999;
+      }
+      .source-title {
+        font-size: 13px;
+        font-weight: 500;
+        color: #1a1a2e;
+      }
+      .source-status {
+        font-size: 10px;
+        color: #888;
+        margin-top: 1px;
+      }
+      .coming-soon {
+        font-size: 9px;
+        font-weight: 600;
+        padding: 1px 6px;
+        border-radius: 8px;
+        background: #fdefd2;
+        color: #854f0b;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-left: auto;
+      }
+
+      /* Import config rows */
+      .form-row {
+        display: grid;
+        grid-template-columns: 160px 1fr;
+        gap: 14px;
+        align-items: start;
+        padding: 8px 0;
+      }
+      .form-lbl {
+        font-size: 11.5px;
+        font-weight: 500;
+        color: #555;
+        padding-top: 8px;
+      }
+      .form-lbl .sublbl {
+        font-size: 10.5px;
+        color: #aaa;
+        font-weight: 400;
+        margin-top: 2px;
+        display: block;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .input {
+        width: 100%;
+        height: 34px;
+        border: 1px solid #e2e2e8;
+        border-radius: 7px;
+        padding: 0 11px;
+        font-size: 12.5px;
+        color: #1a1a2e;
+        outline: none;
+        background: #fff;
+      }
+      .input:focus {
+        border-color: #7f77dd;
+      }
+      .input.mono {
+        font-family: 'SF Mono', Menlo, Consolas, monospace;
+        font-size: 11.5px;
+        background: #f8f8fb;
+      }
+      .preset-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+      .preset {
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 14px;
+        background: #f5f5f8;
+        color: #555;
+        border: 1px solid #e8e8ec;
+        cursor: pointer;
+      }
+      .preset.active {
+        background: #eeedfe;
+        color: #3c3489;
+        border-color: #afa9ec;
+      }
+      .help-inline {
+        font-size: 10.5px;
+        color: #888;
+        line-height: 1.5;
+      }
+      .banner {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 10px 14px;
+        background: #f5f5fa;
+        border: 1px solid #e8e8ec;
+        border-radius: 7px;
+        font-size: 11.5px;
+        color: #555;
+        line-height: 1.5;
+      }
+      .banner.info {
+        background: #eef4fe;
+        border-color: #c9ddfb;
+        color: #1c3d7a;
+      }
+      .banner.success {
+        background: #e3f7f2;
+        border-color: #b3e6d9;
+        color: #1a6b54;
+      }
+
+      /* Section band */
+      .section-band {
+        padding: 12px 28px;
+        background: #fafafa;
+        border-bottom: 1px solid #f0f0f4;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 12px;
+        color: #555;
+      }
+      .section-band strong {
+        color: #1a1a2e;
+        font-weight: 500;
+      }
+
+      /* Builder */
+      .dcb-left {
+        padding: 18px 22px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        border-right: 1px solid #e8e8ec;
+        overflow-y: auto;
+        background: #fff;
+      }
+      .dcb-right {
+        display: flex;
+        flex-direction: column;
+        background: #fafafa;
+        overflow: hidden;
+      }
+      .dcb-sset-list {
+        border: 1px solid #e8e8ec;
+        border-radius: 7px;
+        overflow: hidden;
+        background: #fff;
+      }
+      .dcb-sset-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        border-bottom: 1px solid #f0f0f4;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .dcb-sset-row:last-child {
+        border-bottom: none;
+      }
+      .dcb-sset-row:hover {
+        background: #fafbff;
+      }
+      .dcb-sset-row.checked {
+        background: #fafafe;
+      }
+      .dcb-sset-cb {
+        width: 14px;
+        height: 14px;
+        border-radius: 3px;
+        border: 1.5px solid #ccc;
+        background: #fff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 9px;
+        flex-shrink: 0;
+      }
+      .dcb-sset-row.checked .dcb-sset-cb {
+        background: #5b4fd4;
+        border-color: #5b4fd4;
+      }
+      .dcb-sset-name {
+        font-size: 11.5px;
+        font-weight: 500;
+        color: #1a1a2e;
+        flex: 1;
+      }
+
+      /* Schema editor */
+      .schema-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #fff;
+        border: 1px solid #e8e8ec;
+        border-radius: 7px;
+        overflow: hidden;
+      }
+      .schema-table th {
+        font-size: 10px;
+        font-weight: 500;
+        color: #aaa;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 8px 10px;
+        text-align: left;
+        border-bottom: 1px solid #e8e8ec;
+        background: #fafafa;
+      }
+      .schema-table td {
+        padding: 8px 10px;
+        border-bottom: 1px solid #f0f0f4;
+        font-size: 12px;
+      }
+      .schema-table tr:last-child td {
+        border-bottom: none;
+      }
+      .schema-table input.col-name {
+        height: 26px;
+        border: 1px solid transparent;
+        border-radius: 5px;
+        padding: 0 6px;
+        font-family: 'SF Mono', Menlo, Consolas, monospace;
+        font-size: 11px;
+        background: transparent;
+        outline: none;
+        width: 120px;
+        color: #1a1a2e;
+      }
+      .schema-table input.col-name:focus {
+        border-color: #afa9ec;
+        background: #fff;
+      }
+      .schema-table .role-select {
+        font-size: 11px;
+        height: 24px;
+        border: 1px solid #e2e2e8;
+        border-radius: 5px;
+        padding: 0 22px 0 8px;
+        background: #fff;
+        appearance: none;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'><path d='M1 1l3 3 3-3' stroke='%23888' stroke-width='1.2' fill='none' stroke-linecap='round'/></svg>");
+        background-repeat: no-repeat;
+        background-position: right 6px center;
+      }
+      .add-col {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        color: #5b4fd4;
+        cursor: pointer;
+        padding: 6px 8px;
+        border-radius: 6px;
+        margin-top: 6px;
+      }
+      .add-col:hover {
+        background: #eeedfe;
+      }
+
+      /* Sample sheet preview */
+      .ss-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11px;
+      }
+      .ss-table th {
+        font-size: 10px;
+        font-weight: 500;
+        color: #3c3489;
+        background: #eeedfe;
+        padding: 8px 12px;
+        text-align: left;
+        border-bottom: 1px solid #cecbf6;
+        letter-spacing: 0.03em;
+      }
+      .ss-table td {
+        padding: 7px 12px;
+        border-bottom: 1px solid #f0f0f4;
+        font-family: 'SF Mono', Menlo, Consolas, monospace;
+        color: #1a1a2e;
+        font-size: 10.5px;
+      }
+      .ss-table td.empty {
+        color: #bbb;
+        font-style: italic;
+      }
+      .ss-wrap {
+        background: #fff;
+        border: 1px solid #e8e8ec;
+        border-radius: 7px;
+        overflow: hidden;
+      }
+
+      /* Modal */
+      .modal-layer {
+        display: none;
+      }
+      .modal-layer.open {
+        display: block;
+      }
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        background: rgba(26, 26, 46, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .modal-card {
+        background: #fff;
+        border-radius: 12px;
+        width: 560px;
+        max-width: 92%;
+        padding: 24px;
+        box-shadow: 0 16px 48px rgba(26, 26, 46, 0.25);
+      }
+      .modal-title {
+        font-size: 18px;
+        font-weight: 500;
+        color: #1a1a2e;
+        margin-bottom: 4px;
+      }
+      .modal-sub {
+        font-size: 12px;
+        color: #888;
+        margin-bottom: 18px;
+      }
+      .modal-summary {
+        background: #f8f8fb;
+        border: 1px solid #e8e8ec;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 16px;
+      }
+      .modal-summary-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        margin-bottom: 6px;
+      }
+      .modal-summary-row:last-child {
+        margin-bottom: 0;
+      }
+      .modal-summary-row span:first-child {
+        color: #888;
+      }
+      .modal-summary-row span:last-child {
+        color: #1a1a2e;
+        font-weight: 500;
+      }
+      .modal-field {
+        margin-bottom: 14px;
+      }
+      .modal-label {
+        font-size: 11px;
+        font-weight: 500;
+        color: #555;
+        margin-bottom: 6px;
+        display: block;
+      }
+      .modal-input {
+        width: 100%;
+        height: 36px;
+        border: 1px solid #e2e2e8;
+        border-radius: 7px;
+        padding: 0 11px;
+        font-size: 13px;
+        color: #1a1a2e;
+        outline: none;
+      }
+      .modal-input.select-like {
+        background: #fff
+          url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.3' fill='none' stroke-linecap='round'/></svg>")
+          no-repeat right 11px center;
+        appearance: none;
+        cursor: pointer;
+      }
+      .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      /* Designer notes */
+      .dnote {
+        display: none;
+      }
+      body.notes-on .dnote {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin: 0 0 12px;
+        padding: 9px 12px;
+        background: #fff8ed;
+        border: 1px solid #f5d79a;
+        border-radius: 8px;
+        font-size: 11.5px;
+        color: #7a4f08;
+        line-height: 1.5;
+        flex-shrink: 0;
+      }
+      body.notes-on .dnote::before {
+        content: '✎';
+        color: #b9791a;
+        font-weight: 700;
+      }
+
+      /* Tour */
+      .tour-target {
+        outline: 3px solid #5b4fd4 !important;
+        outline-offset: 3px;
+        border-radius: 8px;
+        animation: touring 1.4s ease-in-out infinite;
+      }
+      @keyframes touring {
+        0%,
+        100% {
+          outline-color: #5b4fd4;
+        }
+        50% {
+          outline-color: #c3bef4;
+        }
+      }
+      .tour-cap {
+        position: fixed;
+        left: 50%;
+        bottom: 26px;
+        transform: translateX(-50%);
+        z-index: 130;
+        width: 470px;
+        max-width: 92vw;
+        background: #1a1a2e;
+        color: #fff;
+        border-radius: 12px;
+        padding: 16px 18px;
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
+        display: none;
+      }
+      .tour-cap.show {
+        display: block;
+      }
+      .tc-count {
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #9b95e0;
+        font-weight: 600;
+        margin-bottom: 5px;
+      }
+      .tc-title {
+        font-size: 15px;
+        font-weight: 600;
+        margin-bottom: 5px;
+      }
+      .tc-body {
+        font-size: 12.5px;
+        line-height: 1.55;
+        color: #d6d6e6;
+        margin-bottom: 14px;
+      }
+      .tc-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .tc-btn {
+        height: 30px;
+        padding: 0 14px;
+        border-radius: 7px;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        border: none;
+      }
+      .tc-next {
+        background: #5b4fd4;
+        color: #fff;
+      }
+      .tc-next:hover {
+        background: #6a5fe0;
+      }
+      .tc-back {
+        background: transparent;
+        color: #bdbdd6;
+        border: 1px solid #3a3a55;
+      }
+      .tc-back:hover {
+        background: #26263f;
+      }
+      .tc-end {
+        background: transparent;
+        color: #9b95e0;
+        margin-left: auto;
+        border: none;
+        font-size: 11.5px;
+        cursor: pointer;
+      }
+      .tc-end:hover {
+        color: #fff;
+      }
+
+      /* Sequence-set file-view variants */
+      .seg {
+        display: inline-flex;
+        border: 1px solid #e2e2e8;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .seg button {
+        height: 28px;
+        padding: 0 12px;
+        font-size: 11.5px;
+        font-weight: 500;
+        border: none;
+        background: #fff;
+        color: #666;
+        cursor: pointer;
+        border-right: 1px solid #e2e2e8;
+      }
+      .seg button:last-child {
+        border-right: none;
+      }
+      .seg button.active {
+        background: #eeedfe;
+        color: #3c3489;
+      }
+      .seg button:hover:not(.active) {
+        background: #f5f5f8;
+      }
+      .seqvar {
+        display: none;
+      }
+      .seqvar.active {
+        display: block;
+      }
+      .exp-chevron {
+        display: inline-block;
+        width: 13px;
+        color: #888;
+        cursor: pointer;
+        font-size: 10px;
+        user-select: none;
+      }
+      .exp-chevron:hover {
+        color: #5b4fd4;
+      }
+      .exp-detail {
+        display: none;
+      }
+      .exp-detail.open {
+        display: table-row;
+      }
+      .exp-detail > td {
+        background: #fafbff !important;
+        padding: 0 !important;
+      }
+      .exp-files {
+        padding: 6px 18px 8px 48px;
+      }
+      .exp-file {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 5px 0;
+        font-size: 11px;
+        border-bottom: 1px solid #f0f0f4;
+      }
+      .exp-file:last-child {
+        border-bottom: none;
+      }
+      .exp-file .ef-name {
+        font-family: 'SF Mono', Menlo, Consolas, monospace;
+        color: #1a1a2e;
+        flex: 1;
+      }
+      .exp-file .ef-type {
+        color: #888;
+        width: 130px;
+      }
+      .exp-file .ef-size {
+        color: #aaa;
+        width: 60px;
+        text-align: right;
+      }
+
+      /* Toast */
+      .toast {
+        position: fixed;
+        left: 50%;
+        top: 18px;
+        transform: translateX(-50%) translateY(-20px);
+        z-index: 140;
+        background: #1a6b54;
+        color: #fff;
+        font-size: 12.5px;
+        font-weight: 500;
+        padding: 10px 18px;
+        border-radius: 8px;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2);
+        opacity: 0;
+        pointer-events: none;
+        transition: all 0.25s;
+      }
+      .toast.show {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ===================== TOPBAR ===================== -->
+    <div class="topbar">
+      <div class="topbar-logo">
+        <svg viewBox="0 0 22 22" fill="none">
+          <rect width="22" height="22" rx="5" fill="#5B4FD4"></rect>
+          <path d="M5 11h12M11 5v12" stroke="#fff" stroke-width="2" stroke-linecap="round"></path>
+        </svg>
+        Easy Genomics
+      </div>
+      <div class="topbar-right">
+        <div class="tb-toggle" id="notes-toggle">
+          <span class="tb-switch"></span>
+          <span>Designer notes</span>
+        </div>
+        <button class="tour-btn" data-tour="start">
+          <span class="pulse"></span>
+          Take the tour
+        </button>
+        <span class="topbar-role">Technician</span>
+        <div class="avatar">KF</div>
+      </div>
+    </div>
+
+    <div class="page-shell">
+      <!-- ===================== SIDEBAR ===================== -->
+      <div class="sidebar">
+        <div class="nav-item muted">Dashboard</div>
+        <div class="nav-item muted">Runs</div>
+        <div class="nav-item muted">Workflows</div>
+        <div class="nav-item active" data-nav="collections">Data Collections</div>
+        <div class="nav-div"></div>
+        <div class="nav-item muted">Lab Users</div>
+        <div class="nav-item muted">Settings</div>
+      </div>
+
+      <!-- ===================== CONTENT ===================== -->
+      <div class="page-content">
+        <!-- ============ VIEW: DATA COLLECTIONS (landing) ============ -->
+        <div class="view active" data-view="collections">
+          <div class="page-title">Data Collections</div>
+          <div class="page-sub">Saved bundles of sequence sets, ready to launch a workflow on.</div>
+
+          <div class="dnote">
+            Kelsey's fix: data collections and sequence sets are separate sibling views. Batches are not in the nav —
+            that concept is shelved pending Kelsey (files may lack timestamps).
+          </div>
+
+          <!-- Clickable flow map -->
+          <div class="funnel" id="flowstrip">
+            <div class="fn-step" data-nav="import" data-wizgo="1">
+              <div class="fn-step-lbl">Step 1</div>
+              <div class="fn-step-name">
+                <span class="fn-dot" style="background: #97c459"></span>
+                Import + regex
+              </div>
+            </div>
+            <div class="fn-step" data-nav="sequence-sets">
+              <div class="fn-step-lbl">Step 2</div>
+              <div class="fn-step-name">
+                <span class="fn-dot" style="background: #2db48f"></span>
+                Sequence Sets
+              </div>
+            </div>
+            <div class="fn-step" data-nav="builder">
+              <div class="fn-step-lbl">Step 3</div>
+              <div class="fn-step-name">
+                <span class="fn-dot" style="background: #5b4fd4"></span>
+                Data Collection
+              </div>
+            </div>
+            <div class="fn-step" data-modal-open="run">
+              <div class="fn-step-lbl">Step 4</div>
+              <div class="fn-step-name">
+                <span class="fn-dot" style="background: #1a1a2e"></span>
+                Run workflow
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-bar">
+            <div class="tab active" data-nav="collections">
+              Data Collections
+              <span style="color: #aaa; font-weight: 400; margin-left: 4px">· 4</span>
+            </div>
+            <div class="tab" data-nav="sequence-sets">
+              Sequence Sets
+              <span style="color: #aaa; font-weight: 400; margin-left: 4px">· 156</span>
+            </div>
+            <div class="tab" data-nav="external-files">
+              External Files
+              <span style="color: #aaa; font-weight: 400; margin-left: 4px">· 12</span>
+            </div>
+          </div>
+
+          <div class="workspace">
+            <div class="toolbar">
+              <div class="search-wrap">
+                <svg viewBox="0 0 13 13" fill="none">
+                  <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" stroke-width="1.3"></circle>
+                  <path d="M9 9l2.5 2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
+                </svg>
+                <input class="search-in" placeholder="Search collections…" />
+              </div>
+              <div style="flex: 1"></div>
+              <button class="tbtn" data-nav="builder">+ New collection</button>
+              <button class="tbtn tbtn-primary" id="btn-import" data-nav="import" data-wizgo="1">
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                  <path
+                    d="M6.5 1.5v6m0 0L4 5m2.5 2.5L9 5M2 9v2h9V9"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                Import data
+              </button>
+            </div>
+
+            <div class="content-scroll">
+              <table class="list-table">
+                <thead>
+                  <tr>
+                    <th style="width: 36px"><span class="cbx cbx-all"></span></th>
+                    <th>Name</th>
+                    <th>Sequence sets</th>
+                    <th>Schema</th>
+                    <th>Last run</th>
+                    <th>Compatible workflows</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="data-row">
+                    <td><span class="cbx"></span></td>
+                    <td>
+                      <div class="row-title">SARS-CoV-2 · 2026-21</div>
+                      <div class="row-meta">Created Mon by KF</div>
+                    </td>
+                    <td>96</td>
+                    <td>paired-end · 4 cols</td>
+                    <td>
+                      <div class="row-title" style="font-weight: 400">viralrecon · 2 h ago</div>
+                      <div class="row-meta">run #4821</div>
+                    </td>
+                    <td>
+                      <span class="tag-pill neutral">viralrecon</span>
+                      <span class="tag-pill neutral">nextclade</span>
+                    </td>
+                    <td style="text-align: right; color: #888; font-size: 16px">⋯</td>
+                  </tr>
+                  <tr class="data-row">
+                    <td><span class="cbx"></span></td>
+                    <td>
+                      <div class="row-title">Influenza A · Sept reseq</div>
+                      <div class="row-meta">Created May 24 by SL</div>
+                    </td>
+                    <td>48</td>
+                    <td>paired-end · 3 cols</td>
+                    <td>
+                      <div class="row-title" style="font-weight: 400">influenza-typing · yesterday</div>
+                      <div class="row-meta">run #4811</div>
+                    </td>
+                    <td><span class="tag-pill neutral">influenza-typing</span></td>
+                    <td style="text-align: right; color: #888; font-size: 16px">⋯</td>
+                  </tr>
+                  <tr class="data-row">
+                    <td><span class="cbx"></span></td>
+                    <td>
+                      <div class="row-title">TB long-read · ONT</div>
+                      <div class="row-meta">Created May 20 by KF</div>
+                    </td>
+                    <td>12</td>
+                    <td>long-read · 2 cols</td>
+                    <td><div class="row-meta">— never used</div></td>
+                    <td><span class="tag-pill neutral">bactmap</span></td>
+                    <td style="text-align: right; color: #888; font-size: 16px">⋯</td>
+                  </tr>
+                  <tr class="data-row">
+                    <td><span class="cbx"></span></td>
+                    <td>
+                      <div class="row-title">Wastewater W19 · mixed</div>
+                      <div class="row-meta">Created May 11 by KF</div>
+                    </td>
+                    <td>24</td>
+                    <td>paired + ref · 5 cols</td>
+                    <td>
+                      <div class="row-title" style="font-weight: 400">freyja · 1 w ago</div>
+                      <div class="row-meta">run #4793</div>
+                    </td>
+                    <td><span class="tag-pill neutral">freyja</span></td>
+                    <td style="text-align: right; color: #888; font-size: 16px">⋯</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="bottom-bar">
+              <div class="bottom-bar-inner">
+                <span class="bb-sel-count">
+                  <strong data-selcount>0</strong>
+                  selected
+                </span>
+                <div class="bulk-actions">
+                  <button class="bb-btn bb-run-wf" data-modal-open="run">
+                    <svg viewBox="0 0 14 14" fill="none"><path d="M4 3l7 4-7 4V3z" fill="currentColor" /></svg>
+                    Launch workflow
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ VIEW: SEQUENCE SETS ============ -->
+        <div class="view" data-view="sequence-sets">
+          <div class="page-title">Data Collections</div>
+          <div class="page-sub">Saved bundles of sequence sets, ready to launch a workflow on.</div>
+
+          <div class="dnote">
+            Tags live at the sequence-set level only — not on files, not on collections. A sequence set is a
+            regex-defined grouping of files (R1/R2 is the common case, not the only one).
+          </div>
+
+          <div class="tab-bar">
+            <div class="tab" data-nav="collections">
+              Data Collections
+              <span style="color: #aaa; font-weight: 400; margin-left: 4px">· 4</span>
+            </div>
+            <div class="tab active" data-nav="sequence-sets">
+              Sequence Sets
+              <span style="color: #aaa; font-weight: 400; margin-left: 4px">· 156</span>
+            </div>
+            <div class="tab" data-nav="external-files">
+              External Files
+              <span style="color: #aaa; font-weight: 400; margin-left: 4px">· 12</span>
+            </div>
+          </div>
+
+          <div class="workspace">
+            <div class="toolbar" id="seq-toolbar">
+              <div class="search-wrap">
+                <svg viewBox="0 0 13 13" fill="none">
+                  <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" stroke-width="1.3"></circle>
+                  <path d="M9 9l2.5 2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
+                </svg>
+                <input class="search-in" placeholder="Search by sample ID or tag…" />
+              </div>
+              <button class="tbtn">Tag: All</button>
+              <button class="tbtn">Source: All imports</button>
+              <div style="flex: 1"></div>
+              <button class="tbtn tbtn-primary" data-nav="import" data-wizgo="1">
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                  <path
+                    d="M6.5 1.5v6m0 0L4 5m2.5 2.5L9 5M2 9v2h9V9"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                Import data
+              </button>
+            </div>
+
+            <div class="section-band">
+              <span style="display: flex; align-items: center; gap: 10px">
+                <span style="color: #888">Files view</span>
+                <span class="seg">
+                  <button class="active" data-seqvar="contents">Contents</button>
+                  <button data-seqvar="columns">Reads + Extras</button>
+                  <button data-seqvar="expandable">Expandable</button>
+                </span>
+              </span>
+              <span style="color: #aaa; font-style: italic">
+                3 ways to show a multi-file set — pick one for the final
+              </span>
+            </div>
+
+            <div class="section-band">
+              <span>
+                <strong>156 sequence sets</strong>
+                in this lab · 6 tags · a set can bundle many files
+              </span>
+              <span>
+                Last import:
+                <strong>Mon, 96 sets from 2026-21</strong>
+              </span>
+            </div>
+
+            <div class="content-scroll">
+              <!-- Variant A · single Contents column -->
+              <div class="seqvar active" data-seqvar-panel="contents">
+                <table class="list-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 36px"><span class="cbx cbx-all"></span></th>
+                      <th>Sample ID</th>
+                      <th>Contents</th>
+                      <th>Tags</th>
+                      <th>Source import</th>
+                      <th>Created</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="data-row row-selected">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-2026-0001</span></td>
+                      <td>
+                        <strong style="font-weight: 500">2</strong>
+                        files
+                        <span style="color: #888">· R1 + R2</span>
+                      </td>
+                      <td><span class="tag-pill covid">COVID</span></td>
+                      <td><div class="row-meta">S3 · 2026-21</div></td>
+                      <td><div class="row-meta">Mon</div></td>
+                    </tr>
+                    <tr class="data-row row-selected">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-2026-0002</span></td>
+                      <td>
+                        <strong style="font-weight: 500">2</strong>
+                        files
+                        <span style="color: #888">· R1 + R2</span>
+                      </td>
+                      <td><span class="tag-pill covid">COVID</span></td>
+                      <td><div class="row-meta">S3 · 2026-21</div></td>
+                      <td><div class="row-meta">Mon</div></td>
+                    </tr>
+                    <tr class="data-row row-selected">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-2026-0003</span></td>
+                      <td>
+                        <strong style="font-weight: 500">3</strong>
+                        files
+                        <span style="color: #888">· R1 + R2 + ref.fasta</span>
+                      </td>
+                      <td>
+                        <span class="tag-pill covid">COVID</span>
+                        <span class="tag-pill neutral">with-ref</span>
+                      </td>
+                      <td><div class="row-meta">S3 · 2026-21</div></td>
+                      <td><div class="row-meta">Mon</div></td>
+                    </tr>
+                    <tr class="data-row row-selected">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-2026-0004</span></td>
+                      <td>
+                        <strong style="font-weight: 500">1</strong>
+                        file
+                        <span style="color: #888">· R1 (single-end)</span>
+                      </td>
+                      <td><span class="tag-pill covid">COVID</span></td>
+                      <td><div class="row-meta">S3 · 2026-21</div></td>
+                      <td><div class="row-meta">Mon</div></td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-2026-0005</span></td>
+                      <td>
+                        <strong style="font-weight: 500">8</strong>
+                        files
+                        <span style="color: #888">· R1 + R2 · 4 lanes</span>
+                      </td>
+                      <td>
+                        <span class="tag-pill covid">COVID</span>
+                        <span class="tag-pill neutral">multi-lane</span>
+                      </td>
+                      <td><div class="row-meta">S3 · 2026-21</div></td>
+                      <td><div class="row-meta">Mon</div></td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-WW-019</span></td>
+                      <td>
+                        <strong style="font-weight: 500">4</strong>
+                        files
+                        <span style="color: #888">· R1 + R2 + ref.fasta + primers.bed</span>
+                      </td>
+                      <td>
+                        <span class="tag-pill neutral">wastewater</span>
+                        <span class="tag-pill neutral">with-ref</span>
+                      </td>
+                      <td><div class="row-meta">S3 · W19-mixed</div></td>
+                      <td><div class="row-meta">May 11</div></td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-Apr-S012</span></td>
+                      <td>
+                        <strong style="font-weight: 500">2</strong>
+                        files
+                        <span style="color: #888">· R1 + R2</span>
+                      </td>
+                      <td><span class="tag-pill flu">Flu</span></td>
+                      <td><div class="row-meta">S3 · Apr-2026</div></td>
+                      <td><div class="row-meta">May 24</div></td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-Apr-S013</span></td>
+                      <td>
+                        <strong style="font-weight: 500">2</strong>
+                        files
+                        <span style="color: #888">· R1 + R2</span>
+                      </td>
+                      <td><span class="tag-pill flu">Flu</span></td>
+                      <td><div class="row-meta">S3 · Apr-2026</div></td>
+                      <td><div class="row-meta">May 24</div></td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">TB-ONT-001</span></td>
+                      <td>
+                        <strong style="font-weight: 500">1</strong>
+                        file
+                        <span style="color: #888">· long-read</span>
+                      </td>
+                      <td><span class="tag-pill mrsa">TB</span></td>
+                      <td><div class="row-meta">S3 · TB-run-1</div></td>
+                      <td><div class="row-meta">May 20</div></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Variant B · Reads + Extras + Files count -->
+              <div class="seqvar" data-seqvar-panel="columns">
+                <table class="list-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 36px"><span class="cbx cbx-all"></span></th>
+                      <th>Sample ID</th>
+                      <th>Reads</th>
+                      <th>Extras</th>
+                      <th>Files</th>
+                      <th>Tags</th>
+                      <th>Source</th>
+                      <th>Created</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="data-row row-selected">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-2026-0001</span></td>
+                      <td>
+                        <span class="status-pill paired">
+                          <span class="dot"></span>
+                          R1 + R2
+                        </span>
+                      </td>
+                      <td style="color: #bbb">—</td>
+                      <td>2</td>
+                      <td><span class="tag-pill covid">COVID</span></td>
+                      <td><div class="row-meta">2026-21</div></td>
+                      <td><div class="row-meta">Mon</div></td>
+                    </tr>
+                    <tr class="data-row row-selected">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-2026-0002</span></td>
+                      <td>
+                        <span class="status-pill paired">
+                          <span class="dot"></span>
+                          R1 + R2
+                        </span>
+                      </td>
+                      <td style="color: #bbb">—</td>
+                      <td>2</td>
+                      <td><span class="tag-pill covid">COVID</span></td>
+                      <td><div class="row-meta">2026-21</div></td>
+                      <td><div class="row-meta">Mon</div></td>
+                    </tr>
+                    <tr class="data-row row-selected">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-2026-0003</span></td>
+                      <td>
+                        <span class="status-pill paired">
+                          <span class="dot"></span>
+                          R1 + R2
+                        </span>
+                      </td>
+                      <td class="row-mono">ref.fasta</td>
+                      <td>3</td>
+                      <td><span class="tag-pill covid">COVID</span></td>
+                      <td><div class="row-meta">2026-21</div></td>
+                      <td><div class="row-meta">Mon</div></td>
+                    </tr>
+                    <tr class="data-row row-selected">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-2026-0004</span></td>
+                      <td>
+                        <span class="status-pill single">
+                          <span class="dot"></span>
+                          R1 only
+                        </span>
+                      </td>
+                      <td style="color: #bbb">—</td>
+                      <td>1</td>
+                      <td><span class="tag-pill covid">COVID</span></td>
+                      <td><div class="row-meta">2026-21</div></td>
+                      <td><div class="row-meta">Mon</div></td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-2026-0005</span></td>
+                      <td>
+                        <span class="status-pill paired">
+                          <span class="dot"></span>
+                          R1 + R2 · 4 lanes
+                        </span>
+                      </td>
+                      <td style="color: #bbb">—</td>
+                      <td>8</td>
+                      <td><span class="tag-pill covid">COVID</span></td>
+                      <td><div class="row-meta">2026-21</div></td>
+                      <td><div class="row-meta">Mon</div></td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-WW-019</span></td>
+                      <td>
+                        <span class="status-pill paired">
+                          <span class="dot"></span>
+                          R1 + R2
+                        </span>
+                      </td>
+                      <td class="row-mono">
+                        ref.fasta
+                        <span style="color: #888">+1</span>
+                      </td>
+                      <td>4</td>
+                      <td><span class="tag-pill neutral">wastewater</span></td>
+                      <td><div class="row-meta">W19-mixed</div></td>
+                      <td><div class="row-meta">May 11</div></td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-Apr-S012</span></td>
+                      <td>
+                        <span class="status-pill paired">
+                          <span class="dot"></span>
+                          R1 + R2
+                        </span>
+                      </td>
+                      <td style="color: #bbb">—</td>
+                      <td>2</td>
+                      <td><span class="tag-pill flu">Flu</span></td>
+                      <td><div class="row-meta">Apr-2026</div></td>
+                      <td><div class="row-meta">May 24</div></td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-Apr-S013</span></td>
+                      <td>
+                        <span class="status-pill paired">
+                          <span class="dot"></span>
+                          R1 + R2
+                        </span>
+                      </td>
+                      <td style="color: #bbb">—</td>
+                      <td>2</td>
+                      <td><span class="tag-pill flu">Flu</span></td>
+                      <td><div class="row-meta">Apr-2026</div></td>
+                      <td><div class="row-meta">May 24</div></td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">TB-ONT-001</span></td>
+                      <td>
+                        <span class="status-pill single">
+                          <span class="dot"></span>
+                          long-read
+                        </span>
+                      </td>
+                      <td style="color: #bbb">—</td>
+                      <td>1</td>
+                      <td><span class="tag-pill mrsa">TB</span></td>
+                      <td><div class="row-meta">TB-run-1</div></td>
+                      <td><div class="row-meta">May 20</div></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Variant C · expandable file list -->
+              <div class="seqvar" data-seqvar-panel="expandable">
+                <table class="list-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 36px"><span class="cbx cbx-all"></span></th>
+                      <th>Sample ID</th>
+                      <th>Contents</th>
+                      <th>Tags</th>
+                      <th>Source import</th>
+                      <th>Created</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="data-row row-selected">
+                      <td><span class="cbx"></span></td>
+                      <td>
+                        <span class="exp-chevron" data-exptarget="x1">▸</span>
+                        <span class="row-title">WI-2026-0001</span>
+                      </td>
+                      <td>
+                        2 files
+                        <span style="color: #888">· R1 + R2</span>
+                      </td>
+                      <td><span class="tag-pill covid">COVID</span></td>
+                      <td><div class="row-meta">S3 · 2026-21</div></td>
+                      <td><div class="row-meta">Mon</div></td>
+                    </tr>
+                    <tr class="exp-detail" id="x1">
+                      <td></td>
+                      <td colspan="5">
+                        <div class="exp-files">
+                          <div class="exp-file">
+                            <span class="ef-name">WI-2026-0001_R1_001.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R1</span>
+                            <span class="ef-size">1.1 GB</span>
+                          </div>
+                          <div class="exp-file">
+                            <span class="ef-name">WI-2026-0001_R2_001.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R2</span>
+                            <span class="ef-size">1.2 GB</span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr class="data-row row-selected">
+                      <td><span class="cbx"></span></td>
+                      <td>
+                        <span class="exp-chevron" data-exptarget="x2">▸</span>
+                        <span class="row-title">WI-2026-0002</span>
+                      </td>
+                      <td>
+                        2 files
+                        <span style="color: #888">· R1 + R2</span>
+                      </td>
+                      <td><span class="tag-pill covid">COVID</span></td>
+                      <td><div class="row-meta">S3 · 2026-21</div></td>
+                      <td><div class="row-meta">Mon</div></td>
+                    </tr>
+                    <tr class="exp-detail" id="x2">
+                      <td></td>
+                      <td colspan="5">
+                        <div class="exp-files">
+                          <div class="exp-file">
+                            <span class="ef-name">WI-2026-0002_R1_001.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R1</span>
+                            <span class="ef-size">1.0 GB</span>
+                          </div>
+                          <div class="exp-file">
+                            <span class="ef-name">WI-2026-0002_R2_001.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R2</span>
+                            <span class="ef-size">1.1 GB</span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr class="data-row row-selected">
+                      <td><span class="cbx"></span></td>
+                      <td>
+                        <span class="exp-chevron" data-exptarget="x3">▸</span>
+                        <span class="row-title">WI-2026-0003</span>
+                      </td>
+                      <td>
+                        3 files
+                        <span style="color: #888">· R1 + R2 + ref.fasta</span>
+                      </td>
+                      <td>
+                        <span class="tag-pill covid">COVID</span>
+                        <span class="tag-pill neutral">with-ref</span>
+                      </td>
+                      <td><div class="row-meta">S3 · 2026-21</div></td>
+                      <td><div class="row-meta">Mon</div></td>
+                    </tr>
+                    <tr class="exp-detail" id="x3">
+                      <td></td>
+                      <td colspan="5">
+                        <div class="exp-files">
+                          <div class="exp-file">
+                            <span class="ef-name">WI-2026-0003_R1_001.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R1</span>
+                            <span class="ef-size">1.1 GB</span>
+                          </div>
+                          <div class="exp-file">
+                            <span class="ef-name">WI-2026-0003_R2_001.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R2</span>
+                            <span class="ef-size">1.2 GB</span>
+                          </div>
+                          <div class="exp-file">
+                            <span class="ef-name">WI-2026-0003_ref.fasta</span>
+                            <span class="ef-type">FASTA · reference</span>
+                            <span class="ef-size">31 KB</span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr class="data-row row-selected">
+                      <td><span class="cbx"></span></td>
+                      <td>
+                        <span class="exp-chevron" data-exptarget="x4">▸</span>
+                        <span class="row-title">WI-2026-0004</span>
+                      </td>
+                      <td>
+                        1 file
+                        <span style="color: #888">· R1 (single-end)</span>
+                      </td>
+                      <td><span class="tag-pill covid">COVID</span></td>
+                      <td><div class="row-meta">S3 · 2026-21</div></td>
+                      <td><div class="row-meta">Mon</div></td>
+                    </tr>
+                    <tr class="exp-detail" id="x4">
+                      <td></td>
+                      <td colspan="5">
+                        <div class="exp-files">
+                          <div class="exp-file">
+                            <span class="ef-name">WI-2026-0004_R1_001.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R1</span>
+                            <span class="ef-size">0.9 GB</span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td>
+                        <span class="exp-chevron" data-exptarget="x5">▸</span>
+                        <span class="row-title">WI-2026-0005</span>
+                      </td>
+                      <td>
+                        8 files
+                        <span style="color: #888">· R1 + R2 · 4 lanes</span>
+                      </td>
+                      <td>
+                        <span class="tag-pill covid">COVID</span>
+                        <span class="tag-pill neutral">multi-lane</span>
+                      </td>
+                      <td><div class="row-meta">S3 · 2026-21</div></td>
+                      <td><div class="row-meta">Mon</div></td>
+                    </tr>
+                    <tr class="exp-detail" id="x5">
+                      <td></td>
+                      <td colspan="5">
+                        <div class="exp-files">
+                          <div class="exp-file">
+                            <span class="ef-name">WI-2026-0005_S5_L001_R1_001.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R1 · L001</span>
+                            <span class="ef-size">1.1 GB</span>
+                          </div>
+                          <div class="exp-file">
+                            <span class="ef-name">WI-2026-0005_S5_L001_R2_001.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R2 · L001</span>
+                            <span class="ef-size">1.2 GB</span>
+                          </div>
+                          <div class="exp-file">
+                            <span class="ef-name">WI-2026-0005_S5_L002_R1_001.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R1 · L002</span>
+                            <span class="ef-size">1.1 GB</span>
+                          </div>
+                          <div class="exp-file">
+                            <span class="ef-name">WI-2026-0005_S5_L002_R2_001.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R2 · L002</span>
+                            <span class="ef-size">1.2 GB</span>
+                          </div>
+                          <div class="exp-file">
+                            <span class="ef-name" style="color: #888">+ 4 more · lanes L003, L004 (R1/R2)</span>
+                            <span class="ef-type"></span>
+                            <span class="ef-size">4.6 GB</span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td>
+                        <span class="exp-chevron" data-exptarget="x6">▸</span>
+                        <span class="row-title">WI-WW-019</span>
+                      </td>
+                      <td>
+                        4 files
+                        <span style="color: #888">· R1 + R2 + ref.fasta + primers.bed</span>
+                      </td>
+                      <td>
+                        <span class="tag-pill neutral">wastewater</span>
+                        <span class="tag-pill neutral">with-ref</span>
+                      </td>
+                      <td><div class="row-meta">S3 · W19-mixed</div></td>
+                      <td><div class="row-meta">May 11</div></td>
+                    </tr>
+                    <tr class="exp-detail" id="x6">
+                      <td></td>
+                      <td colspan="5">
+                        <div class="exp-files">
+                          <div class="exp-file">
+                            <span class="ef-name">WI-WW-019_R1.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R1</span>
+                            <span class="ef-size">2.0 GB</span>
+                          </div>
+                          <div class="exp-file">
+                            <span class="ef-name">WI-WW-019_R2.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R2</span>
+                            <span class="ef-size">2.1 GB</span>
+                          </div>
+                          <div class="exp-file">
+                            <span class="ef-name">reference_MN908947.fasta</span>
+                            <span class="ef-type">FASTA · reference</span>
+                            <span class="ef-size">30 KB</span>
+                          </div>
+                          <div class="exp-file">
+                            <span class="ef-name">primers_artic_v4.bed</span>
+                            <span class="ef-type">BED · primers</span>
+                            <span class="ef-size">12 KB</span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td>
+                        <span class="exp-chevron" data-exptarget="x7">▸</span>
+                        <span class="row-title">WI-Apr-S012</span>
+                      </td>
+                      <td>
+                        2 files
+                        <span style="color: #888">· R1 + R2</span>
+                      </td>
+                      <td><span class="tag-pill flu">Flu</span></td>
+                      <td><div class="row-meta">S3 · Apr-2026</div></td>
+                      <td><div class="row-meta">May 24</div></td>
+                    </tr>
+                    <tr class="exp-detail" id="x7">
+                      <td></td>
+                      <td colspan="5">
+                        <div class="exp-files">
+                          <div class="exp-file">
+                            <span class="ef-name">WI-Apr-S012_R1_001.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R1</span>
+                            <span class="ef-size">1.0 GB</span>
+                          </div>
+                          <div class="exp-file">
+                            <span class="ef-name">WI-Apr-S012_R2_001.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R2</span>
+                            <span class="ef-size">1.0 GB</span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td>
+                        <span class="exp-chevron" data-exptarget="x8">▸</span>
+                        <span class="row-title">WI-Apr-S013</span>
+                      </td>
+                      <td>
+                        2 files
+                        <span style="color: #888">· R1 + R2</span>
+                      </td>
+                      <td><span class="tag-pill flu">Flu</span></td>
+                      <td><div class="row-meta">S3 · Apr-2026</div></td>
+                      <td><div class="row-meta">May 24</div></td>
+                    </tr>
+                    <tr class="exp-detail" id="x8">
+                      <td></td>
+                      <td colspan="5">
+                        <div class="exp-files">
+                          <div class="exp-file">
+                            <span class="ef-name">WI-Apr-S013_R1_001.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R1</span>
+                            <span class="ef-size">1.0 GB</span>
+                          </div>
+                          <div class="exp-file">
+                            <span class="ef-name">WI-Apr-S013_R2_001.fastq.gz</span>
+                            <span class="ef-type">FASTQ · R2</span>
+                            <span class="ef-size">1.0 GB</span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td>
+                        <span class="exp-chevron" data-exptarget="x9">▸</span>
+                        <span class="row-title">TB-ONT-001</span>
+                      </td>
+                      <td>
+                        1 file
+                        <span style="color: #888">· long-read</span>
+                      </td>
+                      <td><span class="tag-pill mrsa">TB</span></td>
+                      <td><div class="row-meta">S3 · TB-run-1</div></td>
+                      <td><div class="row-meta">May 20</div></td>
+                    </tr>
+                    <tr class="exp-detail" id="x9">
+                      <td></td>
+                      <td colspan="5">
+                        <div class="exp-files">
+                          <div class="exp-file">
+                            <span class="ef-name">TB-ONT-001.fastq.gz</span>
+                            <span class="ef-type">FASTQ · long-read</span>
+                            <span class="ef-size">3.4 GB</span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="bottom-bar">
+              <div class="bottom-bar-inner">
+                <span class="bb-sel-count">
+                  <strong data-selcount>0</strong>
+                  selected
+                </span>
+                <div class="bulk-actions">
+                  <button class="bb-btn bb-ghost">Add tag</button>
+                  <button class="bb-btn bb-solid" data-needs-sel data-nav="builder">
+                    Build data collection from selection
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ VIEW: EXTERNAL FILES (new) ============ -->
+        <div class="view" data-view="external-files">
+          <div class="page-title">Data Collections</div>
+          <div class="page-sub">
+            Files found directly in the lab's S3 bucket that didn't come through an import — instrument dumps, manual
+            uploads, leftovers. Not sequence sets yet.
+          </div>
+
+          <div class="dnote">
+            New from the Jun 9 standup: "orphan" files in S3 bypass the import flow. This third sibling tab surfaces
+            them (queried straight from the bucket) so nothing is stranded — filter by type and build sequence sets from
+            them by hand.
+          </div>
+
+          <div class="tab-bar">
+            <div class="tab" data-nav="collections">
+              Data Collections
+              <span style="color: #aaa; font-weight: 400; margin-left: 4px">· 4</span>
+            </div>
+            <div class="tab" data-nav="sequence-sets">
+              Sequence Sets
+              <span style="color: #aaa; font-weight: 400; margin-left: 4px">· 156</span>
+            </div>
+            <div class="tab active" data-nav="external-files">
+              External Files
+              <span style="color: #aaa; font-weight: 400; margin-left: 4px">· 12</span>
+            </div>
+          </div>
+
+          <div class="workspace">
+            <div class="toolbar" id="ext-toolbar">
+              <div class="search-wrap">
+                <svg viewBox="0 0 13 13" fill="none">
+                  <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" stroke-width="1.3"></circle>
+                  <path d="M9 9l2.5 2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
+                </svg>
+                <input class="search-in" placeholder="Search file names…" />
+              </div>
+              <button class="tbtn tbtn-active">Type: FASTQ ▾</button>
+              <button class="tbtn">Prefix: incoming/ ▾</button>
+              <div style="flex: 1"></div>
+              <button class="tbtn" data-toast="Rescanning bucket… found 12 unlinked files">
+                <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                  <path
+                    d="M12 7a5 5 0 1 1-1.5-3.5M12 2v3h-3"
+                    stroke="currentColor"
+                    stroke-width="1.3"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                Rescan bucket
+              </button>
+            </div>
+
+            <div class="section-band">
+              <span>
+                Scanned from
+                <span class="mono" style="color: #1a1a2e">s3://eg-wslh-lab/incoming/</span>
+                ·
+                <strong>12 files</strong>
+                not linked to any sequence set · 5 FASTQ shown
+              </span>
+              <span>Last scan 2 min ago</span>
+            </div>
+
+            <div class="content-scroll">
+              <table class="list-table">
+                <thead>
+                  <tr>
+                    <th style="width: 36px"><span class="cbx cbx-all"></span></th>
+                    <th>File</th>
+                    <th>Type</th>
+                    <th>Size</th>
+                    <th>Last modified</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="data-row row-selected">
+                    <td><span class="cbx"></span></td>
+                    <td class="row-mono">NB-552_R1.fastq.gz</td>
+                    <td><span class="tag-pill neutral">FASTQ</span></td>
+                    <td>1.2 GB</td>
+                    <td><div class="row-meta">Today 09:14</div></td>
+                    <td>
+                      <span class="status-pill warn">
+                        <span class="dot"></span>
+                        unlinked
+                      </span>
+                    </td>
+                  </tr>
+                  <tr class="data-row row-selected">
+                    <td><span class="cbx"></span></td>
+                    <td class="row-mono">NB-552_R2.fastq.gz</td>
+                    <td><span class="tag-pill neutral">FASTQ</span></td>
+                    <td>1.3 GB</td>
+                    <td><div class="row-meta">Today 09:14</div></td>
+                    <td>
+                      <span class="status-pill warn">
+                        <span class="dot"></span>
+                        unlinked
+                      </span>
+                    </td>
+                  </tr>
+                  <tr class="data-row">
+                    <td><span class="cbx"></span></td>
+                    <td class="row-mono">NB-553_R1.fastq.gz</td>
+                    <td><span class="tag-pill neutral">FASTQ</span></td>
+                    <td>1.1 GB</td>
+                    <td><div class="row-meta">Today 09:15</div></td>
+                    <td>
+                      <span class="status-pill warn">
+                        <span class="dot"></span>
+                        unlinked
+                      </span>
+                    </td>
+                  </tr>
+                  <tr class="data-row">
+                    <td><span class="cbx"></span></td>
+                    <td class="row-mono">NB-553_R2.fastq.gz</td>
+                    <td><span class="tag-pill neutral">FASTQ</span></td>
+                    <td>1.2 GB</td>
+                    <td><div class="row-meta">Today 09:15</div></td>
+                    <td>
+                      <span class="status-pill warn">
+                        <span class="dot"></span>
+                        unlinked
+                      </span>
+                    </td>
+                  </tr>
+                  <tr class="data-row">
+                    <td><span class="cbx"></span></td>
+                    <td class="row-mono">undetermined_R1.fastq.gz</td>
+                    <td><span class="tag-pill neutral">FASTQ</span></td>
+                    <td>0.4 GB</td>
+                    <td><div class="row-meta">Today 09:16</div></td>
+                    <td>
+                      <span class="status-pill warn">
+                        <span class="dot"></span>
+                        unlinked
+                      </span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td
+                      colspan="6"
+                      style="text-align: center; color: #aaa; font-size: 11px; padding: 14px; font-style: italic"
+                    >
+                      …7 non-FASTQ files hidden by the Type: FASTQ filter (3× CSV, 2× BAM, 1× FASTA, 1× TXT)
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="bottom-bar">
+              <div class="bottom-bar-inner">
+                <span class="bb-sel-count">
+                  <strong data-selcount>0</strong>
+                  selected
+                </span>
+                <div class="bulk-actions">
+                  <button class="bb-btn bb-ghost">Download</button>
+                  <button class="bb-btn bb-solid" data-needs-sel data-modal-open="build">
+                    Build sequence set from selection
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ VIEW: IMPORT WIZARD ============ -->
+        <div class="view" data-view="import">
+          <div class="page-back" data-nav="collections">← Back to Data Collections</div>
+          <div class="page-title">Import data</div>
+          <div class="page-sub">
+            Bring files in and build sequence sets in one flow. The "Build" step is interactive — fix edge cases,
+            rename, tag, exclude before anything commits.
+          </div>
+
+          <div class="workspace">
+            <!-- Stepper -->
+            <div class="wizard-stepper">
+              <div class="wstep" data-step="1" data-wizgo="1">
+                <div class="wstep-num">1</div>
+                <div class="wstep-body">
+                  <div class="wstep-lbl">Step 1 · Source</div>
+                  <div class="wstep-val mono">s3://wslh-seq/2026-21/</div>
+                </div>
+              </div>
+              <div class="wstep" data-step="2" data-wizgo="2">
+                <div class="wstep-num">2</div>
+                <div class="wstep-body">
+                  <div class="wstep-lbl">Step 2 · Pattern</div>
+                  <div class="wstep-val">Underscore _R1/_R2</div>
+                </div>
+              </div>
+              <div class="wstep" data-step="3" data-wizgo="3">
+                <div class="wstep-num">3</div>
+                <div class="wstep-body">
+                  <div class="wstep-lbl">Step 3 · Build sequence sets</div>
+                  <div class="wstep-val">96 ready · 1 needs review</div>
+                </div>
+              </div>
+              <div class="wstep" data-step="4" data-wizgo="4">
+                <div class="wstep-num">4</div>
+                <div class="wstep-body">
+                  <div class="wstep-lbl">Step 4 · Confirm</div>
+                  <div class="wstep-val">Copy &amp; create</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel 1: Source -->
+            <div class="wizpanel" data-wizpanel="1" id="wiz-source">
+              <div class="content-scroll">
+                <div class="imp-section">
+                  <h3>Where are the files?</h3>
+                  <p class="imp-help">
+                    Pick a source. Files are copied into the lab's own bucket on import — the originals are never
+                    touched.
+                  </p>
+                  <div class="source-grid">
+                    <div class="source-card active">
+                      <div class="source-card-head">
+                        <div class="source-icon">
+                          <svg viewBox="0 0 16 16" fill="none">
+                            <path
+                              d="M2 5l6-3 6 3-6 3-6-3z"
+                              stroke="currentColor"
+                              stroke-width="1.3"
+                              stroke-linejoin="round"
+                            />
+                            <path
+                              d="M2 5v6l6 3 6-3V5"
+                              stroke="currentColor"
+                              stroke-width="1.3"
+                              stroke-linejoin="round"
+                            />
+                          </svg>
+                        </div>
+                        <div>
+                          <div class="source-title">Amazon S3</div>
+                          <div class="source-status">Connected</div>
+                        </div>
+                      </div>
+                      <div class="help-inline">Point at a bucket/prefix the sequencer or WSLH drops files into.</div>
+                    </div>
+                    <div class="source-card">
+                      <div class="source-card-head">
+                        <div class="source-icon">
+                          <svg viewBox="0 0 16 16" fill="none">
+                            <path
+                              d="M8 11V3m0 0L5 6m3-3l3 3M3 12v2h10v-2"
+                              stroke="currentColor"
+                              stroke-width="1.3"
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                            />
+                          </svg>
+                        </div>
+                        <div>
+                          <div class="source-title">Upload from computer</div>
+                          <div class="source-status">Drag &amp; drop</div>
+                        </div>
+                      </div>
+                      <div class="help-inline">For small, local sets. Browser upload into the lab bucket.</div>
+                    </div>
+                    <div class="source-card disabled">
+                      <div class="source-card-head">
+                        <div class="source-icon">
+                          <svg viewBox="0 0 16 16" fill="none">
+                            <rect
+                              x="2"
+                              y="3"
+                              width="12"
+                              height="10"
+                              rx="1.5"
+                              stroke="currentColor"
+                              stroke-width="1.3"
+                            />
+                            <path d="M2 6h12" stroke="currentColor" stroke-width="1.3" />
+                          </svg>
+                        </div>
+                        <div>
+                          <div class="source-title">SFTP / instrument</div>
+                          <div class="source-status">Direct feed</div>
+                        </div>
+                        <span class="coming-soon">Soon</span>
+                      </div>
+                      <div class="help-inline">Automatic pickup from an instrument share.</div>
+                    </div>
+                  </div>
+                  <div style="margin-top: 18px">
+                    <div class="form-row">
+                      <div class="form-lbl">
+                        S3 path
+                        <span class="sublbl">bucket + prefix</span>
+                      </div>
+                      <div class="field">
+                        <input class="input mono" value="s3://wslh-seq/2026-21/" />
+                        <div class="help-inline">192 files detected at this prefix.</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="bottom-bar">
+                <div class="bottom-bar-inner">
+                  <button class="bb-btn bb-ghost" data-nav="collections">Cancel</button>
+                  <div class="bulk-actions">
+                    <button class="bb-btn bb-solid" data-wiz="next">Continue to pattern →</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel 2: Pattern / regex -->
+            <div class="wizpanel" data-wizpanel="2" id="wiz-pattern">
+              <div class="content-scroll">
+                <div class="imp-section">
+                  <h3>How are files grouped into sequence sets?</h3>
+                  <p class="imp-help">
+                    A regex decides which files belong together. R1/R2 pairing is the common case — but a sequence set
+                    can group more than a pair (extra lanes, a reference FASTA). Pattern lives per-import, not at the
+                    lab-admin level.
+                  </p>
+                  <div class="form-row">
+                    <div class="form-lbl">Preset</div>
+                    <div class="field">
+                      <div class="preset-row">
+                        <span class="preset active">Underscore _R1/_R2</span>
+                        <span class="preset">Dot .R1/.R2</span>
+                        <span class="preset">Illumina _S#_L###_R#</span>
+                        <span class="preset">Custom regex…</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="form-row">
+                    <div class="form-lbl">
+                      Regex
+                      <span class="sublbl">named groups</span>
+                    </div>
+                    <div class="field">
+                      <input class="input mono" value="(?&lt;sample&gt;.+?)_(?&lt;read&gt;R[12])(?:_001)?\.fastq\.gz" />
+                      <div class="help-inline">
+                        <span class="mono">sample</span>
+                        = the sequence-set id ·
+                        <span class="mono">read</span>
+                        = which file in the set.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="imp-section" style="border-bottom: none">
+                  <h3 style="margin-bottom: 10px">Live preview · how files collapse into sets</h3>
+                  <div class="ss-wrap" style="max-width: 560px">
+                    <table class="ss-table">
+                      <thead>
+                        <tr>
+                          <th>Files matched</th>
+                          <th>→ Sequence set</th>
+                          <th>Role</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td>WI-2026-0001_R1_001.fastq.gz</td>
+                          <td rowspan="2" style="vertical-align: middle; background: #fafafe">WI-2026-0001</td>
+                          <td>R1</td>
+                        </tr>
+                        <tr>
+                          <td>WI-2026-0001_R2_001.fastq.gz</td>
+                          <td style="background: #fafafe">R2</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="banner info" style="margin-top: 14px">
+                    From 192 files →
+                    <strong>96 sequence sets</strong>
+                    : 94 paired · 1 single-end · 1 pattern mismatch to resolve in the next step.
+                  </div>
+                </div>
+              </div>
+              <div class="bottom-bar">
+                <div class="bottom-bar-inner">
+                  <button class="bb-btn bb-ghost" data-wiz="back">← Back to source</button>
+                  <div class="bulk-actions">
+                    <button class="bb-btn bb-solid" data-wiz="next">Continue to build →</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel 3: Build sequence sets -->
+            <div class="wizpanel" data-wizpanel="3" id="wiz-build">
+              <div class="imp-section" style="padding-bottom: 8px; flex-shrink: 0">
+                <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 18px">
+                  <div style="flex: 1">
+                    <h3>Build sequence sets · 96 will be created</h3>
+                    <p class="imp-help" style="margin-bottom: 0">
+                      Each row = one sequence set = one sample (sample_id + R1 + R2 + optional FASTA). Hover a row to
+                      rename, tag, or exclude. The warning row needs attention before continuing.
+                    </p>
+                  </div>
+                  <div style="display: flex; gap: 6px; flex-shrink: 0">
+                    <span class="status-pill paired">
+                      <span class="dot"></span>
+                      94 paired
+                    </span>
+                    <span class="status-pill single">
+                      <span class="dot"></span>
+                      1 single-end
+                    </span>
+                    <span class="status-pill warn">
+                      <span class="dot"></span>
+                      1 needs review
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div class="section-band" style="flex-shrink: 0">
+                <span>
+                  <strong data-selcount>0</strong>
+                  selected · select rows to bulk-tag or exclude
+                </span>
+                <div style="display: flex; gap: 8px">
+                  <button class="tbtn" style="height: 28px; font-size: 11px">Bulk add tag…</button>
+                  <button class="tbtn" style="height: 28px; font-size: 11px">Bulk exclude</button>
+                </div>
+              </div>
+              <div class="content-scroll">
+                <table class="list-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 24px"><span class="cbx cbx-all"></span></th>
+                      <th>Sample ID</th>
+                      <th>FASTQ R1</th>
+                      <th>FASTQ R2</th>
+                      <th>FASTA</th>
+                      <th>Tags</th>
+                      <th>Status / actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-2026-0001</span></td>
+                      <td class="row-mono">WI-2026-0001_R1_001.fastq.gz</td>
+                      <td class="row-mono">WI-2026-0001_R2_001.fastq.gz</td>
+                      <td class="row-mono" style="color: #bbb">—</td>
+                      <td style="color: #bbb">—</td>
+                      <td>
+                        <span class="status-pill paired">
+                          <span class="dot"></span>
+                          paired
+                        </span>
+                        <span class="row-actions">
+                          <a>rename</a>
+                          <a>+ tag</a>
+                          <a class="danger">exclude</a>
+                        </span>
+                      </td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-2026-0002</span></td>
+                      <td class="row-mono">WI-2026-0002_R1_001.fastq.gz</td>
+                      <td class="row-mono">WI-2026-0002_R2_001.fastq.gz</td>
+                      <td class="row-mono" style="color: #bbb">—</td>
+                      <td style="color: #bbb">—</td>
+                      <td>
+                        <span class="status-pill paired">
+                          <span class="dot"></span>
+                          paired
+                        </span>
+                        <span class="row-actions">
+                          <a>rename</a>
+                          <a>+ tag</a>
+                          <a class="danger">exclude</a>
+                        </span>
+                      </td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-2026-0003</span></td>
+                      <td class="row-mono">WI-2026-0003_R1_001.fastq.gz</td>
+                      <td class="row-mono">WI-2026-0003_R2_001.fastq.gz</td>
+                      <td class="row-mono">WI-2026-0003_ref.fasta</td>
+                      <td><span class="tag-pill neutral">with-ref</span></td>
+                      <td>
+                        <span class="status-pill paired">
+                          <span class="dot"></span>
+                          paired + ref
+                        </span>
+                        <span class="row-actions">
+                          <a>rename</a>
+                          <a>+ tag</a>
+                          <a class="danger">exclude</a>
+                        </span>
+                      </td>
+                    </tr>
+                    <tr class="data-row">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title">WI-2026-0004</span></td>
+                      <td class="row-mono">WI-2026-0004_R1_001.fastq.gz</td>
+                      <td class="row-mono" style="color: #bbb">— (single-end)</td>
+                      <td class="row-mono" style="color: #bbb">—</td>
+                      <td style="color: #bbb">—</td>
+                      <td>
+                        <span class="status-pill single">
+                          <span class="dot"></span>
+                          single-end
+                        </span>
+                        <span class="row-actions">
+                          <a>mark paired</a>
+                          <a>+ tag</a>
+                          <a class="danger">exclude</a>
+                        </span>
+                      </td>
+                    </tr>
+                    <tr class="data-row always-show" style="background: #fff8ed">
+                      <td><span class="cbx"></span></td>
+                      <td><span class="row-title" style="color: #854f0b">Wisconsin_sample1</span></td>
+                      <td class="row-mono" style="color: #854f0b">Wisconsin_sample1_R1.fastq.gz</td>
+                      <td class="row-mono" style="color: #854f0b">Wisconsin_sample1_R2.fastq.gz</td>
+                      <td class="row-mono" style="color: #bbb">—</td>
+                      <td style="color: #bbb">—</td>
+                      <td>
+                        <span class="status-pill warn">
+                          <span class="dot"></span>
+                          pattern mismatch
+                        </span>
+                        <span class="row-actions" style="margin-left: 8px">
+                          <a>rename to fix</a>
+                          <a>keep as-is</a>
+                          <a class="danger">exclude</a>
+                        </span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td
+                        colspan="7"
+                        style="text-align: center; color: #aaa; font-size: 11px; padding: 14px; font-style: italic"
+                      >
+                        …91 more rows · all paired
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="bottom-bar">
+                <div class="bottom-bar-inner">
+                  <span class="bb-sel-count">
+                    <strong>96 sequence sets</strong>
+                    · 192 files · 11.4 GB
+                  </span>
+                  <div class="bulk-actions">
+                    <button class="bb-btn bb-ghost" data-wiz="back">← Back to pattern</button>
+                    <button class="bb-btn bb-solid" data-wiz="next">Continue to confirm →</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel 4: Confirm -->
+            <div class="wizpanel" data-wizpanel="4" id="wiz-confirm">
+              <div class="content-scroll">
+                <div class="imp-section" style="border-bottom: none">
+                  <h3>Confirm &amp; create</h3>
+                  <p class="imp-help">
+                    Files will be copied into the lab bucket and the sequence sets created in one shot.
+                  </p>
+                  <div class="modal-summary" style="max-width: 520px">
+                    <div class="modal-summary-row">
+                      <span>Source</span>
+                      <span class="mono">s3://wslh-seq/2026-21/</span>
+                    </div>
+                    <div class="modal-summary-row">
+                      <span>Pattern</span>
+                      <span>Underscore _R1/_R2</span>
+                    </div>
+                    <div class="modal-summary-row">
+                      <span>Sequence sets</span>
+                      <span>96 (94 paired · 1 single · 1 fixed)</span>
+                    </div>
+                    <div class="modal-summary-row">
+                      <span>Files</span>
+                      <span>192 · 11.4 GB</span>
+                    </div>
+                    <div class="modal-summary-row">
+                      <span>Destination</span>
+                      <span class="mono">s3://eg-wslh-lab/</span>
+                    </div>
+                  </div>
+                  <div class="banner success" style="margin-top: 16px; max-width: 520px">
+                    Ready. After this, the 96 sequence sets appear in the Sequence Sets tab — your building blocks for
+                    collections.
+                  </div>
+                </div>
+              </div>
+              <div class="bottom-bar">
+                <div class="bottom-bar-inner">
+                  <button class="bb-btn bb-ghost" data-wiz="back">← Back to build</button>
+                  <div class="bulk-actions">
+                    <button
+                      class="bb-btn bb-solid"
+                      data-nav="sequence-sets"
+                      data-toast="96 sequence sets created from 2026-21"
+                    >
+                      Copy &amp; create 96 sequence sets
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ VIEW: COLLECTION BUILDER ============ -->
+        <div class="view" data-view="builder">
+          <div class="page-back" data-nav="sequence-sets">← Back to Sequence Sets</div>
+          <div class="page-title">New collection</div>
+          <div class="page-sub">Compose sequence sets + define the sample sheet schema.</div>
+
+          <div class="dnote">
+            Kelsey: "I loved this page — this is exactly solving the critical issue." No file-picking, no re-pairing;
+            those are solved upstream at import. The sample sheet writes itself on the right.
+          </div>
+
+          <div class="workspace split">
+            <div class="dcb-left">
+              <div>
+                <label class="modal-label">Collection name</label>
+                <input class="input" value="SARS-CoV-2 · 2026-21" />
+              </div>
+              <div>
+                <label class="modal-label">Sequence sets · 96 selected</label>
+                <div class="search-wrap" style="max-width: none; margin-bottom: 8px">
+                  <svg viewBox="0 0 13 13" fill="none">
+                    <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" stroke-width="1.3"></circle>
+                    <path d="M9 9l2.5 2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
+                  </svg>
+                  <input class="search-in" placeholder="Search or filter by tag…" />
+                </div>
+                <div class="dcb-sset-list">
+                  <div class="dcb-sset-row checked">
+                    <span class="dcb-sset-cb">✓</span>
+                    <span class="dcb-sset-name">WI-2026-0001</span>
+                    <span class="status-pill paired">
+                      <span class="dot"></span>
+                      R1+R2
+                    </span>
+                  </div>
+                  <div class="dcb-sset-row checked">
+                    <span class="dcb-sset-cb">✓</span>
+                    <span class="dcb-sset-name">WI-2026-0002</span>
+                    <span class="status-pill paired">
+                      <span class="dot"></span>
+                      R1+R2
+                    </span>
+                  </div>
+                  <div class="dcb-sset-row checked">
+                    <span class="dcb-sset-cb">✓</span>
+                    <span class="dcb-sset-name">WI-2026-0003</span>
+                    <span class="status-pill paired">
+                      <span class="dot"></span>
+                      R1+R2+ref
+                    </span>
+                  </div>
+                  <div class="dcb-sset-row checked">
+                    <span class="dcb-sset-cb">✓</span>
+                    <span class="dcb-sset-name">WI-2026-0004</span>
+                    <span class="status-pill single">
+                      <span class="dot"></span>
+                      R1 only
+                    </span>
+                  </div>
+                  <div
+                    class="dcb-sset-row"
+                    style="color: #aaa; font-style: italic; font-size: 11px; justify-content: center"
+                  >
+                    …92 more selected
+                  </div>
+                </div>
+                <div class="help-inline" style="margin-top: 6px">
+                  Multi-select. Tag-filter at the top to grab "all COVID" or "all from Apr-2026 import" quickly.
+                </div>
+              </div>
+              <div id="builder-schema">
+                <label class="modal-label">Schema · auto from sequence sets</label>
+                <table class="schema-table">
+                  <thead>
+                    <tr>
+                      <th>Column</th>
+                      <th>Role</th>
+                      <th style="width: 50px; text-align: right"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><input class="col-name" value="sample" /></td>
+                      <td>
+                        <select class="role-select">
+                          <option>sample_id</option>
+                        </select>
+                      </td>
+                      <td style="text-align: right; color: #ccc; font-size: 13px">⋮</td>
+                    </tr>
+                    <tr>
+                      <td><input class="col-name" value="fastq_1" /></td>
+                      <td>
+                        <select class="role-select">
+                          <option>R1 file</option>
+                        </select>
+                      </td>
+                      <td style="text-align: right; color: #ccc; font-size: 13px">⋮</td>
+                    </tr>
+                    <tr>
+                      <td><input class="col-name" value="fastq_2" /></td>
+                      <td>
+                        <select class="role-select">
+                          <option>R2 file</option>
+                        </select>
+                      </td>
+                      <td style="text-align: right; color: #ccc; font-size: 13px">⋮</td>
+                    </tr>
+                    <tr>
+                      <td><input class="col-name" value="reference" /></td>
+                      <td>
+                        <select class="role-select">
+                          <option>extra .fasta</option>
+                        </select>
+                      </td>
+                      <td style="text-align: right; color: #ccc; font-size: 13px">⋮</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="add-col">+ Add column · metadata or extra file</div>
+              </div>
+            </div>
+
+            <div class="dcb-right">
+              <div class="toolbar">
+                <div style="font-size: 13px; font-weight: 500; color: #1a1a2e">
+                  Sample sheet ·
+                  <span class="mono" style="color: #888; font-size: 12px">samplesheet.csv</span>
+                  · 96 rows
+                </div>
+                <div style="flex: 1"></div>
+                <button class="tbtn">Download CSV</button>
+                <button class="tbtn">Preview JSON</button>
+              </div>
+              <div style="padding: 14px 18px; flex: 1; overflow-y: auto">
+                <div class="ss-wrap">
+                  <table class="ss-table">
+                    <thead>
+                      <tr>
+                        <th>sample</th>
+                        <th>fastq_1</th>
+                        <th>fastq_2</th>
+                        <th>reference</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>WI-2026-0001</td>
+                        <td>s3://…/WI-2026-0001_R1.fastq.gz</td>
+                        <td>s3://…/WI-2026-0001_R2.fastq.gz</td>
+                        <td class="empty">—</td>
+                      </tr>
+                      <tr>
+                        <td>WI-2026-0002</td>
+                        <td>s3://…/WI-2026-0002_R1.fastq.gz</td>
+                        <td>s3://…/WI-2026-0002_R2.fastq.gz</td>
+                        <td class="empty">—</td>
+                      </tr>
+                      <tr>
+                        <td>WI-2026-0003</td>
+                        <td>s3://…/WI-2026-0003_R1.fastq.gz</td>
+                        <td>s3://…/WI-2026-0003_R2.fastq.gz</td>
+                        <td>s3://…/WI-2026-0003_ref.fasta</td>
+                      </tr>
+                      <tr>
+                        <td>WI-2026-0004</td>
+                        <td>s3://…/WI-2026-0004_R1.fastq.gz</td>
+                        <td class="empty">—</td>
+                        <td class="empty">—</td>
+                      </tr>
+                      <tr>
+                        <td
+                          colspan="4"
+                          style="text-align: center; font-style: italic; color: #aaa; font-family: inherit"
+                        >
+                          …92 more rows
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="banner success" style="margin-top: 14px">
+                  Sheet shape is dynamic — row 3 carries an extra FASTA, row 4 is single-end. The schema accommodates
+                  all of them.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="bottom-bar">
+            <div class="bottom-bar-inner">
+              <button class="bb-btn bb-ghost" data-nav="sequence-sets">Cancel</button>
+              <div class="bulk-actions">
+                <button class="bb-btn bb-ghost" data-nav="collections" data-toast="Draft saved">Save as draft</button>
+                <button
+                  class="bb-btn bb-solid"
+                  data-nav="collections"
+                  data-toast="Collection saved · SARS-CoV-2 · 2026-21"
+                >
+                  Save collection
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== MODAL: RUN WORKFLOW ===================== -->
+    <div class="modal-layer" data-modal="run">
+      <div class="modal-backdrop">
+        <div class="modal-card" id="run-modal-card">
+          <div class="modal-title">Launch workflow</div>
+          <div class="modal-sub">
+            The sample sheet is already built from this collection — a single click from here.
+          </div>
+          <div class="modal-summary">
+            <div class="modal-summary-row">
+              <span>Collection</span>
+              <span>SARS-CoV-2 · 2026-21</span>
+            </div>
+            <div class="modal-summary-row">
+              <span>Sample sheet</span>
+              <span>96 rows · 4 cols</span>
+            </div>
+            <div class="modal-summary-row">
+              <span>Sequence sets</span>
+              <span>WI-2026-0001 … WI-2026-0096</span>
+            </div>
+            <div class="modal-summary-row">
+              <span>Previously analysed</span>
+              <span>0 / 96</span>
+            </div>
+          </div>
+          <div class="modal-field">
+            <label class="modal-label">Workflow</label>
+            <select class="modal-input select-like">
+              <option>nf-core/viralrecon (COVID, Flu)</option>
+              <option>nf-core/bactmap</option>
+              <option>nextstrain/nextclade</option>
+              <option>Custom pipeline…</option>
+            </select>
+          </div>
+          <div class="modal-field">
+            <label class="modal-label">Run name</label>
+            <input class="modal-input" value="viralrecon · SARS-CoV-2 · 2026-21" />
+          </div>
+          <div class="modal-field">
+            <label class="modal-label">Parameter overrides · optional</label>
+            <input class="modal-input" placeholder="e.g. --primer_set artic-v3" />
+          </div>
+          <div class="modal-footer">
+            <button class="tbtn" data-modal-close>Cancel</button>
+            <button
+              class="tbtn tbtn-primary"
+              data-modal-close
+              data-nav="collections"
+              data-toast="Run launched 🚀 viralrecon · 96 samples"
+            >
+              Launch run
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== MODAL: BUILD SEQUENCE SET (from external files) ===================== -->
+    <div class="modal-layer" data-modal="build">
+      <div class="modal-backdrop">
+        <div class="modal-card">
+          <div class="modal-title">Build sequence set</div>
+          <div class="modal-sub">
+            From the files you selected in the bucket. R1/R2 were auto-detected — adjust if needed.
+          </div>
+          <div class="modal-summary">
+            <div class="modal-summary-row">
+              <span>R1</span>
+              <span class="mono">NB-552_R1.fastq.gz</span>
+            </div>
+            <div class="modal-summary-row">
+              <span>R2</span>
+              <span class="mono">NB-552_R2.fastq.gz</span>
+            </div>
+            <div class="modal-summary-row">
+              <span>Detected as</span>
+              <span>paired-end</span>
+            </div>
+          </div>
+          <div class="modal-field">
+            <label class="modal-label">Sample ID</label>
+            <input class="modal-input" value="NB-552" />
+          </div>
+          <div class="modal-field">
+            <label class="modal-label">Tag · optional</label>
+            <input class="modal-input" placeholder="e.g. COVID" />
+          </div>
+          <div class="modal-footer">
+            <button class="tbtn" data-modal-close>Cancel</button>
+            <button
+              class="tbtn tbtn-primary"
+              data-modal-close
+              data-nav="sequence-sets"
+              data-toast="Sequence set NB-552 created from external files"
+            >
+              Create sequence set
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== TOAST + TOUR ===================== -->
+    <div class="toast" id="toast"></div>
+    <div class="tour-cap" id="tourcap">
+      <div class="tc-count" id="tour-count">1 / 10</div>
+      <div class="tc-title" id="tour-title"></div>
+      <div class="tc-body" id="tour-body"></div>
+      <div class="tc-actions">
+        <button class="tc-btn tc-back" id="tour-back">← Back</button>
+        <button class="tc-btn tc-next" id="tour-next">Next →</button>
+        <button class="tc-end" id="tour-end">End tour</button>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        var $ = function (s, r) {
+          return (r || document).querySelector(s);
+        };
+        var $$ = function (s, r) {
+          return Array.prototype.slice.call((r || document).querySelectorAll(s));
+        };
+        var state = { view: 'collections', wiz: 1, modal: null, tour: -1 };
+
+        function showView(name) {
+          if (!name) return;
+          state.view = name;
+          $$('.view').forEach(function (v) {
+            v.classList.toggle('active', v.dataset.view === name);
+          });
+          var v = $('.view[data-view="' + name + '"]');
+          if (v) {
+            var sc = v.querySelector('.content-scroll');
+            if (sc) sc.scrollTop = 0;
+          }
+        }
+
+        function setWiz(n) {
+          n = Math.max(1, Math.min(4, parseInt(n, 10) || 1));
+          state.wiz = n;
+          $$('.wstep').forEach(function (s) {
+            var i = parseInt(s.dataset.step, 10);
+            s.classList.toggle('done', i < n);
+            s.classList.toggle('active', i === n);
+            var num = s.querySelector('.wstep-num');
+            if (num) num.textContent = i < n ? '✓' : String(i);
+          });
+          $$('.wizpanel').forEach(function (p) {
+            p.classList.toggle('active', parseInt(p.dataset.wizpanel, 10) === n);
+          });
+        }
+
+        function openModal(name) {
+          state.modal = name;
+          $$('.modal-layer').forEach(function (m) {
+            m.classList.toggle('open', m.dataset.modal === name);
+          });
+        }
+        function closeModal() {
+          state.modal = null;
+          $$('.modal-layer').forEach(function (m) {
+            m.classList.remove('open');
+          });
+        }
+
+        function recount(view) {
+          if (!view) return;
+          var scope = view.querySelector('.seqvar.active') || view;
+          var sel = $$('tr.row-selected', scope).length;
+          var c = view.querySelector('[data-selcount]');
+          if (c) c.textContent = sel;
+          $$('[data-needs-sel]', view).forEach(function (b) {
+            b.classList.toggle('btn-disabled', sel === 0);
+          });
+        }
+        function recountAll() {
+          $$('.view').forEach(recount);
+        }
+
+        var toastT;
+        function toast(msg) {
+          var t = $('#toast');
+          t.textContent = msg;
+          t.classList.add('show');
+          clearTimeout(toastT);
+          toastT = setTimeout(function () {
+            t.classList.remove('show');
+          }, 2600);
+        }
+
+        // ---------- Guided tour ----------
+        var TOUR = [
+          {
+            view: 'collections',
+            target: '#btn-import',
+            title: 'It all starts with Import',
+            body: 'The lab’s data lives here. Bringing files in — and turning them into sequence sets — begins with Import data.',
+          },
+          {
+            view: 'import',
+            wiz: 1,
+            target: '#wiz-source',
+            title: 'Step 1 · Point at the files',
+            body: 'Pick a source — usually an S3 path the sequencer or WSLH drops files into. On import, files are copied into the lab’s own bucket.',
+          },
+          {
+            view: 'import',
+            wiz: 2,
+            target: '#wiz-pattern',
+            title: 'Step 2 · A regex groups files into sequence sets',
+            body: 'The pattern decides which files belong together. R1/R2 is the common case — but a sequence set can group more than a pair (extra lanes, a reference FASTA).',
+          },
+          {
+            view: 'import',
+            wiz: 3,
+            target: '#wiz-build',
+            title: 'Step 3 · Build the sequence sets',
+            body: 'Each row is one sequence set being assembled. Rename, tag, exclude, or fix edge cases — like the pattern-mismatch row — before anything commits.',
+          },
+          {
+            view: 'import',
+            wiz: 4,
+            target: '#wiz-confirm',
+            title: 'Step 4 · Copy & create',
+            body: 'Confirm. Files copy into the lab bucket and all the sequence sets are created in one shot.',
+          },
+          {
+            view: 'sequence-sets',
+            target: '#seq-toolbar',
+            title: 'Sequence sets — the building blocks',
+            body: 'Every set is one sample’s reads (plus optional extras). Search and tag at the sequence-set level. These are what collections get built from.',
+          },
+          {
+            view: 'external-files',
+            target: '#ext-toolbar',
+            title: 'External files don’t get stranded',
+            body: 'Files that landed in the bucket without an import show up here. Filter by type — e.g. FASTQ — and build sequence sets from them by hand.',
+          },
+          {
+            view: 'builder',
+            target: '#builder-schema',
+            title: 'Compose a data collection',
+            body: 'Pick sequence sets, confirm the schema, and the sample sheet writes itself on the right. No file-picking, no re-pairing — solved upstream.',
+          },
+          {
+            view: 'collections',
+            modal: 'run',
+            target: '#run-modal-card',
+            title: 'One click to run',
+            body: 'From a collection, launch a workflow directly. The sample sheet is already built — pick a workflow, name the run, go.',
+          },
+          {
+            view: 'collections',
+            target: '#flowstrip',
+            title: 'That’s the whole flow',
+            body: 'Import → sequence sets → (tag) → collection → run. Click anything to explore it yourself.',
+          },
+        ];
+        function clearTarget() {
+          $$('.tour-target').forEach(function (e) {
+            e.classList.remove('tour-target');
+          });
+        }
+        function showStep(i) {
+          if (i < 0) return;
+          if (i >= TOUR.length) {
+            endTour();
+            return;
+          }
+          state.tour = i;
+          var s = TOUR[i];
+          if (s.wiz) setWiz(s.wiz);
+          showView(s.view);
+          if (s.modal) openModal(s.modal);
+          else closeModal();
+          clearTarget();
+          $('#tour-title').textContent = s.title;
+          $('#tour-body').textContent = s.body;
+          $('#tour-count').textContent = i + 1 + ' / ' + TOUR.length;
+          $('#tour-back').classList.toggle('btn-disabled', i === 0);
+          $('#tour-next').textContent = i === TOUR.length - 1 ? 'Done' : 'Next →';
+          $('#tourcap').classList.add('show');
+          if (s.target) {
+            var el = $(s.target);
+            if (el) {
+              el.classList.add('tour-target');
+              el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }
+          }
+        }
+        function endTour() {
+          state.tour = -1;
+          clearTarget();
+          $('#tourcap').classList.remove('show');
+          closeModal();
+        }
+        function startTour() {
+          showStep(0);
+        }
+
+        // ---------- Delegated clicks ----------
+        document.addEventListener('click', function (e) {
+          var t = e.target.closest(
+            '[data-nav],[data-wizgo],[data-wiz],[data-modal-open],[data-modal-close],[data-toast],[data-tour],.cbx,.cbx-all,.source-card,.preset,#notes-toggle,#tour-back,#tour-next,#tour-end,[data-seqvar],.exp-chevron',
+          );
+          if (!t) return;
+
+          // Select-all checkbox
+          if (t.classList.contains('cbx-all')) {
+            var tbl = t.closest('table');
+            var on = !t.classList.contains('on');
+            t.classList.toggle('on', on);
+            $$('tbody tr', tbl).forEach(function (tr) {
+              if (tr.querySelector('.cbx')) tr.classList.toggle('row-selected', on);
+            });
+            recount(t.closest('.view'));
+            return;
+          }
+          // Row checkbox
+          if (t.classList.contains('cbx')) {
+            var tr2 = t.closest('tr');
+            if (tr2) {
+              tr2.classList.toggle('row-selected');
+              recount(t.closest('.view'));
+            }
+            return;
+          }
+          // Source card / preset pickers
+          if (t.classList.contains('source-card')) {
+            if (!t.classList.contains('disabled')) {
+              $$('.source-card', t.parentNode).forEach(function (c) {
+                c.classList.remove('active');
+              });
+              t.classList.add('active');
+            }
+            return;
+          }
+          if (t.classList.contains('preset')) {
+            $$('.preset', t.parentNode).forEach(function (c) {
+              c.classList.remove('active');
+            });
+            t.classList.add('active');
+            return;
+          }
+          // Sequence-set file-view switcher
+          if (t.dataset.seqvar) {
+            var sv = t.closest('.view');
+            $$('.seqvar', sv).forEach(function (s) {
+              s.classList.toggle('active', s.getAttribute('data-seqvar-panel') === t.dataset.seqvar);
+            });
+            $$('.seg button', sv).forEach(function (b) {
+              b.classList.toggle('active', b === t);
+            });
+            recount(sv);
+            return;
+          }
+          // Expandable file list toggle
+          if (t.classList.contains('exp-chevron')) {
+            var det = document.getElementById(t.getAttribute('data-exptarget'));
+            if (det) {
+              t.textContent = det.classList.toggle('open') ? '▾' : '▸';
+            }
+            return;
+          }
+          // Notes toggle
+          if (t.id === 'notes-toggle') {
+            document.body.classList.toggle('notes-on');
+            t.classList.toggle('on');
+            return;
+          }
+          // Tour controls
+          if (t.dataset.tour === 'start') {
+            startTour();
+            return;
+          }
+          if (t.id === 'tour-back') {
+            if (state.tour > 0) showStep(state.tour - 1);
+            return;
+          }
+          if (t.id === 'tour-next') {
+            showStep(state.tour + 1);
+            return;
+          }
+          if (t.id === 'tour-end') {
+            endTour();
+            return;
+          }
+
+          // Disabled guard for everything below
+          if (t.classList.contains('btn-disabled')) return;
+
+          if (t.dataset.wizgo) {
+            setWiz(t.dataset.wizgo);
+          }
+          if (t.dataset.wiz === 'next') {
+            setWiz(state.wiz + 1);
+          }
+          if (t.dataset.wiz === 'back') {
+            setWiz(state.wiz - 1);
+          }
+          if (t.dataset.modalOpen) {
+            openModal(t.dataset.modalOpen);
+          }
+          if (t.hasAttribute('data-modal-close')) {
+            closeModal();
+          }
+          if (t.dataset.nav) {
+            showView(t.dataset.nav);
+          }
+          if (t.dataset.toast) {
+            toast(t.dataset.toast);
+          }
+        });
+
+        // Close modal on backdrop click (not on card)
+        document.addEventListener('click', function (e) {
+          if (e.target.classList && e.target.classList.contains('modal-backdrop') && state.tour < 0) {
+            closeModal();
+          }
+        });
+
+        // Init
+        setWiz(1);
+        recountAll();
+        showView('collections');
+      })();
+    </script>
+  </body>
+</html>

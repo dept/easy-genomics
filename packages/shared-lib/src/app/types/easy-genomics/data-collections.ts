@@ -29,6 +29,8 @@ export type FileTagAssignment = {
   Key: string;
   /** Standard (non-batch, non-workflow, non-permanent) tags only. */
   TagIds: string[];
+  /** Sequence sets this file belongs to. */
+  SequenceSetIds?: string[];
   /** At most one batch tag id if the file is assigned to a batch. */
   BatchTagId?: string;
   /** Workflow tag ids that have been associated with this file via run launches. */
@@ -81,4 +83,19 @@ export type S3TaggedObjectRef = {
 export type ListFilesByTagResponse = {
   Files: S3TaggedObjectRef[];
   NextCursor?: string;
+};
+
+export type UnlinkedBucketObjectsResponse = {
+  Contents?: Array<{ Key: string; LastModified?: string; Size?: number }>;
+  IsTruncated: boolean;
+  S3Bucket: string;
+  ResolvedPrefix: string;
+  ListingTruncated?: boolean;
+  ReturnedKeyCount?: number;
+};
+
+export type BulkCreateSequenceSetsResponse = {
+  CreatedCount: number;
+  SequenceSetIds: string[];
+  Errors?: Array<{ Name: string; Message: string }>;
 };
