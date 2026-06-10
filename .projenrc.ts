@@ -294,6 +294,10 @@ sharedLib.addScripts({
 });
 sharedLib.addTask('generate:openapi', { exec: 'tsx src/app/openapi/generate-openapi.ts' });
 sharedLib.addTask('lint:openapi', { exec: 'redocly lint src/app/openapi/easy-genomics-api.yaml' });
+sharedLib.addTask('generate:api-types', {
+  exec: 'openapi-typescript src/app/openapi/easy-genomics-api.yaml -o src/app/types/easy-genomics/generated.d.ts',
+});
+sharedLib.preCompileTask.prependExec('pnpm run generate:api-types');
 
 if (sharedLib.eslint) {
   sharedLib.eslint.addRules({ ...eslintGlobalRules });
