@@ -47,6 +47,9 @@
 
 <template>
   <EGCard :padding="4">
+    <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
+      {{ useUiStore().isRequestPending('sendInvite') ? 'Sending invitation…' : '' }}
+    </div>
     <UForm :schema="formSchema" :state="state" @submit="onSubmit">
       <div class="flex w-full items-center justify-center space-x-2">
         <div class="w-full grow">
@@ -64,7 +67,7 @@
         </div>
         <EGButton
           label="Invite"
-          type="submit"
+          u-button-type="submit"
           :disabled="isFormDisabled || useUiStore().isRequestPending('sendInvite')"
           icon="i-heroicons-envelope"
           :loading="useUiStore().isRequestPending('sendInvite')"
