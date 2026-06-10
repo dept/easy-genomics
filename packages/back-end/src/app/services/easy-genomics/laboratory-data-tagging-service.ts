@@ -16,6 +16,11 @@ import {
   WorkflowPlatform,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import {
+  ListSequenceSetTagsResponse,
+  ListSequenceSetsByTagResponse,
+  SequenceSetTagAssignment,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sequence-sets';
 import { v5 as uuidv5 } from 'uuid';
 import { DynamoDBService } from '../dynamodb-service';
 
@@ -140,6 +145,14 @@ function skFile(ref: string): string {
 
 function skMap(tagId: string, ref: string): string {
   return `MAP#${tagId}#${ref}`;
+}
+
+function skSequenceSet(setId: string): string {
+  return `SEQUENCE_SET#${setId}`;
+}
+
+function skMapSequenceSet(tagId: string, setId: string): string {
+  return `MAP#${tagId}#SEQSET#${setId}`;
 }
 
 function gsi1PkForTag(laboratoryId: string, tagId: string): string {
@@ -791,10 +804,16 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         const usageList = usagesMap
           ? Object.values(usagesMap).sort((a, b) => (b.RunCreatedAt || '').localeCompare(a.RunCreatedAt || ''))
           : undefined;
+        const fileRow = items.find((item) => (unmarshall(item) as Record<string, unknown>).Sk === sk);
+        const sequenceSetIds =
+          fileRow != null
+            ? ((unmarshall(fileRow) as Record<string, unknown>).SequenceSetIds as string[] | undefined)
+            : undefined;
         out.push({
           Key: key,
           TagIds: standard,
           WorkflowTagIds: workflowIds,
+          ...(sequenceSetIds?.length ? { SequenceSetIds: sequenceSetIds } : {}),
           ...(batchTagId ? { BatchTagId: batchTagId } : {}),
           ...(isPermanent ? { IsPermanent: true } : {}),
           ...(usageList && usageList.length ? { LaboratoryRunUsages: usageList } : {}),
@@ -1559,6 +1578,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     TagIds: string[];
     S3Bucket: string;
     ObjectKey: string;
+    SequenceSetIds?: string[];
     LaboratoryRunUsages?: Record<string, LaboratoryRunUsageSummary>;
   } | null> {
     const res = await this.getItem({
@@ -1572,7 +1592,284 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       TagIds: (row.TagIds as string[]) || [],
       S3Bucket: row.S3Bucket as string,
       ObjectKey: row.ObjectKey as string,
+      SequenceSetIds: (row.SequenceSetIds as string[]) || undefined,
       LaboratoryRunUsages: (row.LaboratoryRunUsages as Record<string, LaboratoryRunUsageSummary>) || undefined,
     };
+  }
+
+  /** Resolve distinct sequence set ids that contain any of the given S3 keys. */
+  public async resolveSequenceSetIdsForKeys(laboratoryId: string, bucket: string, keys: string[]): Promise<string[]> {
+    const ids = new Set<string>();
+    for (const key of keys) {
+      const ref = encodeS3ObjectRef(bucket, key);
+      const row = await this.getFileRow(laboratoryId, ref);
+      for (const sid of row?.SequenceSetIds || []) {
+        ids.add(sid);
+      }
+    }
+    return [...ids];
+  }
+
+  public async listSequenceSetTagAssignments(
+    laboratoryId: string,
+    sequenceSetIds: string[],
+  ): Promise<ListSequenceSetTagsResponse> {
+    const { batchTagIds, workflowTagIds, permanentTagIds } = await this.getKindIndexedTagIds(laboratoryId);
+    const permanentTagId = permanentTagIdForLaboratory(laboratoryId);
+    permanentTagIds.add(permanentTagId);
+
+    const out: SequenceSetTagAssignment[] = [];
+    for (const setId of sequenceSetIds) {
+      const res = await this.getItem({
+        TableName: TABLE_NAME,
+        Key: marshall({ LaboratoryId: laboratoryId, Sk: skSequenceSet(setId) }),
+        ConsistentRead: true,
+      });
+      if (!res.Item) {
+        out.push({ SequenceSetId: setId, TagIds: [], WorkflowTagIds: [] });
+        continue;
+      }
+      const row = unmarshall(res.Item) as Record<string, unknown>;
+      const allTagIds = (row.TagIds as string[]) || [];
+      const workflowIds = allTagIds.filter((id) => workflowTagIds.has(id));
+      const standard = allTagIds.filter(
+        (id) => !batchTagIds.has(id) && !workflowTagIds.has(id) && !permanentTagIds.has(id),
+      );
+      const isPermanent = allTagIds.some((id) => permanentTagIds.has(id));
+      const usages = row.LaboratoryRunUsages as Record<string, LaboratoryRunUsageSummary> | undefined;
+      const usageList = usages
+        ? Object.values(usages).sort((a, b) => b.RunCreatedAt.localeCompare(a.RunCreatedAt))
+        : undefined;
+
+      out.push({
+        SequenceSetId: setId,
+        TagIds: standard,
+        WorkflowTagIds: workflowIds,
+        ...(isPermanent ? { IsPermanent: true } : {}),
+        ...(usageList?.length ? { LaboratoryRunUsages: usageList } : {}),
+      });
+    }
+    return { SequenceSets: out };
+  }
+
+  public async listSequenceSetsByTag(
+    laboratoryId: string,
+    tagId: string,
+    limit: number,
+    cursor?: string,
+  ): Promise<ListSequenceSetsByTagResponse> {
+    const gsiPk = gsi1PkForTag(laboratoryId, tagId);
+    const response: QueryCommandOutput = await this.queryItems({
+      TableName: TABLE_NAME,
+      IndexName: GSI1_NAME,
+      KeyConditionExpression: '#gpk = :gpk AND begins_with(#gsk, :prefix)',
+      ExpressionAttributeNames: { '#gpk': 'Gsi1Pk', '#gsk': 'Gsi1Sk' },
+      ExpressionAttributeValues: {
+        ':gpk': { S: gsiPk },
+        ':prefix': { S: 'SEQSET#' },
+      },
+      Limit: limit,
+      ExclusiveStartKey: cursor ? (JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as never) : undefined,
+    });
+
+    const sequenceSetIds = (response.Items || [])
+      .map((item) => {
+        const row = unmarshall(item) as Record<string, string>;
+        return row.SequenceSetId || row.Gsi1Sk?.replace(/^SEQSET#/, '');
+      })
+      .filter((id): id is string => !!id);
+
+    const nextCursor = response.LastEvaluatedKey
+      ? Buffer.from(JSON.stringify(response.LastEvaluatedKey), 'utf8').toString('base64url')
+      : undefined;
+
+    return { SequenceSetIds: sequenceSetIds, NextCursor: nextCursor };
+  }
+
+  public async applyTagsToSequenceSets(
+    laboratory: Laboratory,
+    userId: string,
+    sequenceSetIds: string[],
+    addTagIds: string[],
+    removeTagIds: string[],
+  ): Promise<void> {
+    const laboratoryId = laboratory.LaboratoryId;
+    const add = addTagIds || [];
+    const remove = removeTagIds || [];
+
+    for (const tagId of add) {
+      const t = await this.getTagRow(laboratoryId, tagId);
+      if (!t) throw new Error(`Unknown tag: ${tagId}`);
+      if (t.Kind === 'workflow') throw new Error('Workflow tags are auto-managed');
+      if (t.Kind === 'batch') throw new Error('Batch tags are not supported on sequence sets');
+    }
+    for (const tagId of remove) {
+      const t = await this.getTagRow(laboratoryId, tagId);
+      if (!t) throw new Error(`Unknown tag: ${tagId}`);
+      if (t.Kind === 'workflow') throw new Error('Workflow tags are auto-managed');
+    }
+
+    for (const setId of sequenceSetIds) {
+      const res = await this.getItem({
+        TableName: TABLE_NAME,
+        Key: marshall({ LaboratoryId: laboratoryId, Sk: skSequenceSet(setId) }),
+        ConsistentRead: true,
+      });
+      if (!res.Item) throw new Error(`Unknown sequence set: ${setId}`);
+
+      const row = unmarshall(res.Item) as Record<string, unknown>;
+      const tagIds = new Set<string>((row.TagIds as string[]) || []);
+
+      for (const rid of remove) {
+        if (tagIds.delete(rid)) {
+          await this.deleteSequenceSetMapIfExists(laboratoryId, rid, setId);
+          await this.adjustTagFileCount(laboratoryId, rid, -1);
+        }
+      }
+
+      for (const aid of add) {
+        if (!tagIds.has(aid)) {
+          tagIds.add(aid);
+          await this.putSequenceSetMapRow(laboratoryId, aid, setId);
+          await this.adjustTagFileCount(laboratoryId, aid, 1);
+        }
+      }
+
+      const now = new Date().toISOString();
+      await this.updateItem({
+        TableName: TABLE_NAME,
+        Key: marshall({ LaboratoryId: laboratoryId, Sk: skSequenceSet(setId) }),
+        UpdateExpression: 'SET TagIds = :tids, ModifiedAt = :ma, ModifiedBy = :mb',
+        ExpressionAttributeValues: marshall({
+          ':tids': [...tagIds],
+          ':ma': now,
+          ':mb': userId,
+        }),
+      });
+    }
+  }
+
+  public async applyWorkflowToSequenceSets(
+    laboratory: Laboratory,
+    userId: string,
+    workflowTagId: string,
+    sequenceSetIds: string[],
+  ): Promise<void> {
+    if (!sequenceSetIds.length) return;
+    const laboratoryId = laboratory.LaboratoryId;
+    const tagRow = await this.getTagRow(laboratoryId, workflowTagId);
+    if (!tagRow) throw new Error(`Unknown tag: ${workflowTagId}`);
+
+    for (const setId of sequenceSetIds) {
+      const res = await this.getItem({
+        TableName: TABLE_NAME,
+        Key: marshall({ LaboratoryId: laboratoryId, Sk: skSequenceSet(setId) }),
+        ConsistentRead: true,
+      });
+      if (!res.Item) continue;
+
+      const row = unmarshall(res.Item) as Record<string, unknown>;
+      const tagIds = new Set<string>((row.TagIds as string[]) || []);
+      if (tagIds.has(workflowTagId)) {
+        await this.putSequenceSetMapRowIfAbsent(laboratoryId, workflowTagId, setId);
+        continue;
+      }
+
+      tagIds.add(workflowTagId);
+      const now = new Date().toISOString();
+      await this.updateItem({
+        TableName: TABLE_NAME,
+        Key: marshall({ LaboratoryId: laboratoryId, Sk: skSequenceSet(setId) }),
+        UpdateExpression: 'SET TagIds = :tids, ModifiedAt = :ma, ModifiedBy = :mb',
+        ExpressionAttributeValues: marshall({
+          ':tids': [...tagIds],
+          ':ma': now,
+          ':mb': userId,
+        }),
+      });
+      const inserted = await this.putSequenceSetMapRowIfAbsent(laboratoryId, workflowTagId, setId);
+      if (inserted) await this.adjustTagFileCount(laboratoryId, workflowTagId, 1);
+    }
+  }
+
+  public async recordLaboratoryRunUsageForSequenceSets(
+    laboratory: Laboratory,
+    userId: string,
+    sequenceSetIds: string[],
+    summary: LaboratoryRunUsageSummary,
+  ): Promise<void> {
+    const laboratoryId = laboratory.LaboratoryId;
+    const now = new Date().toISOString();
+
+    for (const setId of sequenceSetIds) {
+      try {
+        await this.updateItem({
+          TableName: TABLE_NAME,
+          Key: marshall({ LaboratoryId: laboratoryId, Sk: skSequenceSet(setId) }),
+          UpdateExpression: 'SET LaboratoryRunUsages.#runId = :summary, ModifiedAt = :ma, ModifiedBy = :mb',
+          ExpressionAttributeNames: { '#runId': summary.RunId },
+          ExpressionAttributeValues: marshall({
+            ':summary': summary,
+            ':ma': now,
+            ':mb': userId,
+          }),
+        });
+      } catch {
+        // Set row may not exist — skip
+      }
+    }
+  }
+
+  private async putSequenceSetMapRow(laboratoryId: string, tagId: string, setId: string): Promise<void> {
+    const now = new Date().toISOString();
+    await this.putItem({
+      TableName: TABLE_NAME,
+      Item: marshall(
+        {
+          LaboratoryId: laboratoryId,
+          Sk: skMapSequenceSet(tagId, setId),
+          Gsi1Pk: gsi1PkForTag(laboratoryId, tagId),
+          Gsi1Sk: `SEQSET#${setId}`,
+          SequenceSetId: setId,
+          TagId: tagId,
+          CreatedAt: now,
+        },
+        { removeUndefinedValues: true },
+      ),
+    });
+  }
+
+  private async putSequenceSetMapRowIfAbsent(laboratoryId: string, tagId: string, setId: string): Promise<boolean> {
+    const now = new Date().toISOString();
+    try {
+      await this.putItem({
+        TableName: TABLE_NAME,
+        Item: marshall(
+          {
+            LaboratoryId: laboratoryId,
+            Sk: skMapSequenceSet(tagId, setId),
+            Gsi1Pk: gsi1PkForTag(laboratoryId, tagId),
+            Gsi1Sk: `SEQSET#${setId}`,
+            SequenceSetId: setId,
+            TagId: tagId,
+            CreatedAt: now,
+          },
+          { removeUndefinedValues: true },
+        ),
+        ConditionExpression: 'attribute_not_exists(#sk)',
+        ExpressionAttributeNames: { '#sk': 'Sk' },
+      });
+      return true;
+    } catch (e: unknown) {
+      if (isConditionalCheckFailed(e)) return false;
+      throw e;
+    }
+  }
+
+  private async deleteSequenceSetMapIfExists(laboratoryId: string, tagId: string, setId: string): Promise<void> {
+    await this.deleteItem({
+      TableName: TABLE_NAME,
+      Key: marshall({ LaboratoryId: laboratoryId, Sk: skMapSequenceSet(tagId, setId) }),
+    });
   }
 }
