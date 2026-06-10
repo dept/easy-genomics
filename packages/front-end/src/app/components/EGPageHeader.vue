@@ -2,6 +2,7 @@
   const props = withDefaults(
     defineProps<{
       title: string;
+      titleId?: string;
       description?: string;
       showBack: boolean;
       backButtonLabel?: string;
@@ -67,7 +68,7 @@
           <USkeleton v-for="line in skeletonDescriptionLines" class="mt-4 min-h-5 w-[150px] rounded" :key="line" />
         </template>
         <template v-else>
-          <EGText tag="h1" class="mb-0">{{ title }}</EGText>
+          <EGText :id="titleId" tag="h1" class="mb-0">{{ title }}</EGText>
           <EGText v-if="description" tag="p" class="text-muted mt-4 rounded">{{ description }}</EGText>
         </template>
       </div>
