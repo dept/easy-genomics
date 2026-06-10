@@ -5,7 +5,7 @@ import { RequestFileDownloadUrlSchema } from '@easy-genomics/shared-lib/src/app/
 import {
   FileDownloadUrlResponse,
   RequestFileDownloadUrl,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-file-download-url';
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
