@@ -54,7 +54,9 @@
   }
 
   function focusTab(index: number) {
-    tabRefs.value[index]?.focus();
+    nextTick(() => {
+      tabRefs.value[index]?.focus();
+    });
   }
 
   function focusPanel(index: number) {
@@ -70,10 +72,8 @@
     focusPanel(index);
   }
 
-  // Implements the WAI-ARIA Authoring Practices "tabs with automatic activation"
-  // keyboard interaction for a vertically-oriented tablist: Up/Down move between
-  // tabs (wrapping), Home/End jump to the first/last tab. Moving focus also
-  // selects the tab so the matching panel is revealed.
+  // WAI-ARIA tabs with automatic activation: arrow keys move between tabs (wrapping),
+  // Home/End jump to first/last. Click moves focus into the matching panel.
   function onKeydown(event: KeyboardEvent, index: number) {
     const lastIndex = props.items.length - 1;
     if (lastIndex < 0) return;

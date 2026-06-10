@@ -113,6 +113,7 @@
               : '',
           ]"
           :tabindex="rowClickAction ? 0 : undefined"
+          :role="rowClickAction ? 'button' : undefined"
           :aria-label="rowAriaLabel(row)"
           @keydown="rowClickAction ? onRowKeydown($event, row) : undefined"
         >

@@ -789,7 +789,7 @@
     </div>
   </EGPageHeader>
 
-  <!-- Dashboard tab -->
+  <!-- Dashboard tab: tabindex enables programmatic focus after tab click; outline suppressed intentionally (focus is moved from the tab, not via Tab). -->
   <div
     v-if="activeTabKey === 'dashboard'"
     role="tabpanel"
@@ -982,7 +982,7 @@
     </EGTable>
   </div>
 
-  <!-- Lab Users tab -->
+  <!-- Lab Users tab: outline suppressed on programmatic focus from sidebar tab click (see dashboard tab comment). -->
   <div
     v-if="activeTabKey === 'users'"
     role="tabpanel"
@@ -1053,7 +1053,7 @@
     </section>
   </div>
 
-  <!-- Lab Details -->
+  <!-- Lab Details: outline suppressed on programmatic focus from sidebar tab click (see dashboard tab comment). -->
   <div
     v-if="activeTabKey === 'details'"
     role="tabpanel"
