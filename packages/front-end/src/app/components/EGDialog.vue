@@ -15,6 +15,8 @@
 
   const emit = defineEmits(['action-triggered', 'update:modelValue']);
 
+  const titleId = useId();
+
   function handleCancel() {
     emit('update:modelValue', false);
   }
@@ -37,6 +39,9 @@
     :modelValue="modelValue"
     @update:modelValue="(value) => emit('update:modelValue', value)"
     prevent-close
+    role="dialog"
+    aria-modal="true"
+    :aria-labelledby="titleId"
   >
     <UCard
       :ui="{
@@ -50,16 +55,17 @@
       <template #header>
         <div class="flex flex-col">
           <div class="flex items-start gap-2">
-            <EGText tag="h3" class="mb-6 min-w-0 flex-1 break-all">{{ primaryMessage }}</EGText>
+            <EGText :id="titleId" tag="h2" class="mb-6 min-w-0 flex-1 break-all">{{ primaryMessage }}</EGText>
             <div class="shrink-0">
               <UButton
                 @click="handleCancel"
                 icon="i-heroicons-x-mark"
-                class="hover:bg-background-dark-grey ml-2"
+                class="hover:bg-background-dark-grey focus-visible:outline-primary-500 ml-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                 color="black"
                 variant="ghost"
                 :ui="{ rounded: 'rounded-full' }"
                 :disabled="buttonsDisabled || loading"
+                aria-label="Close dialog"
               />
             </div>
           </div>

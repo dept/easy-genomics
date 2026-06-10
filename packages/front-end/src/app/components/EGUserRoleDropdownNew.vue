@@ -55,6 +55,7 @@
         color="gray"
         icon="i-heroicons-chevron-down"
         trailing
+        class="focus-visible:outline-primary-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
         :aria-label="menuLabel"
         :aria-expanded="isOpen"
         aria-haspopup="menu"
