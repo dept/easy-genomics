@@ -2,18 +2,20 @@
   import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import type { LaboratoryDataTag } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
   import type {
-    LaboratoryRunDataCollection,
-    LaboratorySequenceSet,
-  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sequence-sets';
+    LaboratorySequenceCollection,
+    LaboratorySample,
+  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
+  import EGDialog from '@FE/components/EGDialog.vue';
   import { useLabsStore, useToastStore, useUiStore } from '@FE/stores';
-  import EGBuildSequenceSetModal from '@FE/components/EGBuildSequenceSetModal.vue';
-  import EGBuildSequenceSetsFromRegexModal from '@FE/components/EGBuildSequenceSetsFromRegexModal.vue';
+  import { ButtonVariantEnum } from '@FE/types/buttons';
+  import EGBuildSampleModal from '@FE/components/EGBuildSampleModal.vue';
+  import EGBuildSamplesFromRegexModal from '@FE/components/EGBuildSamplesFromRegexModal.vue';
   import EGDataCollectionBuilder from '@FE/components/EGDataCollectionBuilder.vue';
-  import EGDataCollectionsListTab from '@FE/components/EGDataCollectionsListTab.vue';
+  import EGSequenceCollectionsListTab from '@FE/components/EGSequenceCollectionsListTab.vue';
   import EGDataCollectionsTabBar, { type DataCollectionsTab } from '@FE/components/EGDataCollectionsTabBar.vue';
   import EGImportDataWizard from '@FE/components/EGImportDataWizard.vue';
   import EGRunFromDataCollectionModal from '@FE/components/EGRunFromDataCollectionModal.vue';
-  import EGSequenceSetsTab from '@FE/components/EGSequenceSetsTab.vue';
+  import EGSamplesTab from '@FE/components/EGSamplesTab.vue';
   import EGUnlinkedFilesTab from '@FE/components/EGUnlinkedFilesTab.vue';
 
   const props = defineProps<{ labId: string }>();
@@ -27,40 +29,41 @@
 
   const lab = computed<Laboratory | null>(() => labsStore.labs[props.labId] ?? null);
   const view = ref<View>('main');
-  const activeTab = ref<DataCollectionsTab>('sequence-sets');
+  const activeTab = ref<DataCollectionsTab>('samples');
 
   const tags = ref<LaboratoryDataTag[]>([]);
-  const sequenceSets = ref<LaboratorySequenceSet[]>([]);
-  const dataCollections = ref<LaboratoryRunDataCollection[]>([]);
-  const setIdToTagIds = ref<Record<string, string[]>>({});
+  const samples = ref<LaboratorySample[]>([]);
+  const sequenceCollections = ref<LaboratorySequenceCollection[]>([]);
+  const sampleIdToTagIds = ref<Record<string, string[]>>({});
   const unlinkedFiles = ref<Array<{ Key: string; Size?: number; LastModified?: string }>>([]);
   const unlinkedMeta = ref({ s3Bucket: '', resolvedPrefix: '', lastScanLabel: '' });
 
   const collectionSearch = ref('');
-  const sequenceSetSearch = ref('');
+  const sampleSearch = ref('');
   const fileSearch = ref('');
   const tagsFilterUntagged = ref(false);
   const tagsFilterTagIds = ref<string[]>([]);
 
-  const selectedCollectionIds = ref<string[]>([]);
-  const selectedSequenceSetIds = ref<string[]>([]);
+  const selectedSampleIds = ref<string[]>([]);
   const selectedFileKeys = ref<string[]>([]);
 
-  const showBuildSequenceSetModal = ref(false);
+  const showBuildSampleModal = ref(false);
   const showRegexGroupModal = ref(false);
   const showRunModal = ref(false);
-  const runCollection = ref<LaboratoryRunDataCollection | null>(null);
-  const builderInitialSetIds = ref<string[]>([]);
+  const runCollection = ref<LaboratorySequenceCollection | null>(null);
+  const builderInitialSampleIds = ref<string[]>([]);
   const builderInitialName = ref('');
-  const builderEditingCollection = ref<LaboratoryRunDataCollection | null>(null);
+  const builderEditingCollection = ref<LaboratorySequenceCollection | null>(null);
+  const collectionToDelete = ref<LaboratorySequenceCollection | null>(null);
+  const isDeleteCollectionDialogOpen = ref(false);
 
   const loading = computed(() =>
     uiStore.anyRequestPending([
       'dataCollectionsList',
       'dataCollectionsTags',
       'dataCollectionsMutate',
-      'dataCollectionsSequenceSets',
-      'dataCollectionsRunCollections',
+      'dataCollectionsSamples',
+      'dataCollectionsRunSequenceCollections',
     ]),
   );
 
@@ -76,44 +79,44 @@
     }
   }
 
-  async function loadSequenceSets(): Promise<void> {
-    uiStore.setRequestPending('dataCollectionsSequenceSets');
+  async function loadSamples(): Promise<void> {
+    uiStore.setRequestPending('dataCollectionsSamples');
     try {
-      const res = await $api.dataCollections.listSequenceSets(props.labId);
-      sequenceSets.value = res.SequenceSets;
-      if (res.SequenceSets.length) {
+      const res = await $api.dataCollections.listSamples(props.labId);
+      samples.value = res.Samples;
+      if (res.Samples.length) {
         const CHUNK = 100;
         const tagMap: Record<string, string[]> = {};
-        for (let i = 0; i < res.SequenceSets.length; i += CHUNK) {
-          const chunk = res.SequenceSets.slice(i, i + CHUNK).map((s) => s.SequenceSetId);
-          const tr = await $api.dataCollections.requestListSequenceSetTags({
+        for (let i = 0; i < res.Samples.length; i += CHUNK) {
+          const chunk = res.Samples.slice(i, i + CHUNK).map((s) => s.SampleId);
+          const tr = await $api.dataCollections.requestListSampleTags({
             LaboratoryId: props.labId,
-            SequenceSetIds: chunk,
+            SampleIds: chunk,
           });
-          for (const a of tr.SequenceSets) {
-            tagMap[a.SequenceSetId] = a.TagIds;
+          for (const a of tr.Samples) {
+            tagMap[a.SampleId] = a.TagIds;
           }
         }
-        setIdToTagIds.value = tagMap;
+        sampleIdToTagIds.value = tagMap;
       } else {
-        setIdToTagIds.value = {};
+        sampleIdToTagIds.value = {};
       }
     } catch {
-      toast.error('Failed to load sequence sets.');
+      toast.error('Failed to load samples.');
     } finally {
-      uiStore.setRequestComplete('dataCollectionsSequenceSets');
+      uiStore.setRequestComplete('dataCollectionsSamples');
     }
   }
 
-  async function loadDataCollections(): Promise<void> {
-    uiStore.setRequestPending('dataCollectionsRunCollections');
+  async function loadSequenceCollections(): Promise<void> {
+    uiStore.setRequestPending('dataCollectionsRunSequenceCollections');
     try {
-      const res = await $api.dataCollections.listDataCollections(props.labId);
-      dataCollections.value = res.DataCollections ?? [];
+      const res = await $api.dataCollections.listSequenceCollections(props.labId);
+      sequenceCollections.value = res.SequenceCollections ?? [];
     } catch {
-      toast.error('Failed to load data collections.');
+      toast.error('Failed to load sequence collections.');
     } finally {
-      uiStore.setRequestComplete('dataCollectionsRunCollections');
+      uiStore.setRequestComplete('dataCollectionsRunSequenceCollections');
     }
   }
 
@@ -138,19 +141,23 @@
   }
 
   async function refreshAll(): Promise<void> {
-    await Promise.all([loadTags(), loadSequenceSets(), loadDataCollections(), loadUnlinkedFiles()]);
+    await Promise.all([loadTags(), loadSamples(), loadSequenceCollections(), loadUnlinkedFiles()]);
   }
 
-  async function onSequenceSetTagsUpdated(): Promise<void> {
-    await loadSequenceSets();
+  async function onSampleTagsUpdated(): Promise<void> {
+    await loadSamples();
   }
 
-  async function onSequenceSetTagCreated(): Promise<void> {
+  async function onSampleBatchUpdated(): Promise<void> {
+    await Promise.all([loadTags(), loadSamples()]);
+  }
+
+  async function onSampleTagCreated(): Promise<void> {
     await loadTags();
   }
 
-  async function onSequenceSetTagDeleted(): Promise<void> {
-    await Promise.all([loadTags(), loadSequenceSets()]);
+  async function onSampleTagDeleted(): Promise<void> {
+    await Promise.all([loadTags(), loadSamples()]);
   }
 
   onMounted(() => void refreshAll());
@@ -166,27 +173,30 @@
 
   function openBuilder(setIds: string[] = [], name = ''): void {
     builderEditingCollection.value = null;
-    builderInitialSetIds.value = setIds;
+    builderInitialSampleIds.value = setIds;
     builderInitialName.value = name;
     view.value = 'builder';
   }
 
-  async function openBuilderForEdit(collection: LaboratoryRunDataCollection): Promise<void> {
-    uiStore.setRequestPending('dataCollectionsRunCollections');
+  async function openBuilderForEdit(collection: LaboratorySequenceCollection): Promise<void> {
+    uiStore.setRequestPending('dataCollectionsRunSequenceCollections');
     try {
-      const res = await $api.dataCollections.listDataCollectionSequenceSets(props.labId, collection.DataCollectionId);
+      const res = await $api.dataCollections.listSequenceCollectionSamples(
+        props.labId,
+        collection.SequenceCollectionId,
+      );
       builderEditingCollection.value = collection;
-      builderInitialSetIds.value = res.SequenceSetIds;
+      builderInitialSampleIds.value = res.SampleIds;
       builderInitialName.value = collection.Name;
       view.value = 'builder';
     } finally {
-      uiStore.setRequestComplete('dataCollectionsRunCollections');
+      uiStore.setRequestComplete('dataCollectionsRunSequenceCollections');
     }
   }
 
   function onImportCompleted(): void {
     view.value = 'main';
-    activeTab.value = 'sequence-sets';
+    activeTab.value = 'samples';
     void refreshAll();
   }
 
@@ -202,9 +212,53 @@
     builderEditingCollection.value = null;
   }
 
-  function launchWorkflow(c: LaboratoryRunDataCollection): void {
+  function launchWorkflow(c: LaboratorySequenceCollection): void {
     runCollection.value = c;
     showRunModal.value = true;
+  }
+
+  const deleteCollectionPrimaryMessage = computed(() =>
+    collectionToDelete.value ? `Delete collection "${collectionToDelete.value.Name}"?` : '',
+  );
+
+  const deleteCollectionSecondaryMessage = computed(() => {
+    if (!collectionToDelete.value) return '';
+    const n = collectionToDelete.value.SampleCount;
+    if (n === 0) {
+      return 'This will permanently delete the sequence collection. Its samples and files will not be affected.';
+    }
+    if (n === 1) {
+      return 'This will permanently delete the sequence collection. The 1 sample it contains will not be deleted.';
+    }
+    return `This will permanently delete the sequence collection. The ${n} samples it contains will not be deleted.`;
+  });
+
+  const deleteCollectionBusy = computed(() => uiStore.isRequestPending('dataCollectionsMutate'));
+
+  function openDeleteCollectionDialog(collection: LaboratorySequenceCollection): void {
+    collectionToDelete.value = collection;
+    isDeleteCollectionDialogOpen.value = true;
+  }
+
+  function closeDeleteCollectionDialog(): void {
+    isDeleteCollectionDialogOpen.value = false;
+    collectionToDelete.value = null;
+  }
+
+  async function confirmDeleteCollection(): Promise<void> {
+    if (!collectionToDelete.value) return;
+    const collectionId = collectionToDelete.value.SequenceCollectionId;
+    uiStore.setRequestPending('dataCollectionsMutate');
+    try {
+      await $api.dataCollections.deleteSequenceCollection(props.labId, collectionId);
+      toast.success('Sequence collection deleted');
+      closeDeleteCollectionDialog();
+      await loadSequenceCollections();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete sequence collection');
+    } finally {
+      uiStore.setRequestComplete('dataCollectionsMutate');
+    }
   }
 </script>
 
@@ -223,8 +277,8 @@
       v-else-if="view === 'builder'"
       :lab-id="labId"
       :lab="lab"
-      :sequence-sets="sequenceSets"
-      :initial-set-ids="builderInitialSetIds"
+      :samples="samples"
+      :initial-set-ids="builderInitialSampleIds"
       :initial-name="builderInitialName"
       :editing-collection="builderEditingCollection"
       @back="closeBuilder"
@@ -234,50 +288,50 @@
     <template v-else>
       <div class="mb-1">
         <h1 class="text-2xl font-medium">Data Collections</h1>
-        <p class="text-sm text-gray-500">Saved bundles of sequence sets, ready to launch a workflow on.</p>
+        <p class="text-sm text-gray-500">Saved bundles of samples, ready to launch a workflow on.</p>
       </div>
 
       <EGDataCollectionsTabBar
         v-model:active-tab="activeTab"
-        :collection-count="dataCollections.length"
-        :sequence-set-count="sequenceSets.length"
+        :collection-count="sequenceCollections.length"
+        :sample-count="samples.length"
         :file-count="unlinkedFiles.length"
       />
 
-      <EGDataCollectionsListTab
+      <EGSequenceCollectionsListTab
         v-if="activeTab === 'collections'"
-        :collections="dataCollections"
+        :collections="sequenceCollections"
         :loading="loading"
-        :selected-ids="selectedCollectionIds"
         :search="collectionSearch"
-        @update:selected-ids="selectedCollectionIds = $event"
         @update:search="collectionSearch = $event"
         @new-collection="openBuilder()"
         @import="openImport"
         @launch-workflow="launchWorkflow"
         @edit-collection="openBuilderForEdit"
+        @delete-collection="openDeleteCollectionDialog"
       />
 
-      <EGSequenceSetsTab
-        v-else-if="activeTab === 'sequence-sets'"
+      <EGSamplesTab
+        v-else-if="activeTab === 'samples'"
         :lab-id="labId"
-        :sequence-sets="sequenceSets"
+        :samples="samples"
         :tags="tags"
-        :set-id-to-tag-ids="setIdToTagIds"
+        :sample-id-to-tag-ids="sampleIdToTagIds"
         :loading="loading"
-        :selected-ids="selectedSequenceSetIds"
-        :search="sequenceSetSearch"
+        :selected-ids="selectedSampleIds"
+        :search="sampleSearch"
         :tags-filter-untagged="tagsFilterUntagged"
         :tags-filter-tag-ids="tagsFilterTagIds"
-        @update:selected-ids="selectedSequenceSetIds = $event"
-        @update:search="sequenceSetSearch = $event"
+        @update:selected-ids="selectedSampleIds = $event"
+        @update:search="sampleSearch = $event"
         @update:tags-filter-untagged="tagsFilterUntagged = $event"
         @update:tags-filter-tag-ids="tagsFilterTagIds = $event"
         @import="openImport"
-        @build-collection="openBuilder(selectedSequenceSetIds)"
-        @tags-updated="onSequenceSetTagsUpdated"
-        @tag-created="onSequenceSetTagCreated"
-        @tag-deleted="onSequenceSetTagDeleted"
+        @build-collection="openBuilder(selectedSampleIds)"
+        @tags-updated="onSampleTagsUpdated"
+        @batch-updated="onSampleBatchUpdated"
+        @tag-created="onSampleTagCreated"
+        @tag-deleted="onSampleTagDeleted"
       />
 
       <EGUnlinkedFilesTab
@@ -292,26 +346,26 @@
         @update:selected-keys="selectedFileKeys = $event"
         @update:search="fileSearch = $event"
         @rescan="loadUnlinkedFiles"
-        @build-sequence-set="showBuildSequenceSetModal = true"
+        @build-sample="showBuildSampleModal = true"
         @group-with-regex="showRegexGroupModal = true"
       />
     </template>
 
-    <EGBuildSequenceSetModal
-      v-model="showBuildSequenceSetModal"
+    <EGBuildSampleModal
+      v-model="showBuildSampleModal"
       :lab-id="labId"
       :lab="lab"
       :selected-keys="selectedFileKeys"
       @created="
         () => {
           selectedFileKeys = [];
-          activeTab = 'sequence-sets';
+          activeTab = 'samples';
           refreshAll();
         }
       "
     />
 
-    <EGBuildSequenceSetsFromRegexModal
+    <EGBuildSamplesFromRegexModal
       v-model="showRegexGroupModal"
       :lab-id="labId"
       :lab="lab"
@@ -319,12 +373,26 @@
       @created="
         () => {
           selectedFileKeys = [];
-          activeTab = 'sequence-sets';
+          activeTab = 'samples';
           refreshAll();
         }
       "
     />
 
     <EGRunFromDataCollectionModal v-model="showRunModal" :lab-id="labId" :lab="lab" :data-collection="runCollection" />
+
+    <EGDialog
+      v-model="isDeleteCollectionDialogOpen"
+      action-label="Delete collection"
+      :action-variant="ButtonVariantEnum.enum.destructive"
+      cancel-label="Cancel"
+      :cancel-variant="ButtonVariantEnum.enum.secondary"
+      :primary-message="deleteCollectionPrimaryMessage"
+      :secondary-message="deleteCollectionSecondaryMessage"
+      :loading="deleteCollectionBusy"
+      :buttons-disabled="deleteCollectionBusy"
+      @action-triggered="confirmDeleteCollection"
+      @update:model-value="(open) => !open && closeDeleteCollectionDialog()"
+    />
   </div>
 </template>

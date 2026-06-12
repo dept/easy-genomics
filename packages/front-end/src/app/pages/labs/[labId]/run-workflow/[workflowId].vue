@@ -192,13 +192,13 @@
     }
     runStore.updateWipOmicsRunParams(omicsRunTempId.value, paramsToApply);
 
-    applyDataCollectionsPrepopulation();
+    applySequenceCollectionsPrepopulation();
 
     uiStore.setRequestComplete('loadOmicsWorkflow');
   }
 
   /** When opened from Data Collections with a pre-built sample sheet, skip to parameter configuration. */
-  function applyDataCollectionsPrepopulation(): void {
+  function applySequenceCollectionsPrepopulation(): void {
     if ($route.query.from !== 'data-collections') return;
 
     const wip = runStore.wipOmicsRuns[omicsRunTempId.value];

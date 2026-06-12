@@ -1,5 +1,5 @@
 import {
-  BulkCreateSequenceSetsResponse,
+  BulkCreateSamplesResponse,
   LaboratoryDataTag,
   ListFileTagsResponse,
   ListFilesByTagResponse,
@@ -7,16 +7,16 @@ import {
   UnlinkedBucketObjectsResponse,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
 import type {
-  GenerateDataCollectionSampleSheetResponse,
-  LaboratoryRunDataCollection,
-  LaboratorySequenceSet,
-  ListLaboratoryRunDataCollectionsResponse,
-  ListLaboratorySequenceSetsResponse,
-  ListSequenceSetTagsResponse,
-  ListSequenceSetsByTagResponse,
+  GenerateSequenceCollectionSampleSheetResponse,
+  LaboratorySequenceCollection,
+  LaboratorySample,
+  ListLaboratorySequenceCollectionsResponse,
+  ListLaboratorySamplesResponse,
+  ListSampleTagsResponse,
+  ListSamplesByTagResponse,
   SampleSheetColumnDef,
-  SequenceSetLayout,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sequence-sets';
+  SampleLayout,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
 import HttpFactory from '@FE/repository/factory';
 
 export type RequestLaboratoryBucketObjectsBody = {
@@ -107,6 +107,16 @@ class DataCollectionsModule extends HttpFactory {
     await this.call('POST', '/data-collections/edit-batch', body);
   }
 
+  async assignSampleBatch(body: {
+    LaboratoryId: string;
+    SampleIds: string[];
+    ClearBatch?: boolean;
+    BatchTagId?: string;
+    NewBatchName?: string;
+  }): Promise<void> {
+    await this.call('POST', '/data-collections/edit-sample-batch', body);
+  }
+
   async listFilesByTag(
     laboratoryId: string,
     tagId: string,
@@ -132,127 +142,124 @@ class DataCollectionsModule extends HttpFactory {
     return res;
   }
 
-  async listSequenceSets(laboratoryId: string): Promise<ListLaboratorySequenceSetsResponse> {
-    const res = await this.call<ListLaboratorySequenceSetsResponse>(
+  async listSamples(laboratoryId: string): Promise<ListLaboratorySamplesResponse> {
+    const res = await this.call<ListLaboratorySamplesResponse>(
       'GET',
-      `/data-collections/list-sequence-sets?laboratoryId=${encodeURIComponent(laboratoryId)}`,
+      `/data-collections/list-samples?laboratoryId=${encodeURIComponent(laboratoryId)}`,
     );
-    if (!res) throw new Error('Failed to list sequence sets');
+    if (!res) throw new Error('Failed to list samples');
     return res;
   }
 
-  async createSequenceSet(body: {
+  async createSample(body: {
     LaboratoryId: string;
     S3Bucket: string;
     Name?: string;
-    Layout: SequenceSetLayout;
+    Layout: SampleLayout;
     FilenameRegex?: string;
     SampleIdPattern?: string;
     Keys?: string[];
-    ExistingSequenceSetId?: string;
+    ExistingSampleId?: string;
     ExpandRegexFromListing?: boolean;
-  }): Promise<LaboratorySequenceSet> {
-    const res = await this.call<LaboratorySequenceSet>('POST', '/data-collections/create-sequence-set', body);
-    if (!res) throw new Error('Failed to create sequence set');
+  }): Promise<LaboratorySample> {
+    const res = await this.call<LaboratorySample>('POST', '/data-collections/create-sample', body);
+    if (!res) throw new Error('Failed to create sample');
     return res;
   }
 
-  async addFilesToSequenceSet(body: {
+  async addFilesToSample(body: {
     LaboratoryId: string;
     S3Bucket: string;
-    SequenceSetId: string;
+    SampleId: string;
     Keys: string[];
   }): Promise<void> {
-    await this.call('POST', '/data-collections/add-files-to-sequence-set', body);
+    await this.call('POST', '/data-collections/add-files-to-sample', body);
   }
 
-  async listDataCollections(laboratoryId: string): Promise<ListLaboratoryRunDataCollectionsResponse> {
-    const res = await this.call<ListLaboratoryRunDataCollectionsResponse>(
+  async listSequenceCollections(laboratoryId: string): Promise<ListLaboratorySequenceCollectionsResponse> {
+    const res = await this.call<ListLaboratorySequenceCollectionsResponse>(
       'GET',
-      `/data-collections/list-data-collections?laboratoryId=${encodeURIComponent(laboratoryId)}`,
+      `/data-collections/list-sequence-collections?laboratoryId=${encodeURIComponent(laboratoryId)}`,
     );
-    if (!res) throw new Error('Failed to list data collections');
+    if (!res) throw new Error('Failed to list sequence collections');
     return res;
   }
 
-  async listDataCollectionSequenceSets(
+  async listSequenceCollectionSamples(
     laboratoryId: string,
-    dataCollectionId: string,
-  ): Promise<{ SequenceSetIds: string[] }> {
-    const q = new URLSearchParams({ laboratoryId, dataCollectionId });
-    const res = await this.call<{ SequenceSetIds: string[] }>(
+    sequenceCollectionId: string,
+  ): Promise<{ SampleIds: string[] }> {
+    const q = new URLSearchParams({ laboratoryId, sequenceCollectionId });
+    const res = await this.call<{ SampleIds: string[] }>(
       'GET',
-      `/data-collections/list-data-collection-sequence-sets?${q.toString()}`,
+      `/data-collections/list-sequence-collection-samples?${q.toString()}`,
     );
-    if (!res) throw new Error('Failed to list data collection sequence sets');
+    if (!res) throw new Error('Failed to list sequence collection samples');
     return res;
   }
 
-  async createDataCollection(body: {
+  async createSequenceCollection(body: {
     LaboratoryId: string;
     Name?: string;
     Columns: SampleSheetColumnDef[];
-    SequenceSetIds?: string[];
-    ExistingDataCollectionId?: string;
-  }): Promise<LaboratoryRunDataCollection> {
-    const res = await this.call<LaboratoryRunDataCollection>('POST', '/data-collections/create-data-collection', body);
-    if (!res) throw new Error('Failed to create data collection');
+    SampleIds?: string[];
+    ExistingSequenceCollectionId?: string;
+  }): Promise<LaboratorySequenceCollection> {
+    const res = await this.call<LaboratorySequenceCollection>(
+      'POST',
+      '/data-collections/create-sequence-collection',
+      body,
+    );
+    if (!res) throw new Error('Failed to create sequence collection');
     return res;
   }
 
-  async generateDataCollectionSampleSheet(body: {
+  async generateSequenceCollectionSampleSheet(body: {
     LaboratoryId: string;
     S3Bucket: string;
-    DataCollectionId: string;
+    SequenceCollectionId: string;
     Platform: 'AWS HealthOmics' | 'Seqera Cloud';
     TransactionId: string;
     SampleSheetName: string;
     ValidateS3FilesExist?: boolean;
-  }): Promise<GenerateDataCollectionSampleSheetResponse> {
-    const res = await this.call<GenerateDataCollectionSampleSheetResponse>(
+  }): Promise<GenerateSequenceCollectionSampleSheetResponse> {
+    const res = await this.call<GenerateSequenceCollectionSampleSheetResponse>(
       'POST',
-      '/data-collections/generate-data-collection-sample-sheet',
+      '/data-collections/generate-sequence-collection-sample-sheet',
       body,
     );
     if (!res) throw new Error('Failed to generate sample sheet');
     return res;
   }
 
-  async addTagsToSequenceSets(body: {
+  async addTagsToSamples(body: {
     LaboratoryId: string;
-    SequenceSetIds: string[];
+    SampleIds: string[];
     AddTagIds?: string[];
     RemoveTagIds?: string[];
   }): Promise<void> {
-    await this.call('POST', '/data-collections/add-tags-to-sequence-sets', body);
+    await this.call('POST', '/data-collections/add-tags-to-samples', body);
   }
 
-  async requestListSequenceSetTags(body: {
-    LaboratoryId: string;
-    SequenceSetIds: string[];
-  }): Promise<ListSequenceSetTagsResponse> {
-    const res = await this.call<ListSequenceSetTagsResponse>(
-      'POST',
-      '/data-collections/request-list-sequence-set-tags',
-      body,
-    );
-    if (!res) throw new Error('Failed to list sequence set tags');
+  async requestListSampleTags(body: { LaboratoryId: string; SampleIds: string[] }): Promise<ListSampleTagsResponse> {
+    const res = await this.call<ListSampleTagsResponse>('POST', '/data-collections/request-list-sample-tags', body);
+    if (!res) throw new Error('Failed to list sample tags');
     return res;
   }
 
-  async listSequenceSetsByTag(
+  async listSamplesByTag(
     laboratoryId: string,
     tagId: string,
     opts?: { limit?: number; cursor?: string },
-  ): Promise<ListSequenceSetsByTagResponse> {
+  ): Promise<ListSamplesByTagResponse> {
     const q = new URLSearchParams({ laboratoryId, tagId });
     if (opts?.limit) q.set('limit', String(opts.limit));
     if (opts?.cursor) q.set('cursor', opts.cursor);
-    const res = await this.call<ListSequenceSetsByTagResponse>(
+    const res = await this.call<ListSamplesByTagResponse>(
       'GET',
-      `/data-collections/list-sequence-sets-by-tag?${q.toString()}`,
+      `/data-collections/list-samples-by-tag?${q.toString()}`,
     );
-    if (!res) throw new Error('Failed to list sequence sets by tag');
+    if (!res) throw new Error('Failed to list samples by tag');
     return res;
   }
 
@@ -266,60 +273,69 @@ class DataCollectionsModule extends HttpFactory {
     return res;
   }
 
-  async bulkCreateSequenceSets(body: {
+  async bulkCreateSamples(body: {
     LaboratoryId: string;
     S3Bucket: string;
     ImportLabel: string;
-    SequenceSets: Array<{
+    Samples: Array<{
       Name: string;
-      Layout: SequenceSetLayout;
+      Layout: SampleLayout;
       Keys: string[];
       TagIds?: string[];
       FilenameRegex?: string;
       SampleIdPattern?: string;
     }>;
     CopyJobs?: Array<{ SourceBucket: string; SourceKey: string; DestKey: string }>;
-  }): Promise<BulkCreateSequenceSetsResponse> {
-    const res = await this.call<BulkCreateSequenceSetsResponse>(
-      'POST',
-      '/data-collections/create-bulk-sequence-sets',
-      body,
-    );
-    if (!res) throw new Error('Failed to bulk create sequence sets');
+    NewBatchName?: string;
+    BatchTagId?: string;
+  }): Promise<BulkCreateSamplesResponse> {
+    const res = await this.call<BulkCreateSamplesResponse>('POST', '/data-collections/create-bulk-samples', body);
+    if (!res) throw new Error('Failed to bulk create samples');
     return res;
   }
 
-  async addSequenceSetsToDataCollection(body: {
+  async addSamplesToSequenceCollection(body: {
     LaboratoryId: string;
-    DataCollectionId: string;
-    SequenceSetIds: string[];
+    SequenceCollectionId: string;
+    SampleIds: string[];
   }): Promise<void> {
-    await this.call('POST', '/data-collections/add-sequence-sets-to-data-collection', body);
+    await this.call('POST', '/data-collections/add-samples-to-sequence-collection', body);
   }
 
-  async updateDataCollectionSchema(body: {
+  async updateSequenceCollectionSchema(body: {
     LaboratoryId: string;
-    DataCollectionId: string;
+    SequenceCollectionId: string;
     Columns: SampleSheetColumnDef[];
-  }): Promise<LaboratoryRunDataCollection> {
-    const res = await this.call<LaboratoryRunDataCollection>(
+  }): Promise<LaboratorySequenceCollection> {
+    const res = await this.call<LaboratorySequenceCollection>(
       'POST',
-      '/data-collections/update-data-collection-schema',
+      '/data-collections/update-sequence-collection-schema',
       body,
     );
-    if (!res) throw new Error('Failed to update data collection schema');
+    if (!res) throw new Error('Failed to update sequence collection schema');
     return res;
   }
 
-  async updateDataCollection(body: {
+  async deleteSequenceCollection(laboratoryId: string, sequenceCollectionId: string): Promise<void> {
+    await this.call(
+      'DELETE',
+      `/data-collections/delete-sequence-collection/${encodeURIComponent(sequenceCollectionId)}?laboratoryId=${encodeURIComponent(laboratoryId)}`,
+    );
+  }
+
+  async updateSequenceCollection(body: {
     LaboratoryId: string;
-    DataCollectionId: string;
+    SequenceCollectionId: string;
     Name: string;
     Columns: SampleSheetColumnDef[];
-    SequenceSetIds: string[];
-  }): Promise<LaboratoryRunDataCollection> {
-    const res = await this.call<LaboratoryRunDataCollection>('POST', '/data-collections/update-data-collection', body);
-    if (!res) throw new Error('Failed to update data collection');
+    SampleIds: string[];
+  }): Promise<LaboratorySequenceCollection> {
+    const res = await this.call<LaboratorySequenceCollection>(
+      'POST',
+      '/data-collections/edit-sequence-collection',
+      body,
+    );
+    if (!res) throw new Error('Failed to update sequence collection');
     return res;
   }
 }

@@ -7,13 +7,9 @@
     LaboratoryDataTag,
     LaboratoryRunUsageSummary,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
-  import type { LaboratorySequenceSet } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sequence-sets';
+  import type { LaboratorySample } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
   import type { DataCollectionFileTypeFilter, HiddenFileTypeBreakdownRow } from '@FE/utils/data-collections-file-type';
-  import {
-    SEQUENCE_SET_LAYOUT_LABELS,
-    selectionKey,
-    type ExplorerSelection,
-  } from '@FE/utils/data-collections-selection';
+  import { SAMPLE_LAYOUT_LABELS, selectionKey, type ExplorerSelection } from '@FE/utils/data-collections-selection';
   import { formatFileSize } from '@FE/utils/file-size';
 
   const props = defineProps<{
@@ -23,9 +19,9 @@
     s3Bucket?: string;
     labRoot: string;
     visibleFiles: { Key: string; Size?: number; LastModified?: string }[];
-    visibleSequenceSets?: LaboratorySequenceSet[];
+    visibleSamples?: LaboratorySample[];
     keyToTagIds: Record<string, string[]>;
-    keyToSequenceSetIds?: Record<string, string[]>;
+    keyToSampleIds?: Record<string, string[]>;
     /** Batch tag id per file key (optional until parent loads assignments). */
     keyToBatchTagId?: Record<string, string | undefined>;
     /**
@@ -66,7 +62,7 @@
     'update:fileTypeFilter': [value: DataCollectionFileTypeFilter];
     'update:explorerSelection': [selection: ExplorerSelection];
     toggleKey: [key: string];
-    toggleSequenceSet: [sequenceSetId: string];
+    toggleSample: [sampleId: string];
     selectAllDisplayed: [];
     clearSelection: [];
     clearFilter: [chipId: string];
@@ -77,8 +73,8 @@
   }>();
 
   const filterChipsResolved = computed(() => props.filterChips ?? []);
-  const sequenceSetsResolved = computed(() => props.visibleSequenceSets ?? []);
-  const keyToSequenceSetIdsResolved = computed(() => props.keyToSequenceSetIds ?? {});
+  const samplesResolved = computed(() => props.visibleSamples ?? []);
+  const keyToSampleIdsResolved = computed(() => props.keyToSampleIds ?? {});
 
   const selectedKeySet = computed(() => new Set(props.explorerSelection.map(selectionKey)));
 
@@ -86,12 +82,12 @@
     return selectedKeySet.value.has(`file:${key}`);
   }
 
-  function isSequenceSetSelected(setId: string): boolean {
-    return selectedKeySet.value.has(`sequenceSet:${setId}`);
+  function isSampleSelected(setId: string): boolean {
+    return selectedKeySet.value.has(`sample:${setId}`);
   }
 
-  function sequenceSetCountForFile(key: string): number {
-    return keyToSequenceSetIdsResolved.value[key]?.length ?? 0;
+  function sampleCountForFile(key: string): number {
+    return keyToSampleIdsResolved.value[key]?.length ?? 0;
   }
 
   const selectionCount = computed(() => props.explorerSelection.length);
@@ -574,32 +570,32 @@
         <p class="text-muted max-w-sm text-center text-sm">Loading samples and tag data…</p>
       </div>
       <div
-        v-if="sequenceSetsResolved.length"
+        v-if="samplesResolved.length"
         class="border-border-muted mb-4 rounded-lg border bg-gray-50/80 p-3"
         role="region"
-        aria-label="Sequence sets"
+        aria-label="Samples"
       >
-        <h3 class="text-muted mb-2 text-xs font-semibold uppercase tracking-wide">Sequence Sets</h3>
+        <h3 class="text-muted mb-2 text-xs font-semibold uppercase tracking-wide">Samples</h3>
         <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           <button
-            v-for="set in sequenceSetsResolved"
-            :key="set.SequenceSetId"
+            v-for="set in samplesResolved"
+            :key="set.SampleId"
             type="button"
             data-sequence-set-card
             class="hover:border-primary/40 flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm transition"
-            :class="{ 'bg-primary-muted ring-primary ring-2': isSequenceSetSelected(set.SequenceSetId) }"
-            :aria-selected="isSequenceSetSelected(set.SequenceSetId)"
-            @click="emit('toggleSequenceSet', set.SequenceSetId)"
+            :class="{ 'bg-primary-muted ring-primary ring-2': isSampleSelected(set.SampleId) }"
+            :aria-selected="isSampleSelected(set.SampleId)"
+            @click="emit('toggleSample', set.SampleId)"
           >
             <UCheckbox
-              :model-value="isSequenceSetSelected(set.SequenceSetId)"
-              @update:model-value="emit('toggleSequenceSet', set.SequenceSetId)"
+              :model-value="isSampleSelected(set.SampleId)"
+              @update:model-value="emit('toggleSample', set.SampleId)"
               @click.stop
             />
             <div class="min-w-0 flex-1">
               <div class="truncate font-medium text-gray-900">{{ set.Name }}</div>
               <div class="text-muted mt-0.5 text-xs">
-                {{ SEQUENCE_SET_LAYOUT_LABELS[set.Layout] ?? set.Layout }} · {{ set.FileCount }} file(s)
+                {{ SAMPLE_LAYOUT_LABELS[set.Layout] ?? set.Layout }} · {{ set.FileCount }} file(s)
               </div>
             </div>
           </button>
@@ -709,8 +705,8 @@
                 <div v-if="folderPathUnderLab(f.Key)" class="text-muted mt-0.5 truncate text-[11px]">
                   {{ folderPathUnderLab(f.Key) }}
                 </div>
-                <div v-if="sequenceSetCountForFile(f.Key)" class="text-primary/80 mt-0.5 text-[10px]">
-                  In {{ sequenceSetCountForFile(f.Key) }} sequence set(s)
+                <div v-if="sampleCountForFile(f.Key)" class="text-primary/80 mt-0.5 text-[10px]">
+                  In {{ sampleCountForFile(f.Key) }} sample(s)
                 </div>
               </div>
             </UTooltip>
@@ -740,7 +736,7 @@
       <div v-else class="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         <table class="w-full min-w-[56rem] border-collapse text-left text-sm" aria-label="Samples">
           <caption class="sr-only">
-            Samples in data collections
+            Samples in sequence collections
             <template v-if="selectionCount">, {{ selectionCount }} selected</template>
           </caption>
           <thead>
