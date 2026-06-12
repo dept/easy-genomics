@@ -33,12 +33,58 @@
 
   const isDark = computed(() => props.variant === 'dark');
 
+  // Holds a reference to each tab button so keyboard navigation can move focus
+  // between them (required by the ARIA tabs pattern / roving tabindex).
+  const tabRefs = ref<(HTMLButtonElement | null)[]>([]);
+
+  function setTabRef(el: Element | null, index: number) {
+    tabRefs.value[index] = (el as HTMLButtonElement) ?? null;
+  }
+
   function tabId(key: string) {
     return `tab-${key}`;
   }
 
   function panelId(key: string) {
     return `panel-${key}`;
+  }
+
+  function select(index: number) {
+    emit('update:modelValue', index);
+  }
+
+  function focusTab(index: number) {
+    tabRefs.value[index]?.focus();
+  }
+
+  // Implements the WAI-ARIA Authoring Practices "tabs with automatic activation"
+  // keyboard interaction for a vertically-oriented tablist: Up/Down move between
+  // tabs (wrapping), Home/End jump to the first/last tab. Moving focus also
+  // selects the tab so the matching panel is revealed.
+  function onKeydown(event: KeyboardEvent, index: number) {
+    const lastIndex = props.items.length - 1;
+    let nextIndex: number | null = null;
+
+    switch (event.key) {
+      case 'ArrowDown':
+        nextIndex = index === lastIndex ? 0 : index + 1;
+        break;
+      case 'ArrowUp':
+        nextIndex = index === 0 ? lastIndex : index - 1;
+        break;
+      case 'Home':
+        nextIndex = 0;
+        break;
+      case 'End':
+        nextIndex = lastIndex;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    select(nextIndex);
+    focusTab(nextIndex);
   }
 </script>
 
@@ -65,12 +111,15 @@
           role="presentation"
         />
         <button
+          :ref="(el) => setTabRef(el, index)"
           type="button"
           role="tab"
           :id="tabId(item.key)"
           :aria-controls="panelId(item.key)"
           :aria-selected="modelValue === index"
-          @click="emit('update:modelValue', index)"
+          :tabindex="modelValue === index ? 0 : -1"
+          @click="select(index)"
+          @keydown="onKeydown($event, index)"
           class="focus-visible:outline-primary-500 flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left font-serif text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           :class="
             isDark
