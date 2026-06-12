@@ -1,6 +1,10 @@
 <script setup lang="ts">
-  import type { LaboratoryDataTag } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
+  import type {
+    LaboratoryDataTag,
+    LaboratoryRunUsageSummary,
+  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
   import type { LaboratorySample } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
+  import EGFileAnalysisHistoryTooltip from '@FE/components/EGFileAnalysisHistoryTooltip.vue';
   import EGSampleTagSidebar from '@FE/components/EGSampleTagSidebar.vue';
   import { useToastStore, useUiStore } from '@FE/stores';
   import { SAMPLE_LAYOUT_LABELS } from '@FE/utils/data-collections-selection';
@@ -11,6 +15,7 @@
     samples: LaboratorySample[];
     tags: LaboratoryDataTag[];
     sampleIdToTagIds: Record<string, string[]>;
+    sampleIdToRunUsages: Record<string, LaboratoryRunUsageSummary[]>;
     loading: boolean;
     selectedIds: string[];
     search: string;
@@ -50,6 +55,12 @@
 
   /** Cards grid vs tabular layout (matches file explorer). */
   const explorerView = ref<'cards' | 'table'>('cards');
+
+  /** While a sample's analysis popover is open, that card/row is stacked above siblings. */
+  const analysisPopoverOpenKey = ref<string | null>(null);
+
+  const BATCH_HEADER_DOT_NOT_ANALYZED = '#EF9F27';
+  const BATCH_HEADER_DOT_ANALYZED = '#2DB48F';
 
   const presetColors = ['#5B4FD4', '#85B7EB', '#F09595', '#97C459', '#ED93B1', '#EF9F27', '#B4B2A9'];
 
@@ -182,6 +193,59 @@
   function batchDisplayName(sample: LaboratorySample): string {
     if (!sample.BatchTagId) return '—';
     return tagById(sample.BatchTagId)?.Name ?? sample.BatchTagId;
+  }
+
+  function runUsagesForSample(sampleId: string): LaboratoryRunUsageSummary[] {
+    return props.sampleIdToRunUsages[sampleId] ?? [];
+  }
+
+  function runCountForSample(sampleId: string): number {
+    return runUsagesForSample(sampleId).length;
+  }
+
+  function standardTagNamesForSample(sampleId: string): string[] {
+    return tagIdsForSet(sampleId).map((tid) => tagById(tid)?.Name ?? tid);
+  }
+
+  function onAnalysisPopoverOpen(sampleId: string, open: boolean): void {
+    if (open) {
+      analysisPopoverOpenKey.value = sampleId;
+    } else if (analysisPopoverOpenKey.value === sampleId) {
+      analysisPopoverOpenKey.value = null;
+    }
+  }
+
+  type BatchSectionHeaderParts = {
+    titleBold: string;
+    sampleCount: number;
+    sampleNoun: string;
+    notYetAnalyzed: number;
+    analyzed: number;
+  };
+
+  function batchSectionHeaderParts(sec: SampleSection): BatchSectionHeaderParts {
+    const n = sec.samples.length;
+    const sampleNoun = n === 1 ? 'sample' : 'samples';
+    let notYetAnalyzed = 0;
+    let analyzed = 0;
+    for (const s of sec.samples) {
+      if (runCountForSample(s.SampleId) > 0) analyzed += 1;
+      else notYetAnalyzed += 1;
+    }
+    return {
+      titleBold: sec.title,
+      sampleCount: n,
+      sampleNoun,
+      notYetAnalyzed,
+      analyzed,
+    };
+  }
+
+  function selectSamplesForRun(runId: string): void {
+    const ids = props.samples
+      .filter((s) => runUsagesForSample(s.SampleId).some((u) => u.RunId === runId))
+      .map((s) => s.SampleId);
+    emit('update:selectedIds', ids);
   }
 
   function batchSectionFullySelected(sec: SampleSection): boolean {
@@ -550,13 +614,36 @@
                 :class="secIdx === 0 ? 'mt-0' : 'mt-6'"
                 role="presentation"
               >
-                <h3 class="text-muted min-w-0 flex-1 text-xs font-normal leading-snug tracking-wide">
-                  <span class="inline-flex flex-wrap items-baseline gap-x-1.5">
-                    <span class="font-semibold text-gray-900">
-                      <template v-if="sec.batchId !== null">Batch {{ sec.title }}</template>
-                      <template v-else>{{ sec.title }}</template>
+                <h3 class="text-muted min-w-0 flex-1 whitespace-normal text-xs font-normal leading-snug tracking-wide">
+                  <span class="inline-flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <span class="inline-flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+                      <span class="font-semibold text-gray-900">
+                        <template v-if="sec.batchId !== null">
+                          Batch {{ batchSectionHeaderParts(sec).titleBold }}
+                        </template>
+                        <template v-else>{{ batchSectionHeaderParts(sec).titleBold }}</template>
+                      </span>
+                      <span>
+                        {{ batchSectionHeaderParts(sec).sampleCount }}
+                        {{ batchSectionHeaderParts(sec).sampleNoun }}
+                      </span>
                     </span>
-                    <span>{{ sec.samples.length }} sample{{ sec.samples.length === 1 ? '' : 's' }}</span>
+                    <span class="inline-flex items-center gap-1.5">
+                      <span
+                        class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                        :style="{ backgroundColor: BATCH_HEADER_DOT_NOT_ANALYZED }"
+                        aria-hidden="true"
+                      />
+                      <span>{{ batchSectionHeaderParts(sec).notYetAnalyzed }} not yet analyzed</span>
+                    </span>
+                    <span class="inline-flex items-center gap-1.5">
+                      <span
+                        class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                        :style="{ backgroundColor: BATCH_HEADER_DOT_ANALYZED }"
+                        aria-hidden="true"
+                      />
+                      <span>{{ batchSectionHeaderParts(sec).analyzed }} analyzed</span>
+                    </span>
                   </span>
                 </h3>
                 <button
@@ -576,25 +663,48 @@
                 class="border-border-muted focus-visible:ring-primary relative min-w-0 cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
                 :class="{
                   'bg-primary-muted ring-primary ring-2': isSelected(s.SampleId),
+                  'z-[80]': analysisPopoverOpenKey === s.SampleId,
                 }"
                 :aria-selected="isSelected(s.SampleId)"
                 :aria-label="`${s.Name}, ${contentsLabel(s)}`"
                 @click="toggle(s.SampleId)"
                 @keydown="onSampleItemKeydown($event, s.SampleId)"
               >
+                <div class="absolute left-0 top-0 z-[1]" @mousedown.stop @click.stop>
+                  <EGFileAnalysisHistoryTooltip
+                    :lab-id="labId"
+                    :file-key="s.SampleId"
+                    :file-name="s.Name"
+                    :batch-name="batchDisplayName(s) === '—' ? undefined : batchDisplayName(s)"
+                    :standard-tag-names="standardTagNamesForSample(s.SampleId)"
+                    :run-usages="runUsagesForSample(s.SampleId)"
+                    variant="card"
+                    @select-run-files="selectSamplesForRun($event.runId)"
+                    @update:open="onAnalysisPopoverOpen(s.SampleId, $event)"
+                  />
+                </div>
                 <div class="absolute right-2 top-2" @mousedown.stop @click.stop>
                   <UCheckbox :model-value="isSelected(s.SampleId)" @update:model-value="toggle(s.SampleId)" />
                 </div>
                 <div class="w-full min-w-0 pr-8">
-                  <div class="line-clamp-2 w-full min-w-0 break-all text-sm font-medium leading-snug text-gray-900">
+                  <div
+                    class="mt-7 line-clamp-2 w-full min-w-0 break-all text-sm font-medium leading-snug text-gray-900"
+                  >
                     {{ s.Name }}
                   </div>
                   <div class="text-muted mt-1 text-xs">{{ contentsLabel(s) }}</div>
                 </div>
                 <div class="mt-2 flex min-h-[1.25rem] min-w-0 max-w-full flex-wrap gap-1">
-                  <template v-if="tagIdsForSet(s.SampleId).length">
+                  <span
+                    v-if="!standardTagIdsForSet(s.SampleId).length"
+                    class="inline-flex min-w-0 max-w-full overflow-hidden rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-medium text-gray-600"
+                    @click.stop
+                  >
+                    <span class="truncate">Untagged</span>
+                  </span>
+                  <template v-else>
                     <span
-                      v-for="tid in tagIdsForSet(s.SampleId)"
+                      v-for="tid in standardTagIdsForSet(s.SampleId)"
                       :key="tid"
                       class="inline-flex min-w-0 max-w-full overflow-hidden rounded-full px-2 py-0.5 text-[10px] font-medium"
                       :title="tagById(tid)?.Name || tid"
@@ -608,41 +718,56 @@
                     </span>
                   </template>
                 </div>
-                <div class="text-muted mt-2 flex items-center justify-between gap-2 text-[10px]">
-                  <span class="min-w-0 truncate">{{ s.ImportSource?.label || '—' }}</span>
-                  <span class="shrink-0">
-                    {{ s.CreatedAt ? new Date(s.CreatedAt).toLocaleDateString() : '—' }}
-                  </span>
-                </div>
               </div>
             </template>
           </div>
 
           <div v-else class="overflow-x-auto">
-            <table class="w-full min-w-[52rem] border-collapse text-left text-sm" aria-label="Samples">
+            <table class="w-full min-w-[36rem] border-collapse text-left text-sm" aria-label="Samples">
               <thead class="sticky top-0 z-10 bg-gray-50">
                 <tr>
                   <th class="w-10 p-3" />
                   <th class="p-3 text-left text-xs uppercase text-gray-400">Sample ID</th>
-                  <th class="p-3 text-left text-xs uppercase text-gray-400">Batch</th>
                   <th class="p-3 text-left text-xs uppercase text-gray-400">Contents</th>
                   <th class="p-3 text-left text-xs uppercase text-gray-400">Tags</th>
-                  <th class="p-3 text-left text-xs uppercase text-gray-400">Source</th>
-                  <th class="p-3 text-left text-xs uppercase text-gray-400">Created</th>
+                  <th class="p-3 text-left text-xs uppercase text-gray-400">Run Status</th>
                 </tr>
               </thead>
               <tbody>
                 <template v-for="sec in sampleSections" :key="sec.batchId ?? 'unbatched-table'">
                   <tr class="bg-gray-50/95">
-                    <td colspan="7" class="border-t border-gray-100 px-3 py-2.5" scope="colgroup">
+                    <td colspan="5" class="border-t border-gray-100 px-3 py-2.5" scope="colgroup">
                       <div class="flex w-full min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-2">
                         <span class="text-muted min-w-0 flex-1 text-xs font-normal leading-snug tracking-wide">
-                          <span class="inline-flex flex-wrap items-baseline gap-x-1.5">
-                            <span class="font-semibold text-gray-900">
-                              <template v-if="sec.batchId !== null">Batch {{ sec.title }}</template>
-                              <template v-else>{{ sec.title }}</template>
+                          <span class="inline-flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                            <span class="inline-flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+                              <span class="font-semibold text-gray-900">
+                                <template v-if="sec.batchId !== null">
+                                  Batch {{ batchSectionHeaderParts(sec).titleBold }}
+                                </template>
+                                <template v-else>{{ batchSectionHeaderParts(sec).titleBold }}</template>
+                              </span>
+                              <span>
+                                {{ batchSectionHeaderParts(sec).sampleCount }}
+                                {{ batchSectionHeaderParts(sec).sampleNoun }}
+                              </span>
                             </span>
-                            <span>{{ sec.samples.length }} sample{{ sec.samples.length === 1 ? '' : 's' }}</span>
+                            <span class="inline-flex items-center gap-1.5">
+                              <span
+                                class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                                :style="{ backgroundColor: BATCH_HEADER_DOT_NOT_ANALYZED }"
+                                aria-hidden="true"
+                              />
+                              <span>{{ batchSectionHeaderParts(sec).notYetAnalyzed }} not yet analyzed</span>
+                            </span>
+                            <span class="inline-flex items-center gap-1.5">
+                              <span
+                                class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                                :style="{ backgroundColor: BATCH_HEADER_DOT_ANALYZED }"
+                                aria-hidden="true"
+                              />
+                              <span>{{ batchSectionHeaderParts(sec).analyzed }} analyzed</span>
+                            </span>
                           </span>
                         </span>
                         <button
@@ -661,7 +786,10 @@
                     :key="s.SampleId"
                     tabindex="0"
                     class="border-t border-gray-100 hover:bg-gray-50 focus:outline-none focus-visible:bg-gray-50"
-                    :class="{ 'bg-primary-50': isSelected(s.SampleId) }"
+                    :class="{
+                      'bg-primary-50': isSelected(s.SampleId),
+                      'relative z-[80]': analysisPopoverOpenKey === s.SampleId,
+                    }"
                     :aria-selected="isSelected(s.SampleId)"
                     @click="toggle(s.SampleId)"
                     @keydown="onSampleItemKeydown($event, s.SampleId)"
@@ -670,24 +798,47 @@
                       <UCheckbox :model-value="isSelected(s.SampleId)" @update:model-value="toggle(s.SampleId)" />
                     </td>
                     <td class="p-3 font-medium">{{ s.Name }}</td>
-                    <td class="p-3 text-gray-600">{{ batchDisplayName(s) }}</td>
                     <td class="p-3 text-gray-600">{{ contentsLabel(s) }}</td>
                     <td class="p-3">
-                      <span
-                        v-for="tid in tagIdsForSet(s.SampleId)"
-                        :key="tid"
-                        class="mr-1 inline-block rounded-full px-2 py-0.5 text-xs"
-                        :style="{
-                          background: (tagById(tid)?.ColorHex || '#eee') + '33',
-                          color: tagById(tid)?.ColorHex,
-                        }"
-                      >
-                        {{ tagById(tid)?.Name || tid }}
-                      </span>
+                      <div class="flex min-w-0 max-w-full flex-wrap gap-1">
+                        <span
+                          v-if="!standardTagIdsForSet(s.SampleId).length"
+                          class="inline-flex min-w-0 max-w-full overflow-hidden rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-medium text-gray-600"
+                          @click.stop
+                        >
+                          <span class="truncate">Untagged</span>
+                        </span>
+                        <template v-else>
+                          <span
+                            v-for="tid in standardTagIdsForSet(s.SampleId)"
+                            :key="tid"
+                            class="inline-flex min-w-0 max-w-full overflow-hidden rounded-full px-2 py-0.5 text-[10px] font-medium"
+                            :title="tagById(tid)?.Name || tid"
+                            :style="{
+                              background: tagById(tid)?.ColorHex || '#e2e2e8',
+                              color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
+                            }"
+                            @click.stop
+                          >
+                            <span class="truncate">{{ tagById(tid)?.Name || tid }}</span>
+                          </span>
+                        </template>
+                      </div>
                     </td>
-                    <td class="p-3 text-xs text-gray-400">{{ s.ImportSource?.label || '—' }}</td>
-                    <td class="p-3 text-xs text-gray-400">
-                      {{ s.CreatedAt ? new Date(s.CreatedAt).toLocaleDateString() : '—' }}
+                    <td class="px-3 py-2 align-middle">
+                      <span class="inline-flex w-fit max-w-full align-middle" @mousedown.stop @click.stop>
+                        <EGFileAnalysisHistoryTooltip
+                          :lab-id="labId"
+                          :file-key="s.SampleId"
+                          :file-name="s.Name"
+                          :batch-name="batchDisplayName(s) === '—' ? undefined : batchDisplayName(s)"
+                          :standard-tag-names="standardTagNamesForSample(s.SampleId)"
+                          :run-usages="runUsagesForSample(s.SampleId)"
+                          variant="table"
+                          @select-run-files="selectSamplesForRun($event.runId)"
+                          @update:open="onAnalysisPopoverOpen(s.SampleId, $event)"
+                        />
+                      </span>
                     </td>
                   </tr>
                 </template>
@@ -709,7 +860,7 @@
           <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openChangeBatchModal">
             Change batch
           </UButton>
-          <UButton size="sm" variant="soft" :disabled="bulkPanelBusy" @click="openAddBulkPanel">Add Tags</UButton>
+          <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openAddBulkPanel">Add Tags</UButton>
           <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openRemoveBulkPanel">
             Remove Tags
           </UButton>

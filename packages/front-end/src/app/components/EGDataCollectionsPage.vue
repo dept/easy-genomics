@@ -1,6 +1,9 @@
 <script setup lang="ts">
   import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-  import type { LaboratoryDataTag } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
+  import type {
+    LaboratoryDataTag,
+    LaboratoryRunUsageSummary,
+  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
   import type {
     LaboratorySequenceCollection,
     LaboratorySample,
@@ -20,6 +23,10 @@
 
   const props = defineProps<{ labId: string }>();
 
+  const emit = defineEmits<{
+    'update:explorerTab': [tab: DataCollectionsTab];
+  }>();
+
   const { $api } = useNuxtApp();
   const labsStore = useLabsStore();
   const uiStore = useUiStore();
@@ -31,10 +38,13 @@
   const view = ref<View>('main');
   const activeTab = ref<DataCollectionsTab>('samples');
 
+  watch(activeTab, (tab) => emit('update:explorerTab', tab), { immediate: true });
+
   const tags = ref<LaboratoryDataTag[]>([]);
   const samples = ref<LaboratorySample[]>([]);
   const sequenceCollections = ref<LaboratorySequenceCollection[]>([]);
   const sampleIdToTagIds = ref<Record<string, string[]>>({});
+  const sampleIdToRunUsages = ref<Record<string, LaboratoryRunUsageSummary[]>>({});
   const unlinkedFiles = ref<Array<{ Key: string; Size?: number; LastModified?: string }>>([]);
   const unlinkedMeta = ref({ s3Bucket: '', resolvedPrefix: '', lastScanLabel: '' });
 
@@ -87,6 +97,7 @@
       if (res.Samples.length) {
         const CHUNK = 100;
         const tagMap: Record<string, string[]> = {};
+        const runUsagesMap: Record<string, LaboratoryRunUsageSummary[]> = {};
         for (let i = 0; i < res.Samples.length; i += CHUNK) {
           const chunk = res.Samples.slice(i, i + CHUNK).map((s) => s.SampleId);
           const tr = await $api.dataCollections.requestListSampleTags({
@@ -95,11 +106,14 @@
           });
           for (const a of tr.Samples) {
             tagMap[a.SampleId] = a.TagIds;
+            runUsagesMap[a.SampleId] = a.LaboratoryRunUsages ?? [];
           }
         }
         sampleIdToTagIds.value = tagMap;
+        sampleIdToRunUsages.value = runUsagesMap;
       } else {
         sampleIdToTagIds.value = {};
+        sampleIdToRunUsages.value = {};
       }
     } catch {
       toast.error('Failed to load samples.');
@@ -286,11 +300,6 @@
     />
 
     <template v-else>
-      <div class="mb-1">
-        <h1 class="text-2xl font-medium">Data Collections</h1>
-        <p class="text-sm text-gray-500">Saved bundles of samples, ready to launch a workflow on.</p>
-      </div>
-
       <EGDataCollectionsTabBar
         v-model:active-tab="activeTab"
         :collection-count="sequenceCollections.length"
@@ -317,6 +326,7 @@
         :samples="samples"
         :tags="tags"
         :sample-id-to-tag-ids="sampleIdToTagIds"
+        :sample-id-to-run-usages="sampleIdToRunUsages"
         :loading="loading"
         :selected-ids="selectedSampleIds"
         :search="sampleSearch"
