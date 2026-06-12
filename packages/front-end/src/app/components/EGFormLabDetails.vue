@@ -819,17 +819,17 @@
           <UTooltip :delay-duration="0" :ui="{ base: 'h-auto w-auto max-w-sm whitespace-normal text-left' }">
             <template #text>
               <div class="space-y-1.5 py-1">
-                <p class="font-medium">Which provider should I choose?</p>
+                <p class="font-medium text-black">Which provider should I choose?</p>
                 <p>
-                  <span class="font-medium">Amazon Bedrock</span>
+                  <span class="font-medium text-black">Amazon Bedrock</span>
                   — no API key; the error text stays inside your AWS account. Simplest setup and tightest data control.
                 </p>
                 <p>
-                  <span class="font-medium">Anthropic (Claude)</span>
+                  <span class="font-medium text-black">Anthropic (Claude)</span>
                   — best accuracy on nuanced or ambiguous errors. Requires an Anthropic API key.
                 </p>
                 <p>
-                  <span class="font-medium">OpenAI (GPT)</span>
+                  <span class="font-medium text-black">OpenAI (GPT)</span>
                   — low-cost small models (e.g. gpt-4o-mini) suited to high-volume traffic. Requires an OpenAI API key.
                 </p>
                 <p class="italic">
@@ -850,25 +850,6 @@
           Seqera errors. Each integration can use a different provider — for example a cheaper model for high-volume
           Seqera traffic, a more accurate model for HealthOmics ambiguous cases.
         </p>
-
-        <!-- Concrete example of a classified failure so admins can see what the analysis produces
-             (owner + summary + suggested action), mirroring the run detail page output. -->
-        <div class="mb-4 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs">
-          <p class="text-muted mb-1 font-medium">Example of an analyzed failure</p>
-          <p class="text-muted mb-2 italic">"OUT_OF_MEMORY: a task ran out of memory during execution"</p>
-          <p class="text-black">
-            <span class="font-medium">Owner:</span>
-            Bioinformatician
-          </p>
-          <p class="text-black">
-            <span class="font-medium">Summary:</span>
-            A task ran out of memory during execution.
-          </p>
-          <p class="text-black">
-            <span class="font-medium">Suggested action:</span>
-            Increase the memory allocation for the failing task in the workflow definition.
-          </p>
-        </div>
 
         <!-- HealthOmics sub-section -->
         <div v-if="state.AwsHealthOmicsEnabled" class="mb-6 rounded border border-gray-200 p-4">
