@@ -118,7 +118,7 @@
   const hasSampleSheetUrl = computed<boolean>(() => !!wipRun.value.sampleSheetS3Url);
 
   /** Files were selected on Data Collections; sample sheet was generated without browser upload. */
-  const isFromDataCollections = computed<boolean>(() => {
+  const isFromSequenceCollections = computed<boolean>(() => {
     const hasPreSeededSheet = !!wipRun.value.sampleSheetS3Url;
     const hasInputKeys = (wipRun.value.inputFileKeys?.length ?? 0) > 0;
     const noUploadedFiles = !wipRun.value.files?.length;
@@ -970,7 +970,7 @@
     <p class="text-muted mb-1 text-sm">Step 2 of 4</p>
     <h2 class="text-heading mb-4 text-lg font-medium">Upload Data</h2>
 
-    <template v-if="isFromDataCollections">
+    <template v-if="isFromSequenceCollections">
       <p class="text-muted mb-4 text-sm">
         {{ dataCollectionsFileBasenames.length }} file(s) from Data Collections are included in this run. A sample sheet
         has already been generated.
@@ -1185,7 +1185,7 @@
     </template>
 
     <div
-      v-if="!isFromDataCollections && filesProblemAlertMessage"
+      v-if="!isFromSequenceCollections && filesProblemAlertMessage"
       role="alert"
       class="bg-alert-danger-muted text-alert-danger my-10 flex items-center gap-2 rounded-lg p-6"
     >
@@ -1205,7 +1205,7 @@
       :display-label="true"
     />
 
-    <div v-if="!isFromDataCollections" class="flex items-center justify-between pt-4">
+    <div v-if="!isFromSequenceCollections" class="flex items-center justify-between pt-4">
       <EGButton
         variant="secondary"
         label="Upload Sample Sheet"

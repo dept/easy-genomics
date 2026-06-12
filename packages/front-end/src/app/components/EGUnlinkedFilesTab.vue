@@ -21,7 +21,7 @@
     'update:selectedKeys': [keys: string[]];
     'update:search': [value: string];
     rescan: [];
-    'build-sequence-set': [];
+    'build-sample': [];
     'group-with-regex': [];
   }>();
 
@@ -143,7 +143,7 @@
         <UButton variant="outline" :disabled="selectedKeys.length < 2" @click="emit('group-with-regex')">
           Group with regex
         </UButton>
-        <UButton @click="emit('build-sequence-set')">Build sequence set</UButton>
+        <UButton @click="emit('build-sample')">Build sample</UButton>
       </div>
     </div>
   </div>

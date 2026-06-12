@@ -1,8 +1,4 @@
-import type {
-  SampleSheetColumnDef,
-  SampleSheetColumnRole,
-  SequenceSetLayout,
-} from '../types/easy-genomics/sequence-sets';
+import type { SampleSheetColumnDef, SampleSheetColumnRole, SampleLayout } from '../types/easy-genomics/samples';
 
 export type SampleSheetSchemaValidationResult = { ok: true } | { ok: false; message: string };
 
@@ -116,7 +112,7 @@ export function validateSampleSheetSchema(columns: SampleSheetColumnDef[]): Samp
 }
 
 export function mapSequenceSetFilesToRoles(
-  layout: SequenceSetLayout,
+  layout: SampleLayout,
   keys: string[],
   bucket: string,
   sequenceSetName: string,
@@ -131,7 +127,7 @@ export function mapSequenceSetFilesToRoles(
   if (layout === 'long_reads') {
     const readKey =
       firstMatchingKey(sortedKeys, ['.fastq.gz', '.fq.gz', '.fastq', '.fq', '.bam', '.cram']) ?? sortedKeys[0];
-    if (!readKey) return { ok: false, message: 'Sequence set has no files.' };
+    if (!readKey) return { ok: false, message: 'Sample has no files.' };
     roleMap.reads = toUri(readKey);
     roleMap.sample_id = sequenceSetName;
     return { ok: true, roleMap, inputFileKeys };
@@ -141,7 +137,7 @@ export function mapSequenceSetFilesToRoles(
     const fastqKeys = sortedKeys.filter(isFastqKey);
     const r1Key =
       fastqKeys.find((k) => getReadDirection(k.split('/').pop() || k, sampleIdPattern) !== 'R2') ?? fastqKeys[0];
-    if (!r1Key) return { ok: false, message: 'Single-end sequence set requires at least one FASTQ file.' };
+    if (!r1Key) return { ok: false, message: 'Single-end sample requires at least one FASTQ file.' };
     roleMap.read1 = toUri(r1Key);
     roleMap.sample_id =
       getSampleIdFromRFileName(r1Key.split('/').pop() || r1Key, sampleIdPattern) ||
@@ -164,12 +160,12 @@ export function mapSequenceSetFilesToRoles(
   if (!r2Key && fastqKeys.length >= 2) r2Key = fastqKeys.find((k) => k !== r1Key);
 
   if (layout === 'paired_end' || layout === 'paired_end_with_extras') {
-    if (!r1Key) return { ok: false, message: 'Paired-end sequence set requires at least one FASTQ file.' };
+    if (!r1Key) return { ok: false, message: 'Paired-end sample requires at least one FASTQ file.' };
     if (layout === 'paired_end' && r2Key === undefined && fastqKeys.length > 1) {
       r2Key = fastqKeys.find((k) => k !== r1Key);
     }
     if (layout === 'paired_end' && !r2Key) {
-      return { ok: false, message: 'Paired-end sequence set requires matching R1 and R2 files.' };
+      return { ok: false, message: 'Paired-end sample requires matching R1 and R2 files.' };
     }
     roleMap.read1 = toUri(r1Key);
     if (r2Key) roleMap.read2 = toUri(r2Key);
@@ -253,17 +249,17 @@ export function buildSampleSheetCsv(columns: SampleSheetColumnDef[], rows: Sampl
   return [header, ...body].join('\n');
 }
 
-export type SequenceSetForSampleSheet = {
-  SequenceSetId: string;
+export type SampleForSampleSheet = {
+  SampleId: string;
   Name: string;
-  Layout: SequenceSetLayout;
+  Layout: SampleLayout;
   SampleIdPattern?: string;
   FileKeys: string[];
 };
 
-export function buildSampleSheetFromSequenceSets(
+export function buildSampleSheetFromSamples(
   columns: SampleSheetColumnDef[],
-  sequenceSets: SequenceSetForSampleSheet[],
+  sequenceSets: SampleForSampleSheet[],
   bucket: string,
 ): { ok: true; csv: string; rows: SampleSheetRowValues[]; inputFileKeys: string[] } | { ok: false; message: string } {
   const schemaCheck = validateSampleSheetSchema(columns);

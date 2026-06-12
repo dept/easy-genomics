@@ -2,25 +2,25 @@
   import { v4 as uuidv4 } from 'uuid';
   import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import type {
-    LaboratoryRunDataCollection,
+    LaboratorySequenceCollection,
     SampleSheetColumnDef,
     SampleSheetColumnRole,
-  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sequence-sets';
-  import { RUN_DATA_COLLECTION_NAME_MAX_LENGTH } from '@easy-genomics/shared-lib/src/app/constants/data-collections';
+  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
+  import { SEQUENCE_COLLECTION_NAME_MAX_LENGTH } from '@easy-genomics/shared-lib/src/app/constants/data-collections';
   import {
     SAMPLE_SHEET_COLUMN_ROLE_LABELS,
     SAMPLE_SHEET_SCHEMA_PRESETS,
     validateSampleSheetSchema,
   } from '@easy-genomics/shared-lib/src/app/utils/data-collection-sample-sheet';
   import { useToastStore, useUiStore } from '@FE/stores';
-  import { selectedSequenceSetIds, type ExplorerSelection } from '@FE/utils/data-collections-selection';
+  import { selectedSampleIds, type ExplorerSelection } from '@FE/utils/data-collections-selection';
 
   const props = defineProps<{
     modelValue: boolean;
     labId: string;
     lab: Laboratory | null;
     selection: ExplorerSelection;
-    dataCollections: LaboratoryRunDataCollection[];
+    dataCollections: LaboratorySequenceCollection[];
   }>();
 
   const emit = defineEmits<{
@@ -41,7 +41,7 @@
   const submitting = ref(false);
   const generateAfterSave = ref(false);
 
-  const setIds = computed(() => selectedSequenceSetIds(props.selection));
+  const setIds = computed(() => selectedSampleIds(props.selection));
 
   const roleOptions = computed(() =>
     (Object.keys(SAMPLE_SHEET_COLUMN_ROLE_LABELS) as SampleSheetColumnRole[]).map((value) => ({
@@ -58,7 +58,7 @@
   );
 
   const nameInvalid = computed(
-    () => mode.value === 'create' && name.value.trim().length > RUN_DATA_COLLECTION_NAME_MAX_LENGTH,
+    () => mode.value === 'create' && name.value.trim().length > SEQUENCE_COLLECTION_NAME_MAX_LENGTH,
   );
 
   const schemaError = computed(() => {
@@ -107,36 +107,38 @@
     submitting.value = true;
     uiStore.setRequestPending('dataCollectionsMutate');
     try {
-      const collection = await $api.dataCollections.createDataCollection({
+      const collection = await $api.dataCollections.createSequenceCollection({
         LaboratoryId: props.labId,
         Columns: columns.value,
-        SequenceSetIds: setIds.value,
+        SampleIds: setIds.value,
         ...(mode.value === 'create'
           ? { Name: name.value.trim() }
-          : { ExistingDataCollectionId: existingCollectionId.value! }),
+          : { ExistingSequenceCollectionId: existingCollectionId.value! }),
       });
 
       if (generate && props.lab?.S3Bucket) {
         const txId = uuidv4();
         const sheetName = `samplesheet-${name.value.trim() || collection.Name}.csv`.replace(/\s+/g, '-');
-        await $api.dataCollections.generateDataCollectionSampleSheet({
+        await $api.dataCollections.generateSequenceCollectionSampleSheet({
           LaboratoryId: props.labId,
           S3Bucket: props.lab.S3Bucket,
-          DataCollectionId: collection.DataCollectionId,
+          SequenceCollectionId: collection.SequenceCollectionId,
           Platform: 'AWS HealthOmics',
           TransactionId: txId,
           SampleSheetName: sheetName,
           ValidateS3FilesExist: true,
         });
-        toast.success('Data collection saved and sample sheet generated.');
+        toast.success('Sequence collection saved and sample sheet generated.');
       } else {
-        toast.success(mode.value === 'create' ? 'Data collection created.' : 'Sequence sets added to data collection.');
+        toast.success(
+          mode.value === 'create' ? 'Sequence collection created.' : 'Samples added to sequence collection.',
+        );
       }
 
       emit('saved');
       close();
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save data collection.');
+      toast.error(e instanceof Error ? e.message : 'Failed to save sequence collection.');
     } finally {
       submitting.value = false;
       uiStore.setRequestComplete('dataCollectionsMutate');
@@ -149,13 +151,13 @@
     <UCard :ui="{ body: { base: 'max-h-[70vh] overflow-y-auto' } }">
       <template #header>
         <div class="flex items-center justify-between">
-          <h3 class="text-base font-semibold">Add to data collection</h3>
+          <h3 class="text-base font-semibold">Add to sequence collection</h3>
           <UButton color="gray" variant="ghost" icon="i-heroicons-x-mark-20-solid" @click="close" />
         </div>
       </template>
 
       <div class="space-y-4">
-        <p class="text-muted text-sm">{{ setIds.length }} sequence set(s) selected</p>
+        <p class="text-muted text-sm">{{ setIds.length }} sample(s) selected</p>
 
         <div class="flex gap-4">
           <label class="flex cursor-pointer items-center gap-2 text-sm">
@@ -169,17 +171,17 @@
         </div>
 
         <div v-if="mode === 'create'">
-          <label class="text-muted mb-1 block text-xs font-medium">Data collection name</label>
+          <label class="text-muted mb-1 block text-xs font-medium">Sequence collection name</label>
           <UInput v-model="name" placeholder="Name" :color="nameInvalid ? 'red' : undefined" />
         </div>
         <div v-else>
-          <label class="text-muted mb-1 block text-xs font-medium">Existing data collection</label>
+          <label class="text-muted mb-1 block text-xs font-medium">Existing sequence collection</label>
           <USelectMenu
             v-model="existingCollectionId"
-            :options="dataCollections.map((c) => ({ label: c.Name, value: c.DataCollectionId }))"
+            :options="dataCollections.map((c) => ({ label: c.Name, value: c.SequenceCollectionId }))"
             value-attribute="value"
             option-attribute="label"
-            placeholder="Select data collection"
+            placeholder="Select sequence collection"
           />
         </div>
 

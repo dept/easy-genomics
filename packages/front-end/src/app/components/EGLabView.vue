@@ -810,7 +810,7 @@
     tabindex="0"
     class="mt-4"
   >
-    <h2 class="sr-only">Data collections</h2>
+    <h2 class="sr-only">Sequence collections</h2>
     <EGDataCollectionsPage :lab-id="labId" />
   </div>
 

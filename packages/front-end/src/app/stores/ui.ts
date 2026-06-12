@@ -48,8 +48,8 @@ type PendingRequest =
   | 'dataCollectionsList'
   | 'dataCollectionsTags'
   | 'dataCollectionsMutate'
-  | 'dataCollectionsSequenceSets'
-  | 'dataCollectionsRunCollections'
+  | 'dataCollectionsSamples'
+  | 'dataCollectionsRunSequenceCollections'
   | 'runFromCollectionsWorkflows';
 
 interface UiStoreState {

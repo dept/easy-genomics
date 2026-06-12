@@ -1,6 +1,6 @@
 import { RunType } from '@easy-genomics/shared-lib/src/app/types/base-entity';
 import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-import type { GenerateDataCollectionSampleSheetResponse } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sequence-sets';
+import type { GenerateSequenceCollectionSampleSheetResponse } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
 import { v4 as uuidv4 } from 'uuid';
 
 import { buildRunWizardUrl, seedWipRunFromSampleSheet } from '../../../src/app/utils/run-upload-sample-sheet';
@@ -26,7 +26,7 @@ describe('run-upload-sample-sheet', () => {
     S3Bucket: 'bucket',
   } as Laboratory;
 
-  const sampleSheetResult: GenerateDataCollectionSampleSheetResponse = {
+  const sampleSheetResult: GenerateSequenceCollectionSampleSheetResponse = {
     SampleSheetS3Url: 's3://bucket/org1/lab1/aws-healthomics/tx/sheet.csv',
     InputFileKeys: ['org1/lab1/a.fastq.gz'],
     CsvPreview: 'sample,fastq_1\na,s3://bucket/org1/lab1/a.fastq.gz',

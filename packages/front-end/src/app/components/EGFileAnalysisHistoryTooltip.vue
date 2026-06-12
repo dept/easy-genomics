@@ -1,6 +1,6 @@
 <script setup lang="ts">
   /**
-   * Hover-triggered analysis history panel for a single file in the data collections explorer.
+   * Hover-triggered analysis history panel for a single file in the sequence collections explorer.
    * Card view: dot (+ count chip when N>1) + trailing chevron. Table view: dot + status text. Panel lists runs;
    * left opens run detail; right zone selects input files for that run.
    */

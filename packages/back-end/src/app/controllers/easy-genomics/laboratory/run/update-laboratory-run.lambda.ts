@@ -104,7 +104,7 @@ export const handler: Handler = async (
     });
 
     // Propagate the freshly computed `ExpiresAt` into every per-file LaboratoryRunUsages entry
-    // so the data collections page can power "Expiring soon" without re-reading the run table.
+    // so the sequence collections page can power "Expiring soon" without re-reading the run table.
     // Best-effort: tagging-side failures must not break the run update.
     if (expiresAt !== undefined && laboratory?.S3Bucket && (response.InputFileKeys || []).length > 0) {
       try {

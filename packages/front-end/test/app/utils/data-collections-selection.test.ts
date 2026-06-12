@@ -2,7 +2,7 @@ import {
   parseSelectionKey,
   selectionFromLegacyKeys,
   selectionHasOnlyFiles,
-  selectionHasOnlySequenceSets,
+  selectionHasOnlySamples,
   selectedFileKeys,
   toggleSelectionItem,
 } from '../../../src/app/utils/data-collections-selection';
@@ -18,10 +18,10 @@ describe('data-collections-selection', () => {
   it('selectionHasOnlyFiles rejects mixed selection', () => {
     const sel = [
       { type: 'file' as const, key: 'a' },
-      { type: 'sequenceSet' as const, sequenceSetId: 's1' },
+      { type: 'sample' as const, sampleId: 's1' },
     ];
     expect(selectionHasOnlyFiles(sel)).toBe(false);
-    expect(selectionHasOnlySequenceSets(sel)).toBe(false);
+    expect(selectionHasOnlySamples(sel)).toBe(false);
     expect(selectedFileKeys(sel)).toEqual(['a']);
   });
 
