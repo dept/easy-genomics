@@ -29,11 +29,8 @@ export const handler: Handler = async (
       sequenceSetIds: parsed.data.SequenceSetIds,
     });
     return buildResponse(200, JSON.stringify(updated), event);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(err);
-    if (typeof err?.message === 'string' && err.message.startsWith('Unknown')) {
-      return buildResponse(404, JSON.stringify({ message: err.message }), event);
-    }
     return buildErrorResponse(err, event);
   }
 };

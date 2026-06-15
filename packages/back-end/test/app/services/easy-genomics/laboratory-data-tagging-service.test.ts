@@ -917,3 +917,104 @@ describe('LaboratoryDataTaggingService.removeLaboratoryRunUsageForRunIds preserv
     expect(mockDeleteItem).not.toHaveBeenCalled();
   });
 });
+
+describe('LaboratoryDataTaggingService.applyTagsToSequenceSets', () => {
+  let svc: LaboratoryDataTaggingService;
+  let mockGetItem: jest.Mock;
+  let mockUpdateItem: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratoryDataTaggingService();
+    mockGetItem = jest.fn();
+    mockUpdateItem = jest.fn().mockResolvedValue({});
+    (svc as unknown as { getItem: typeof mockGetItem }).getItem = mockGetItem;
+    (svc as unknown as { getTagRow: jest.Mock }).getTagRow = jest.fn().mockResolvedValue({
+      TagId: 'tag-1',
+      Kind: 'standard',
+      Name: 'Tag 1',
+    });
+    (svc as unknown as { updateItem: typeof mockUpdateItem }).updateItem = mockUpdateItem;
+    (svc as unknown as { adjustTagFileCount: jest.Mock }).adjustTagFileCount = jest.fn().mockResolvedValue(undefined);
+    (svc as unknown as { putSequenceSetMapRow: jest.Mock }).putSequenceSetMapRow = jest
+      .fn()
+      .mockResolvedValue(undefined);
+    (svc as unknown as { deleteSequenceSetMapIfExists: jest.Mock }).deleteSequenceSetMapIfExists = jest
+      .fn()
+      .mockResolvedValue(undefined);
+  });
+
+  it('rejects auto-managed workflow tags', async () => {
+    (svc as unknown as { getTagRow: jest.Mock }).getTagRow = jest.fn().mockResolvedValue({
+      TagId: 'wf-1',
+      Kind: 'workflow',
+      Name: 'Workflow',
+    });
+    await expect(svc.applyTagsToSequenceSets(labFixture(), 'user-1', ['set-1'], ['wf-1'], [])).rejects.toThrow(
+      'Workflow tags are auto-managed',
+    );
+  });
+});
+
+describe('LaboratoryDataTaggingService.listSequenceSetsByTag', () => {
+  let svc: LaboratoryDataTaggingService;
+  let mockQueryItems: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratoryDataTaggingService();
+    mockQueryItems = jest.fn().mockResolvedValue({
+      Items: [marshall({ SequenceSetId: 'set-1', Gsi1Pk: 'lab-1#TAG#tag-1', Gsi1Sk: 'SEQSET#set-1' })],
+      LastEvaluatedKey: { LaboratoryId: { S: 'lab-1' } },
+    });
+    (svc as unknown as { queryItems: typeof mockQueryItems }).queryItems = mockQueryItems;
+  });
+
+  it('returns a cursor when more pages are available', async () => {
+    const res = await svc.listSequenceSetsByTag('lab-1', 'tag-1', 1);
+    expect(res.SequenceSetIds).toEqual(['set-1']);
+    expect(res.NextCursor).toBeDefined();
+  });
+});
+
+describe('LaboratoryDataTaggingService.recordLaboratoryRunUsageForSequenceSets', () => {
+  let svc: LaboratoryDataTaggingService;
+  let mockUpdateItem: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratoryDataTaggingService();
+    mockUpdateItem = jest.fn().mockResolvedValue({});
+    (svc as unknown as { updateItem: typeof mockUpdateItem }).updateItem = mockUpdateItem;
+  });
+
+  it('initializes LaboratoryRunUsages before writing nested run usage', async () => {
+    const summary = {
+      RunId: 'run-1',
+      RunName: 'Run 1',
+      RunCreatedAt: '2026-01-01T00:00:00.000Z',
+      InputFileCount: 1,
+      InputFileKeys: ['org-1/lab-1/a.fq.gz'],
+    };
+
+    await svc.recordLaboratoryRunUsageForSequenceSets(labFixture(), 'user-1', ['set-1'], summary);
+
+    expect(mockUpdateItem).toHaveBeenCalledTimes(2);
+    expect(mockUpdateItem.mock.calls[0][0].UpdateExpression).toContain('if_not_exists(#lru, :emptyMap)');
+    expect(mockUpdateItem.mock.calls[1][0].UpdateExpression).toContain('LaboratoryRunUsages.#runId');
+  });
+
+  it('skips missing sequence set rows without swallowing unexpected errors', async () => {
+    mockUpdateItem.mockRejectedValueOnce(new ConditionalCheckFailedException({ message: 'c', $metadata: {} }));
+    await expect(
+      svc.recordLaboratoryRunUsageForSequenceSets(labFixture(), 'user-1', ['missing-set'], {
+        RunId: 'run-1',
+        RunName: 'Run 1',
+        RunCreatedAt: '2026-01-01T00:00:00.000Z',
+        InputFileCount: 1,
+        InputFileKeys: ['org-1/lab-1/a.fq.gz'],
+      }),
+    ).resolves.toBeUndefined();
+    expect(mockUpdateItem).toHaveBeenCalledTimes(1);
+  });
+});

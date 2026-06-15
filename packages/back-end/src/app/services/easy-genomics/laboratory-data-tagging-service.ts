@@ -21,6 +21,11 @@ import {
   ListSequenceSetsByTagResponse,
   SequenceSetTagAssignment,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sequence-sets';
+import {
+  SequenceSetNotFoundError,
+  S3BucketMismatchError,
+  S3KeyOutOfPrefixError,
+} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { v5 as uuidv5 } from 'uuid';
 import { DynamoDBService } from '../dynamodb-service';
 
@@ -57,6 +62,8 @@ function isConditionalCheckFailed(e: unknown): boolean {
     (typeof e === 'object' && e !== null && (e as { name?: string }).name === 'ConditionalCheckFailedException')
   );
 }
+
+export { isConditionalCheckFailed };
 
 function deterministicWorkflowTagId(
   laboratoryId: string,
@@ -147,7 +154,7 @@ function skMap(tagId: string, ref: string): string {
   return `MAP#${tagId}#${ref}`;
 }
 
-function skSequenceSet(setId: string): string {
+export function skSequenceSet(setId: string): string {
   return `SEQUENCE_SET#${setId}`;
 }
 
@@ -163,13 +170,13 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
   public assertKeyUnderLabPrefix(laboratory: Laboratory, key: string): void {
     const root = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
     if (!key.startsWith(root)) {
-      throw new Error('S3 key is outside the laboratory prefix');
+      throw new S3KeyOutOfPrefixError();
     }
   }
 
   public assertBucketMatchesLab(laboratory: Laboratory, bucket: string): void {
     if (!laboratory.S3Bucket || laboratory.S3Bucket !== bucket) {
-      throw new Error('S3 bucket does not match laboratory configuration');
+      throw new S3BucketMismatchError();
     }
   }
 
@@ -1715,7 +1722,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         Key: marshall({ LaboratoryId: laboratoryId, Sk: skSequenceSet(setId) }),
         ConsistentRead: true,
       });
-      if (!res.Item) throw new Error(`Unknown sequence set: ${setId}`);
+      if (!res.Item) throw new SequenceSetNotFoundError(setId);
 
       const row = unmarshall(res.Item) as Record<string, unknown>;
       const tagIds = new Set<string>((row.TagIds as string[]) || []);
@@ -1803,6 +1810,18 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
 
     for (const setId of sequenceSetIds) {
       try {
+        // Step 1: ensure the SEQUENCE_SET# row has a map at `LaboratoryRunUsages`. UpdateItem with
+        // a SET on a nested path requires the parent map to exist.
+        await this.updateItem({
+          TableName: TABLE_NAME,
+          Key: marshall({ LaboratoryId: laboratoryId, Sk: skSequenceSet(setId) }),
+          UpdateExpression: 'SET #lru = if_not_exists(#lru, :emptyMap)',
+          ExpressionAttributeNames: { '#lru': 'LaboratoryRunUsages', '#sk': 'Sk' },
+          ExpressionAttributeValues: marshall({ ':emptyMap': {} }),
+          ConditionExpression: 'attribute_exists(#sk)',
+        });
+
+        // Step 2: record this run's usage entry on the sequence set row.
         await this.updateItem({
           TableName: TABLE_NAME,
           Key: marshall({ LaboratoryId: laboratoryId, Sk: skSequenceSet(setId) }),
@@ -1814,8 +1833,13 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
             ':mb': userId,
           }),
         });
-      } catch {
-        // Set row may not exist — skip
+      } catch (e: unknown) {
+        if (isConditionalCheckFailed(e)) {
+          // Set row does not exist — skip
+          continue;
+        }
+        console.warn(`Failed to record run usage for sequence set ${setId}:`, e);
+        throw e;
       }
     }
   }

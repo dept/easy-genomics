@@ -30,16 +30,8 @@ export const handler: Handler = async (
       },
     );
     return buildResponse(200, JSON.stringify(res), event);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(err);
-    if (typeof err?.message === 'string') {
-      if (err.message.startsWith('Unknown data collection') || err.message.includes('sequence set')) {
-        return buildResponse(400, JSON.stringify({ message: err.message }), event);
-      }
-      if (err.message.includes('S3 object not found')) {
-        return buildResponse(400, JSON.stringify({ message: err.message }), event);
-      }
-    }
     return buildErrorResponse(err, event);
   }
 };

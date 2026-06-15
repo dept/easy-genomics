@@ -60,4 +60,29 @@ describe('run-upload-sample-sheet', () => {
     expect(url).toContain('/run-workflow/wf-1');
     expect(url).toContain('from=data-collections');
   });
+
+  it('seeds seqera WIP run', () => {
+    const txId = uuidv4();
+    const tempId = seedWipRunFromSampleSheet({
+      lab,
+      labId: 'lab1',
+      runName: 'Run1',
+      platform: 'Seqera Cloud' as RunType,
+      workflowExternalId: 'wf-1',
+      sampleSheetResult,
+      transactionId: txId,
+    });
+    expect(tempId).toBe(txId);
+    expect(mockUpdateWipSeqeraRun).toHaveBeenCalled();
+    expect(mockUpdateWipSeqeraRunParams).toHaveBeenCalledWith(
+      txId,
+      expect.objectContaining({ input: sampleSheetResult.SampleSheetS3Url }),
+    );
+  });
+
+  it('builds run wizard URL for seqera', () => {
+    const url = buildRunWizardUrl('lab1', 'Seqera Cloud', 'wf-1', 'temp-1');
+    expect(url).toContain('/run-pipeline/wf-1');
+    expect(url).toContain('seqeraRunTempId=temp-1');
+  });
 });

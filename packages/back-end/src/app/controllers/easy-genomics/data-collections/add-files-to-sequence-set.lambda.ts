@@ -20,11 +20,8 @@ export const handler: Handler = async (
 
     await sequenceSetService.addFilesToSequenceSet(laboratory, userId, body.S3Bucket, body.SequenceSetId, body.Keys);
     return buildResponse(200, JSON.stringify({ ok: true }), event);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(err);
-    if (typeof err?.message === 'string' && err.message.startsWith('Unknown sequence set')) {
-      return buildResponse(404, JSON.stringify({ message: err.message }), event);
-    }
     return buildErrorResponse(err, event);
   }
 };

@@ -5,7 +5,7 @@
     LaboratoryRunDataCollection,
     LaboratorySequenceSet,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sequence-sets';
-  import { useLabsStore, useUiStore } from '@FE/stores';
+  import { useLabsStore, useToastStore, useUiStore } from '@FE/stores';
   import EGBuildSequenceSetModal from '@FE/components/EGBuildSequenceSetModal.vue';
   import EGBuildSequenceSetsFromRegexModal from '@FE/components/EGBuildSequenceSetsFromRegexModal.vue';
   import EGDataCollectionBuilder from '@FE/components/EGDataCollectionBuilder.vue';
@@ -21,6 +21,7 @@
   const { $api } = useNuxtApp();
   const labsStore = useLabsStore();
   const uiStore = useUiStore();
+  const toast = useToastStore();
 
   type View = 'main' | 'import' | 'builder';
 
@@ -68,6 +69,8 @@
     try {
       const res = await $api.dataCollections.listTags(props.labId);
       tags.value = res.Tags;
+    } catch {
+      toast.error('Failed to load tags.');
     } finally {
       uiStore.setRequestComplete('dataCollectionsTags');
     }
@@ -95,6 +98,8 @@
       } else {
         setIdToTagIds.value = {};
       }
+    } catch {
+      toast.error('Failed to load sequence sets.');
     } finally {
       uiStore.setRequestComplete('dataCollectionsSequenceSets');
     }
@@ -105,6 +110,8 @@
     try {
       const res = await $api.dataCollections.listDataCollections(props.labId);
       dataCollections.value = res.DataCollections ?? [];
+    } catch {
+      toast.error('Failed to load data collections.');
     } finally {
       uiStore.setRequestComplete('dataCollectionsRunCollections');
     }
@@ -123,6 +130,8 @@
         resolvedPrefix: res.ResolvedPrefix,
         lastScanLabel: `Last scan ${new Date().toLocaleTimeString()}`,
       };
+    } catch {
+      toast.error('Failed to load unlinked files.');
     } finally {
       uiStore.setRequestComplete('dataCollectionsList');
     }

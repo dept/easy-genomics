@@ -1,4 +1,6 @@
 import {
+  parseSelectionKey,
+  selectionFromLegacyKeys,
   selectionHasOnlyFiles,
   selectionHasOnlySequenceSets,
   selectedFileKeys,
@@ -21,5 +23,23 @@ describe('data-collections-selection', () => {
     expect(selectionHasOnlyFiles(sel)).toBe(false);
     expect(selectionHasOnlySequenceSets(sel)).toBe(false);
     expect(selectedFileKeys(sel)).toEqual(['a']);
+  });
+
+  it('parseSelectionKey handles legacy bare S3 keys', () => {
+    expect(parseSelectionKey('org/lab/sample.fastq.gz')).toEqual({
+      type: 'file',
+      key: 'org/lab/sample.fastq.gz',
+    });
+  });
+
+  it('selectionFromLegacyKeys converts bare keys to file selections', () => {
+    expect(selectionFromLegacyKeys(['org/lab/a.fq.gz', 'org/lab/b.fq.gz'])).toEqual([
+      { type: 'file', key: 'org/lab/a.fq.gz' },
+      { type: 'file', key: 'org/lab/b.fq.gz' },
+    ]);
+  });
+
+  it('selectionHasOnlyFiles returns true for file-only selections', () => {
+    expect(selectionHasOnlyFiles([{ type: 'file', key: 'a' }])).toBe(true);
   });
 });
