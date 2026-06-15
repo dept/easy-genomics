@@ -22,18 +22,29 @@ import {
   buildSampleSheetFromSequenceSets,
   SequenceSetForSampleSheet,
 } from '@easy-genomics/shared-lib/src/app/utils/data-collection-sample-sheet';
+import { isFilenameRegexSafe } from '@easy-genomics/shared-lib/src/app/utils/filename-regex-safety';
+import {
+  DataCollectionNotFoundError,
+  InvalidRequestError,
+  LaboratoryBucketNotFoundError,
+  NotFoundError,
+  SequenceSetNotFoundError,
+  S3KeyOutOfPrefixError,
+} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { buildContentsSummary } from '@easy-genomics/shared-lib/src/app/utils/sequence-set-regex-grouping';
 import { DataCollectionService } from './data-collection-service';
-import { decodeS3ObjectRef, encodeS3ObjectRef, LaboratoryDataTaggingService } from './laboratory-data-tagging-service';
+import {
+  decodeS3ObjectRef,
+  encodeS3ObjectRef,
+  isConditionalCheckFailed,
+  LaboratoryDataTaggingService,
+  skSequenceSet,
+} from './laboratory-data-tagging-service';
 import { DynamoDBService } from '../dynamodb-service';
 import { S3Service } from '../s3-service';
 
 const TABLE_NAME = `${process.env.NAME_PREFIX}-laboratory-data-tagging-table`;
 const GSI1_NAME = 'Gsi1Pk_Index';
-
-function skSequenceSet(id: string): string {
-  return `SEQUENCE_SET#${id}`;
-}
 
 function skSeqSetFile(setId: string, ref: string): string {
   return `SEQSETFILE#${setId}#${ref}`;
@@ -202,8 +213,63 @@ export class LaboratorySequenceSetService extends DynamoDBService {
     keys: string[],
   ): Promise<void> {
     const existing = await this.getSequenceSet(laboratory.LaboratoryId, setId);
-    if (!existing) throw new Error(`Unknown sequence set: ${setId}`);
+    if (!existing) throw new SequenceSetNotFoundError(setId);
     await this.addFilesToSequenceSetInternal(laboratory, userId, bucket, setId, keys);
+  }
+
+  public async createOrExtendSequenceSet(
+    laboratory: Laboratory,
+    userId: string,
+    bucket: string,
+    opts: {
+      keys: string[];
+      layout: SequenceSetLayout;
+      existingSequenceSetId?: string;
+      name?: string;
+      filenameRegex?: string;
+      sampleIdPattern?: string;
+      expandRegexFromListing?: boolean;
+    },
+  ): Promise<LaboratorySequenceSet> {
+    this.assertBucketMatchesLab(laboratory, bucket);
+    let keys = [...opts.keys];
+
+    if (opts.expandRegexFromListing && opts.filenameRegex) {
+      if (!isFilenameRegexSafe(opts.filenameRegex)) {
+        throw new InvalidRequestError('Filename regex is not allowed');
+      }
+      const labPrefix = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
+      const { contents } = await this.dataCollectionService.listTransactionInputs({
+        bucket,
+        labPrefix,
+        pageSize: 1000,
+      });
+      const regex = new RegExp(opts.filenameRegex);
+      for (const obj of contents) {
+        if (!obj.Key) continue;
+        const base = obj.Key.split('/').pop() || obj.Key;
+        if (regex.test(base)) keys.push(obj.Key);
+      }
+      keys = [...new Set(keys)];
+    }
+
+    if (opts.existingSequenceSetId) {
+      if (!keys.length) throw new InvalidRequestError('At least one file key is required');
+      await this.addFilesToSequenceSet(laboratory, userId, bucket, opts.existingSequenceSetId, keys);
+      const set = await this.getSequenceSet(laboratory.LaboratoryId, opts.existingSequenceSetId);
+      if (!set) throw new SequenceSetNotFoundError(opts.existingSequenceSetId);
+      return set;
+    }
+
+    if (!opts.name || !keys.length) throw new InvalidRequestError();
+
+    return this.createSequenceSet(laboratory, userId, bucket, {
+      name: opts.name,
+      layout: opts.layout,
+      filenameRegex: opts.filenameRegex,
+      sampleIdPattern: opts.sampleIdPattern,
+      keys,
+    });
   }
 
   public async removeFilesFromSequenceSet(
@@ -215,7 +281,7 @@ export class LaboratorySequenceSetService extends DynamoDBService {
   ): Promise<void> {
     const laboratoryId = laboratory.LaboratoryId;
     const existing = await this.getSequenceSet(laboratoryId, setId);
-    if (!existing) throw new Error(`Unknown sequence set: ${setId}`);
+    if (!existing) throw new SequenceSetNotFoundError(setId);
 
     let removed = 0;
     for (const key of keys) {
@@ -271,6 +337,17 @@ export class LaboratorySequenceSetService extends DynamoDBService {
     return { Files: files, NextCursor: nextCursor };
   }
 
+  private async listAllSequenceSetFiles(laboratoryId: string, setId: string): Promise<S3TaggedObjectRef[]> {
+    const all: S3TaggedObjectRef[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await this.listSequenceSetFiles(laboratoryId, setId, 500, cursor);
+      all.push(...page.Files);
+      cursor = page.NextCursor;
+    } while (cursor);
+    return all;
+  }
+
   public async listDataCollectionSequenceSetIds(laboratoryId: string, collectionId: string): Promise<string[]> {
     const gsiPk = gsi1PkForDataCollection(laboratoryId, collectionId);
     const ids: string[] = [];
@@ -305,7 +382,7 @@ export class LaboratorySequenceSetService extends DynamoDBService {
     const laboratoryId = laboratory.LaboratoryId;
     for (const setId of opts.sequenceSetIds) {
       const set = await this.getSequenceSet(laboratoryId, setId);
-      if (!set) throw new Error(`Unknown sequence set: ${setId}`);
+      if (!set) throw new SequenceSetNotFoundError(setId);
     }
 
     const collectionId = randomUUID();
@@ -345,7 +422,7 @@ export class LaboratorySequenceSetService extends DynamoDBService {
     sequenceSetIds: string[],
   ): Promise<void> {
     const existing = await this.getDataCollection(laboratory.LaboratoryId, collectionId);
-    if (!existing) throw new Error(`Unknown data collection: ${collectionId}`);
+    if (!existing) throw new DataCollectionNotFoundError(collectionId);
     await this.addSequenceSetsToDataCollectionInternal(laboratory, userId, collectionId, sequenceSetIds);
   }
 
@@ -357,7 +434,7 @@ export class LaboratorySequenceSetService extends DynamoDBService {
   ): Promise<LaboratoryRunDataCollection> {
     const laboratoryId = laboratory.LaboratoryId;
     const existing = await this.getDataCollection(laboratoryId, collectionId);
-    if (!existing) throw new Error(`Unknown data collection: ${collectionId}`);
+    if (!existing) throw new DataCollectionNotFoundError(collectionId);
 
     const now = new Date().toISOString();
     await this.updateItem({
@@ -388,11 +465,11 @@ export class LaboratorySequenceSetService extends DynamoDBService {
   ): Promise<LaboratoryRunDataCollection> {
     const laboratoryId = laboratory.LaboratoryId;
     const existing = await this.getDataCollection(laboratoryId, collectionId);
-    if (!existing) throw new Error(`Unknown data collection: ${collectionId}`);
+    if (!existing) throw new DataCollectionNotFoundError(collectionId);
 
     for (const setId of opts.sequenceSetIds) {
       const set = await this.getSequenceSet(laboratoryId, setId);
-      if (!set) throw new Error(`Unknown sequence set: ${setId}`);
+      if (!set) throw new SequenceSetNotFoundError(setId);
     }
 
     const currentSetIds = await this.listDataCollectionSequenceSetIds(laboratoryId, collectionId);
@@ -440,32 +517,32 @@ export class LaboratorySequenceSetService extends DynamoDBService {
     this.assertBucketMatchesLab(laboratory, bucket);
 
     const collection = await this.getDataCollection(laboratoryId, collectionId);
-    if (!collection) throw new Error(`Unknown data collection: ${collectionId}`);
+    if (!collection) throw new DataCollectionNotFoundError(collectionId);
 
     const setIds = await this.listDataCollectionSequenceSetIds(laboratoryId, collectionId);
-    if (!setIds.length) throw new Error('Data collection has no sequence sets.');
+    if (!setIds.length) throw new InvalidRequestError('Data collection has no sequence sets.');
 
     const sequenceSets: SequenceSetForSampleSheet[] = [];
     for (const setId of setIds) {
       const setMeta = await this.getSequenceSet(laboratoryId, setId);
       if (!setMeta) continue;
-      const { Files } = await this.listSequenceSetFiles(laboratoryId, setId, 500);
+      const files = await this.listAllSequenceSetFiles(laboratoryId, setId);
       sequenceSets.push({
         SequenceSetId: setId,
         Name: setMeta.Name,
         Layout: setMeta.Layout,
         SampleIdPattern: setMeta.SampleIdPattern,
-        FileKeys: Files.map((f) => f.Key),
+        FileKeys: files.map((f) => f.Key),
       });
     }
 
     const built = buildSampleSheetFromSequenceSets(collection.Columns, sequenceSets, bucket);
-    if (!built.ok) throw new Error(built.message);
+    if (!built.ok) throw new InvalidRequestError(built.message);
 
     if (opts.validateS3FilesExist) {
       for (const key of built.inputFileKeys) {
         const exists = await this.s3Service.doesObjectExist({ Bucket: bucket, Key: key });
-        if (!exists) throw new Error(`S3 object not found: ${key}`);
+        if (!exists) throw new NotFoundError(`S3 object not found: ${key}`);
       }
     }
 
@@ -514,13 +591,13 @@ export class LaboratorySequenceSetService extends DynamoDBService {
     },
   ): Promise<UnlinkedBucketObjectsResponse> {
     const s3Bucket = laboratory.S3Bucket || '';
-    if (!s3Bucket) throw new Error('Laboratory has no S3 bucket configured');
+    if (!s3Bucket) throw new LaboratoryBucketNotFoundError(laboratory.LaboratoryId);
 
     const labRoot = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
     const relative = (opts.relativePrefix || '').replace(/^\/*/, '');
     let normalizedPrefix = `${labRoot}${relative}`;
     if (!normalizedPrefix.endsWith('/')) normalizedPrefix = `${normalizedPrefix}/`;
-    if (!normalizedPrefix.startsWith(labRoot)) throw new Error('Prefix is outside laboratory scope');
+    if (!normalizedPrefix.startsWith(labRoot)) throw new S3KeyOutOfPrefixError();
 
     const pageSize = Math.min(opts.pageSize ?? 1000, 1000);
     const maxTotalKeys = Math.min(opts.maxTotalKeys ?? 15_000, 50_000);
@@ -557,7 +634,6 @@ export class LaboratorySequenceSetService extends DynamoDBService {
       IsTruncated: listingTruncated,
       S3Bucket: s3Bucket,
       ResolvedPrefix: normalizedPrefix,
-      ListingTruncated: listingTruncated,
       ReturnedKeyCount: unlinked.length,
     };
   }
@@ -587,6 +663,8 @@ export class LaboratorySequenceSetService extends DynamoDBService {
     };
 
     for (const job of opts.copyJobs || []) {
+      this.assertBucketMatchesLab(laboratory, job.sourceBucket);
+      this.assertKeyUnderLabPrefix(laboratory, job.sourceKey);
       this.assertKeyUnderLabPrefix(laboratory, job.destKey);
       await this.s3Service.copyBucketObject({
         Bucket: bucket,
@@ -736,10 +814,9 @@ export class LaboratorySequenceSetService extends DynamoDBService {
           ExpressionAttributeNames: { '#sk': 'Sk' },
         });
         added++;
-        await this.addSequenceSetIdToFileRow(laboratoryId, ref, bucket, key, setId, userId);
+        await this.addSequenceSetIdToFileRow(laboratoryId, ref, bucket, key, setId);
       } catch (e: unknown) {
-        const name = typeof e === 'object' && e !== null ? (e as { name?: string }).name : undefined;
-        if (name !== 'ConditionalCheckFailedException') throw e;
+        if (!isConditionalCheckFailed(e)) throw e;
       }
     }
 
@@ -760,7 +837,7 @@ export class LaboratorySequenceSetService extends DynamoDBService {
 
     for (const setId of sequenceSetIds) {
       const set = await this.getSequenceSet(laboratoryId, setId);
-      if (!set) throw new Error(`Unknown sequence set: ${setId}`);
+      if (!set) throw new SequenceSetNotFoundError(setId);
 
       const mapSk = skDcSet(collectionId, setId);
       try {
@@ -783,8 +860,7 @@ export class LaboratorySequenceSetService extends DynamoDBService {
         });
         added++;
       } catch (e: unknown) {
-        const name = typeof e === 'object' && e !== null ? (e as { name?: string }).name : undefined;
-        if (name !== 'ConditionalCheckFailedException') throw e;
+        if (!isConditionalCheckFailed(e)) throw e;
       }
     }
 
@@ -811,8 +887,7 @@ export class LaboratorySequenceSetService extends DynamoDBService {
         });
         removed++;
       } catch (e: unknown) {
-        const name = typeof e === 'object' && e !== null ? (e as { name?: string }).name : undefined;
-        if (name !== 'ConditionalCheckFailedException') throw e;
+        if (!isConditionalCheckFailed(e)) throw e;
       }
     }
 
@@ -827,7 +902,6 @@ export class LaboratorySequenceSetService extends DynamoDBService {
     bucket: string,
     key: string,
     setId: string,
-    userId: string,
   ): Promise<void> {
     const now = new Date().toISOString();
     try {
@@ -847,26 +921,8 @@ export class LaboratorySequenceSetService extends DynamoDBService {
         }),
       });
     } catch (e: unknown) {
-      const name = typeof e === 'object' && e !== null ? (e as { name?: string }).name : undefined;
-      if (name === 'ConditionalCheckFailedException') return;
-      // File row may not exist yet — create it
-      await this.putItem({
-        TableName: TABLE_NAME,
-        Item: marshall(
-          {
-            LaboratoryId: laboratoryId,
-            Sk: skFile(ref),
-            S3Bucket: bucket,
-            ObjectKey: key,
-            TagIds: [],
-            SequenceSetIds: [setId],
-            ModifiedAt: now,
-            CreatedAt: now,
-            CreatedBy: userId,
-          },
-          { removeUndefinedValues: true },
-        ),
-      });
+      if (isConditionalCheckFailed(e)) return;
+      throw e;
     }
   }
 
@@ -935,18 +991,22 @@ export class LaboratorySequenceSetService extends DynamoDBService {
     delta: number,
     userId: string,
   ): Promise<void> {
-    const row = await this.getDataCollection(laboratoryId, collectionId);
-    if (!row) return;
-    const next = Math.max(0, (row.SequenceSetCount || 0) + delta);
+    if (delta === 0) return;
     await this.updateItem({
       TableName: TABLE_NAME,
       Key: marshall({ LaboratoryId: laboratoryId, Sk: skDataCollection(collectionId) }),
-      UpdateExpression: 'SET SequenceSetCount = :n, ModifiedAt = :ma, ModifiedBy = :mb',
+      UpdateExpression: 'ADD SequenceSetCount :delta SET ModifiedAt = :ma, ModifiedBy = :mb',
       ExpressionAttributeValues: marshall({
-        ':n': next,
+        ':delta': delta,
         ':ma': new Date().toISOString(),
         ':mb': userId,
+        ...(delta < 0 ? { ':absDelta': -delta } : {}),
       }),
+      ...(delta < 0
+        ? {
+            ConditionExpression: 'SequenceSetCount >= :absDelta',
+          }
+        : {}),
     });
   }
 

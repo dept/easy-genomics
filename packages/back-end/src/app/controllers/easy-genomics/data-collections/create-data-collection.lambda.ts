@@ -1,5 +1,5 @@
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
-import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { DataCollectionNotFoundError, InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { CreateDataCollectionSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/data-collections/create-data-collection';
 import { validateSampleSheetSchema } from '@easy-genomics/shared-lib/src/app/utils/data-collection-sample-sheet';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
@@ -37,6 +37,7 @@ export const handler: Handler = async (
         laboratory.LaboratoryId,
         parsed.data.ExistingDataCollectionId,
       );
+      if (!collection) throw new DataCollectionNotFoundError(parsed.data.ExistingDataCollectionId);
       return buildResponse(200, JSON.stringify(collection), event);
     }
 
@@ -48,11 +49,8 @@ export const handler: Handler = async (
       sequenceSetIds: parsed.data.SequenceSetIds,
     });
     return buildResponse(200, JSON.stringify(created), event);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(err);
-    if (typeof err?.message === 'string' && err.message.startsWith('Unknown')) {
-      return buildResponse(404, JSON.stringify({ message: err.message }), event);
-    }
     return buildErrorResponse(err, event);
   }
 };

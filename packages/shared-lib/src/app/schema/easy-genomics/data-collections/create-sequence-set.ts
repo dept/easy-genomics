@@ -10,7 +10,7 @@ export const CreateSequenceSetSchema = z
     /** Create a new sequence set with this name. Omit when adding to ExistingSequenceSetId. */
     Name: z.string().trim().min(1).max(SEQUENCE_SET_NAME_MAX_LENGTH).optional(),
     Layout: SequenceSetLayoutSchema,
-    FilenameRegex: z.string().trim().min(1).optional(),
+    FilenameRegex: z.string().trim().min(1).max(500).optional(),
     SampleIdPattern: z.string().trim().min(1).optional(),
     /** S3 keys to attach. Required unless ExistingSequenceSetId with regex expansion supplies keys. */
     Keys: z.array(z.string().min(1)).max(500).optional(),

@@ -47,6 +47,8 @@ export async function associateInputsWithWorkflowTag(args: {
 
       if (sequenceSetIds.length) {
         await tagging.applyWorkflowToSequenceSets(laboratory, userId, tag.TagId, sequenceSetIds);
+        // Dual-write file-level workflow tags during transition so legacy file-tag views keep working.
+        await tagging.applyWorkflowToFiles(laboratory, userId, tag.TagId, laboratory.S3Bucket, labScopedKeys);
       } else {
         await tagging.applyWorkflowToFiles(laboratory, userId, tag.TagId, laboratory.S3Bucket, labScopedKeys);
       }

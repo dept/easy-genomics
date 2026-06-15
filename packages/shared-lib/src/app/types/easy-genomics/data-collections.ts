@@ -90,7 +90,6 @@ export type UnlinkedBucketObjectsResponse = {
   IsTruncated: boolean;
   S3Bucket: string;
   ResolvedPrefix: string;
-  ListingTruncated?: boolean;
   ReturnedKeyCount?: number;
 };
 
