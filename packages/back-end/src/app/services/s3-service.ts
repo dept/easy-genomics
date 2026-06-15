@@ -165,6 +165,10 @@ export class S3Service {
     );
   };
 
+  public copyBucketObject = async (copyObjectInput: CopyObjectCommandInput): Promise<void> => {
+    await this.s3Request<CopyObjectCommandInput, void>(S3Command.COPY_BUCKET_OBJECT, copyObjectInput);
+  };
+
   public getBucketLocation = async (
     getBucketLocationInput: GetBucketLocationCommandInput,
   ): Promise<GetBucketLocationCommandOutput> => {

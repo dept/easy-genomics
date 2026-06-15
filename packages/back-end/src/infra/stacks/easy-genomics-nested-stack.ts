@@ -1813,6 +1813,79 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
     ]);
 
+    const sequenceSetDataCollectionRoutes = [
+      '/easy-genomics/data-collections/list-sequence-sets',
+      '/easy-genomics/data-collections/create-sequence-set',
+      '/easy-genomics/data-collections/add-files-to-sequence-set',
+      '/easy-genomics/data-collections/remove-files-from-sequence-set',
+      '/easy-genomics/data-collections/list-sequence-set-files',
+      '/easy-genomics/data-collections/list-data-collections',
+      '/easy-genomics/data-collections/list-data-collection-sequence-sets',
+      '/easy-genomics/data-collections/create-data-collection',
+      '/easy-genomics/data-collections/add-sequence-sets-to-data-collection',
+      '/easy-genomics/data-collections/update-data-collection-schema',
+      '/easy-genomics/data-collections/update-data-collection',
+      '/easy-genomics/data-collections/add-tags-to-sequence-sets',
+      '/easy-genomics/data-collections/request-list-sequence-set-tags',
+      '/easy-genomics/data-collections/list-sequence-sets-by-tag',
+      '/easy-genomics/data-collections/request-unlinked-bucket-objects',
+      '/easy-genomics/data-collections/create-bulk-sequence-sets',
+    ];
+    for (const route of sequenceSetDataCollectionRoutes) {
+      this.iam.addPolicyStatements(route, [
+        ...laboratoryReadForDataCollections,
+        new PolicyStatement({
+          resources: laboratoryDataTaggingDynamoResources,
+          actions: laboratoryDataTaggingDynamoActions,
+        }),
+      ]);
+    }
+
+    // create-sequence-set may expand regex matches via lab bucket listing
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/create-sequence-set', [
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/request-unlinked-bucket-objects', [
+      ...laboratoryReadForDataCollections,
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/create-bulk-sequence-sets', [
+      ...laboratoryReadForDataCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*/*'],
+        actions: ['s3:CopyObject', 's3:PutObject', 's3:HeadObject'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/data-collections/generate-data-collection-sample-sheet
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/generate-data-collection-sample-sheet', [
+      ...laboratoryReadForDataCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*/*'],
+        actions: ['s3:PutObject', 's3:HeadObject'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
     // /easy-genomics/data-collections/process-expired-laboratory-data
     // Daily scheduled S3 retention sweep. Needs to scan all laboratories, read+mutate the
     // tagging table for every lab, and call s3:DeleteObject on the underlying objects.

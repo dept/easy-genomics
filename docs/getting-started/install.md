@@ -79,8 +79,11 @@ dev-main-front-end-stack.HostingBucketName = {app-domain-name}
 - NOTE: If the `aws-hosted-zone-id` and/or the `aws-certificate-arn` are not defined in the `easy-genomics.yaml`, the
   `ApplicationUrl` returned will be the CloudFront Distribution URL.
 
-Finally, use the `${easy-genomics root-dir}/config/easy-genomics.yaml` file's configured `org-admin-email` and
-`org-admin-password` account details to log in into Easy Genomics to test the functionality.
+Finally, use the `${easy-genomics root-dir}/config/easy-genomics.yaml` file's configured `sys-admin-email` and
+`sys-admin-password` (or `org-admin-email` / `org-admin-password` on non-prod) to sign in and verify the deployment.
+
+**Next step:** follow **[Your first workflow run](./first-workflow-run.md)** for the full platform journey
+(organisation, lab, integrations, data upload, and workflow run).
 
 Once you have completed an initial deployment of the Back-End and Front-End application logic, you can subsequently use
 the `build-and-deploy` short-cut command from the `${easy-genomics root-dir}` directory to conveniently complete both
