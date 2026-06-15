@@ -42,6 +42,7 @@
     "@types/uuid": "^9.0.8",
     "@typescript-eslint/eslint-plugin": "^7",
     "@typescript-eslint/parser": "^7",
+    "@useoptic/optic": "^1.0.9",
     "aws-sdk-client-mock": "^3.1.0",
     "aws-sdk-client-mock-jest": "^3.1.0",
     "constructs": "^10.0.0",

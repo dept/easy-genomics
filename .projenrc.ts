@@ -13,6 +13,7 @@ import {
 import { pathsToModuleNameMapper } from 'ts-jest';
 import { ApacheLicense } from './projenrc/apache-license';
 import { setupProjectFolders } from './projenrc/easy-genomics-project-setup';
+import { GithubActionsApiDiffCheck } from './projenrc/github-actions-api-diff-check';
 import { GithubActionsCICDRelease } from './projenrc/github-actions-cicd-release';
 import { Husky } from './projenrc/husky';
 import { Nx } from './projenrc/nx';
@@ -173,6 +174,7 @@ const root = new typescript.TypeScriptProject({
     '@types/uuid',
     '@typescript-eslint/eslint-plugin@^7',
     '@typescript-eslint/parser@^7',
+    '@useoptic/optic@^1.0.9',
     'aws-sdk-client-mock',
     'aws-sdk-client-mock-jest',
     'cz-conventional-changelog',
@@ -603,6 +605,7 @@ new GithubActionsCICDRelease(root, {
   onPushBranch: 'infra/*',
   e2e: false,
 });
+new GithubActionsApiDiffCheck(root, { pnpmVersion });
 new ApacheLicense(root, licenseOptions);
 new ApacheLicense(backEndApp, licenseOptions);
 new ApacheLicense(frontEndApp, licenseOptions);
