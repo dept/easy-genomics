@@ -113,6 +113,7 @@ test('public routes are exactly the expected set', () => {
 
   expect(publicRoutes.sort()).toEqual(
     [
+      'GET /easy-genomics/list-api-docs',
       'POST /easy-genomics/user/confirm-user-forgot-password-request',
       'POST /easy-genomics/user/confirm-user-invitation-request',
       'POST /easy-genomics/user/create-user-forgot-password-request',

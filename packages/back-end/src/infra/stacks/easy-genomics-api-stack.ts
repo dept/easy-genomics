@@ -156,6 +156,26 @@ export class EasyGenomicsApiStack extends Stack {
       true,
     );
 
+    // Public API documentation page (Swagger UI) — intentionally unauthenticated.
+    const publicApiDocsPath = `${stackPath}/${apigwId}/${apigwId}/Default/easy-genomics/list-api-docs/GET/Resource`;
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      [publicApiDocsPath],
+      [
+        {
+          id: 'AwsSolutions-APIG4',
+          reason:
+            'Public API documentation endpoint; intentionally unauthenticated so external stakeholders can browse without a Cognito user',
+        },
+        {
+          id: 'AwsSolutions-COG4',
+          reason:
+            'Public API documentation endpoint; intentionally unauthenticated so external stakeholders can browse without a Cognito user',
+        },
+      ],
+      true,
+    );
+
     // Lambda execution roles that require broader S3 access (signed URLs,
     // bucket listing, multi-object downloads, etc.).
     NagSuppressions.addResourceSuppressionsByPath(

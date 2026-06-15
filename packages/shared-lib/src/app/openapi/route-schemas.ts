@@ -63,6 +63,9 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
 
   'GET /easy-genomics/list-buckets': {},
 
+  // Public Swagger UI page for this API. Returns HTML, not JSON; no request/response schema.
+  'GET /easy-genomics/list-api-docs': { public: true },
+
   // ── easy-genomics/organization/ ─────────────────────────────────────────────
 
   'POST /easy-genomics/organization/create-organization': {
