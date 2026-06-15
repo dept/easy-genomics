@@ -2,10 +2,10 @@ process.env.NAME_PREFIX = 'unit-test';
 
 import { ConditionalCheckFailedException, type AttributeValue } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
-import { S3BucketMismatchError, S3KeyOutOfPrefixError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-import { LaboratorySequenceSetService } from '../../../../src/app/services/easy-genomics/laboratory-sequence-set-service';
+import { S3BucketMismatchError, S3KeyOutOfPrefixError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { encodeS3ObjectRef } from '../../../../src/app/services/easy-genomics/laboratory-data-tagging-service';
+import { LaboratorySequenceSetService } from '../../../../src/app/services/easy-genomics/laboratory-sequence-set-service';
 
 function labFixture(overrides?: Partial<Laboratory>): Laboratory {
   return {
