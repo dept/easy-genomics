@@ -265,7 +265,17 @@ const sharedLib = new typescript.TypeScriptProject({
     'uuid',
     'zod',
   ],
-  devDeps: ['@types/aws-lambda', '@types/js-yaml', '@types/uuid', 'aws-cdk-lib', 'openapi-typescript'],
+  devDeps: [
+    '@types/aws-lambda',
+    '@types/js-yaml',
+    '@types/uuid',
+    '@redocly/cli@~1.34.15',
+    'aws-cdk-lib',
+    'openapi-typescript',
+    'tsx',
+    'typescript-json-schema',
+    'zod-to-json-schema@~3.24.6',
+  ],
   tsconfig: {
     ...tsConfigOptions,
     compilerOptions: {
@@ -282,6 +292,8 @@ const sharedLib = new typescript.TypeScriptProject({
 sharedLib.addScripts({
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
 });
+sharedLib.addTask('generate:openapi', { exec: 'tsx src/app/openapi/generate-openapi.ts' });
+sharedLib.addTask('lint:openapi', { exec: 'redocly lint src/app/openapi/easy-genomics-api.yaml' });
 
 if (sharedLib.eslint) {
   sharedLib.eslint.addRules({ ...eslintGlobalRules });
@@ -610,6 +622,7 @@ new ApacheLicense(sharedLib, licenseOptions);
 setupProjectFolders(root);
 
 root.package.addField('packageManager', `pnpm@${pnpmVersion}`);
+
 root.gitignore.addPatterns(
   '*.bkp',
   '*.dtmp',

@@ -50,6 +50,14 @@
         }
       ]
     },
+    "generate:openapi": {
+      "name": "generate:openapi",
+      "steps": [
+        {
+          "exec": "tsx src/app/openapi/generate-openapi.ts"
+        }
+      ]
+    },
     "install": {
       "name": "install",
       "description": "Install project dependencies and update lockfile (non-frozen)",
@@ -65,6 +73,14 @@
       "steps": [
         {
           "exec": "pnpm i --frozen-lockfile"
+        }
+      ]
+    },
+    "lint:openapi": {
+      "name": "lint:openapi",
+      "steps": [
+        {
+          "exec": "redocly lint src/app/openapi/easy-genomics-api.yaml"
         }
       ]
     },
@@ -122,13 +138,13 @@
       },
       "steps": [
         {
-          "exec": "pnpm dlx npm-check-updates@16 --upgrade --target=minor --peer --dep=dev,peer,prod,optional --filter=@types/aws-lambda,@types/jest,@types/js-yaml,@types/uuid,aws-cdk-lib,eslint-import-resolver-typescript,eslint-plugin-import,jest,openapi-typescript,ts-jest,typescript,@aws-sdk/client-api-gateway,@aws-sdk/client-cognito-identity-provider,@aws-sdk/client-s3,aws-cdk,aws-lambda,js-yaml,strnum,uuid,zod"
+          "exec": "pnpm dlx npm-check-updates@16 --upgrade --target=minor --peer --dep=dev,peer,prod,optional --filter=@types/aws-lambda,@types/jest,@types/js-yaml,@types/uuid,aws-cdk-lib,eslint-import-resolver-typescript,eslint-plugin-import,jest,openapi-typescript,ts-jest,tsx,typescript,typescript-json-schema,@aws-sdk/client-api-gateway,@aws-sdk/client-cognito-identity-provider,@aws-sdk/client-s3,aws-cdk,aws-lambda,js-yaml,strnum,uuid,zod"
         },
         {
           "exec": "pnpm i --no-frozen-lockfile"
         },
         {
-          "exec": "pnpm update @types/aws-lambda @types/jest @types/js-yaml @types/node @types/uuid @typescript-eslint/eslint-plugin @typescript-eslint/parser aws-cdk-lib eslint-import-resolver-typescript eslint-plugin-import eslint jest jest-junit openapi-typescript ts-jest typescript @aws-sdk/client-api-gateway @aws-sdk/client-cognito-identity-provider @aws-sdk/client-omics @aws-sdk/client-s3 aws-cdk aws-lambda js-yaml strnum uuid zod"
+          "exec": "pnpm update @redocly/cli @types/aws-lambda @types/jest @types/js-yaml @types/node @types/uuid @typescript-eslint/eslint-plugin @typescript-eslint/parser aws-cdk-lib eslint-import-resolver-typescript eslint-plugin-import eslint jest jest-junit openapi-typescript ts-jest tsx typescript typescript-json-schema zod-to-json-schema @aws-sdk/client-api-gateway @aws-sdk/client-cognito-identity-provider @aws-sdk/client-omics @aws-sdk/client-s3 aws-cdk aws-lambda js-yaml strnum uuid zod"
         },
         {
           "exec": "pnpm exec projen"
