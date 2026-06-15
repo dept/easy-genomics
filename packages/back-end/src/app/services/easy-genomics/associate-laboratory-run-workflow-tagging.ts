@@ -31,6 +31,12 @@ export async function associateInputsWithWorkflowTag(args: {
     const labScopedKeys = inputKeys.filter((k) => k.startsWith(labPrefix));
     if (!labScopedKeys.length) return;
 
+    const sequenceSetIds = await tagging.resolveSequenceSetIdsForKeys(
+      laboratory.LaboratoryId,
+      laboratory.S3Bucket,
+      labScopedKeys,
+    );
+
     if (run.WorkflowExternalId) {
       const tag = await tagging.getOrCreateWorkflowTag(laboratory, userId, {
         platform: run.Platform,
@@ -39,7 +45,13 @@ export async function associateInputsWithWorkflowTag(args: {
         name: run.WorkflowName?.trim() || run.WorkflowExternalId,
       });
 
-      await tagging.applyWorkflowToFiles(laboratory, userId, tag.TagId, laboratory.S3Bucket, labScopedKeys);
+      if (sequenceSetIds.length) {
+        await tagging.applyWorkflowToSequenceSets(laboratory, userId, tag.TagId, sequenceSetIds);
+        // Dual-write file-level workflow tags during transition so legacy file-tag views keep working.
+        await tagging.applyWorkflowToFiles(laboratory, userId, tag.TagId, laboratory.S3Bucket, labScopedKeys);
+      } else {
+        await tagging.applyWorkflowToFiles(laboratory, userId, tag.TagId, laboratory.S3Bucket, labScopedKeys);
+      }
     }
 
     const summary: LaboratoryRunUsageSummary = {
@@ -57,6 +69,10 @@ export async function associateInputsWithWorkflowTag(args: {
       ...(typeof run.ExpiresAt === 'number' ? { ExpiresAt: run.ExpiresAt } : {}),
     };
 
+    if (sequenceSetIds.length) {
+      await tagging.recordLaboratoryRunUsageForSequenceSets(laboratory, userId, sequenceSetIds, summary);
+    }
+    // Dual-write file-level usage during transition so legacy views keep working.
     await tagging.recordLaboratoryRunInputUsage(laboratory, userId, laboratory.S3Bucket, labScopedKeys, summary);
   } catch (err) {
     console.warn('Failed to associate laboratory run inputs with data tagging (continuing):', err);
