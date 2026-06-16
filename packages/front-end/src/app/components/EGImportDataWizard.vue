@@ -7,7 +7,7 @@
   import type {
     FileUploadManifest,
     FileUploadRequest,
-  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/upload/s3-file-upload-manifest';
+  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
   import {
     groupFilenamesByRegex,
     REGEX_GROUPING_PRESETS,
