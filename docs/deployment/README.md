@@ -8,3 +8,4 @@ For operators configuring, deploying, and upgrading the platform.
 | [configuration.md](./configuration.md) | `easy-genomics.yaml` settings and the optional GitHub PAT secret | ✅ Available                                                |
 | [upgrading.md](./upgrading.md)         | Upgrade-safety warning; full upgrade/version-migration guide     | ⚠️ Hazard notice available · 🚧 full guide owned by DOCS-03 |
 | [production.md](./production.md)       | Production deployment runbook (Route 53, ACM, prod config)       | ✅ Available                                                |
+| [analytics.md](./analytics.md)         | Privacy-safe upstream usage analytics (opt-in, anonymous)        | ✅ Available                                                |

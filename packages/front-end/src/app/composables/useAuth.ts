@@ -21,6 +21,9 @@ export default function useAuth() {
       if (user) {
         await useUser().setCurrentUserDataFromToken();
         await useOrgsStore().loadOrgs();
+        const analytics = useAnalytics();
+        await analytics.identify(useUserStore().currentUserDetails.id);
+        analytics.track('signed_in', { method: 'password' });
         await navigateTo('/');
       }
     } catch (error: any) {
@@ -73,6 +76,9 @@ export default function useAuth() {
 
   async function signOut() {
     try {
+      const analytics = useAnalytics();
+      analytics.track('signed_out', {});
+      analytics.reset();
       await Auth.signOut();
       useUserStore().reset();
     } catch (error) {

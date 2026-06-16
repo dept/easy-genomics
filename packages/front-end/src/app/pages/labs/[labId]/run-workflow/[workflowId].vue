@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { ReadWorkflow } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
+  import { toCountBucket, toSizeBucket } from '@easy-genomics/shared-lib/src/app/types/analytics';
   import { useRunStore } from '@FE/stores';
   import { ButtonVariantEnum } from '@FE/types/buttons';
   import { WorkflowParameter } from '@aws-sdk/client-omics';
@@ -84,6 +85,11 @@
   /**
    * Intercept any navigation away from the page (including the browser back button) and present the modal
    */
+  onMounted(() => {
+    // Analytics: run wizard started.
+    useAnalytics().track('run_wizard_started', { platform: 'omics' });
+  });
+
   onBeforeRouteLeave((to, from, next) => {
     const noConfirmRoutes = ['/signin'];
 
@@ -109,6 +115,13 @@
   });
 
   function confirmCancel() {
+    // Analytics: run wizard abandoned (only if not launched).
+    if (!hasLaunched.value) {
+      useAnalytics().track('run_wizard_abandoned', {
+        step_at_exit: steps.value[selectedStepIndex.value]?.key || '',
+        platform: 'omics',
+      });
+    }
     exitConfirmed.value = true;
     $router.push(nextRoute.value!);
   }
@@ -259,8 +272,12 @@
   }
 
   function nextStep(val: string) {
+    const completedStep = steps.value[selectedStepIndex.value]?.key || '';
     setStepEnabled(val, true);
     selectedStepIndex.value = clampIndex(selectedStepIndex.value + 1);
+
+    // Analytics: run wizard step completed.
+    useAnalytics().track('run_step_completed', { step: completedStep, platform: 'omics' });
   }
 
   function clampIndex(index: number) {
@@ -287,9 +304,22 @@
     enableAllSteps();
   }
 
-  function handleLaunchSuccess() {
+  async function handleLaunchSuccess() {
     hasLaunched.value = true;
     selectedStepIndex.value = -1;
+
+    // Analytics: run launched (workflow id hashed; counts/sizes bucketed).
+    const analytics = useAnalytics();
+    const workflowIdHash = await analytics.hashId(workflowId);
+    const wip = wipOmicsRun.value as { uploadedFiles?: unknown[]; uploadedFileSize?: number } | undefined;
+    const fileCount = Array.isArray(wip?.uploadedFiles) ? wip!.uploadedFiles.length : 0;
+    const uploadBytes = typeof wip?.uploadedFileSize === 'number' ? wip!.uploadedFileSize : 0;
+    analytics.track('run_launched', {
+      platform: 'omics',
+      workflow_id_hash: workflowIdHash,
+      file_count_bucket: toCountBucket(fileCount),
+      upload_size_bucket: toSizeBucket(uploadBytes),
+    });
   }
 </script>
 

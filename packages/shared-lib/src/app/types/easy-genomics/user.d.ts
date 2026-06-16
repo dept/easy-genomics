@@ -38,6 +38,7 @@ export interface User extends BaseAttributes {
   SampleIdSplitPattern?: string; // User preference for splitting sample IDs from filenames
   OmicsWorkflowDefaultParams?: Record<string, Record<string, unknown>>; // workflowId -> parameters
   FavouriteWorkflows?: FavouriteWorkflow[];
+  AnalyticsConsent?: 'unset' | 'granted' | 'denied'; // User opt-in choice for upstream usage analytics; follows the user across browsers
 }
 
 export interface FavouriteWorkflow {

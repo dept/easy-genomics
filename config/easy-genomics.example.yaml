@@ -42,3 +42,24 @@ easy-genomics:
             #test-access-token: 'dummy-access-token-example-donotuse-1234567890'
             #test-s3-url: '123456789012-dev-example-lab-bucket'
             #test-invite-email: 'your-test-email@your-domain.org'
+
+        ## Optional: Privacy-safe upstream usage analytics. OFF by default.
+        ##
+        ## When enabled, this deployment opts in to sending ANONYMOUS usage events to the
+        ## Easy Genomics project's central analytics, to help improve the open-source product.
+        ## This is a DOUBLE opt-in: each end user must also accept the in-app consent banner
+        ## before any event is sent. No emails, names, file names, sample data, run parameters,
+        ## IP addresses, account ids, domains or hostnames are ever sent.
+        ##
+        ## Turning this on does NOT provision analytics services in your account beyond a random
+        ## anonymous per-deployment identifier (AWS Secrets Manager). Events are sent directly to
+        ## PostHog from the browser.
+        ##
+        ## By default analytics is disabled when env-type is 'dev' (to protect local development).
+        ## Set 'allow-dev: true' to opt a 'dev' env-type deployment in anyway (e.g. a hosted demo).
+        ##
+        ## HIPAA: this analytics is NOT designed for environments handling PHI. Institutions
+        ## handling PHI should leave it disabled.
+        analytics:
+            enabled: false # true to opt in
+            allow-dev: false # true to also allow analytics when env-type is 'dev'

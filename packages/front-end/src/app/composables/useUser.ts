@@ -3,7 +3,7 @@ import { CreateUserInvitationRequest } from '@easy-genomics/shared-lib/src/app/t
 import { OrganizationUserDetails } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization-user-details';
 import { OrganizationAccess } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { VALIDATION_MESSAGES } from '@FE/constants/validation';
-import { useToastStore } from '@FE/stores';
+import { useAnalyticsStore, useToastStore } from '@FE/stores';
 import { decodeJwt } from '@FE/utils/jwt-utils';
 
 export type NameOptions = {
@@ -69,6 +69,10 @@ export default function useUser() {
     try {
       await $api.users.invite(orgId, email);
       useToastStore().success(toastSuccessMessage);
+      // Analytics: user invited (no email; just role + count bucket).
+      if (action === 'send') {
+        useAnalytics().track('user_invited', { role: 'OrganizationUser', count_bucket: '1' });
+      }
     } catch (error) {
       useToastStore().error(toastErrorMessage);
       console.error(error);
@@ -115,6 +119,14 @@ export default function useUser() {
       // retrieve and set account id and email
       userStore.currentUserDetails.id = decodedToken['cognito:username'];
       userStore.currentUserDetails.email = decodedToken.email;
+
+      // Adopt the server-side analytics consent choice so it follows the user
+      // across browsers, but only when this device has not made its own choice.
+      const analyticsStore = useAnalyticsStore();
+      const tokenConsent = decodedToken.AnalyticsConsent;
+      if (analyticsStore.consent === 'unset' && (tokenConsent === 'granted' || tokenConsent === 'denied')) {
+        analyticsStore.setConsent(tokenConsent);
+      }
 
       // check and set superuser status
       userStore.currentUserPermissions.isSuperuser = decodedToken['cognito:groups']?.includes('SystemAdmin');

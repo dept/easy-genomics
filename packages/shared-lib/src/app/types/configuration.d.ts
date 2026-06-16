@@ -55,6 +55,27 @@ export interface ConfigurationSettings {
 
   // Front-End specific settings
   ['front-end']?: {};
+
+  /**
+   * Optional: Privacy-safe upstream usage analytics.
+   *
+   * Off by default. When `enabled: true` the institution opts in to sending
+   * anonymous usage events to the Easy Genomics project's central PostHog
+   * project. End users must additionally accept the in-app consent banner
+   * before any event is sent (double opt-in).
+   *
+   * Turning this on does not provision any analytics services in the adopting
+   * institution's AWS account beyond a per-deployment identifier secret.
+   */
+  ['analytics']?: {
+    ['enabled']?: boolean; // Defaults to false when unset
+    /**
+     * Opt-in escape hatch to allow analytics on a 'dev' env-type deployment
+     * (e.g. the project's own dev demo). Defaults to false; local development
+     * never sends events unless this is explicitly enabled.
+     */
+    ['allow-dev']?: boolean;
+  };
 }
 
 export interface Configuration {

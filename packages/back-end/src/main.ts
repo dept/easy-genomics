@@ -38,6 +38,7 @@ let labTechnicianPassword: string | undefined;
 let seqeraApiBaseUrl: string;
 let githubPatSecretName: string | undefined;
 let vpcPeering: VpcPeering | undefined;
+let analyticsEnabled: boolean = false;
 
 // Optional: shared public API domain wiring. When both `apiDomainName` and
 // `awsApiCertificateArn` are provided AND `awsHostedZoneId` is available, we
@@ -79,6 +80,7 @@ if (process.env.CI_CD === 'true') {
 
   seqeraApiBaseUrl = process.env.SEQERA_API_BASE_URL || SEQERA_API_BASE_URL;
   githubPatSecretName = process.env.GITHUB_PAT_SECRET_NAME;
+  analyticsEnabled = process.env.ANALYTICS_ENABLED === 'true';
   apiDomainName = process.env.API_DOMAIN_NAME;
   awsApiCertificateArn = process.env.AWS_API_CERTIFICATE_ARN;
 
@@ -196,6 +198,7 @@ if (process.env.CI_CD === 'true') {
 
   seqeraApiBaseUrl = configSettings['back-end']['seqera-api-base-url'] || SEQERA_API_BASE_URL;
   githubPatSecretName = configSettings['back-end']['github-pat-secret-name'] || undefined;
+  analyticsEnabled = configSettings.analytics?.enabled === true;
 
   const vpcPeeringSettings = configSettings['back-end']['vpc-peering'];
   if (vpcPeeringSettings) {
@@ -323,6 +326,7 @@ const sharedStackProps = {
   cognitoDomainPrefix,
   callbackUrls,
   logoutUrls,
+  analyticsEnabled,
 };
 
 // Shared platform stack: VPC, KMS, Auth, AWS HealthOmics and NF-Tower (sharing one API Gateway).

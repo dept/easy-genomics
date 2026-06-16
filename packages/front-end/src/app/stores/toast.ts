@@ -28,8 +28,15 @@ const useToastStore = defineStore('toastStore', {
     warning(title: string, timeout?: number) {
       this.toasts.push({ id: `toast-${uuidv4()}`, title, variant: 'warning', timeout });
     },
-    error(title: string, timeout?: number) {
+    error(title: string, timeout?: number, errorCode?: string) {
       this.toasts.push({ id: `toast-${uuidv4()}`, title, variant: 'error', timeout });
+      // Analytics: a user-visible error was shown. Only an opaque error code is
+      // ever sent — never the human-readable message text.
+      try {
+        useAnalytics().track('error_toast_shown', { error_code: errorCode || 'unspecified' });
+      } catch (e) {
+        // Analytics must never break the toast pipeline.
+      }
     },
   },
 });

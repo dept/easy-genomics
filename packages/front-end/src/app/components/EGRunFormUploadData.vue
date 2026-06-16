@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import axios from 'axios';
+  import { toSizeBucket } from '@easy-genomics/shared-lib/src/app/types/analytics';
   import { ButtonSizeEnum } from '@FE/types/buttons';
   import type {
     FileUploadInfo,
@@ -707,6 +708,15 @@
         } else {
           toastStore.error(`Upload failed for ${errors.length} files`);
         }
+        // Analytics: file upload failure (no file names; size bucketed).
+        const failedBytes = errors.reduce((sum, e) => {
+          const match = files.value.find((f) => f.name === e.fileName);
+          return sum + (match?.size || 0);
+        }, 0);
+        useAnalytics().track('file_upload_failed', {
+          error_code: 'upload_failed',
+          size_bucket: toSizeBucket(failedBytes),
+        });
       }
 
       return errors;
@@ -895,6 +905,8 @@
     sampleSheetValidationError.value = error ?? null;
     if (!valid) {
       toastStore.error('Sample sheet validation failed — check the required format.');
+      // Analytics: sample sheet validation failure (error type only, no content).
+      useAnalytics().track('sample_sheet_validation_failed', { error_type: error ? 'invalid_format' : 'unknown' });
       return;
     }
 

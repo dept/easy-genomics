@@ -481,6 +481,9 @@
   async function navigateToSearchDirectory(node: FileTreeNode): Promise<void> {
     if (!node.s3Key) return;
 
+    // Analytics: file browser navigation.
+    useAnalytics().track('file_browser_action', { action: 'navigate' });
+
     const relativePath = node.s3Key.startsWith(normalizedRootPrefix.value)
       ? node.s3Key.slice(normalizedRootPrefix.value.length)
       : node.s3Key;
@@ -651,6 +654,11 @@
     downloadActive.value[uniqueString] = true;
 
     useToastStore().success('Your files have begun downloading');
+
+    // Analytics: file browser action (file vs folder download).
+    useAnalytics().track('file_browser_action', {
+      action: node.type === 'file' ? 'download_file' : 'download_folder',
+    });
 
     try {
       if (node.type === 'file') {

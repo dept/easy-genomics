@@ -250,6 +250,10 @@
       "type": "runtime"
     },
     {
+      "name": "posthog-js",
+      "type": "runtime"
+    },
+    {
       "name": "prettier-plugin-tailwindcss",
       "type": "runtime"
     },
