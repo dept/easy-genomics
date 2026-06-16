@@ -677,7 +677,6 @@ export class LaboratorySampleService extends DynamoDBService {
       IsTruncated: listingTruncated,
       S3Bucket: s3Bucket,
       ResolvedPrefix: normalizedPrefix,
-      ListingTruncated: listingTruncated,
       ReturnedKeyCount: unlinked.length,
     };
   }
@@ -709,6 +708,8 @@ export class LaboratorySampleService extends DynamoDBService {
     };
 
     for (const job of opts.copyJobs || []) {
+      this.assertBucketMatchesLab(laboratory, job.sourceBucket);
+      this.assertKeyUnderLabPrefix(laboratory, job.sourceKey);
       this.assertKeyUnderLabPrefix(laboratory, job.destKey);
       await this.s3Service.copyBucketObject({
         Bucket: bucket,
@@ -965,7 +966,7 @@ export class LaboratorySampleService extends DynamoDBService {
         TableName: TABLE_NAME,
         Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
         UpdateExpression:
-          'SET SampleIds = list_append(if_not_exists(SampleIds, :empty), :sid), S3Bucket = :b, ObjectKey = :k, ModifiedAt = :ma',
+          'SET SampleIds = list_append(if_not_exists(SampleIds, :empty), :sid), S3Bucket = :b, ObjectKey = :k, ModifiedAt = :ma, CreatedAt = if_not_exists(CreatedAt, :ca), CreatedBy = if_not_exists(CreatedBy, :cb)',
         ConditionExpression: 'attribute_not_exists(SampleIds) OR NOT contains(SampleIds, :oneId)',
         ExpressionAttributeValues: marshall({
           ':sid': [setId],
@@ -974,29 +975,13 @@ export class LaboratorySampleService extends DynamoDBService {
           ':b': bucket,
           ':k': key,
           ':ma': now,
+          ':ca': now,
+          ':cb': userId,
         }),
       });
     } catch (e: unknown) {
-      const name = typeof e === 'object' && e !== null ? (e as { name?: string }).name : undefined;
-      if (name === 'ConditionalCheckFailedException') return;
-      // File row may not exist yet — create it
-      await this.putItem({
-        TableName: TABLE_NAME,
-        Item: marshall(
-          {
-            LaboratoryId: laboratoryId,
-            Sk: skFile(ref),
-            S3Bucket: bucket,
-            ObjectKey: key,
-            TagIds: [],
-            SampleIds: [setId],
-            ModifiedAt: now,
-            CreatedAt: now,
-            CreatedBy: userId,
-          },
-          { removeUndefinedValues: true },
-        ),
-      });
+      if (isConditionalCheckFailed(e)) return;
+      throw e;
     }
   }
 

@@ -347,6 +347,7 @@ export class LaboratoryRunNotFoundError extends HttpError {
  *
  * @param sequenceSetId
  * @param messageOpt - optional additional message
+ * @deprecated Use {@link SampleNotFoundError}
  */
 export class SequenceSetNotFoundError extends HttpError {
   constructor(sequenceSetId: string, messageOpt?: string) {
@@ -355,14 +356,39 @@ export class SequenceSetNotFoundError extends HttpError {
 }
 
 /**
+ * Sample not found
+ *
+ * @param sampleId
+ * @param messageOpt - optional additional message
+ */
+export class SampleNotFoundError extends HttpError {
+  constructor(sampleId: string, messageOpt?: string) {
+    super(`Sample '${sampleId}' could not be found`, 404, 'EG-328', messageOpt);
+  }
+}
+
+/**
  * Data collection not found
  *
  * @param collectionId
  * @param messageOpt - optional additional message
+ * @deprecated Use {@link SequenceCollectionNotFoundError}
  */
 export class DataCollectionNotFoundError extends HttpError {
   constructor(collectionId: string, messageOpt?: string) {
     super(`Data collection '${collectionId}' could not be found`, 404, 'EG-325', messageOpt);
+  }
+}
+
+/**
+ * Sequence collection not found
+ *
+ * @param collectionId
+ * @param messageOpt - optional additional message
+ */
+export class SequenceCollectionNotFoundError extends HttpError {
+  constructor(collectionId: string, messageOpt?: string) {
+    super(`Sequence collection '${collectionId}' could not be found`, 404, 'EG-329', messageOpt);
   }
 }
 

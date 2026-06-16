@@ -1161,7 +1161,7 @@ describe('LaboratoryDataTaggingService.removeLaboratoryRunUsageForRunIds preserv
   });
 });
 
-describe('LaboratoryDataTaggingService.applyTagsToSequenceSets', () => {
+describe('LaboratoryDataTaggingService.applyTagsToSamples', () => {
   let svc: LaboratoryDataTaggingService;
   let mockGetItem: jest.Mock;
   let mockUpdateItem: jest.Mock;
@@ -1193,13 +1193,13 @@ describe('LaboratoryDataTaggingService.applyTagsToSequenceSets', () => {
       Kind: 'workflow',
       Name: 'Workflow',
     });
-    await expect(svc.applyTagsToSequenceSets(labFixture(), 'user-1', ['set-1'], ['wf-1'], [])).rejects.toThrow(
+    await expect(svc.applyTagsToSamples(labFixture(), 'user-1', ['set-1'], ['wf-1'], [])).rejects.toThrow(
       'Workflow tags are auto-managed',
     );
   });
 });
 
-describe('LaboratoryDataTaggingService.listSequenceSetsByTag', () => {
+describe('LaboratoryDataTaggingService.listSamplesByTag', () => {
   let svc: LaboratoryDataTaggingService;
   let mockQueryItems: jest.Mock;
 
@@ -1207,20 +1207,20 @@ describe('LaboratoryDataTaggingService.listSequenceSetsByTag', () => {
     jest.clearAllMocks();
     svc = new LaboratoryDataTaggingService();
     mockQueryItems = jest.fn().mockResolvedValue({
-      Items: [marshall({ SequenceSetId: 'set-1', Gsi1Pk: 'lab-1#TAG#tag-1', Gsi1Sk: 'SEQSET#set-1' })],
+      Items: [marshall({ SampleId: 'set-1', Gsi1Pk: 'lab-1#TAG#tag-1', Gsi1Sk: 'SAMPLE#set-1' })],
       LastEvaluatedKey: { LaboratoryId: { S: 'lab-1' } },
     });
     (svc as unknown as { queryItems: typeof mockQueryItems }).queryItems = mockQueryItems;
   });
 
   it('returns a cursor when more pages are available', async () => {
-    const res = await svc.listSequenceSetsByTag('lab-1', 'tag-1', 1);
-    expect(res.SequenceSetIds).toEqual(['set-1']);
+    const res = await svc.listSamplesByTag('lab-1', 'tag-1', 1);
+    expect(res.SampleIds).toEqual(['set-1']);
     expect(res.NextCursor).toBeDefined();
   });
 });
 
-describe('LaboratoryDataTaggingService.recordLaboratoryRunUsageForSequenceSets', () => {
+describe('LaboratoryDataTaggingService.recordLaboratoryRunUsageForSamples', () => {
   let svc: LaboratoryDataTaggingService;
   let mockUpdateItem: jest.Mock;
 
@@ -1240,17 +1240,17 @@ describe('LaboratoryDataTaggingService.recordLaboratoryRunUsageForSequenceSets',
       InputFileKeys: ['org-1/lab-1/a.fq.gz'],
     };
 
-    await svc.recordLaboratoryRunUsageForSequenceSets(labFixture(), 'user-1', ['set-1'], summary);
+    await svc.recordLaboratoryRunUsageForSamples(labFixture(), 'user-1', ['set-1'], summary);
 
     expect(mockUpdateItem).toHaveBeenCalledTimes(2);
     expect(mockUpdateItem.mock.calls[0][0].UpdateExpression).toContain('if_not_exists(#lru, :emptyMap)');
     expect(mockUpdateItem.mock.calls[1][0].UpdateExpression).toContain('LaboratoryRunUsages.#runId');
   });
 
-  it('skips missing sequence set rows without swallowing unexpected errors', async () => {
+  it('skips missing sample rows without swallowing unexpected errors', async () => {
     mockUpdateItem.mockRejectedValueOnce(new ConditionalCheckFailedException({ message: 'c', $metadata: {} }));
     await expect(
-      svc.recordLaboratoryRunUsageForSequenceSets(labFixture(), 'user-1', ['missing-set'], {
+      svc.recordLaboratoryRunUsageForSamples(labFixture(), 'user-1', ['missing-set'], {
         RunId: 'run-1',
         RunName: 'Run 1',
         RunCreatedAt: '2026-01-01T00:00:00.000Z',
