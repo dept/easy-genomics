@@ -272,7 +272,6 @@ describe('LaboratorySampleService.addSampleIdToFileRow', () => {
         'my-bucket',
         'org-1/lab-1/a.fq.gz',
         'sample-1',
-        'user-1',
       ),
     ).rejects.toThrow('ProvisionedThroughputExceededException');
     expect(mockPutItem).not.toHaveBeenCalled();

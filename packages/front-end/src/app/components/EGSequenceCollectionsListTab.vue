@@ -11,7 +11,6 @@
   const emit = defineEmits<{
     'update:search': [value: string];
     'new-collection': [];
-    import: [];
     'launch-workflow': [collection: LaboratorySequenceCollection];
     'edit-collection': [collection: LaboratorySequenceCollection];
     'delete-collection': [collection: LaboratorySequenceCollection];
@@ -43,7 +42,6 @@
       />
       <div class="flex-1" />
       <UButton variant="outline" @click="emit('new-collection')">+ New Sequence Collection</UButton>
-      <UButton @click="emit('import')">Import data</UButton>
     </div>
 
     <div class="flex-1 overflow-y-auto">
