@@ -49,9 +49,33 @@ export interface paths {
     /** Read Workflow Schema */
     get: operations["readWorkflowSchema"];
   };
+  "/easy-genomics/data-collections/add-files-to-sequence-set": {
+    /** Add Files To Sequence Set */
+    post: operations["addFilesToSequenceSet"];
+  };
+  "/easy-genomics/data-collections/add-sequence-sets-to-data-collection": {
+    /** Add Sequence Sets To Data Collection */
+    post: operations["addSequenceSetsToDataCollection"];
+  };
   "/easy-genomics/data-collections/add-tags-to-files": {
     /** Add Tags To Files */
     post: operations["addTagsToFiles"];
+  };
+  "/easy-genomics/data-collections/add-tags-to-sequence-sets": {
+    /** Add Tags To Sequence Sets */
+    post: operations["addTagsToSequenceSets"];
+  };
+  "/easy-genomics/data-collections/create-bulk-sequence-sets": {
+    /** Create Bulk Sequence Sets */
+    post: operations["createBulkSequenceSets"];
+  };
+  "/easy-genomics/data-collections/create-data-collection": {
+    /** Create Data Collection */
+    post: operations["createDataCollection"];
+  };
+  "/easy-genomics/data-collections/create-sequence-set": {
+    /** Create Sequence Set */
+    post: operations["createSequenceSet"];
   };
   "/easy-genomics/data-collections/create-tag": {
     /** Create Tag */
@@ -65,13 +89,37 @@ export interface paths {
     /** Edit Batch */
     post: operations["editBatch"];
   };
+  "/easy-genomics/data-collections/list-data-collection-sequence-sets": {
+    /** List Data Collection Sequence Sets */
+    get: operations["listDataCollectionSequenceSets"];
+  };
+  "/easy-genomics/data-collections/list-data-collections": {
+    /** List Data Collections */
+    get: operations["listDataCollections"];
+  };
   "/easy-genomics/data-collections/list-files-by-tag": {
     /** List Files By Tag */
     get: operations["listFilesByTag"];
   };
+  "/easy-genomics/data-collections/list-sequence-set-files": {
+    /** List Sequence Set Files */
+    get: operations["listSequenceSetFiles"];
+  };
+  "/easy-genomics/data-collections/list-sequence-sets-by-tag": {
+    /** List Sequence Sets By Tag */
+    get: operations["listSequenceSetsByTag"];
+  };
+  "/easy-genomics/data-collections/list-sequence-sets": {
+    /** List Sequence Sets */
+    get: operations["listSequenceSets"];
+  };
   "/easy-genomics/data-collections/list-tags": {
     /** List Tags */
     get: operations["listTags"];
+  };
+  "/easy-genomics/data-collections/remove-files-from-sequence-set": {
+    /** Remove Files From Sequence Set */
+    post: operations["removeFilesFromSequenceSet"];
   };
   "/easy-genomics/data-collections/request-laboratory-bucket-objects": {
     /** Request Laboratory Bucket Objects */
@@ -80,6 +128,22 @@ export interface paths {
   "/easy-genomics/data-collections/request-list-file-tags": {
     /** Request List File Tags */
     post: operations["requestListFileTags"];
+  };
+  "/easy-genomics/data-collections/request-list-sequence-set-tags": {
+    /** Request List Sequence Set Tags */
+    post: operations["requestListSequenceSetTags"];
+  };
+  "/easy-genomics/data-collections/request-unlinked-bucket-objects": {
+    /** Request Unlinked Bucket Objects */
+    post: operations["requestUnlinkedBucketObjects"];
+  };
+  "/easy-genomics/data-collections/update-data-collection-schema/{id}": {
+    /** Update Data Collection Schema */
+    put: operations["updateDataCollectionSchema"];
+  };
+  "/easy-genomics/data-collections/update-data-collection/{id}": {
+    /** Update Data Collection */
+    put: operations["updateDataCollection"];
   };
   "/easy-genomics/data-collections/update-tag/{id}": {
     /** Update Tag */
@@ -380,12 +444,76 @@ export interface components {
       workflowOwnerId?: string;
       workflowVersionName?: string;
     };
+    AddFilesToSequenceSetRequest: {
+      LaboratoryId: string;
+      S3Bucket: string;
+      /** Format: uuid */
+      SequenceSetId: string;
+      Keys: string[];
+    };
+    AddSequenceSetsToDataCollectionRequest: {
+      LaboratoryId: string;
+      /** Format: uuid */
+      DataCollectionId: string;
+      SequenceSetIds: string[];
+    };
     AddTagsToFilesRequest: {
       LaboratoryId: string;
       S3Bucket: string;
       Keys: string[];
       AddTagIds?: string[];
       RemoveTagIds?: string[];
+    };
+    AddTagsToSequenceSetsRequest: {
+      LaboratoryId: string;
+      SequenceSetIds: string[];
+      AddTagIds?: string[];
+      RemoveTagIds?: string[];
+    };
+    CreateBulkSequenceSetsRequest: {
+      LaboratoryId: string;
+      S3Bucket: string;
+      ImportLabel: string;
+      SequenceSets: ({
+          Name: string;
+          /** @enum {string} */
+          Layout: "paired_end" | "single_end" | "long_reads" | "paired_end_with_extras";
+          Keys: string[];
+          TagIds?: string[];
+          FilenameRegex?: string;
+          SampleIdPattern?: string;
+        })[];
+      CopyJobs?: {
+          SourceBucket: string;
+          SourceKey: string;
+          DestKey: string;
+        }[];
+    };
+    CreateDataCollectionRequest: {
+      LaboratoryId: string;
+      Name?: string;
+      Columns: ({
+          columnName: string;
+          /** @enum {string} */
+          role: "sample_id" | "read1" | "read2" | "reads" | "reference_fasta" | "reference_gtf" | "reference_gff" | "reference_bed" | "input_bam" | "input_cram" | "input_vcf" | "metadata" | "custom_uri";
+          required: boolean;
+        })[];
+      SequenceSetIds?: string[];
+      /** Format: uuid */
+      ExistingDataCollectionId?: string;
+    };
+    CreateSequenceSetRequest: {
+      LaboratoryId: string;
+      S3Bucket: string;
+      Name?: string;
+      /** @enum {string} */
+      Layout: "paired_end" | "single_end" | "long_reads" | "paired_end_with_extras";
+      FilenameRegex?: string;
+      SampleIdPattern?: string;
+      Keys?: string[];
+      /** Format: uuid */
+      ExistingSequenceSetId?: string;
+      ExpandRegexFromListing?: boolean;
     };
     CreateTagRequest: {
       LaboratoryId: string;
@@ -459,6 +587,13 @@ export interface components {
           ModifiedBy?: string;
         })[];
     };
+    RemoveFilesFromSequenceSetRequest: {
+      LaboratoryId: string;
+      S3Bucket: string;
+      /** Format: uuid */
+      SequenceSetId: string;
+      Keys: string[];
+    };
     RequestLaboratoryBucketObjectsRequest: {
       LaboratoryId: string;
       RelativePrefix?: string;
@@ -476,6 +611,8 @@ export interface components {
           Key: string;
           /** @description Standard (non-batch, non-workflow, non-permanent) tags only. */
           TagIds: string[];
+          /** @description Sequence sets this file belongs to. */
+          SequenceSetIds?: string[];
           /** @description At most one batch tag id if the file is assigned to a batch. */
           BatchTagId?: string;
           /** @description Workflow tag ids that have been associated with this file via run launches. */
@@ -513,6 +650,41 @@ export interface components {
               ExpiresAt?: number;
             }[];
         }[];
+    };
+    RequestListSequenceSetTagsRequest: {
+      LaboratoryId: string;
+      SequenceSetIds: string[];
+    };
+    RequestUnlinkedBucketObjectsRequest: {
+      LaboratoryId: string;
+      RelativePrefix?: string;
+      MaxTotalKeys?: number;
+      MaxTransactionFolders?: number;
+      MaxKeys?: number;
+    };
+    UpdateDataCollectionSchemaRequest: {
+      LaboratoryId: string;
+      /** Format: uuid */
+      DataCollectionId: string;
+      Columns: ({
+          columnName: string;
+          /** @enum {string} */
+          role: "sample_id" | "read1" | "read2" | "reads" | "reference_fasta" | "reference_gtf" | "reference_gff" | "reference_bed" | "input_bam" | "input_cram" | "input_vcf" | "metadata" | "custom_uri";
+          required: boolean;
+        })[];
+    };
+    UpdateDataCollectionRequest: {
+      LaboratoryId: string;
+      /** Format: uuid */
+      DataCollectionId: string;
+      Name: string;
+      Columns: ({
+          columnName: string;
+          /** @enum {string} */
+          role: "sample_id" | "read1" | "read2" | "reads" | "reference_fasta" | "reference_gtf" | "reference_gff" | "reference_bed" | "input_bam" | "input_cram" | "input_vcf" | "metadata" | "custom_uri";
+          required: boolean;
+        })[];
+      SequenceSetIds: string[];
     };
     UpdateTagRequest: {
       LaboratoryId: string;
@@ -652,7 +824,59 @@ export interface components {
         [key: string]: unknown;
       };
     };
-    LaboratoryRun: unknown;
+    LaboratoryRun: {
+      LaboratoryId: string;
+      UserId: string;
+      /** @enum {string} */
+      Platform: "AWS HealthOmics" | "Seqera Cloud";
+      OrganizationId: string;
+      Status: string;
+      RunId: string;
+      RunName: string;
+      Owner: string;
+      WorkflowName?: string;
+      PlatformApiBaseUrl?: string;
+      WorkflowVersionName?: string;
+      /**
+       * @description Platform-side workflow identifier (HealthOmics workflowId or Seqera pipelineId).
+       * Persisted at run-creation time so the data tagging system can associate inputs
+       * with a stable workflow identity.
+       */
+      WorkflowExternalId?: string;
+      /**
+       * @description S3 object keys (within the laboratory bucket) that were used as inputs
+       * for this run. Populated at run-creation time and consumed by the data
+       * tagging system to record file -> workflow associations. Optional because
+       * legacy runs and runs whose input keys could not be determined will not
+       * have this field.
+       */
+      InputFileKeys?: string[];
+      ExternalRunId?: string;
+      InputS3Url?: string;
+      OutputS3Url?: string;
+      SampleSheetS3Url?: string;
+      Settings?: Record<string, never> | string;
+      CreatedAt?: string;
+      CreatedBy?: string;
+      ModifiedAt?: string;
+      ModifiedBy?: string;
+      /**
+       * @description ISO timestamp indicating when the run first reached a terminal state.
+       * Used as the anchor for retention/TTL recomputation.
+       */
+      TerminalAt?: string;
+      /**
+       * @description DynamoDB TTL epoch timestamp (in seconds).
+       * When enabled, DynamoDB will remove items after this timestamp.
+       */
+      ExpiresAt?: number;
+      /**
+       * @description Actual execution duration reported by the underlying platform, in seconds.
+       * Populated by the status-check processor from Seqera `workflow.duration`
+       * or AWS HealthOmics `stopTime - startTime`.
+       */
+      RunDurationSeconds?: number;
+    };
     ReadLaboratoryRun: {
       LaboratoryId: string;
       UserId: string;
@@ -820,7 +1044,21 @@ export interface components {
       Status: "Active" | "Inactive" | "Invited";
       OrganizationAdmin: boolean;
     };
-    OrganizationUserDetails: unknown;
+    OrganizationUserDetails: {
+      OrganizationAdmin: boolean;
+      UserId: string;
+      OrganizationId: string;
+      /** @enum {string} */
+      UserStatus: "Active" | "Inactive" | "Invited";
+      /** @enum {string} */
+      OrganizationUserStatus: "Active" | "Inactive" | "Invited";
+      PreferredName?: string;
+      FirstName?: string;
+      LastName?: string;
+      UserEmail?: string;
+      Title?: string;
+      OrganizationAccess?: Record<string, never>;
+    };
     RemoveOrganizationUserRequest: {
       /** Format: uuid */
       OrganizationId: string;
@@ -2408,7 +2646,22 @@ export interface components {
           }[];
       };
     };
-    DescribeWorkflowReportsResponse: unknown;
+    /**
+     * @description These are the types for the workflow report endpoint which is not published as part
+     * of the nextflow tower openapi.
+     */
+    WorkflowReport: {
+      display: string;
+      mimeType: string;
+      path: string;
+      externalPath: string;
+      size: number;
+    };
+    DescribeWorkflowReportsResponse: {
+      hasReports: boolean;
+      basePath: string;
+      reports: components["schemas"]["WorkflowReport"][];
+    };
     DescribeWorkflowResponse: {
       orgName?: string;
       workspaceName?: string;
@@ -2977,11 +3230,137 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
+  /** Add Files To Sequence Set */
+  addFilesToSequenceSet: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AddFilesToSequenceSetRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Add Sequence Sets To Data Collection */
+  addSequenceSetsToDataCollection: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AddSequenceSetsToDataCollectionRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
   /** Add Tags To Files */
   addTagsToFiles: {
     requestBody: {
       content: {
         "application/json": components["schemas"]["AddTagsToFilesRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Add Tags To Sequence Sets */
+  addTagsToSequenceSets: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AddTagsToSequenceSetsRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Create Bulk Sequence Sets */
+  createBulkSequenceSets: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateBulkSequenceSetsRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Create Data Collection */
+  createDataCollection: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateDataCollectionRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Create Sequence Set */
+  createSequenceSet: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateSequenceSetRequest"];
       };
     };
     responses: {
@@ -3061,6 +3440,52 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
+  /** List Data Collection Sequence Sets */
+  listDataCollectionSequenceSets: {
+    parameters: {
+      query: {
+        /** @description Laboratory to query */
+        laboratoryId: string;
+        /** @description Data collection to list sequence sets for */
+        dataCollectionId: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** List Data Collections */
+  listDataCollections: {
+    parameters: {
+      query: {
+        /** @description Laboratory to list data collections for */
+        laboratoryId: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
   /** List Files By Tag */
   listFilesByTag: {
     parameters: {
@@ -3089,6 +3514,84 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
+  /** List Sequence Set Files */
+  listSequenceSetFiles: {
+    parameters: {
+      query: {
+        /** @description Laboratory to query */
+        laboratoryId: string;
+        /** @description Sequence set to list files for */
+        sequenceSetId: string;
+        /** @description Max number of results (1-500) */
+        limit?: string;
+        /** @description Pagination cursor */
+        cursor?: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** List Sequence Sets By Tag */
+  listSequenceSetsByTag: {
+    parameters: {
+      query: {
+        /** @description Laboratory to query */
+        laboratoryId: string;
+        /** @description Tag to list sequence sets for */
+        tagId: string;
+        /** @description Max number of results (1-500) */
+        limit?: string;
+        /** @description Pagination cursor */
+        cursor?: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** List Sequence Sets */
+  listSequenceSets: {
+    parameters: {
+      query: {
+        /** @description Laboratory to list sequence sets for */
+        laboratoryId: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
   /** List Tags */
   listTags: {
     parameters: {
@@ -3102,6 +3605,27 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["ListLaboratoryDataTagsResponse"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Remove Files From Sequence Set */
+  removeFilesFromSequenceSet: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RemoveFilesFromSequenceSetRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
         };
       };
       400: components["responses"]["BadRequest"];
@@ -3144,6 +3668,100 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["ListFileTagsResponse"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Request List Sequence Set Tags */
+  requestListSequenceSetTags: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RequestListSequenceSetTagsRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Request Unlinked Bucket Objects */
+  requestUnlinkedBucketObjects: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RequestUnlinkedBucketObjectsRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Update Data Collection Schema */
+  updateDataCollectionSchema: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateDataCollectionSchemaRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Update Data Collection */
+  updateDataCollection: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateDataCollectionRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
         };
       };
       400: components["responses"]["BadRequest"];
