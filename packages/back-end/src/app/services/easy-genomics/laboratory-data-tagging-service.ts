@@ -22,9 +22,12 @@ import {
   SampleTagAssignment,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
 import {
+  BatchTagNotFoundError,
+  NotABatchTagError,
   SampleNotFoundError,
   S3BucketMismatchError,
   S3KeyOutOfPrefixError,
+  TagNameAlreadyExistsError,
 } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { v5 as uuidv5 } from 'uuid';
 import { DynamoDBService } from '../dynamodb-service';
@@ -371,7 +374,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     if (
       existing.Tags.some((t) => (t.Kind ?? 'standard') !== 'workflow' && t.Name.trim().toLowerCase() === normalized)
     ) {
-      throw new Error('A tag with this name already exists');
+      throw new TagNameAlreadyExistsError();
     }
 
     const tagId = randomUUID();
@@ -568,7 +571,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
             t.TagId !== tagId && (t.Kind ?? 'standard') !== 'workflow' && t.Name.trim().toLowerCase() === normalized,
         )
       ) {
-        throw new Error('A tag with this name already exists');
+        throw new TagNameAlreadyExistsError();
       }
     }
 
@@ -1376,8 +1379,8 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       targetBatchId = created.TagId;
     } else if (mode.type === 'existing') {
       const row = await this.getTagRow(laboratoryId, mode.batchTagId);
-      if (!row) throw new Error(`Unknown batch: ${mode.batchTagId}`);
-      if ((row.Kind ?? 'standard') !== 'batch') throw new Error('Tag is not a batch');
+      if (!row) throw new BatchTagNotFoundError(mode.batchTagId);
+      if ((row.Kind ?? 'standard') !== 'batch') throw new NotABatchTagError();
       targetBatchId = mode.batchTagId;
     }
 
@@ -1471,8 +1474,8 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       targetBatchId = created.TagId;
     } else {
       const row = await this.getTagRow(laboratoryId, mode.batchTagId);
-      if (!row) throw new Error(`Unknown batch: ${mode.batchTagId}`);
-      if ((row.Kind ?? 'standard') !== 'batch') throw new Error('Tag is not a batch');
+      if (!row) throw new BatchTagNotFoundError(mode.batchTagId);
+      if ((row.Kind ?? 'standard') !== 'batch') throw new NotABatchTagError();
       targetBatchId = mode.batchTagId;
     }
 
@@ -1484,7 +1487,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         Key: marshall({ LaboratoryId: laboratoryId, Sk: skSample(setId) }),
         ConsistentRead: true,
       });
-      if (!res.Item) throw new Error(`Unknown sample: ${setId}`);
+      if (!res.Item) throw new SampleNotFoundError(setId);
 
       const row = unmarshall(res.Item) as Record<string, unknown>;
       const tagIds = new Set<string>((row.TagIds as string[]) || []);
@@ -1881,7 +1884,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         // a SET on a nested path requires the parent map to exist.
         await this.updateItem({
           TableName: TABLE_NAME,
-          Key: marshall({ LaboratoryId: laboratoryId, Sk: skSequenceSet(setId) }),
+          Key: marshall({ LaboratoryId: laboratoryId, Sk: skSample(setId) }),
           UpdateExpression: 'SET #lru = if_not_exists(#lru, :emptyMap)',
           ExpressionAttributeNames: { '#lru': 'LaboratoryRunUsages', '#sk': 'Sk' },
           ExpressionAttributeValues: marshall({ ':emptyMap': {} }),

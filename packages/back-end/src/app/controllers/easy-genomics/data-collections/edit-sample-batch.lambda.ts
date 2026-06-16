@@ -35,19 +35,6 @@ export const handler: Handler = async (
     return buildResponse(200, JSON.stringify({ ok: true }), event);
   } catch (err: unknown) {
     console.error(err);
-    const message = err instanceof Error ? err.message : String(err);
-    if (err instanceof InvalidRequestError) {
-      return buildErrorResponse(err, event);
-    }
-    if (message.includes('not a batch')) {
-      return buildResponse(400, JSON.stringify({ message }), event);
-    }
-    if (message.startsWith('Unknown batch') || message.startsWith('Unknown sample')) {
-      return buildResponse(404, JSON.stringify({ message }), event);
-    }
-    if (message === 'A tag with this name already exists') {
-      return buildResponse(409, JSON.stringify({ message }), event);
-    }
     return buildErrorResponse(err, event);
   }
 };

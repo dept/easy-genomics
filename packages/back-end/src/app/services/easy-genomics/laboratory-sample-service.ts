@@ -25,6 +25,7 @@ import {
 import { isFilenameRegexSafe } from '@easy-genomics/shared-lib/src/app/utils/filename-regex-safety';
 import {
   InvalidRequestError,
+  NotFoundError,
   SampleNotFoundError,
   SequenceCollectionNotFoundError,
 } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
@@ -580,12 +581,12 @@ export class LaboratorySampleService extends DynamoDBService {
     }
 
     const built = buildSampleSheetFromSamples(collection.Columns, samples, bucket);
-    if (!built.ok) throw new Error(built.message);
+    if (!built.ok) throw new InvalidRequestError(built.message);
 
     if (opts.validateS3FilesExist) {
       for (const key of built.inputFileKeys) {
         const exists = await this.s3Service.doesObjectExist({ Bucket: bucket, Key: key });
-        if (!exists) throw new Error(`S3 object not found: ${key}`);
+        if (!exists) throw new NotFoundError(`S3 object not found: ${key}`);
       }
     }
 
@@ -677,7 +678,6 @@ export class LaboratorySampleService extends DynamoDBService {
       IsTruncated: listingTruncated,
       S3Bucket: s3Bucket,
       ResolvedPrefix: normalizedPrefix,
-      ListingTruncated: listingTruncated,
       ReturnedKeyCount: unlinked.length,
     };
   }
@@ -709,6 +709,8 @@ export class LaboratorySampleService extends DynamoDBService {
     };
 
     for (const job of opts.copyJobs || []) {
+      this.assertBucketMatchesLab(laboratory, job.sourceBucket);
+      this.assertKeyUnderLabPrefix(laboratory, job.sourceKey);
       this.assertKeyUnderLabPrefix(laboratory, job.destKey);
       await this.s3Service.copyBucketObject({
         Bucket: bucket,
@@ -866,10 +868,9 @@ export class LaboratorySampleService extends DynamoDBService {
           ExpressionAttributeNames: { '#sk': 'Sk' },
         });
         added++;
-        await this.addSampleIdToFileRow(laboratoryId, ref, bucket, key, setId, userId);
+        await this.addSampleIdToFileRow(laboratoryId, ref, bucket, key, setId);
       } catch (e: unknown) {
-        const name = typeof e === 'object' && e !== null ? (e as { name?: string }).name : undefined;
-        if (name !== 'ConditionalCheckFailedException') throw e;
+        if (!isConditionalCheckFailed(e)) throw e;
       }
     }
 
@@ -913,8 +914,7 @@ export class LaboratorySampleService extends DynamoDBService {
         });
         added++;
       } catch (e: unknown) {
-        const name = typeof e === 'object' && e !== null ? (e as { name?: string }).name : undefined;
-        if (name !== 'ConditionalCheckFailedException') throw e;
+        if (!isConditionalCheckFailed(e)) throw e;
       }
     }
 
@@ -941,8 +941,7 @@ export class LaboratorySampleService extends DynamoDBService {
         });
         removed++;
       } catch (e: unknown) {
-        const name = typeof e === 'object' && e !== null ? (e as { name?: string }).name : undefined;
-        if (name !== 'ConditionalCheckFailedException') throw e;
+        if (!isConditionalCheckFailed(e)) throw e;
       }
     }
 
@@ -957,7 +956,6 @@ export class LaboratorySampleService extends DynamoDBService {
     bucket: string,
     key: string,
     setId: string,
-    userId: string,
   ): Promise<void> {
     const now = new Date().toISOString();
     try {
@@ -977,26 +975,8 @@ export class LaboratorySampleService extends DynamoDBService {
         }),
       });
     } catch (e: unknown) {
-      const name = typeof e === 'object' && e !== null ? (e as { name?: string }).name : undefined;
-      if (name === 'ConditionalCheckFailedException') return;
-      // File row may not exist yet — create it
-      await this.putItem({
-        TableName: TABLE_NAME,
-        Item: marshall(
-          {
-            LaboratoryId: laboratoryId,
-            Sk: skFile(ref),
-            S3Bucket: bucket,
-            ObjectKey: key,
-            TagIds: [],
-            SampleIds: [setId],
-            ModifiedAt: now,
-            CreatedAt: now,
-            CreatedBy: userId,
-          },
-          { removeUndefinedValues: true },
-        ),
-      });
+      if (isConditionalCheckFailed(e)) return;
+      throw e;
     }
   }
 
@@ -1065,15 +1045,13 @@ export class LaboratorySampleService extends DynamoDBService {
     delta: number,
     userId: string,
   ): Promise<void> {
-    const row = await this.getSequenceCollection(laboratoryId, collectionId);
-    if (!row) return;
-    const next = Math.max(0, (row.SampleCount || 0) + delta);
+    if (delta === 0) return;
     await this.updateItem({
       TableName: TABLE_NAME,
       Key: marshall({ LaboratoryId: laboratoryId, Sk: skSequenceCollection(collectionId) }),
-      UpdateExpression: 'SET SampleCount = :n, ModifiedAt = :ma, ModifiedBy = :mb',
+      UpdateExpression: 'ADD SampleCount :delta SET ModifiedAt = :ma, ModifiedBy = :mb',
       ExpressionAttributeValues: marshall({
-        ':n': next,
+        ':delta': delta,
         ':ma': new Date().toISOString(),
         ':mb': userId,
       }),

@@ -39,8 +39,8 @@ describe('BulkCreateSamplesSchema batch fields', () => {
     expect(parsed.success).toBe(false);
   });
 
-  it('rejects when neither NewBatchName nor BatchTagId is set', () => {
+  it('accepts when neither NewBatchName nor BatchTagId is set', () => {
     const parsed = BulkCreateSamplesSchema.safeParse(basePayload);
-    expect(parsed.success).toBe(false);
+    expect(parsed.success).toBe(true);
   });
 });

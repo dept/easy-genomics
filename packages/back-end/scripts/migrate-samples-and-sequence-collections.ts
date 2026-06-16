@@ -32,22 +32,7 @@ import dotenv from 'dotenv';
 import { DeleteItemCommand, DynamoDBClient, PutItemCommand, ScanCommand } from '@aws-sdk/client-dynamodb';
 import { GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
-
-const SK_REPLACEMENTS: Array<[string, string]> = [
-  ['SEQUENCE_SET#', 'SAMPLE#'],
-  ['SEQSETFILE#', 'SAMPLEFILE#'],
-  ['DATA_COLLECTION#', 'SEQUENCE_COLLECTION#'],
-  ['DCSET#', 'SCSET#'],
-  ['#SEQSET#', '#SAMPLE#'],
-  ['#DC#', '#SC#'],
-];
-
-const ATTR_RENAMES: Record<string, string> = {
-  SequenceSetId: 'SampleId',
-  SequenceSetIds: 'SampleIds',
-  DataCollectionId: 'SequenceCollectionId',
-  SequenceSetCount: 'SampleCount',
-};
+import { migrateItem, needsMigration } from './lib/migrate-samples-and-sequence-collections-lib';
 
 function loadEnv(): void {
   const envPath = path.resolve(process.cwd(), '.env.local');
@@ -107,39 +92,6 @@ async function verifyCredentials(): Promise<void> {
     }
     throw err;
   }
-}
-
-function migrateSk(sk: string): string {
-  let out = sk;
-  for (const [from, to] of SK_REPLACEMENTS) {
-    out = out.split(from).join(to);
-  }
-  return out;
-}
-
-function migrateGsi1Pk(pk: string | undefined): string | undefined {
-  if (!pk) return pk;
-  return migrateSk(pk);
-}
-
-function migrateItem(item: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...item };
-  if (typeof out.Sk === 'string') out.Sk = migrateSk(out.Sk);
-  if (typeof out.Gsi1Pk === 'string') out.Gsi1Pk = migrateGsi1Pk(out.Gsi1Pk);
-  if (typeof out.Gsi1Sk === 'string') out.Gsi1Sk = migrateSk(out.Gsi1Sk as string);
-  for (const [from, to] of Object.entries(ATTR_RENAMES)) {
-    if (from in out) {
-      out[to] = out[from];
-      delete out[from];
-    }
-  }
-  return out;
-}
-
-function needsMigration(item: Record<string, unknown>): boolean {
-  const sk = String(item.Sk ?? '');
-  if (SK_REPLACEMENTS.some(([from]) => sk.includes(from))) return true;
-  return Object.keys(ATTR_RENAMES).some((k) => k in item);
 }
 
 async function main(): Promise<void> {

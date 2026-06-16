@@ -1883,8 +1883,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
     ]);
 
-    // /easy-genomics/data-collections/generate-sequence-collection-sample-sheet
-    this.iam.addPolicyStatements('/easy-genomics/data-collections/generate-sequence-collection-sample-sheet', [
+    // /easy-genomics/data-collections/request-sequence-collection-sample-sheet
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/request-sequence-collection-sample-sheet', [
       ...laboratoryReadForSequenceCollections,
       new PolicyStatement({
         resources: laboratoryDataTaggingDynamoResources,

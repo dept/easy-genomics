@@ -35,7 +35,7 @@ export const BulkCreateSamplesSchema = z
   .refine(
     (data) => {
       const modes = [!!data.BatchTagId, !!data.NewBatchName].filter(Boolean);
-      return modes.length === 1;
+      return modes.length <= 1;
     },
-    { message: 'Specify exactly one of BatchTagId or NewBatchName' },
+    { message: 'Specify at most one of BatchTagId or NewBatchName' },
   );

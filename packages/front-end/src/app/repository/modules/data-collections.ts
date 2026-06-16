@@ -225,7 +225,7 @@ class DataCollectionsModule extends HttpFactory {
   }): Promise<GenerateSequenceCollectionSampleSheetResponse> {
     const res = await this.call<GenerateSequenceCollectionSampleSheetResponse>(
       'POST',
-      '/data-collections/generate-sequence-collection-sample-sheet',
+      '/data-collections/request-sequence-collection-sample-sheet',
       body,
     );
     if (!res) throw new Error('Failed to generate sample sheet');
