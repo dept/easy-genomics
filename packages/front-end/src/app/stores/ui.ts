@@ -57,6 +57,7 @@ interface UiStoreState {
   previousPageRoute: string;
   remountAppKey: number;
   hasSidebar: boolean;
+  sidebarCollapsed: boolean;
 }
 
 const initialState = (): UiStoreState => ({
@@ -64,6 +65,7 @@ const initialState = (): UiStoreState => ({
   previousPageRoute: '',
   remountAppKey: 0,
   hasSidebar: false,
+  sidebarCollapsed: false,
 });
 
 const useUiStore = defineStore('uiStore', {
@@ -104,10 +106,18 @@ const useUiStore = defineStore('uiStore', {
     setSidebarVisible(visible: boolean) {
       this.hasSidebar = visible;
     },
+
+    toggleSidebarCollapsed() {
+      this.sidebarCollapsed = !this.sidebarCollapsed;
+    },
+
+    setSidebarCollapsed(collapsed: boolean) {
+      this.sidebarCollapsed = collapsed;
+    },
   },
 
   persist: {
-    pick: ['previousPageRoute'],
+    pick: ['previousPageRoute', 'sidebarCollapsed'],
   },
 });
 
