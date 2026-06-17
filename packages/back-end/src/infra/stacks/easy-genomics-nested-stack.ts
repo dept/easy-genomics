@@ -148,6 +148,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
       lambdaFunctionsNamespace: `${this.props.constructNamespace}`,
       lambdaFunctionsResources: {
         // Used for setting specific resources for a given Lambda function (e.g. environment settings, trigger events)
+        '/easy-genomics/list-api-docs': {
+          methodOptions: {
+            authorizer: undefined, // Public API documentation page — no Cognito user required
+          },
+        },
         '/easy-genomics/user/create-user-invitation-request': {
           environment: {
             COGNITO_USER_POOL_CLIENT_ID: this.props.userPoolClient?.userPoolClientId!,
@@ -1804,6 +1809,79 @@ export class EasyGenomicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: ['arn:aws:s3:::*'],
         actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    const sequenceSetDataCollectionRoutes = [
+      '/easy-genomics/data-collections/list-sequence-sets',
+      '/easy-genomics/data-collections/create-sequence-set',
+      '/easy-genomics/data-collections/add-files-to-sequence-set',
+      '/easy-genomics/data-collections/remove-files-from-sequence-set',
+      '/easy-genomics/data-collections/list-sequence-set-files',
+      '/easy-genomics/data-collections/list-data-collections',
+      '/easy-genomics/data-collections/list-data-collection-sequence-sets',
+      '/easy-genomics/data-collections/create-data-collection',
+      '/easy-genomics/data-collections/add-sequence-sets-to-data-collection',
+      '/easy-genomics/data-collections/update-data-collection-schema',
+      '/easy-genomics/data-collections/update-data-collection',
+      '/easy-genomics/data-collections/add-tags-to-sequence-sets',
+      '/easy-genomics/data-collections/request-list-sequence-set-tags',
+      '/easy-genomics/data-collections/list-sequence-sets-by-tag',
+      '/easy-genomics/data-collections/request-unlinked-bucket-objects',
+      '/easy-genomics/data-collections/create-bulk-sequence-sets',
+    ];
+    for (const route of sequenceSetDataCollectionRoutes) {
+      this.iam.addPolicyStatements(route, [
+        ...laboratoryReadForDataCollections,
+        new PolicyStatement({
+          resources: laboratoryDataTaggingDynamoResources,
+          actions: laboratoryDataTaggingDynamoActions,
+        }),
+      ]);
+    }
+
+    // create-sequence-set may expand regex matches via lab bucket listing
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/create-sequence-set', [
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/request-unlinked-bucket-objects', [
+      ...laboratoryReadForDataCollections,
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/create-bulk-sequence-sets', [
+      ...laboratoryReadForDataCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*/*'],
+        actions: ['s3:CopyObject', 's3:PutObject', 's3:HeadObject'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/data-collections/generate-data-collection-sample-sheet
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/generate-data-collection-sample-sheet', [
+      ...laboratoryReadForDataCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*/*'],
+        actions: ['s3:PutObject', 's3:HeadObject'],
         effect: Effect.ALLOW,
       }),
     ]);

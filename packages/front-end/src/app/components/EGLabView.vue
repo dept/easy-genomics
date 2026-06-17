@@ -62,6 +62,7 @@
   const labName = computed<string>(() => lab.value?.Name || '');
 
   const addUsersPanelId = 'lab-add-users-panel';
+  const usersHeadingId = 'lab-users-heading';
 
   usePageTitle(() => {
     const base = labName.value ? labName.value : 'Lab';
@@ -366,6 +367,36 @@
       if (!userA.LabTechnician && userB.LabTechnician) return 1;
       // then sort by name
       return stringSortCompare(userA.displayName, userB.displayName);
+    });
+  });
+
+  const usersSearchStatusMessage = computed(() => {
+    const q = searchOutput.value.trim();
+    if (!q) return '';
+    const count = usersTableItems.value.length;
+    if (count === 0) return `No users match "${q}"`;
+    const noun = count === 1 ? 'user' : 'users';
+    return `${count} ${noun} match "${q}"`;
+  });
+
+  const isUsersTabLoading = computed(() =>
+    useUiStore().anyRequestPending([
+      'loadLabData',
+      'getLabUsers',
+      'assignLabRole',
+      'addUserToLab',
+      'removeUserFromLab',
+    ]),
+  );
+
+  watch(showAddUserModule, (isOpen) => {
+    if (!isOpen) return;
+    nextTick(() => {
+      const panel = document.getElementById(addUsersPanelId);
+      const focusable = panel?.querySelector<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      focusable?.focus();
     });
   });
 
@@ -734,6 +765,7 @@
     />
     <EGButton
       v-if="!superuser && activeTabKey === 'users'"
+      u-button-type="button"
       label="Add Lab Users"
       :disabled="!canAddUsers"
       :aria-expanded="showAddUserModule"
@@ -757,15 +789,15 @@
     </div>
   </EGPageHeader>
 
-  <!-- Dashboard tab -->
+  <!-- Dashboard tab: tabindex enables programmatic focus after tab click; outline suppressed intentionally (focus is moved from the tab, not via Tab). -->
   <div
     v-if="activeTabKey === 'dashboard'"
     role="tabpanel"
     id="panel-dashboard"
     aria-labelledby="tab-dashboard"
     tabindex="0"
+    class="outline-none focus:outline-none"
   >
-    <h2 class="sr-only">Lab dashboard</h2>
     <EGDashboard :lab-id="labId" />
   </div>
 
@@ -950,65 +982,86 @@
     </EGTable>
   </div>
 
-  <!-- Lab Users tab -->
-  <div v-if="activeTabKey === 'users'" role="tabpanel" id="panel-users" aria-labelledby="tab-users" tabindex="0">
-    <h2 class="sr-only">Lab users</h2>
-    <EGSearchInput
-      @input-event="updateSearchOutput"
-      label="Search users"
-      placeholder="Search user"
-      :disabled="useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'addUserToLab'])"
-      class="my-6 w-[408px]"
-    />
+  <!-- Lab Users tab: outline suppressed on programmatic focus from sidebar tab click (see dashboard tab comment). -->
+  <div
+    v-if="activeTabKey === 'users'"
+    role="tabpanel"
+    id="panel-users"
+    aria-labelledby="tab-users"
+    tabindex="0"
+    class="outline-none focus:outline-none"
+    :aria-busy="isUsersTabLoading"
+  >
+    <section :aria-labelledby="usersHeadingId">
+      <EGText :id="usersHeadingId" tag="h2" class="sr-only">Lab users</EGText>
 
-    <EGDialog
-      actionLabel="Remove User"
-      :actionVariant="ButtonVariantEnum.enum.destructive"
-      cancelLabel="Cancel"
-      :cancelVariant="ButtonVariantEnum.enum.secondary"
-      @action-triggered="handleRemoveUserFromLab"
-      :primaryMessage="primaryMessage"
-      v-model="isOpen"
-    />
+      <EGSearchInput
+        @input-event="updateSearchOutput"
+        label="Search users"
+        placeholder="Search user"
+        :disabled="useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'addUserToLab'])"
+        class="my-6 w-[408px]"
+      />
+      <p class="sr-only" aria-live="polite" aria-atomic="true">{{ usersSearchStatusMessage }}</p>
 
-    <EGTable
-      :table-data="usersTableItems"
-      :columns="usersTableColumns"
-      :is-loading="useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'assignLabRole'])"
-      :show-pagination="!useUiStore().anyRequestPending(['loadLabData', 'getLabUsers', 'assignLabRole'])"
-    >
-      <template #displayName-data="{ row: labUser }">
-        <div class="flex items-center">
-          <EGUserDisplay :name="labUser.displayName" :email="labUser.UserEmail" />
-        </div>
-      </template>
+      <EGDialog
+        action-label="Remove User"
+        :action-variant="ButtonVariantEnum.enum.destructive"
+        cancel-label="Cancel"
+        :cancel-variant="ButtonVariantEnum.enum.secondary"
+        @action-triggered="handleRemoveUserFromLab"
+        :primary-message="primaryMessage"
+        v-model="isOpen"
+      />
 
-      <template #actions-data="{ row: labUser }">
-        <div class="flex items-center">
-          <EGUserRoleDropdownNew
-            :show-remove-from-lab="true"
-            :key="labUser?.LabManager"
-            :disabled="
-              useUiStore().anyRequestPending(['loadLabData', 'getLabUsers']) ||
-              !userStore.canEditLabUsers(labId) ||
-              userStore.isSuperuser
-            "
-            :user="labUser"
-            @assign-lab-role="handleAssignLabRole($event)"
-            @remove-user-from-lab="showRemoveUserDialog($event.user)"
-          />
-        </div>
-      </template>
+      <EGTable
+        :table-data="usersTableItems"
+        :columns="usersTableColumns"
+        :is-loading="isUsersTabLoading"
+        :show-pagination="!isUsersTabLoading"
+        :labelled-by="usersHeadingId"
+      >
+        <template #displayName-data="{ row: labUser }">
+          <div class="flex items-center">
+            <EGUserDisplay :name="labUser.displayName" :email="labUser.UserEmail" />
+          </div>
+        </template>
 
-      <template #empty-state>
-        <div class="text-muted flex h-24 items-center justify-center font-normal">There are no users in your Lab</div>
-      </template>
-    </EGTable>
+        <template #actions-data="{ row: labUser }">
+          <div class="flex items-center">
+            <EGUserRoleDropdownNew
+              :show-remove-from-lab="true"
+              :key="labUser?.LabManager"
+              :disabled="
+                useUiStore().anyRequestPending(['loadLabData', 'getLabUsers']) ||
+                !userStore.canEditLabUsers(labId) ||
+                userStore.isSuperuser
+              "
+              :user="labUser"
+              @assign-lab-role="handleAssignLabRole($event)"
+              @remove-user-from-lab="showRemoveUserDialog($event.user)"
+            />
+          </div>
+        </template>
+
+        <template #empty-state>
+          <div class="text-muted flex h-24 items-center justify-center font-normal" role="status">
+            There are no users in your Lab
+          </div>
+        </template>
+      </EGTable>
+    </section>
   </div>
 
-  <!-- Lab Details -->
-  <div v-if="activeTabKey === 'details'" role="tabpanel" id="panel-details" aria-labelledby="tab-details" tabindex="0">
-    <h2 class="sr-only">Lab settings</h2>
+  <!-- Lab Details: outline suppressed on programmatic focus from sidebar tab click (see dashboard tab comment). -->
+  <div
+    v-if="activeTabKey === 'details'"
+    role="tabpanel"
+    id="panel-details"
+    aria-labelledby="tab-details"
+    tabindex="0"
+    class="outline-none focus:outline-none"
+  >
     <EGFormLabDetails @updated="handleDetailsUpdated" />
   </div>
 

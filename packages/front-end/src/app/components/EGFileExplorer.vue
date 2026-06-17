@@ -3,20 +3,17 @@
   import { useDebounceFn } from '@vueuse/core';
   import { format } from 'date-fns';
   import type { TableSort } from './EGTable.vue';
-  import {
+  import type {
     S3Object,
     S3Response,
-  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-list-bucket-objects';
-  import {
     S3TopLevelResponse,
     S3Prefix,
-  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-top-level-bucket-objects';
-  import { RequestTopLevelBucketObjects } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-top-level-bucket-objects';
-  import {
+    RequestTopLevelBucketObjects,
     RequestSearchBucketObjects,
-    S3Prefix as S3SearchPrefix,
     S3SearchResponse,
-  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-search-bucket-objects';
+  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
+
+  type S3SearchPrefix = S3Prefix;
 
   interface FileTreeNode {
     type?: string;

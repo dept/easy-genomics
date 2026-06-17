@@ -93,9 +93,48 @@ Some response types in `route-schemas.ts` are the closest existing type rather t
 handler may return a subset or transformed version of the type). Check handler implementations to see the actual
 response structure.
 
+## TypeScript Types (API-02)
+
+`easy-genomics-api.yaml` is also the source of truth for TypeScript types via `openapi-typescript`.
+
+### Generated file
+
+`packages/shared-lib/src/app/types/easy-genomics/generated.d.ts` is **committed to git** (following the same convention
+as `nextflow-tower-openapi-spec.d.ts`). This means `tsc` can compile all packages without running a generation step
+first, and spec-to-type drift shows up in PR diffs.
+
+### How to regenerate types
+
+```bash
+# From packages/shared-lib/
+pnpm run generate:api-types
+
+# Or regenerate spec + types together:
+pnpm run generate:openapi && pnpm run generate:api-types
+```
+
+The `generate:api-types` task also runs automatically as part of `nx run shared-lib:build` (wired into `pre-compile`).
+
+### Type alias wrapper
+
+`packages/shared-lib/src/app/types/easy-genomics/easy-genomics-api.ts` re-exports types from `generated.d.ts` under
+their original names. Import from this wrapper — not from `generated.d.ts` directly.
+
+```typescript
+import { ConfirmUserInvitationRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
+```
+
+Response types and nested utility types that are not cleanly representable in the spec (S3 SDK passthroughs, SNS event
+payloads, complex self-referential shapes) are hand-written directly in the wrapper with a comment explaining why.
+
+### How to add types for a new handler
+
+1. Create the handler and add it to `route-schemas.ts` (see above).
+2. Run `generate:openapi` then `generate:api-types`.
+3. If the new types need friendly re-exports, add aliases to `easy-genomics-api.ts`.
+
 ## Out of Scope (Follow-On Tickets)
 
-- **API-02**: TypeScript type generation from the spec
 - **API-03**: Swagger UI / API documentation hosting
 - **API-04**: CDK API Gateway integration (automatic routing based on the spec)
 - **API-05**: CI breaking-change detection (warn on spec changes during review)

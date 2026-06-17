@@ -47,7 +47,10 @@ type PendingRequest =
   | 'switchOrg'
   | 'dataCollectionsList'
   | 'dataCollectionsTags'
-  | 'dataCollectionsMutate';
+  | 'dataCollectionsMutate'
+  | 'dataCollectionsSequenceSets'
+  | 'dataCollectionsRunCollections'
+  | 'runFromCollectionsWorkflows';
 
 interface UiStoreState {
   pendingRequests: Set<string>;

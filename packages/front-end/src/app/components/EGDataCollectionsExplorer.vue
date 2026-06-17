@@ -7,7 +7,13 @@
     LaboratoryDataTag,
     LaboratoryRunUsageSummary,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
+  import type { LaboratorySequenceSet } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sequence-sets';
   import type { DataCollectionFileTypeFilter, HiddenFileTypeBreakdownRow } from '@FE/utils/data-collections-file-type';
+  import {
+    SEQUENCE_SET_LAYOUT_LABELS,
+    selectionKey,
+    type ExplorerSelection,
+  } from '@FE/utils/data-collections-selection';
   import { formatFileSize } from '@FE/utils/file-size';
 
   const props = defineProps<{
@@ -17,7 +23,9 @@
     s3Bucket?: string;
     labRoot: string;
     visibleFiles: { Key: string; Size?: number; LastModified?: string }[];
+    visibleSequenceSets?: LaboratorySequenceSet[];
     keyToTagIds: Record<string, string[]>;
+    keyToSequenceSetIds?: Record<string, string[]>;
     /** Batch tag id per file key (optional until parent loads assignments). */
     keyToBatchTagId?: Record<string, string | undefined>;
     /**
@@ -38,7 +46,7 @@
     keyToIsPermanent?: Record<string, boolean>;
     batchTags?: LaboratoryDataTag[];
     tags: LaboratoryDataTag[];
-    selectedKeys: string[];
+    explorerSelection: ExplorerSelection;
     loading: boolean;
     search: string;
     /** Files returned for the current S3 prefix (before search / tag filters in the parent). */
@@ -56,8 +64,9 @@
   const emit = defineEmits<{
     'update:search': [v: string];
     'update:fileTypeFilter': [value: DataCollectionFileTypeFilter];
-    'update:selectedKeys': [keys: string[]];
+    'update:explorerSelection': [selection: ExplorerSelection];
     toggleKey: [key: string];
+    toggleSequenceSet: [sequenceSetId: string];
     selectAllDisplayed: [];
     clearSelection: [];
     clearFilter: [chipId: string];
@@ -68,6 +77,24 @@
   }>();
 
   const filterChipsResolved = computed(() => props.filterChips ?? []);
+  const sequenceSetsResolved = computed(() => props.visibleSequenceSets ?? []);
+  const keyToSequenceSetIdsResolved = computed(() => props.keyToSequenceSetIds ?? {});
+
+  const selectedKeySet = computed(() => new Set(props.explorerSelection.map(selectionKey)));
+
+  function isFileSelected(key: string): boolean {
+    return selectedKeySet.value.has(`file:${key}`);
+  }
+
+  function isSequenceSetSelected(setId: string): boolean {
+    return selectedKeySet.value.has(`sequenceSet:${setId}`);
+  }
+
+  function sequenceSetCountForFile(key: string): number {
+    return keyToSequenceSetIdsResolved.value[key]?.length ?? 0;
+  }
+
+  const selectionCount = computed(() => props.explorerSelection.length);
 
   /** Cards grid vs tabular explorer layout. */
   const explorerView = ref<'cards' | 'table'>('cards');
@@ -300,22 +327,22 @@
 
   function batchSectionFullySelected(sec: { files: readonly { Key: string }[] }): boolean {
     if (!sec.files.length) return false;
-    return sec.files.every((f) => props.selectedKeys.includes(f.Key));
+    return sec.files.every((f) => isFileSelected(f.Key));
   }
 
   /** Selects all files in the section, or clears them from the selection if already fully selected. */
   function toggleBatchSection(sec: { files: readonly { Key: string }[] }): void {
     const keys = sec.files.map((f) => f.Key);
     if (batchSectionFullySelected(sec)) {
-      const remove = new Set(keys);
+      const remove = new Set(keys.map((k) => `file:${k}`));
       emit(
-        'update:selectedKeys',
-        props.selectedKeys.filter((k: string) => !remove.has(k)),
+        'update:explorerSelection',
+        props.explorerSelection.filter((s) => !(s.type === 'file' && remove.has(selectionKey(s)))),
       );
     } else {
-      const merged = new Set(props.selectedKeys);
-      keys.forEach((k) => merged.add(k));
-      emit('update:selectedKeys', [...merged]);
+      const merged = new Map(props.explorerSelection.map((s) => [selectionKey(s), s]));
+      keys.forEach((k) => merged.set(`file:${k}`, { type: 'file', key: k }));
+      emit('update:explorerSelection', [...merged.values()]);
     }
   }
 
@@ -366,9 +393,9 @@
       h.classList.remove('eg-data-collections-lasso-hit');
     });
     if (added.length) {
-      const s = new Set(props.selectedKeys);
-      added.forEach((k) => s.add(k));
-      emit('update:selectedKeys', [...s]);
+      const merged = new Map(props.explorerSelection.map((s) => [selectionKey(s), s]));
+      added.forEach((k) => merged.set(`file:${k}`, { type: 'file', key: k }));
+      emit('update:explorerSelection', [...merged.values()]);
     }
   }
 
@@ -383,7 +410,8 @@
   });
 
   function onCardDragStart(e: DragEvent, key: string): void {
-    const keys = props.selectedKeys.includes(key) ? [...props.selectedKeys] : [key];
+    const fileKeys = props.explorerSelection.filter((s) => s.type === 'file').map((s) => s.key);
+    const keys = isFileSelected(key) ? fileKeys : [key];
     e.dataTransfer?.setData('application/x-eg-keys', JSON.stringify(keys));
     e.dataTransfer?.setData('text/plain', 'keys');
   }
@@ -396,7 +424,7 @@
 
   function fileItemAriaLabel(key: string, size?: number): string {
     const name = fileName(key);
-    const selected = props.selectedKeys.includes(key);
+    const selected = isFileSelected(key);
     const status = runCountForFileKey(key) > 0 ? 'Analyzed' : 'Not yet analyzed';
     const parts = [selected ? 'Selected' : 'Not selected', `${status} sample`, name];
     if (size !== undefined) parts.push(formatFileSize(size));
@@ -414,8 +442,8 @@
     const n = props.visibleFiles.length;
     const noun = n === 1 ? 'sample' : 'samples';
     let text = `${n} ${noun} shown`;
-    if (props.selectedKeys.length) {
-      text += `, ${props.selectedKeys.length} selected`;
+    if (selectionCount.value) {
+      text += `, ${selectionCount.value} selected`;
     }
     return text;
   });
@@ -499,13 +527,13 @@
       </div>
       <div class="ml-auto flex shrink-0">
         <UButton
-          v-if="selectedKeys.length"
+          v-if="selectionCount"
           size="xs"
           variant="ghost"
-          :aria-label="`Deselect all ${selectedKeys.length} selected samples`"
+          :aria-label="`Deselect all ${selectionCount} selected items`"
           @click="emit('clearSelection')"
         >
-          Deselect all ({{ selectedKeys.length }})
+          Deselect all ({{ selectionCount }})
         </UButton>
         <UButton
           v-else
@@ -545,6 +573,39 @@
         <UIcon name="i-heroicons-arrow-path" class="text-primary h-10 w-10 shrink-0 animate-spin" />
         <p class="text-muted max-w-sm text-center text-sm">Loading samples and tag data…</p>
       </div>
+      <div
+        v-if="sequenceSetsResolved.length"
+        class="border-border-muted mb-4 rounded-lg border bg-gray-50/80 p-3"
+        role="region"
+        aria-label="Sequence sets"
+      >
+        <h3 class="text-muted mb-2 text-xs font-semibold uppercase tracking-wide">Sequence Sets</h3>
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <button
+            v-for="set in sequenceSetsResolved"
+            :key="set.SequenceSetId"
+            type="button"
+            data-sequence-set-card
+            class="hover:border-primary/40 flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm transition"
+            :class="{ 'bg-primary-muted ring-primary ring-2': isSequenceSetSelected(set.SequenceSetId) }"
+            :aria-selected="isSequenceSetSelected(set.SequenceSetId)"
+            @click="emit('toggleSequenceSet', set.SequenceSetId)"
+          >
+            <UCheckbox
+              :model-value="isSequenceSetSelected(set.SequenceSetId)"
+              @update:model-value="emit('toggleSequenceSet', set.SequenceSetId)"
+              @click.stop
+            />
+            <div class="min-w-0 flex-1">
+              <div class="truncate font-medium text-gray-900">{{ set.Name }}</div>
+              <div class="text-muted mt-0.5 text-xs">
+                {{ SEQUENCE_SET_LAYOUT_LABELS[set.Layout] ?? set.Layout }} · {{ set.FileCount }} file(s)
+              </div>
+            </div>
+          </button>
+        </div>
+      </div>
+
       <div
         v-if="explorerView === 'cards'"
         class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
@@ -604,10 +665,10 @@
             draggable="true"
             class="border-border-muted focus-visible:ring-primary relative min-w-0 cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
             :class="{
-              'bg-primary-muted ring-primary ring-2': selectedKeys.includes(f.Key),
+              'bg-primary-muted ring-primary ring-2': isFileSelected(f.Key),
               'z-[80]': analysisPopoverOpenKey === f.Key,
             }"
-            :aria-selected="selectedKeys.includes(f.Key)"
+            :aria-selected="isFileSelected(f.Key)"
             :aria-label="fileItemAriaLabel(f.Key, f.Size)"
             @click="emit('toggleKey', f.Key)"
             @keydown="onFileItemKeydown($event, f.Key)"
@@ -622,7 +683,7 @@
                 title="This file is protected from auto-deletion when run retention expires."
                 aria-label="Protected from auto-deletion"
               />
-              <UCheckbox :model-value="selectedKeys.includes(f.Key)" @update:model-value="emit('toggleKey', f.Key)" />
+              <UCheckbox :model-value="isFileSelected(f.Key)" @update:model-value="emit('toggleKey', f.Key)" />
             </div>
             <div class="absolute left-0 top-0 z-[1]" @mousedown.stop @click.stop>
               <EGFileAnalysisHistoryTooltip
@@ -647,6 +708,9 @@
                 </div>
                 <div v-if="folderPathUnderLab(f.Key)" class="text-muted mt-0.5 truncate text-[11px]">
                   {{ folderPathUnderLab(f.Key) }}
+                </div>
+                <div v-if="sequenceSetCountForFile(f.Key)" class="text-primary/80 mt-0.5 text-[10px]">
+                  In {{ sequenceSetCountForFile(f.Key) }} sequence set(s)
                 </div>
               </div>
             </UTooltip>
@@ -677,7 +741,7 @@
         <table class="w-full min-w-[56rem] border-collapse text-left text-sm" aria-label="Samples">
           <caption class="sr-only">
             Samples in data collections
-            <template v-if="selectedKeys.length">, {{ selectedKeys.length }} selected</template>
+            <template v-if="selectionCount">, {{ selectionCount }} selected</template>
           </caption>
           <thead>
             <tr class="border-border-muted bg-gray-50/90 text-xs uppercase tracking-wide text-gray-600">
@@ -745,11 +809,11 @@
                 draggable="true"
                 class="border-border-muted focus-visible:ring-primary cursor-pointer border-b transition last:border-b-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset"
                 :class="{
-                  'bg-primary-muted ring-primary ring-2 ring-inset': selectedKeys.includes(f.Key),
-                  'hover:bg-gray-50/80': !selectedKeys.includes(f.Key),
+                  'bg-primary-muted ring-primary ring-2 ring-inset': isFileSelected(f.Key),
+                  'hover:bg-gray-50/80': !isFileSelected(f.Key),
                   'relative z-[80]': analysisPopoverOpenKey === f.Key,
                 }"
-                :aria-selected="selectedKeys.includes(f.Key)"
+                :aria-selected="isFileSelected(f.Key)"
                 :aria-label="fileItemAriaLabel(f.Key, f.Size)"
                 @click="emit('toggleKey', f.Key)"
                 @keydown="onFileItemKeydown($event, f.Key)"
@@ -757,10 +821,7 @@
                 @dragend="onFileCardDragEnd"
               >
                 <td class="px-3 py-2 align-middle" @mousedown.stop @click.stop>
-                  <UCheckbox
-                    :model-value="selectedKeys.includes(f.Key)"
-                    @update:model-value="emit('toggleKey', f.Key)"
-                  />
+                  <UCheckbox :model-value="isFileSelected(f.Key)" @update:model-value="emit('toggleKey', f.Key)" />
                 </td>
                 <td class="min-w-0 max-w-[14rem] overflow-hidden px-3 py-2 align-middle">
                   <UTooltip :open-delay="500" :ui="s3PathTooltipUi">

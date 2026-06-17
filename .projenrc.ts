@@ -296,6 +296,10 @@ sharedLib.addScripts({
 });
 sharedLib.addTask('generate:openapi', { exec: 'tsx src/app/openapi/generate-openapi.ts' });
 sharedLib.addTask('lint:openapi', { exec: 'redocly lint src/app/openapi/easy-genomics-api.yaml' });
+sharedLib.addTask('generate:api-types', {
+  exec: 'openapi-typescript src/app/openapi/easy-genomics-api.yaml -o src/app/types/easy-genomics/generated.d.ts',
+});
+sharedLib.preCompileTask.prependExec('pnpm run generate:api-types');
 
 if (sharedLib.eslint) {
   sharedLib.eslint.addRules({ ...eslintGlobalRules });
@@ -458,6 +462,16 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
   defaultReleaseBranch: defaultReleaseBranch,
   docgen: false,
   eslint: true,
+  jest: true,
+  jestOptions: {
+    jestConfig: {
+      moduleNameMapper: {
+        '^@FE/(.*)$': '<rootDir>/src/app/$1',
+        '^@SharedLib/(.*)$': '<rootDir>/../shared-lib/src/app/$1',
+        '^@BE/(.*)$': '<rootDir>/../back-end/src/app/$1',
+      },
+    },
+  },
   lambdaAutoDiscover: false,
   requireApproval: awscdk.ApprovalLevel.NEVER,
   sampleCode: false,

@@ -5,7 +5,7 @@ import { RequestFolderDownloadJobSchema } from '@easy-genomics/shared-lib/src/ap
 import {
   FolderDownloadJobResponse,
   RequestFolderDownloadJob,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-folder-download-job';
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { v4 as uuidv4 } from 'uuid';

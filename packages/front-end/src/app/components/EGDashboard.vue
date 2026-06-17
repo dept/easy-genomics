@@ -30,6 +30,10 @@
   const searchInputId = 'dashboard-global-search';
   const searchResultsListId = 'dashboard-global-search-results';
   const overviewTimeFilterId = 'dashboard-overview-time-filter';
+  const overviewHeadingId = 'dashboard-overview-heading';
+  const recentRunsHeadingId = 'dashboard-recent-runs-heading';
+  const favouriteWorkflowsHeadingId = 'dashboard-favourite-workflows-heading';
+  const highlightedSearchIndex = ref(-1);
 
   interface SearchResult {
     type: 'run' | 'seqera-pipeline' | 'omics-workflow';
@@ -90,6 +94,22 @@
 
   const showDropdown = computed(() => searchFocused.value && searchQuery.value.trim().length > 0);
 
+  const searchStatusMessage = computed(() => {
+    const q = searchQuery.value.trim();
+    if (!q || !searchFocused.value) return '';
+    if (searchResults.value.length === 0) return `No results for "${q}"`;
+    const noun = searchResults.value.length === 1 ? 'result' : 'results';
+    return `${searchResults.value.length} search ${noun} for "${q}"`;
+  });
+
+  watch([searchQuery, searchResults], () => {
+    highlightedSearchIndex.value = searchResults.value.length > 0 ? 0 : -1;
+  });
+
+  function searchOptionId(index: number): string {
+    return `${searchResultsListId}-option-${index}`;
+  }
+
   function selectSearchResult(result: SearchResult) {
     searchFocused.value = false;
     searchQuery.value = '';
@@ -127,7 +147,65 @@
   function onSearchBlur() {
     setTimeout(() => {
       searchFocused.value = false;
+      highlightedSearchIndex.value = -1;
     }, 200);
+  }
+
+  function onSearchKeydown(event: KeyboardEvent) {
+    const results = searchResults.value;
+    const hasResults = results.length > 0;
+
+    if (!showDropdown.value) {
+      if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && hasResults) {
+        event.preventDefault();
+        searchFocused.value = true;
+        highlightedSearchIndex.value = event.key === 'ArrowDown' ? 0 : results.length - 1;
+      }
+      return;
+    }
+
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        if (hasResults) {
+          highlightedSearchIndex.value = Math.min(highlightedSearchIndex.value + 1, results.length - 1);
+          scrollHighlightedOptionIntoView();
+        }
+        break;
+      case 'ArrowUp':
+        event.preventDefault();
+        if (hasResults) {
+          highlightedSearchIndex.value = Math.max(highlightedSearchIndex.value - 1, 0);
+          scrollHighlightedOptionIntoView();
+        }
+        break;
+      case 'Home':
+        event.preventDefault();
+        if (hasResults) highlightedSearchIndex.value = 0;
+        break;
+      case 'End':
+        event.preventDefault();
+        if (hasResults) highlightedSearchIndex.value = results.length - 1;
+        break;
+      case 'Enter':
+        event.preventDefault();
+        if (highlightedSearchIndex.value >= 0 && highlightedSearchIndex.value < results.length) {
+          selectSearchResult(results[highlightedSearchIndex.value]);
+        }
+        break;
+      case 'Escape':
+        event.preventDefault();
+        searchFocused.value = false;
+        highlightedSearchIndex.value = -1;
+        break;
+    }
+  }
+
+  function scrollHighlightedOptionIntoView() {
+    nextTick(() => {
+      const option = document.getElementById(searchOptionId(highlightedSearchIndex.value));
+      option?.scrollIntoView({ block: 'nearest' });
+    });
   }
 
   const timeFilterOptions = [
@@ -135,6 +213,11 @@
     { label: 'Past 30 days', value: '30' },
     { label: 'Past 90 days', value: '90' },
   ];
+
+  const overviewTimeFilterLabel = computed(() => {
+    const selected = timeFilterOptions.find((opt) => opt.value === overviewTimeFilter.value);
+    return selected?.label ?? 'Past 30 days';
+  });
 
   /**
    * Returns the timestamp used to anchor a run inside the dashboard's time window.
@@ -415,6 +498,7 @@
 
   const overviewStats = computed(() => [
     {
+      key: 'active-runs',
       icon: 'i-heroicons-beaker',
       value: activeRuns.value.length,
       label: 'Active Runs',
@@ -422,6 +506,7 @@
       iconColor: 'text-primary',
     },
     {
+      key: 'completed-runs',
       icon: 'i-heroicons-check-circle',
       value: completedRuns.value.length,
       label: 'Completed Runs',
@@ -429,6 +514,7 @@
       iconColor: 'text-alert-success',
     },
     {
+      key: 'failed-runs',
       icon: 'i-heroicons-x-circle',
       value: failedRuns.value.length,
       label: 'Failed Runs',
@@ -436,6 +522,7 @@
       iconColor: 'text-alert-danger',
     },
     {
+      key: 'avg-run-time',
       icon: 'i-heroicons-clock',
       value: avgRunTime.value,
       label: 'Avg Run time',
@@ -446,21 +533,22 @@
 </script>
 
 <template>
-  <div class="dashboard">
+  <div class="dashboard" :aria-busy="uiStore.isRequestPending('loadDashboardData')">
     <!-- Header: Title + Search -->
     <div class="mb-2 flex items-center justify-between">
       <div>
         <button
-          class="text-primary mb-2 flex items-center gap-1 text-sm font-medium"
-          aria-label="Back to organization"
+          type="button"
+          class="text-primary focus-visible:outline-primary-500 mb-2 flex items-center gap-1 border-0 bg-transparent p-0 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           @click="navigateBack"
         >
-          <UIcon name="i-heroicons-arrow-left" class="h-4 w-4" />
-          Back to organization
+          <UIcon name="i-heroicons-arrow-left" class="h-4 w-4" aria-hidden="true" />
+          Back to laboratories
         </button>
         <EGText tag="h1" class="mb-0">Laboratory of {{ labName }}</EGText>
       </div>
       <div class="relative w-[320px]">
+        <label :for="searchInputId" class="sr-only">Search runs, workflows, and results</label>
         <UInput
           :id="searchInputId"
           v-model="searchQuery"
@@ -471,40 +559,55 @@
           role="combobox"
           :aria-expanded="showDropdown"
           :aria-controls="showDropdown ? searchResultsListId : undefined"
+          :aria-activedescendant="
+            showDropdown && highlightedSearchIndex >= 0 ? searchOptionId(highlightedSearchIndex) : undefined
+          "
           aria-autocomplete="list"
           :ui="{
             placeholder: 'placeholder-text-muted',
+            base: 'focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-1',
             focus: 'outline-none border-0',
             icon: { base: 'text-neutral-black w-[24px] h-[24px]' },
             padding: { sm: 'px-5 py-4' },
-            color: { white: { outline: 'shadow-none focus:ring-1' } },
+            color: { white: { outline: 'shadow-none focus-visible:ring-2 focus-visible:ring-primary-500' } },
           }"
           @focus="searchFocused = true"
           @blur="onSearchBlur"
+          @keydown="onSearchKeydown"
         />
+
+        <p class="sr-only" aria-live="polite" aria-atomic="true">{{ searchStatusMessage }}</p>
 
         <div
           v-if="showDropdown"
           class="absolute right-0 top-full z-50 mt-1 w-[420px] overflow-hidden rounded-xl border border-neutral-100 bg-white shadow-lg"
+          role="presentation"
         >
-          <div v-if="searchResults.length === 0" class="text-muted px-4 py-6 text-center text-sm">No results found</div>
-          <ul v-else :id="searchResultsListId" class="max-h-[360px] overflow-y-auto" role="listbox">
+          <div v-if="searchResults.length === 0" class="text-muted px-4 py-6 text-center text-sm" role="status">
+            No results found
+          </div>
+          <ul
+            v-else
+            :id="searchResultsListId"
+            class="max-h-[360px] overflow-y-auto"
+            role="listbox"
+            aria-label="Search results"
+          >
             <li
-              v-for="result in searchResults"
+              v-for="(result, index) in searchResults"
               :key="`${result.type}-${result.id}`"
-              role="none"
+              :id="searchOptionId(index)"
+              role="option"
+              :aria-selected="highlightedSearchIndex === index"
               class="border-b border-neutral-100 last:border-b-0"
+              :class="{ 'bg-background-light-grey': highlightedSearchIndex === index }"
+              @mousedown.prevent="selectSearchResult(result)"
             >
-              <button
-                type="button"
-                role="option"
-                class="hover:bg-background-light-grey flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left"
-                :aria-label="`${result.name}, ${resultTypeLabel(result.type)}`"
-                @mousedown.prevent="selectSearchResult(result)"
-              >
+              <div class="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left">
                 <UIcon
                   :name="result.type === 'run' ? 'i-heroicons-clock' : 'i-heroicons-command-line'"
                   class="text-muted h-5 w-5 shrink-0"
+                  aria-hidden="true"
                 />
                 <div class="min-w-0 flex-1">
                   <div class="text-body truncate text-sm font-medium">{{ result.name }}</div>
@@ -514,7 +617,7 @@
                   <EGStatusChip v-if="result.status" :status="result.status" />
                   <span class="text-muted whitespace-nowrap text-xs">{{ resultTypeLabel(result.type) }}</span>
                 </div>
-              </button>
+              </div>
             </li>
           </ul>
         </div>
@@ -522,40 +625,48 @@
     </div>
 
     <!-- Dashboard Overview -->
-    <div class="mt-8">
+    <section class="mt-8" :aria-labelledby="overviewHeadingId">
       <div class="flex items-center justify-between">
-        <EGText tag="h3" class="mb-0">Dashboard overview</EGText>
-        <select
-          :id="overviewTimeFilterId"
-          v-model="overviewTimeFilter"
-          class="text-body rounded-lg border border-neutral-100 bg-white px-4 py-2 text-sm"
-        >
-          <option v-for="opt in timeFilterOptions" :key="opt.value" :value="opt.value">
-            {{ opt.label }}
-          </option>
-        </select>
+        <EGText :id="overviewHeadingId" tag="h2" class="mb-0">Dashboard overview</EGText>
+        <div>
+          <label :for="overviewTimeFilterId" class="sr-only">Overview time period</label>
+          <select
+            :id="overviewTimeFilterId"
+            v-model="overviewTimeFilter"
+            class="text-body focus-visible:outline-primary-500 rounded-lg border border-neutral-100 bg-white px-4 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+            :aria-label="`Overview time period, ${overviewTimeFilterLabel}`"
+          >
+            <option v-for="opt in timeFilterOptions" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
+        </div>
       </div>
 
-      <div class="mt-4 grid grid-cols-4 gap-4">
+      <dl class="mt-4 grid grid-cols-4 gap-4">
         <div
-          v-for="(stat, i) in overviewStats"
-          :key="i"
+          v-for="stat in overviewStats"
+          :key="stat.key"
           class="flex items-center gap-4 rounded-2xl border border-neutral-100 bg-white p-6"
         >
-          <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl" :class="stat.bgColor">
+          <div
+            class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl"
+            :class="stat.bgColor"
+            aria-hidden="true"
+          >
             <UIcon :name="stat.icon" class="h-6 w-6" :class="stat.iconColor" />
           </div>
           <div>
-            <div class="text-heading font-serif text-3xl font-semibold">{{ stat.value }}</div>
-            <div class="text-muted text-sm">{{ stat.label }}</div>
+            <dt class="text-muted text-sm">{{ stat.label }}</dt>
+            <dd class="text-heading m-0 font-serif text-3xl font-semibold">{{ stat.value }}</dd>
           </div>
         </div>
-      </div>
-    </div>
+      </dl>
+    </section>
 
     <!-- Recent Runs -->
-    <div class="mt-10">
-      <EGText tag="h3" class="mb-8">Recent Runs</EGText>
+    <section class="mt-10" :aria-labelledby="recentRunsHeadingId">
+      <EGText :id="recentRunsHeadingId" tag="h2" class="mb-8">Recent Runs</EGText>
 
       <EGTable
         :row-click-action="viewRunDetails"
@@ -564,6 +675,7 @@
         v-model:sort="recentRunsSort"
         :is-loading="uiStore.isRequestPending('loadDashboardData')"
         :show-pagination="false"
+        :labelled-by="recentRunsHeadingId"
       >
         <template #RunName-data="{ row: run }">
           <div v-if="run.RunName" class="text-body text-sm font-medium">{{ run.RunName }}</div>
@@ -581,7 +693,12 @@
 
         <template #actions-data="{ row }">
           <div class="flex justify-end">
-            <EGActionButton :items="runsActionItems(row)" class="ml-2" @click="$event.stopPropagation()" />
+            <EGActionButton
+              :items="runsActionItems(row)"
+              :menu-label="`Actions for ${row.RunName || 'run'}`"
+              class="ml-2"
+              @click="$event.stopPropagation()"
+            />
           </div>
         </template>
 
@@ -589,21 +706,21 @@
           <div class="text-muted flex h-24 items-center justify-center font-normal">No recent runs</div>
         </template>
       </EGTable>
-    </div>
+    </section>
 
     <!-- Favourite Workflows -->
-    <div class="mt-10">
+    <section class="mt-10" :aria-labelledby="favouriteWorkflowsHeadingId">
       <div class="mb-8">
-        <EGText tag="h3" class="mb-0">Favourite Workflows</EGText>
+        <EGText :id="favouriteWorkflowsHeadingId" tag="h2" class="mb-0">Favourite Workflows</EGText>
         <p class="text-muted text-sm">Quick launch your most used workflows.</p>
       </div>
 
       <EGTable
-        narrow-run-and-favourite-columns
         :table-data="displayedFavouriteWorkflows"
         :columns="favouriteWorkflowsTableColumns"
         :is-loading="uiStore.isRequestPending('loadDashboardData')"
         :show-pagination="false"
+        :labelled-by="favouriteWorkflowsHeadingId"
       >
         <template #WorkflowName-data="{ row: workflow }">
           <div class="text-body text-sm font-semibold">{{ workflow.WorkflowName }}</div>
@@ -616,9 +733,8 @@
         <template #run-data="{ row: workflow }">
           <button
             type="button"
-            class="text-primary hover:text-primary-dark hover:bg-primary-muted flex items-center justify-center rounded-full p-1 transition-all duration-150 hover:scale-110"
-            aria-label="Run workflow"
-            title="Run workflow"
+            class="text-primary hover:text-primary-dark hover:bg-primary-muted focus-visible:outline-primary-500 flex items-center justify-center rounded-full p-1 transition-all duration-150 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+            :aria-label="`Run workflow ${workflow.WorkflowName}`"
             @click.stop="runFavouriteWorkflow(workflow)"
           >
             <UIcon name="i-heroicons-play-circle" class="h-6 w-6" aria-hidden="true" />
@@ -629,6 +745,6 @@
           <div class="text-muted flex h-24 items-center justify-center font-normal">No favourite workflows yet</div>
         </template>
       </EGTable>
-    </div>
+    </section>
   </div>
 </template>

@@ -59,6 +59,7 @@ export const LaboratoryRunSchema = z
     RunDurationSeconds: z.number().nonnegative().optional(),
   })
   .strict();
+export type LaboratoryRun = z.infer<typeof LaboratoryRunSchema>;
 
 export const ReadLaboratoryRunSchema = z
   .object({

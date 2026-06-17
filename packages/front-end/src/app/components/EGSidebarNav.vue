@@ -33,12 +33,77 @@
 
   const isDark = computed(() => props.variant === 'dark');
 
+  // Holds a reference to each tab button so keyboard navigation can move focus
+  // between them (required by the ARIA tabs pattern / roving tabindex).
+  const tabRefs = ref<(HTMLButtonElement | null)[]>([]);
+
+  function setTabRef(el: Element | null, index: number) {
+    tabRefs.value[index] = (el as HTMLButtonElement) ?? null;
+  }
+
   function tabId(key: string) {
     return `tab-${key}`;
   }
 
   function panelId(key: string) {
     return `panel-${key}`;
+  }
+
+  function select(index: number) {
+    emit('update:modelValue', index);
+  }
+
+  function focusTab(index: number) {
+    nextTick(() => {
+      tabRefs.value[index]?.focus();
+    });
+  }
+
+  function focusPanel(index: number) {
+    const key = props.items[index]?.key;
+    if (!key) return;
+    nextTick(() => {
+      document.getElementById(panelId(key))?.focus();
+    });
+  }
+
+  function onTabClick(index: number) {
+    select(index);
+    focusPanel(index);
+  }
+
+  // WAI-ARIA tabs with automatic activation: arrow keys move between tabs (wrapping),
+  // Home/End jump to first/last. Click moves focus into the matching panel.
+  function onKeydown(event: KeyboardEvent, index: number) {
+    const lastIndex = props.items.length - 1;
+    if (lastIndex < 0) return;
+
+    let nextIndex: number | null = null;
+
+    switch (event.key) {
+      case 'ArrowDown':
+      case 'ArrowRight':
+        nextIndex = index === lastIndex ? 0 : index + 1;
+        break;
+      case 'ArrowUp':
+      case 'ArrowLeft':
+        nextIndex = index === 0 ? lastIndex : index - 1;
+        break;
+      case 'Home':
+        nextIndex = 0;
+        break;
+      case 'End':
+        nextIndex = lastIndex;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    if (nextIndex !== props.modelValue) {
+      select(nextIndex);
+    }
+    focusTab(nextIndex);
   }
 </script>
 
@@ -65,12 +130,15 @@
           role="presentation"
         />
         <button
+          :ref="(el) => setTabRef(el, index)"
           type="button"
           role="tab"
           :id="tabId(item.key)"
           :aria-controls="panelId(item.key)"
           :aria-selected="modelValue === index"
-          @click="emit('update:modelValue', index)"
+          :tabindex="modelValue === index ? 0 : -1"
+          @click="onTabClick(index)"
+          @keydown="onKeydown($event, index)"
           class="focus-visible:outline-primary-500 flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left font-serif text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           :class="
             isDark
