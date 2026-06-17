@@ -148,6 +148,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
       lambdaFunctionsNamespace: `${this.props.constructNamespace}`,
       lambdaFunctionsResources: {
         // Used for setting specific resources for a given Lambda function (e.g. environment settings, trigger events)
+        '/easy-genomics/list-api-docs': {
+          methodOptions: {
+            authorizer: undefined, // Public API documentation page — no Cognito user required
+          },
+        },
         '/easy-genomics/user/create-user-invitation-request': {
           environment: {
             COGNITO_USER_POOL_CLIENT_ID: this.props.userPoolClient?.userPoolClientId!,
