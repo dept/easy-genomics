@@ -2,7 +2,7 @@ import { ListObjectsV2CommandOutput } from '@aws-sdk/client-s3';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { RequestListBucketObjectsSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-list-bucket-objects';
-import { RequestListBucketObjects } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-list-bucket-objects';
+import { RequestListBucketObjects } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';

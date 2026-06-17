@@ -1,7 +1,7 @@
 import { Hash } from 'crypto';
 import { S3RequestPresigner } from '@aws-sdk/s3-request-presigner';
 import { formatUrl } from '@aws-sdk/util-format-url';
-import { FileUploadInfo } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/upload/s3-file-upload-manifest';
+import { FileUploadInfo } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { AwsCredentialIdentity } from '@smithy/types/dist-types/identity/awsCredentialIdentity';
 import { parseUrl } from '@smithy/url-parser';
 

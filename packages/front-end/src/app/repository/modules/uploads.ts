@@ -1,11 +1,9 @@
 import {
   FileUploadManifest,
   FileUploadRequest,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/upload/s3-file-upload-manifest';
-import {
   SampleSheetRequest,
   SampleSheetResponse,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/upload/s3-file-upload-sample-sheet';
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import HttpFactory from '@FE/repository/factory';
 
 class UploadsModule extends HttpFactory {

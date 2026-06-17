@@ -50,6 +50,14 @@
         }
       ]
     },
+    "generate:api-types": {
+      "name": "generate:api-types",
+      "steps": [
+        {
+          "exec": "openapi-typescript src/app/openapi/easy-genomics-api.yaml -o src/app/types/easy-genomics/generated.d.ts"
+        }
+      ]
+    },
     "generate:openapi": {
       "name": "generate:openapi",
       "steps": [
@@ -106,7 +114,12 @@
     },
     "pre-compile": {
       "name": "pre-compile",
-      "description": "Prepare the project for compilation"
+      "description": "Prepare the project for compilation",
+      "steps": [
+        {
+          "exec": "pnpm run generate:api-types"
+        }
+      ]
     },
     "test": {
       "name": "test",

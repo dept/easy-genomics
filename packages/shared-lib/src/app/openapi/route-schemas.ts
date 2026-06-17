@@ -1,10 +1,27 @@
 import { ZodTypeAny } from 'zod';
 import { CreateRunRequestSchema } from '../schema/aws-healthomics/aws-healthomics-api';
 import { AddTagsToFilesSchema } from '../schema/easy-genomics/data-collections/add-tags-to-files';
+import {
+  AddTagsToSequenceSetsSchema,
+  RequestListSequenceSetTagsSchema,
+} from '../schema/easy-genomics/data-collections/add-tags-to-sequence-sets';
 import { AssignBatchSchema } from '../schema/easy-genomics/data-collections/assign-batch';
+import { BulkCreateSequenceSetsSchema } from '../schema/easy-genomics/data-collections/bulk-create-sequence-sets';
+import {
+  AddSequenceSetsToDataCollectionSchema,
+  CreateDataCollectionSchema,
+  UpdateDataCollectionSchema,
+  UpdateDataCollectionSchemaSchema,
+} from '../schema/easy-genomics/data-collections/create-data-collection';
+import {
+  AddFilesToSequenceSetSchema,
+  CreateSequenceSetSchema,
+  RemoveFilesFromSequenceSetSchema,
+} from '../schema/easy-genomics/data-collections/create-sequence-set';
 import { CreateLaboratoryDataTagSchema } from '../schema/easy-genomics/data-collections/create-tag';
 import { RequestLaboratoryBucketObjectsSchema } from '../schema/easy-genomics/data-collections/request-laboratory-bucket-objects';
 import { RequestListFileTagsSchema } from '../schema/easy-genomics/data-collections/request-list-file-tags';
+import { RequestUnlinkedBucketObjectsSchema } from '../schema/easy-genomics/data-collections/request-unlinked-bucket-objects';
 import { UpdateLaboratoryDataTagSchema } from '../schema/easy-genomics/data-collections/update-tag';
 import { RequestFileDownloadUrlSchema } from '../schema/easy-genomics/file/request-file-download-url';
 import { RequestFolderDownloadJobSchema } from '../schema/easy-genomics/file/request-folder-download-job';
@@ -238,6 +255,70 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
   'PUT /easy-genomics/data-collections/update-tag/{id}': {
     request: UpdateLaboratoryDataTagSchema,
     response: 'LaboratoryDataTag',
+  },
+
+  // ── easy-genomics/data-collections/ (sequence sets) ─────────────────────────
+
+  'POST /easy-genomics/data-collections/add-files-to-sequence-set': {
+    request: AddFilesToSequenceSetSchema,
+  },
+  'POST /easy-genomics/data-collections/add-sequence-sets-to-data-collection': {
+    request: AddSequenceSetsToDataCollectionSchema,
+  },
+  'POST /easy-genomics/data-collections/add-tags-to-sequence-sets': {
+    request: AddTagsToSequenceSetsSchema,
+  },
+  'POST /easy-genomics/data-collections/create-bulk-sequence-sets': {
+    request: BulkCreateSequenceSetsSchema,
+  },
+  'POST /easy-genomics/data-collections/create-data-collection': {
+    request: CreateDataCollectionSchema,
+  },
+  'POST /easy-genomics/data-collections/create-sequence-set': {
+    request: CreateSequenceSetSchema,
+  },
+  'GET /easy-genomics/data-collections/list-data-collection-sequence-sets': {
+    query: [
+      { name: 'laboratoryId', required: true, description: 'Laboratory to query' },
+      { name: 'dataCollectionId', required: true, description: 'Data collection to list sequence sets for' },
+    ],
+  },
+  'GET /easy-genomics/data-collections/list-data-collections': {
+    query: [{ name: 'laboratoryId', required: true, description: 'Laboratory to list data collections for' }],
+  },
+  'GET /easy-genomics/data-collections/list-sequence-set-files': {
+    query: [
+      { name: 'laboratoryId', required: true, description: 'Laboratory to query' },
+      { name: 'sequenceSetId', required: true, description: 'Sequence set to list files for' },
+      { name: 'limit', required: false, description: 'Max number of results (1-500)' },
+      { name: 'cursor', required: false, description: 'Pagination cursor' },
+    ],
+  },
+  'GET /easy-genomics/data-collections/list-sequence-sets-by-tag': {
+    query: [
+      { name: 'laboratoryId', required: true, description: 'Laboratory to query' },
+      { name: 'tagId', required: true, description: 'Tag to list sequence sets for' },
+      { name: 'limit', required: false, description: 'Max number of results (1-500)' },
+      { name: 'cursor', required: false, description: 'Pagination cursor' },
+    ],
+  },
+  'GET /easy-genomics/data-collections/list-sequence-sets': {
+    query: [{ name: 'laboratoryId', required: true, description: 'Laboratory to list sequence sets for' }],
+  },
+  'POST /easy-genomics/data-collections/remove-files-from-sequence-set': {
+    request: RemoveFilesFromSequenceSetSchema,
+  },
+  'POST /easy-genomics/data-collections/request-list-sequence-set-tags': {
+    request: RequestListSequenceSetTagsSchema,
+  },
+  'POST /easy-genomics/data-collections/request-unlinked-bucket-objects': {
+    request: RequestUnlinkedBucketObjectsSchema,
+  },
+  'PUT /easy-genomics/data-collections/update-data-collection-schema/{id}': {
+    request: UpdateDataCollectionSchemaSchema,
+  },
+  'PUT /easy-genomics/data-collections/update-data-collection/{id}': {
+    request: UpdateDataCollectionSchema,
   },
 
   // ── easy-genomics/file/ ──────────────────────────────────────────────────────
