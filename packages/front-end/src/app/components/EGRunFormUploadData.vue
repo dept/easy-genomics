@@ -1,17 +1,15 @@
 <script setup lang="ts">
   import axios from 'axios';
   import { ButtonSizeEnum } from '@FE/types/buttons';
-  import {
+  import type {
     FileUploadInfo,
     FileUploadManifest,
     FileUploadRequest,
-  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/upload/s3-file-upload-manifest';
-  import {
     SampleSheetRequest,
     SampleSheetResponse,
     UploadedFileInfo,
     UploadedFilePairInfo,
-  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/upload/s3-file-upload-sample-sheet';
+  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
   import {
     buildSampleSheetFileName,
     extractS3KeysFromCsv,
