@@ -120,12 +120,18 @@ export default function useUser() {
       userStore.currentUserDetails.id = decodedToken['cognito:username'];
       userStore.currentUserDetails.email = decodedToken.email;
 
-      // Adopt the server-side analytics consent choice so it follows the user
-      // across browsers, but only when this device has not made its own choice.
+      // Sync the server-side analytics consent choice so it follows the user
+      // across browsers. Revocation always wins: a server 'denied' is honored
+      // on every device even if this browser previously granted consent, and we
+      // tell the SDK to stop capturing immediately. A server 'granted' is only
+      // adopted when this device has not yet made its own choice.
       const analyticsStore = useAnalyticsStore();
       const tokenConsent = decodedToken.AnalyticsConsent;
-      if (analyticsStore.consent === 'unset' && (tokenConsent === 'granted' || tokenConsent === 'denied')) {
-        analyticsStore.setConsent(tokenConsent);
+      if (tokenConsent === 'denied' && analyticsStore.consent !== 'denied') {
+        analyticsStore.setConsent('denied');
+        await useAnalytics().optOut();
+      } else if (tokenConsent === 'granted' && analyticsStore.consent === 'unset') {
+        analyticsStore.setConsent('granted');
       }
 
       // check and set superuser status

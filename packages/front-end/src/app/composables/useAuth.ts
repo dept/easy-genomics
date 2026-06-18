@@ -21,10 +21,13 @@ export default function useAuth() {
       if (user) {
         await useUser().setCurrentUserDataFromToken();
         await useOrgsStore().loadOrgs();
+        // Navigate into the app before emitting analytics so events fire on a
+        // non-sensitive route (auth routes like /signin can carry an email in
+        // the query string).
+        await navigateTo('/');
         const analytics = useAnalytics();
         await analytics.identify(useUserStore().currentUserDetails.id);
         analytics.track('signed_in', { method: 'password' });
-        await navigateTo('/');
       }
     } catch (error: any) {
       if (error.code === 'NotAuthorizedException') {

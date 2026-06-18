@@ -89,6 +89,21 @@ function sanitizePath(path: string): string {
     .join('/');
 }
 
+/**
+ * Strips the query string and fragment (which can carry emails on auth routes)
+ * from a URL and masks identifying path segments. Falls back to treating the
+ * input as a bare path when it is not an absolute URL.
+ */
+function sanitizeUrl(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    return `${url.origin}${sanitizePath(url.pathname)}`;
+  } catch {
+    const [pathOnly] = rawUrl.split(/[?#]/);
+    return sanitizePath(pathOnly);
+  }
+}
+
 export default function useAnalytics() {
   const config = useRuntimeConfig().public as unknown as {
     ANALYTICS_ENABLED?: boolean;
@@ -133,9 +148,13 @@ export default function useAnalytics() {
     return useAnalyticsStore().consent;
   }
 
-  /** All conditions met for actually emitting events. */
+  /**
+   * All conditions met for actually emitting events. False on sensitive auth
+   * routes so no event (and its auto-attached URL) is captured while a URL may
+   * still contain an email.
+   */
   function isActive(): boolean {
-    return isInstitutionEnabled() && !isForceDisabled() && getConsent() === 'granted';
+    return isInstitutionEnabled() && !isForceDisabled() && !isSensitiveRoute() && getConsent() === 'granted';
   }
 
   /**
@@ -175,9 +194,28 @@ export default function useAnalytics() {
           // We send explicit, reviewed events only.
           autocapture: false,
           capture_pageview: false,
-          capture_pageleave: true,
+          // Off because the auto-captured $pageleave attaches the full
+          // $current_url (incl. query params like ?email=) on auth routes.
+          // Pageviews are emitted manually and sanitized via page().
+          capture_pageleave: false,
           disable_session_recording: true,
           persistence: 'localStorage',
+          // Defense-in-depth: PostHog auto-attaches $current_url / $referrer to
+          // every event, so strip query strings (which can contain emails on
+          // auth routes) and mask identifying path segments on all properties.
+          sanitize_properties: (properties: Record<string, unknown>) => {
+            const sanitized = { ...properties };
+            if (typeof sanitized.$current_url === 'string') {
+              sanitized.$current_url = sanitizeUrl(sanitized.$current_url);
+            }
+            if (typeof sanitized.$referrer === 'string' && sanitized.$referrer !== '$direct') {
+              sanitized.$referrer = sanitizeUrl(sanitized.$referrer);
+            }
+            if (typeof sanitized.$pathname === 'string') {
+              sanitized.$pathname = sanitizePath(sanitized.$pathname);
+            }
+            return sanitized;
+          },
           // Start paused; we opt in explicitly once consent is confirmed.
           opt_out_capturing_by_default: true,
           loaded: (loaded: PostHogLike) => {
