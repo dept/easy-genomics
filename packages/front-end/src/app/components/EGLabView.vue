@@ -16,6 +16,7 @@
   import { WorkflowListItem as OmicsWorkflow } from '@aws-sdk/client-omics';
   import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
   import EGDataCollectionsPage from '@FE/components/EGDataCollectionsPage.vue';
+  import type { DataCollectionsTab } from '@FE/components/EGDataCollectionsTabBar.vue';
   import { TableSort } from './EGTable.vue';
 
   const props = defineProps<{
@@ -140,13 +141,23 @@
 
   const activeTabKey = computed(() => tabItems.value[tabIndex.value]?.key || '');
 
+  const dataCollectionsExplorerTab = ref<DataCollectionsTab>('samples');
+
+  const dataCollectionsDescriptions: Record<DataCollectionsTab, string> = {
+    samples: 'Build the Sequence Collections you run workflows from — starting with the samples in your lab.',
+    collections: 'Saved bundles of samples ready to launch a workflow on.',
+    files:
+      "Files sitting in the lab's S3 bucket that didn't come through an import — instrument dumps, manual drops, leftovers. Not grouped into samples yet.",
+  };
+
   const pageDescription = computed(() => {
+    if (activeTabKey.value === 'dataCollections') {
+      return dataCollectionsDescriptions[dataCollectionsExplorerTab.value];
+    }
     const descriptions: Record<string, string> = {
       runs: 'View your pipeline runs',
       seqeraPipelines: 'View your Seqera pipelines',
       omicsWorkflows: 'View your HealthOmics workflows',
-      dataCollections:
-        "All of your lab's sequencing data lives here. Tag samples by organism, run, or any other grouping that makes sense for your lab, then use those tags to select what goes into a workflow.",
       users: 'View your lab users',
       details: 'View your lab settings',
     };
@@ -810,8 +821,8 @@
     tabindex="0"
     class="mt-4"
   >
-    <h2 class="sr-only">Data collections</h2>
-    <EGDataCollectionsPage :lab-id="labId" />
+    <h2 class="sr-only">Sequence collections</h2>
+    <EGDataCollectionsPage :lab-id="labId" @update:explorer-tab="dataCollectionsExplorerTab = $event" />
   </div>
 
   <!-- Runs tab -->

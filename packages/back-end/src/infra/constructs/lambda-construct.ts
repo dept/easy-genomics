@@ -143,6 +143,39 @@ export class LambdaConstruct extends Construct {
       this.props.lambdaFunctionsResources[lambdaApiEndpoint]?.callbacks?.forEach((callback) => {
         callback(lambdaHandler);
       });
+    } else {
+      // Register Lambda Function Endpoint with API Gateway REST API
+      if (!this.props.restApi) {
+        // Route-bearing controller discovered but this LambdaConstruct wasn't
+        // wired to an API. Fail fast rather than silently drop the route,
+        // otherwise a stack-boundary refactor can hide routes without a build error.
+        throw new Error(
+          `LambdaConstruct "${this.node.id}" discovered HTTP controller "${lambdaApiEndpoint}" but no restApi was provided. ` +
+            'Ensure the owning stack passes its own RestApi, or move the controller to a directory owned by a stack that does.',
+        );
+      }
+      const pathResource = this.props.restApi.root.resourceForPath(lambdaApiEndpoint);
+      // Disable console test-invoke so CDK does not emit a second `test-invoke-stage`
+      // Lambda::Permission per method. That duplicate doubles this stack's permission count
+      // against CloudFormation's 500-resource-per-stack limit; real traffic uses the
+      // deployment-stage permission, which is unaffected.
+      const lambdaIntegration = new LambdaIntegration(lambdaHandler, { allowTestInvoke: false });
+      if (lambdaFunction.command in ALLOWED_LAMBDA_FUNCTION_OPERATIONS_WITH_RESOURCE_ID) {
+        const pathResourceWithId: Resource = pathResource.addResource('{id}');
+        pathResourceWithId.addMethod(
+          ALLOWED_LAMBDA_FUNCTION_OPERATIONS_WITH_RESOURCE_ID[lambdaFunction.command],
+          lambdaIntegration,
+          {
+            authorizer: this.authorizer,
+            ...lambdaMethodOptions,
+          },
+        );
+      } else {
+        pathResource.addMethod(ALLOWED_LAMBDA_FUNCTION_OPERATIONS[lambdaFunction.command], lambdaIntegration, {
+          authorizer: this.authorizer,
+          ...lambdaMethodOptions,
+        });
+      }
     }
 
     // HTTP route registration is handled by the owning stack's

@@ -1,7 +1,7 @@
 <script setup lang="ts">
   import { v4 as uuidv4 } from 'uuid';
   import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-  import type { LaboratoryRunDataCollection } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sequence-sets';
+  import type { LaboratorySequenceCollection } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
   import { RunType } from '@easy-genomics/shared-lib/src/app/types/base-entity';
   import { useOmicsWorkflowsStore, useRunStore, useSeqeraPipelinesStore, useToastStore, useUiStore } from '@FE/stores';
   import {
@@ -21,7 +21,7 @@
     modelValue: boolean;
     labId: string;
     lab: Laboratory | null;
-    dataCollection: LaboratoryRunDataCollection | null;
+    dataCollection: LaboratorySequenceCollection | null;
   }>();
 
   const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>();
@@ -89,10 +89,10 @@
     try {
       const txId = uuidv4();
       const sheetName = defaultSampleSheetName(runName.value.trim() || props.dataCollection.Name);
-      const result = await $api.dataCollections.generateDataCollectionSampleSheet({
+      const result = await $api.dataCollections.generateSequenceCollectionSampleSheet({
         LaboratoryId: props.labId,
         S3Bucket: props.lab.S3Bucket,
-        DataCollectionId: props.dataCollection.DataCollectionId,
+        SequenceCollectionId: props.dataCollection.SequenceCollectionId,
         Platform: workflow.platform,
         TransactionId: txId,
         SampleSheetName: sheetName,
@@ -113,7 +113,7 @@
       window.open(url, '_blank', 'noopener,noreferrer');
       close();
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Failed to start run from data collection.');
+      toast.error(e instanceof Error ? e.message : 'Failed to start run from sequence collection.');
     } finally {
       submitting.value = false;
       uiStore.setRequestComplete('runFromCollectionsWorkflows');
@@ -125,14 +125,14 @@
   <UModal :model-value="modelValue" @update:model-value="emit('update:modelValue', $event)">
     <UCard>
       <template #header>
-        <h3 class="text-base font-semibold">Run from data collection</h3>
+        <h3 class="text-base font-semibold">Run from sequence collection</h3>
       </template>
       <div v-if="dataCollection" class="space-y-4">
         <p class="text-muted text-sm">
           Generate a sample sheet from
           <strong>{{ dataCollection.Name }}</strong>
-          ({{ dataCollection.SequenceSetCount }}
-          sequence set(s)) and open the run wizard.
+          ({{ dataCollection.SampleCount }}
+          sample(s)) and open the run wizard.
         </p>
         <div>
           <label class="text-muted mb-1 block text-xs font-medium">Run name</label>

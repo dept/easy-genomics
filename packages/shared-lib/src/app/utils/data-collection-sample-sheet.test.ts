@@ -1,6 +1,6 @@
 import {
   buildSampleSheetCsv,
-  buildSampleSheetFromSequenceSets,
+  buildSampleSheetFromSamples,
   buildSampleSheetRowFromRoleMap,
   mapSequenceSetFilesToRoles,
   validateSampleSheetRows,
@@ -124,18 +124,18 @@ describe('isFilenameRegexSafe', () => {
   });
 });
 
-describe('buildSampleSheetFromSequenceSets', () => {
+describe('buildSampleSheetFromSamples', () => {
   it('builds nf-core paired-end CSV', () => {
     const columns = [
       { columnName: 'sample', role: 'sample_id' as const, required: true },
       { columnName: 'fastq_1', role: 'read1' as const, required: true },
       { columnName: 'fastq_2', role: 'read2' as const, required: true },
     ];
-    const result = buildSampleSheetFromSequenceSets(
+    const result = buildSampleSheetFromSamples(
       columns,
       [
         {
-          SequenceSetId: '1',
+          SampleId: '1',
           Name: 'SampleA',
           Layout: 'paired_end',
           FileKeys: ['org/lab/a_R1.fastq.gz', 'org/lab/a_R2.fastq.gz'],
