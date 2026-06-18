@@ -40,6 +40,8 @@
   const toast = useToastStore();
   const uiStore = useUiStore();
 
+  const IMPORT_STEPS = ['Source', 'Group files', 'Review samples', 'Confirm'] as const;
+
   const step = ref(1);
   const importSource = ref<ImportSourceKind>('s3');
   const sourcePath = ref('');
@@ -348,12 +350,12 @@
     <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-xl border border-gray-200 bg-white">
       <div class="flex border-b border-gray-200 bg-gray-50 text-sm">
         <div
-          v-for="n in 4"
-          :key="n"
-          class="flex-1 border-r border-gray-100 px-4 py-3"
-          :class="{ 'bg-white font-medium': step === n }"
+          v-for="(title, index) in IMPORT_STEPS"
+          :key="title"
+          class="flex-1 border-r border-gray-100 px-4 py-3 last:border-r-0"
+          :class="{ 'bg-white font-medium': step === index + 1 }"
         >
-          Step {{ n }}
+          {{ title }}
         </div>
       </div>
 

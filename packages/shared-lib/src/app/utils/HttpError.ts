@@ -347,6 +347,7 @@ export class LaboratoryRunNotFoundError extends HttpError {
  *
  * @param sequenceSetId
  * @param messageOpt - optional additional message
+ * @deprecated Use {@link SampleNotFoundError}
  */
 export class SequenceSetNotFoundError extends HttpError {
   constructor(sequenceSetId: string, messageOpt?: string) {
@@ -371,6 +372,7 @@ export class SampleNotFoundError extends HttpError {
  *
  * @param collectionId
  * @param messageOpt - optional additional message
+ * @deprecated Use {@link SequenceCollectionNotFoundError}
  */
 export class DataCollectionNotFoundError extends HttpError {
   constructor(collectionId: string, messageOpt?: string) {

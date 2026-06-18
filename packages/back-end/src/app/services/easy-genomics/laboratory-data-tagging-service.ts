@@ -1880,7 +1880,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
 
     for (const setId of sequenceSetIds) {
       try {
-        // Step 1: ensure the SEQUENCE_SET# row has a map at `LaboratoryRunUsages`. UpdateItem with
+        // Step 1: ensure the SAMPLE# row has a map at `LaboratoryRunUsages`. UpdateItem with
         // a SET on a nested path requires the parent map to exist.
         await this.updateItem({
           TableName: TABLE_NAME,

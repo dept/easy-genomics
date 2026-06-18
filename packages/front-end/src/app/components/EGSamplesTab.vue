@@ -8,7 +8,7 @@
   import EGSampleTagSidebar from '@FE/components/EGSampleTagSidebar.vue';
   import { useToastStore, useUiStore } from '@FE/stores';
   import { SAMPLE_LAYOUT_LABELS } from '@FE/utils/data-collections-selection';
-  import { exceedsBatchNameMaxLength, exceedsTagNameMaxLength } from '@FE/utils/data-collections-name-validation';
+  import { exceedsTagNameMaxLength } from '@FE/utils/data-collections-name-validation';
 
   const props = defineProps<{
     labId: string;
@@ -31,7 +31,6 @@
     import: [];
     'build-collection': [];
     'tags-updated': [];
-    'batch-updated': [];
     'tag-created': [];
     'tag-deleted': [tagId: string];
   }>();
@@ -49,9 +48,6 @@
   const inlineNewTagName = ref('');
   const inlineNewTagColor = ref('#5B4FD4');
   const bulkPanelContentEl = ref<HTMLElement | null>(null);
-  const showChangeBatchModal = ref(false);
-  const changeBatchSelectedBatchId = ref<string | LaboratoryDataTag | undefined>(undefined);
-  const changeBatchNewName = ref('');
 
   /** Cards grid vs tabular layout (matches file explorer). */
   const explorerView = ref<'cards' | 'table'>('cards');
@@ -80,30 +76,6 @@
   const inlineTagNameInvalid = computed(() => exceedsTagNameMaxLength(inlineNewTagName.value));
   const canCreateInlineTag = computed(() => !!inlineNewTagName.value.trim() && !inlineTagNameInvalid.value);
 
-  const changeBatchNewNameInvalid = computed(() => exceedsBatchNameMaxLength(changeBatchNewName.value));
-  const canApplyChangeBatchWithNewName = computed(
-    () => !!changeBatchNewName.value.trim() && !changeBatchNewNameInvalid.value,
-  );
-  const canApplyChangeBatch = computed(
-    () =>
-      canApplyChangeBatchWithNewName.value || (!!resolvedChangeBatchTagId.value && !changeBatchNewName.value.trim()),
-  );
-
-  function resolvedBatchTagId(value: string | LaboratoryDataTag | undefined): string | undefined {
-    if (!value) return undefined;
-    if (typeof value === 'string') return value;
-    return value.TagId;
-  }
-
-  const resolvedChangeBatchTagId = computed(() => resolvedBatchTagId(changeBatchSelectedBatchId.value));
-
-  watch(changeBatchNewName, (v) => {
-    if (v.trim()) changeBatchSelectedBatchId.value = undefined;
-  });
-  watch(changeBatchSelectedBatchId, (v) => {
-    if (v) changeBatchNewName.value = '';
-  });
-
   function standardTagIdsForSet(setId: string): string[] {
     const tagIdSet = new Set(standardTags.value.map((t) => t.TagId));
     return (props.sampleIdToTagIds[setId] ?? []).filter((tid) => tagIdSet.has(tid));
@@ -129,6 +101,7 @@
 
   const sampleSections = computed((): SampleSection[] => {
     const nameById = new Map(batchTags.value.map((t) => [t.TagId, t.Name]));
+    const createdAtById = new Map(batchTags.value.map((t) => [t.TagId, t.CreatedAt ?? '']));
     const groups = new Map<string | null, LaboratorySample[]>();
     for (const s of filtered.value) {
       const bid = s.BatchTagId ?? null;
@@ -137,6 +110,10 @@
     }
     const batchEntries = [...groups.entries()].filter(([k]) => k !== null) as [string, LaboratorySample[]][];
     batchEntries.sort((a, b) => {
+      const ca = createdAtById.get(a[0]) ?? '';
+      const cb = createdAtById.get(b[0]) ?? '';
+      const byDate = cb.localeCompare(ca);
+      if (byDate !== 0) return byDate;
       const na = nameById.get(a[0]) ?? a[0];
       const nb = nameById.get(b[0]) ?? b[0];
       return na.localeCompare(nb);
@@ -179,16 +156,6 @@
   function tagById(id: string): LaboratoryDataTag | undefined {
     return props.tags.find((t) => t.TagId === id);
   }
-
-  const changeBatchCurrentlyInLine = computed(() => {
-    const names = new Set<string>();
-    for (const id of props.selectedIds) {
-      const sample = props.samples.find((s) => s.SampleId === id);
-      if (!sample?.BatchTagId) names.add('Unbatched');
-      else names.add(tagById(sample.BatchTagId)?.Name ?? sample.BatchTagId);
-    }
-    return [...names].sort((a, b) => a.localeCompare(b)).join(', ') || '—';
-  });
 
   function batchDisplayName(sample: LaboratorySample): string {
     if (!sample.BatchTagId) return '—';
@@ -373,75 +340,6 @@
         AddTagIds: addTagIds.length ? addTagIds : undefined,
         RemoveTagIds: removeTagIds.length ? removeTagIds : undefined,
       });
-    }
-  }
-
-  async function assignSampleBatchInChunks(
-    sampleIds: string[],
-    body: { ClearBatch?: boolean; BatchTagId?: string; NewBatchName?: string },
-  ): Promise<void> {
-    for (let i = 0; i < sampleIds.length; i += SEQUENCE_SET_IDS_CHUNK) {
-      const chunk = sampleIds.slice(i, i + SEQUENCE_SET_IDS_CHUNK);
-      await $api.dataCollections.assignSampleBatch({
-        LaboratoryId: props.labId,
-        SampleIds: chunk,
-        ...body,
-      });
-    }
-  }
-
-  function openChangeBatchModal(): void {
-    changeBatchSelectedBatchId.value = undefined;
-    changeBatchNewName.value = '';
-    showChangeBatchModal.value = true;
-  }
-
-  function closeChangeBatchModal(): void {
-    showChangeBatchModal.value = false;
-  }
-
-  function clearExistingBatchSelection(): void {
-    changeBatchSelectedBatchId.value = undefined;
-  }
-
-  async function applyChangeBatch(): Promise<void> {
-    if (!props.selectedIds.length) return;
-    const sampleIds = [...props.selectedIds];
-    const nn = changeBatchNewName.value.trim();
-    if (nn && exceedsBatchNameMaxLength(changeBatchNewName.value)) return;
-    uiStore.setRequestPending('dataCollectionsMutate');
-    try {
-      if (nn) {
-        await assignSampleBatchInChunks(sampleIds, { NewBatchName: nn });
-      } else if (resolvedChangeBatchTagId.value) {
-        await assignSampleBatchInChunks(sampleIds, { BatchTagId: resolvedChangeBatchTagId.value });
-      } else {
-        toast.warning('Choose an existing batch or enter a new batch name.');
-        return;
-      }
-      toast.success('Batch updated');
-      closeChangeBatchModal();
-      emit('batch-updated');
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Batch update failed');
-    } finally {
-      uiStore.setRequestComplete('dataCollectionsMutate');
-    }
-  }
-
-  async function clearBatchFromModal(): Promise<void> {
-    if (!props.selectedIds.length) return;
-    const sampleIds = [...props.selectedIds];
-    uiStore.setRequestPending('dataCollectionsMutate');
-    try {
-      await assignSampleBatchInChunks(sampleIds, { ClearBatch: true });
-      toast.success('Removed from batch');
-      closeChangeBatchModal();
-      emit('batch-updated');
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Batch update failed');
-    } finally {
-      uiStore.setRequestComplete('dataCollectionsMutate');
     }
   }
 
@@ -857,9 +755,6 @@
         <span v-else class="text-muted text-xs">Select samples to add or remove tags in bulk.</span>
         <div v-if="hasSelection" class="ml-auto flex flex-wrap items-center gap-2">
           <UIcon v-if="bulkPanelBusy" name="i-heroicons-arrow-path" class="text-muted h-5 w-5 shrink-0 animate-spin" />
-          <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openChangeBatchModal">
-            Change batch
-          </UButton>
           <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openAddBulkPanel">Add Tags</UButton>
           <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openRemoveBulkPanel">
             Remove Tags
@@ -994,97 +889,4 @@
       </div>
     </div>
   </div>
-
-  <UModal
-    v-model="showChangeBatchModal"
-    :ui="{
-      overlay: {
-        base: 'fixed inset-0 transition-opacity backdrop-blur-[5px]',
-        background: 'bg-gray-800/30',
-      },
-      rounded: 'rounded-3xl',
-      width: 'sm:max-w-lg',
-    }"
-  >
-    <UCard
-      :ui="{
-        base: 'p-8',
-        rounded: 'rounded-3xl',
-        header: { padding: '' },
-      }"
-    >
-      <template #header>
-        <div class="flex flex-col gap-1">
-          <h3 class="text-lg font-semibold text-gray-900">Change batch</h3>
-          <p class="text-muted text-sm">Reassign the selected samples to a different batch.</p>
-        </div>
-      </template>
-
-      <div class="space-y-4">
-        <div class="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
-          <dl class="space-y-2.5 text-sm">
-            <div class="flex items-baseline justify-between gap-4">
-              <dt class="text-muted shrink-0">Samples to move</dt>
-              <dd class="font-medium tabular-nums text-gray-900">{{ selectedIds.length }}</dd>
-            </div>
-            <div class="flex items-start justify-between gap-4">
-              <dt class="text-muted shrink-0 pt-0.5">Currently in</dt>
-              <dd class="min-w-0 flex-1 break-words text-right font-medium leading-snug text-gray-900">
-                {{ changeBatchCurrentlyInLine }}
-              </dd>
-            </div>
-          </dl>
-        </div>
-        <div>
-          <div class="mb-1 flex items-center justify-between gap-2">
-            <label class="text-muted block text-xs font-semibold uppercase tracking-wide">Existing batch</label>
-            <button
-              v-if="changeBatchSelectedBatchId"
-              type="button"
-              class="text-primary shrink-0 text-xs font-normal hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="bulkPanelBusy || !!changeBatchNewName.trim()"
-              @click="clearExistingBatchSelection"
-            >
-              Clear selection
-            </button>
-          </div>
-          <USelectMenu
-            v-model="changeBatchSelectedBatchId"
-            :options="batchTags"
-            option-attribute="Name"
-            value-attribute="TagId"
-            placeholder="Select a batch"
-            size="sm"
-            class="w-full"
-            :disabled="bulkPanelBusy || !!changeBatchNewName.trim()"
-          />
-        </div>
-        <div>
-          <label class="text-muted mb-1 block text-xs font-semibold uppercase tracking-wide">Or create new batch</label>
-          <UInput
-            v-model="changeBatchNewName"
-            placeholder="e.g. Nov-2024-FluPanel"
-            size="sm"
-            class="w-full"
-            :color="changeBatchNewNameInvalid ? 'red' : undefined"
-            :disabled="bulkPanelBusy || !!resolvedChangeBatchTagId"
-          />
-          <p v-if="changeBatchNewNameInvalid" class="text-alert-danger-dark mt-1 text-xs">250 characters max</p>
-          <p v-else class="text-muted mt-1.5 text-xs leading-snug">
-            Leave blank to use the existing batch selected above.
-          </p>
-        </div>
-      </div>
-
-      <div class="mt-8 flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-4">
-        <UButton size="sm" variant="ghost" :disabled="bulkPanelBusy" @click="closeChangeBatchModal">Cancel</UButton>
-        <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="clearBatchFromModal">
-          Remove from batch
-        </UButton>
-        <UButton size="sm" :loading="bulkPanelBusy" :disabled="!canApplyChangeBatch" @click="applyChangeBatch">
-          Move samples
-        </UButton>
-      </div>
-    </UCard>
-  </UModal>
 </template>

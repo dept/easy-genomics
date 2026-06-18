@@ -162,10 +162,6 @@
     await loadSamples();
   }
 
-  async function onSampleBatchUpdated(): Promise<void> {
-    await Promise.all([loadTags(), loadSamples()]);
-  }
-
   async function onSampleTagCreated(): Promise<void> {
     await loadTags();
   }
@@ -314,7 +310,6 @@
         :search="collectionSearch"
         @update:search="collectionSearch = $event"
         @new-collection="openBuilder()"
-        @import="openImport"
         @launch-workflow="launchWorkflow"
         @edit-collection="openBuilderForEdit"
         @delete-collection="openDeleteCollectionDialog"
@@ -339,7 +334,6 @@
         @import="openImport"
         @build-collection="openBuilder(selectedSampleIds)"
         @tags-updated="onSampleTagsUpdated"
-        @batch-updated="onSampleBatchUpdated"
         @tag-created="onSampleTagCreated"
         @tag-deleted="onSampleTagDeleted"
       />
