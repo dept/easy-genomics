@@ -1,6 +1,6 @@
 import { RunType } from '@easy-genomics/shared-lib/src/app/types/base-entity';
 import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-import type { GenerateDataCollectionSampleSheetResponse } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sequence-sets';
+import type { GenerateSequenceCollectionSampleSheetResponse } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
 import { v4 as uuidv4 } from 'uuid';
 import { useRunStore } from '@FE/stores';
 import { buildSampleSheetFileName } from '@FE/utils/sample-sheet-utils';
@@ -12,7 +12,7 @@ export type SeedRunFromSampleSheetParams = {
   platform: RunType;
   workflowExternalId: string;
   sampleSheetResult:
-    | GenerateDataCollectionSampleSheetResponse
+    | GenerateSequenceCollectionSampleSheetResponse
     | {
         SampleSheetS3Url: string;
         InputFileKeys: string[];
@@ -24,7 +24,7 @@ export function seedWipRunFromSampleSheet(params: SeedRunFromSampleSheetParams):
   const runStore = useRunStore();
   const tempId = params.transactionId ?? uuidv4();
   const sampleSheetS3Url = params.sampleSheetResult.SampleSheetS3Url;
-  const sampleSheetResponse = params.sampleSheetResult as GenerateDataCollectionSampleSheetResponse & {
+  const sampleSheetResponse = params.sampleSheetResult as GenerateSequenceCollectionSampleSheetResponse & {
     SampleSheetInfo?: { S3Url: string; Bucket: string; Path: string };
   };
 

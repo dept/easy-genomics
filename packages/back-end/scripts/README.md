@@ -113,6 +113,29 @@ pnpm run seed-workflow-tagging-test-runs:dry-run -- --laboratoryId <uuid> --rese
 GSI queries) on `laboratory-data-tagging-table` (+ indexes); `s3:ListBucket` (and `ListBucket` on the lab bucket) when
 discovering keys. No Omics or Tower API calls.
 
+## `migrate-samples-and-sequence-collections.ts`
+
+**Purpose:** Rewrites DynamoDB rows in `laboratory-data-tagging-table` after the sequence-set → sample and
+data-collection → sequence-collection rename (sort-key prefixes and attribute names). Does not delete lab data; rows
+with changed sort keys are deleted and re-written under the new key.
+
+**When to use:** Once per environment after deploying the renamed application code, if that environment already had
+sequence sets / data collections stored under the old `SEQUENCE_SET#` / `DATA_COLLECTION#` prefixes.
+
+**Usage:**
+
+```bash
+cd packages/back-end
+pnpm tsx scripts/migrate-samples-and-sequence-collections.ts --dry-run
+pnpm tsx scripts/migrate-samples-and-sequence-collections.ts
+```
+
+**Environment:** `NAME_PREFIX`, `REGION` in `.env.local` (or exported). Uses the AWS SDK default credential chain — see
+script header. Temporary console/SSO credentials (`ASIA…` access keys) require a valid `AWS_SESSION_TOKEN` and expire;
+refresh with `aws sso login` or new console credentials before running. Verify with `aws sts get-caller-identity`.
+
+**IAM:** `dynamodb:Scan`, `dynamodb:PutItem`, `dynamodb:DeleteItem` on `${NAME_PREFIX}-laboratory-data-tagging-table`.
+
 ## `recompute-laboratory-run-retention.ts`
 
 **Purpose:** Recomputes DynamoDB TTL-related fields on terminal laboratory runs for **one laboratory**: sets

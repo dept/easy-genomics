@@ -114,7 +114,7 @@ export const handler: Handler = async (
       });
 
       // Mirror the new (or cleared) ExpiresAt onto each input file's LaboratoryRunUsages entry
-      // so the data collections UI reflects the policy change without re-reading the run table.
+      // so the sequence collections UI reflects the policy change without re-reading the run table.
       // Best-effort: tagging-side failures must not roll back the retention update.
       if (laboratory.S3Bucket && (run.InputFileKeys || []).length > 0) {
         try {

@@ -1,10 +1,10 @@
 <script setup lang="ts">
   import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import type {
-    LaboratoryRunDataCollection,
-    LaboratorySequenceSet,
+    LaboratorySequenceCollection,
+    LaboratorySample,
     SampleSheetColumnDef,
-  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sequence-sets';
+  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
   import {
     SAMPLE_SHEET_COLUMN_ROLE_LABELS,
     SAMPLE_SHEET_SCHEMA_PRESETS,
@@ -15,10 +15,10 @@
   const props = defineProps<{
     labId: string;
     lab: Laboratory | null;
-    sequenceSets: LaboratorySequenceSet[];
+    samples: LaboratorySample[];
     initialSetIds: string[];
     initialName?: string;
-    editingCollection?: LaboratoryRunDataCollection | null;
+    editingCollection?: LaboratorySequenceCollection | null;
   }>();
 
   const emit = defineEmits<{ back: []; saved: [] }>();
@@ -39,12 +39,12 @@
   const setSearch = ref('');
   const saving = ref(false);
 
-  const selectedSets = computed(() => props.sequenceSets.filter((s) => selectedSetIds.value.has(s.SequenceSetId)));
+  const selectedSets = computed(() => props.samples.filter((s) => selectedSetIds.value.has(s.SampleId)));
 
   const filteredSets = computed(() => {
     const q = setSearch.value.trim().toLowerCase();
-    if (!q) return props.sequenceSets;
-    return props.sequenceSets.filter((s) => s.Name.toLowerCase().includes(q));
+    if (!q) return props.samples;
+    return props.samples.filter((s) => s.Name.toLowerCase().includes(q));
   });
 
   const preview = computed(() => {
@@ -82,29 +82,29 @@
       return;
     }
     if (!name.value.trim() || !selectedSetIds.value.size) {
-      toast.error('Name and at least one sequence set are required');
+      toast.error('Name and at least one sample are required');
       return;
     }
     saving.value = true;
     uiStore.setRequestPending('dataCollectionsMutate');
     try {
       if (props.editingCollection) {
-        await $api.dataCollections.updateDataCollection({
+        await $api.dataCollections.updateSequenceCollection({
           LaboratoryId: props.labId,
-          DataCollectionId: props.editingCollection.DataCollectionId,
+          SequenceCollectionId: props.editingCollection.SequenceCollectionId,
           Name: name.value.trim(),
           Columns: columns.value,
-          SequenceSetIds: [...selectedSetIds.value],
+          SampleIds: [...selectedSetIds.value],
         });
-        toast.success('Data collection updated');
+        toast.success('Sequence collection updated');
       } else {
-        await $api.dataCollections.createDataCollection({
+        await $api.dataCollections.createSequenceCollection({
           LaboratoryId: props.labId,
           Name: name.value.trim(),
           Columns: columns.value,
-          SequenceSetIds: [...selectedSetIds.value],
+          SampleIds: [...selectedSetIds.value],
         });
-        toast.success('Data collection saved');
+        toast.success('Sequence collection saved');
       }
       emit('saved');
     } catch (e: unknown) {
@@ -121,7 +121,7 @@
     <button type="button" class="hover:text-primary mb-3 w-fit text-sm text-gray-500" @click="emit('back')">
       ← Back
     </button>
-    <h1 class="mb-4 text-2xl font-medium">{{ isEditing ? 'Edit collection' : 'New collection' }}</h1>
+    <h1 class="mb-4 text-2xl font-medium">{{ isEditing ? 'Edit collection' : 'New sequence collection' }}</h1>
 
     <div
       class="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-hidden rounded-t-xl border border-gray-200 bg-white lg:grid-cols-2"
@@ -132,19 +132,15 @@
         </UFormGroup>
 
         <div>
-          <label class="mb-2 block text-sm font-medium">Sequence sets · {{ selectedSetIds.size }} selected</label>
+          <label class="mb-2 block text-sm font-medium">Samples · {{ selectedSetIds.size }} selected</label>
           <UInput v-model="setSearch" placeholder="Search…" class="mb-2" />
           <div class="max-h-48 overflow-y-auto rounded-lg border border-gray-200">
             <label
               v-for="s in filteredSets"
-              :key="s.SequenceSetId"
+              :key="s.SampleId"
               class="flex cursor-pointer items-center gap-2 border-b border-gray-100 px-3 py-2 text-sm hover:bg-gray-50"
             >
-              <input
-                type="checkbox"
-                :checked="selectedSetIds.has(s.SequenceSetId)"
-                @change="toggleSet(s.SequenceSetId)"
-              />
+              <input type="checkbox" :checked="selectedSetIds.has(s.SampleId)" @change="toggleSet(s.SampleId)" />
               <span class="flex-1">{{ s.Name }}</span>
               <span class="text-xs text-gray-400">{{ s.FileCount }} files</span>
             </label>

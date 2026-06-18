@@ -1,164 +1,164 @@
 import type {
-  LaboratoryRunDataCollection,
-  LaboratorySequenceSet,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sequence-sets';
+  LaboratorySequenceCollection,
+  LaboratorySample,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
 import { useUiStore } from '@FE/stores';
 import type { ExplorerSelection } from '@FE/utils/data-collections-selection';
 import {
   selectedFileKeys,
-  selectedSequenceSetIds,
+  selectedSampleIds,
   selectionHasOnlyFiles,
-  selectionHasOnlySequenceSets,
+  selectionHasOnlySamples,
 } from '@FE/utils/data-collections-selection';
 
 export function useLaboratoryDataCollections(labId: Ref<string> | ComputedRef<string>) {
   const { $api } = useNuxtApp();
   const uiStore = useUiStore();
 
-  const sequenceSets = ref<LaboratorySequenceSet[]>([]);
-  const dataCollections = ref<LaboratoryRunDataCollection[]>([]);
-  const keyToSequenceSetIds = ref<Record<string, string[]>>({});
-  /** Sequence set ids belonging to the data collection selected in the left rail (when filtering). */
-  const dataCollectionMemberSetIds = ref<Set<string>>(new Set());
+  const samples = ref<LaboratorySample[]>([]);
+  const sequenceCollections = ref<LaboratorySequenceCollection[]>([]);
+  const keyToSampleIds = ref<Record<string, string[]>>({});
+  /** Sample ids belonging to the sequence collection selected in the left rail (when filtering). */
+  const sequenceCollectionMemberSampleIds = ref<Set<string>>(new Set());
 
-  const sequenceSetsFilterIds = ref<string[]>([]);
-  const dataCollectionFilterId = ref<string | undefined>(undefined);
+  const sampleFilterIds = ref<string[]>([]);
+  const sequenceCollectionFilterId = ref<string | undefined>(undefined);
 
-  const sequenceSetsSectionExpanded = ref(true);
-  const dataCollectionsSectionExpanded = ref(true);
-  const showAllSequenceSets = ref(false);
+  const samplesSectionExpanded = ref(true);
+  const sequenceCollectionsSectionExpanded = ref(true);
+  const showAllSamples = ref(false);
 
-  const loadingSequenceSets = computed(() => uiStore.isRequestPending('dataCollectionsSequenceSets'));
-  const loadingDataCollections = computed(() => uiStore.isRequestPending('dataCollectionsRunCollections'));
+  const loadingSamples = computed(() => uiStore.isRequestPending('dataCollectionsSamples'));
+  const loadingSequenceCollections = computed(() => uiStore.isRequestPending('dataCollectionsRunSequenceCollections'));
 
-  const sequenceSetById = computed(() => {
-    const map: Record<string, LaboratorySequenceSet> = {};
-    for (const s of sequenceSets.value) map[s.SequenceSetId] = s;
+  const sampleById = computed(() => {
+    const map: Record<string, LaboratorySample> = {};
+    for (const s of samples.value) map[s.SampleId] = s;
     return map;
   });
 
-  const dataCollectionById = computed(() => {
-    const map: Record<string, LaboratoryRunDataCollection> = {};
-    for (const c of dataCollections.value) {
-      if (c?.DataCollectionId) map[c.DataCollectionId] = c;
+  const sequenceCollectionById = computed(() => {
+    const map: Record<string, LaboratorySequenceCollection> = {};
+    for (const c of sequenceCollections.value) {
+      if (c?.SequenceCollectionId) map[c.SequenceCollectionId] = c;
     }
     return map;
   });
 
-  async function fetchSequenceSets(): Promise<void> {
-    uiStore.setRequestPending('dataCollectionsSequenceSets');
+  async function fetchSamples(): Promise<void> {
+    uiStore.setRequestPending('dataCollectionsSamples');
     try {
-      const res = await $api.dataCollections.listSequenceSets(unref(labId));
-      sequenceSets.value = res.SequenceSets;
+      const res = await $api.dataCollections.listSamples(unref(labId));
+      samples.value = res.Samples;
     } finally {
-      uiStore.setRequestComplete('dataCollectionsSequenceSets');
+      uiStore.setRequestComplete('dataCollectionsSamples');
     }
   }
 
-  async function fetchDataCollections(): Promise<void> {
-    uiStore.setRequestPending('dataCollectionsRunCollections');
+  async function fetchSequenceCollections(): Promise<void> {
+    uiStore.setRequestPending('dataCollectionsRunSequenceCollections');
     try {
-      const res = await $api.dataCollections.listDataCollections(unref(labId));
-      dataCollections.value = res.DataCollections ?? [];
+      const res = await $api.dataCollections.listSequenceCollections(unref(labId));
+      sequenceCollections.value = res.SequenceCollections ?? [];
     } finally {
-      uiStore.setRequestComplete('dataCollectionsRunCollections');
+      uiStore.setRequestComplete('dataCollectionsRunSequenceCollections');
     }
   }
 
   async function refreshGroupingMetadata(): Promise<void> {
-    await Promise.all([fetchSequenceSets(), fetchDataCollections()]);
+    await Promise.all([fetchSamples(), fetchSequenceCollections()]);
   }
 
-  function applyFileSequenceSetIds(files: { Key: string; SequenceSetIds?: string[] }[]): void {
+  function applyFileSampleIds(files: { Key: string; SampleIds?: string[] }[]): void {
     const next: Record<string, string[]> = {};
     for (const f of files) {
-      if (f.SequenceSetIds?.length) next[f.Key] = f.SequenceSetIds;
+      if (f.SampleIds?.length) next[f.Key] = f.SampleIds;
     }
-    keyToSequenceSetIds.value = next;
+    keyToSampleIds.value = next;
   }
 
-  async function loadDataCollectionMemberSetIds(collectionId: string | undefined): Promise<void> {
+  async function loadSequenceCollectionMemberSampleIds(collectionId: string | undefined): Promise<void> {
     if (!collectionId) {
-      dataCollectionMemberSetIds.value = new Set();
+      sequenceCollectionMemberSampleIds.value = new Set();
       return;
     }
-    uiStore.setRequestPending('dataCollectionsRunCollections');
+    uiStore.setRequestPending('dataCollectionsRunSequenceCollections');
     try {
-      const res = await $api.dataCollections.listDataCollectionSequenceSets(unref(labId), collectionId);
-      dataCollectionMemberSetIds.value = new Set(res.SequenceSetIds);
+      const res = await $api.dataCollections.listSequenceCollectionSamples(unref(labId), collectionId);
+      sequenceCollectionMemberSampleIds.value = new Set(res.SampleIds);
     } finally {
-      uiStore.setRequestComplete('dataCollectionsRunCollections');
+      uiStore.setRequestComplete('dataCollectionsRunSequenceCollections');
     }
   }
 
-  watch(dataCollectionFilterId, async (id) => {
-    await loadDataCollectionMemberSetIds(id);
+  watch(sequenceCollectionFilterId, async (id) => {
+    await loadSequenceCollectionMemberSampleIds(id);
   });
 
-  function fileMatchesSequenceSetFilters(key: string): boolean {
-    if (!sequenceSetsFilterIds.value.length && !dataCollectionFilterId.value) return true;
-    const setIds = keyToSequenceSetIds.value[key] || [];
-    if (sequenceSetsFilterIds.value.length) {
-      const matchesAny = sequenceSetsFilterIds.value.some((id) => setIds.includes(id));
+  function fileMatchesSampleFilters(key: string): boolean {
+    if (!sampleFilterIds.value.length && !sequenceCollectionFilterId.value) return true;
+    const setIds = keyToSampleIds.value[key] || [];
+    if (sampleFilterIds.value.length) {
+      const matchesAny = sampleFilterIds.value.some((id) => setIds.includes(id));
       if (!matchesAny) return false;
     }
-    if (dataCollectionFilterId.value) {
-      const matchesDc = setIds.some((id) => dataCollectionMemberSetIds.value.has(id));
-      if (!matchesDc) return false;
+    if (sequenceCollectionFilterId.value) {
+      const matchesSc = setIds.some((id) => sequenceCollectionMemberSampleIds.value.has(id));
+      if (!matchesSc) return false;
     }
     return true;
   }
 
-  function sequenceSetMatchesFilters(setId: string): boolean {
-    if (sequenceSetsFilterIds.value.length && !sequenceSetsFilterIds.value.includes(setId)) return false;
-    if (dataCollectionFilterId.value && !dataCollectionMemberSetIds.value.has(setId)) return false;
+  function sampleMatchesFilters(setId: string): boolean {
+    if (sampleFilterIds.value.length && !sampleFilterIds.value.includes(setId)) return false;
+    if (sequenceCollectionFilterId.value && !sequenceCollectionMemberSampleIds.value.has(setId)) return false;
     return true;
   }
 
-  function canAddToSequenceSet(selection: ExplorerSelection): boolean {
+  function canAddToSample(selection: ExplorerSelection): boolean {
     return selectionHasOnlyFiles(selection);
   }
 
-  function canAddToDataCollection(selection: ExplorerSelection): boolean {
-    return selectionHasOnlySequenceSets(selection);
+  function canAddToSequenceCollection(selection: ExplorerSelection): boolean {
+    return selectionHasOnlySamples(selection);
   }
 
-  function addToSequenceSetDisabledReason(selection: ExplorerSelection): string | undefined {
+  function addToSampleDisabledReason(selection: ExplorerSelection): string | undefined {
     if (!selection.length) return 'Select one or more files';
-    if (!selectionHasOnlyFiles(selection)) return 'Deselect sequence sets to add files to a sequence set';
+    if (!selectionHasOnlyFiles(selection)) return 'Deselect samples to add files to a sample';
     return undefined;
   }
 
-  function addToDataCollectionDisabledReason(selection: ExplorerSelection): string | undefined {
-    if (!selection.length) return 'Select one or more sequence sets';
-    if (!selectionHasOnlySequenceSets(selection)) return 'Deselect files to add sequence sets to a data collection';
+  function addToSequenceCollectionDisabledReason(selection: ExplorerSelection): string | undefined {
+    if (!selection.length) return 'Select one or more samples';
+    if (!selectionHasOnlySamples(selection)) return 'Deselect files to add samples to a sequence collection';
     return undefined;
   }
 
   return {
-    sequenceSets,
-    dataCollections,
-    keyToSequenceSetIds,
-    sequenceSetsFilterIds,
-    dataCollectionFilterId,
-    sequenceSetsSectionExpanded,
-    dataCollectionsSectionExpanded,
-    showAllSequenceSets,
-    loadingSequenceSets,
-    loadingDataCollections,
-    sequenceSetById,
-    dataCollectionById,
-    fetchSequenceSets,
-    fetchDataCollections,
+    samples,
+    sequenceCollections,
+    keyToSampleIds,
+    sampleFilterIds,
+    sequenceCollectionFilterId,
+    samplesSectionExpanded,
+    sequenceCollectionsSectionExpanded,
+    showAllSamples,
+    loadingSamples,
+    loadingSequenceCollections,
+    sampleById,
+    sequenceCollectionById,
+    fetchSamples,
+    fetchSequenceCollections,
     refreshGroupingMetadata,
-    applyFileSequenceSetIds,
-    fileMatchesSequenceSetFilters,
-    sequenceSetMatchesFilters,
-    canAddToSequenceSet,
-    canAddToDataCollection,
-    addToSequenceSetDisabledReason,
-    addToDataCollectionDisabledReason,
+    applyFileSampleIds,
+    fileMatchesSampleFilters,
+    sampleMatchesFilters,
+    canAddToSample,
+    canAddToSequenceCollection,
+    addToSampleDisabledReason,
+    addToSequenceCollectionDisabledReason,
     selectedFileKeys,
-    selectedSequenceSetIds,
+    selectedSampleIds,
   };
 }

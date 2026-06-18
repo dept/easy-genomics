@@ -2,22 +2,24 @@ import { ZodTypeAny } from 'zod';
 import { CreateRunRequestSchema } from '../schema/aws-healthomics/aws-healthomics-api';
 import { AddTagsToFilesSchema } from '../schema/easy-genomics/data-collections/add-tags-to-files';
 import {
-  AddTagsToSequenceSetsSchema,
-  RequestListSequenceSetTagsSchema,
-} from '../schema/easy-genomics/data-collections/add-tags-to-sequence-sets';
+  AddTagsToSamplesSchema,
+  RequestListSampleTagsSchema,
+} from '../schema/easy-genomics/data-collections/add-tags-to-samples';
 import { AssignBatchSchema } from '../schema/easy-genomics/data-collections/assign-batch';
-import { BulkCreateSequenceSetsSchema } from '../schema/easy-genomics/data-collections/bulk-create-sequence-sets';
+import { AssignSampleBatchSchema } from '../schema/easy-genomics/data-collections/assign-sample-batch';
+import { BulkCreateSamplesSchema } from '../schema/easy-genomics/data-collections/bulk-create-samples';
 import {
-  AddSequenceSetsToDataCollectionSchema,
-  CreateDataCollectionSchema,
-  UpdateDataCollectionSchema,
-  UpdateDataCollectionSchemaSchema,
-} from '../schema/easy-genomics/data-collections/create-data-collection';
+  AddFilesToSampleSchema,
+  CreateSampleSchema,
+  RemoveFilesFromSampleSchema,
+} from '../schema/easy-genomics/data-collections/create-sample';
 import {
-  AddFilesToSequenceSetSchema,
-  CreateSequenceSetSchema,
-  RemoveFilesFromSequenceSetSchema,
-} from '../schema/easy-genomics/data-collections/create-sequence-set';
+  AddSamplesToSequenceCollectionSchema,
+  CreateSequenceCollectionSchema,
+  GenerateSequenceCollectionSampleSheetSchema,
+  UpdateSequenceCollectionSchema,
+  UpdateSequenceCollectionSchemaSchema,
+} from '../schema/easy-genomics/data-collections/create-sequence-collection';
 import { CreateLaboratoryDataTagSchema } from '../schema/easy-genomics/data-collections/create-tag';
 import { RequestLaboratoryBucketObjectsSchema } from '../schema/easy-genomics/data-collections/request-laboratory-bucket-objects';
 import { RequestListFileTagsSchema } from '../schema/easy-genomics/data-collections/request-list-file-tags';
@@ -221,16 +223,47 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
 
   // ── easy-genomics/data-collections/ ─────────────────────────────────────────
 
+  'POST /easy-genomics/data-collections/add-files-to-sample': {
+    request: AddFilesToSampleSchema,
+  },
+  'POST /easy-genomics/data-collections/add-samples-to-sequence-collection': {
+    request: AddSamplesToSequenceCollectionSchema,
+  },
   'POST /easy-genomics/data-collections/add-tags-to-files': {
     request: AddTagsToFilesSchema,
+  },
+  'POST /easy-genomics/data-collections/add-tags-to-samples': {
+    request: AddTagsToSamplesSchema,
+  },
+  'POST /easy-genomics/data-collections/create-bulk-samples': {
+    request: BulkCreateSamplesSchema,
+    response: 'BulkCreateSamplesResponse',
+  },
+  'POST /easy-genomics/data-collections/create-sample': {
+    request: CreateSampleSchema,
+    response: 'LaboratorySample',
+  },
+  'POST /easy-genomics/data-collections/create-sequence-collection': {
+    request: CreateSequenceCollectionSchema,
+    response: 'LaboratorySequenceCollection',
   },
   'POST /easy-genomics/data-collections/create-tag': {
     request: CreateLaboratoryDataTagSchema,
     response: 'LaboratoryDataTag',
   },
+  'DELETE /easy-genomics/data-collections/delete-sequence-collection/{id}': {
+    query: [{ name: 'laboratoryId', required: true, description: 'Laboratory that owns the sequence collection' }],
+  },
   'DELETE /easy-genomics/data-collections/delete-tag/{id}': {},
   'POST /easy-genomics/data-collections/edit-batch': {
     request: AssignBatchSchema,
+  },
+  'POST /easy-genomics/data-collections/edit-sample-batch': {
+    request: AssignSampleBatchSchema,
+  },
+  'POST /easy-genomics/data-collections/edit-sequence-collection': {
+    request: UpdateSequenceCollectionSchema,
+    response: 'LaboratorySequenceCollection',
   },
   'GET /easy-genomics/data-collections/list-files-by-tag': {
     response: 'ListFilesByTagResponse',
@@ -241,9 +274,45 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
       { name: 'cursor', required: false, description: 'Pagination cursor' },
     ],
   },
+  'GET /easy-genomics/data-collections/list-sample-files': {
+    response: 'ListSampleFilesResponse',
+    query: [
+      { name: 'laboratoryId', required: false, description: 'Laboratory to query' },
+      { name: 'sampleId', required: false, description: 'Sample to list files for' },
+      { name: 'limit', required: false, description: 'Max number of results (1-500)' },
+      { name: 'cursor', required: false, description: 'Pagination cursor' },
+    ],
+  },
+  'GET /easy-genomics/data-collections/list-samples': {
+    response: 'ListLaboratorySamplesResponse',
+    query: [{ name: 'laboratoryId', required: false, description: 'Laboratory to list samples for' }],
+  },
+  'GET /easy-genomics/data-collections/list-samples-by-tag': {
+    response: 'ListSamplesByTagResponse',
+    query: [
+      { name: 'laboratoryId', required: false, description: 'Laboratory to query' },
+      { name: 'tagId', required: false, description: 'Tag to list samples for' },
+      { name: 'limit', required: false, description: 'Max number of results (1-500)' },
+      { name: 'cursor', required: false, description: 'Pagination cursor' },
+    ],
+  },
+  'GET /easy-genomics/data-collections/list-sequence-collection-samples': {
+    response: 'ListSequenceCollectionSamplesResponse',
+    query: [
+      { name: 'laboratoryId', required: false, description: 'Laboratory to query' },
+      { name: 'sequenceCollectionId', required: false, description: 'Sequence collection to list samples for' },
+    ],
+  },
+  'GET /easy-genomics/data-collections/list-sequence-collections': {
+    response: 'ListLaboratorySequenceCollectionsResponse',
+    query: [{ name: 'laboratoryId', required: false, description: 'Laboratory to list sequence collections for' }],
+  },
   'GET /easy-genomics/data-collections/list-tags': {
     response: 'ListLaboratoryDataTagsResponse',
     query: [{ name: 'laboratoryId', required: false, description: 'Laboratory to list tags for' }],
+  },
+  'POST /easy-genomics/data-collections/remove-files-from-sample': {
+    request: RemoveFilesFromSampleSchema,
   },
   'POST /easy-genomics/data-collections/request-laboratory-bucket-objects': {
     request: RequestLaboratoryBucketObjectsSchema,
@@ -252,73 +321,25 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
     request: RequestListFileTagsSchema,
     response: 'ListFileTagsResponse',
   },
-  'PUT /easy-genomics/data-collections/update-tag/{id}': {
-    request: UpdateLaboratoryDataTagSchema,
-    response: 'LaboratoryDataTag',
+  'POST /easy-genomics/data-collections/request-list-sample-tags': {
+    request: RequestListSampleTagsSchema,
+    response: 'ListSampleTagsResponse',
   },
-
-  // ── easy-genomics/data-collections/ (sequence sets) ─────────────────────────
-
-  'POST /easy-genomics/data-collections/add-files-to-sequence-set': {
-    request: AddFilesToSequenceSetSchema,
-  },
-  'POST /easy-genomics/data-collections/add-sequence-sets-to-data-collection': {
-    request: AddSequenceSetsToDataCollectionSchema,
-  },
-  'POST /easy-genomics/data-collections/add-tags-to-sequence-sets': {
-    request: AddTagsToSequenceSetsSchema,
-  },
-  'POST /easy-genomics/data-collections/create-bulk-sequence-sets': {
-    request: BulkCreateSequenceSetsSchema,
-  },
-  'POST /easy-genomics/data-collections/create-data-collection': {
-    request: CreateDataCollectionSchema,
-  },
-  'POST /easy-genomics/data-collections/create-sequence-set': {
-    request: CreateSequenceSetSchema,
-  },
-  'GET /easy-genomics/data-collections/list-data-collection-sequence-sets': {
-    query: [
-      { name: 'laboratoryId', required: true, description: 'Laboratory to query' },
-      { name: 'dataCollectionId', required: true, description: 'Data collection to list sequence sets for' },
-    ],
-  },
-  'GET /easy-genomics/data-collections/list-data-collections': {
-    query: [{ name: 'laboratoryId', required: true, description: 'Laboratory to list data collections for' }],
-  },
-  'GET /easy-genomics/data-collections/list-sequence-set-files': {
-    query: [
-      { name: 'laboratoryId', required: true, description: 'Laboratory to query' },
-      { name: 'sequenceSetId', required: true, description: 'Sequence set to list files for' },
-      { name: 'limit', required: false, description: 'Max number of results (1-500)' },
-      { name: 'cursor', required: false, description: 'Pagination cursor' },
-    ],
-  },
-  'GET /easy-genomics/data-collections/list-sequence-sets-by-tag': {
-    query: [
-      { name: 'laboratoryId', required: true, description: 'Laboratory to query' },
-      { name: 'tagId', required: true, description: 'Tag to list sequence sets for' },
-      { name: 'limit', required: false, description: 'Max number of results (1-500)' },
-      { name: 'cursor', required: false, description: 'Pagination cursor' },
-    ],
-  },
-  'GET /easy-genomics/data-collections/list-sequence-sets': {
-    query: [{ name: 'laboratoryId', required: true, description: 'Laboratory to list sequence sets for' }],
-  },
-  'POST /easy-genomics/data-collections/remove-files-from-sequence-set': {
-    request: RemoveFilesFromSequenceSetSchema,
-  },
-  'POST /easy-genomics/data-collections/request-list-sequence-set-tags': {
-    request: RequestListSequenceSetTagsSchema,
+  'POST /easy-genomics/data-collections/request-sequence-collection-sample-sheet': {
+    request: GenerateSequenceCollectionSampleSheetSchema,
+    response: 'GenerateSequenceCollectionSampleSheetResponse',
   },
   'POST /easy-genomics/data-collections/request-unlinked-bucket-objects': {
     request: RequestUnlinkedBucketObjectsSchema,
+    response: 'UnlinkedBucketObjectsResponse',
   },
-  'PUT /easy-genomics/data-collections/update-data-collection-schema/{id}': {
-    request: UpdateDataCollectionSchemaSchema,
+  'PUT /easy-genomics/data-collections/update-sequence-collection-schema/{id}': {
+    request: UpdateSequenceCollectionSchemaSchema,
+    response: 'LaboratorySequenceCollection',
   },
-  'PUT /easy-genomics/data-collections/update-data-collection/{id}': {
-    request: UpdateDataCollectionSchema,
+  'PUT /easy-genomics/data-collections/update-tag/{id}': {
+    request: UpdateLaboratoryDataTagSchema,
+    response: 'LaboratoryDataTag',
   },
 
   // ── easy-genomics/file/ ──────────────────────────────────────────────────────

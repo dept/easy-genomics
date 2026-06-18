@@ -11,7 +11,7 @@ import {
 
 const laboratoryService = new LaboratoryService();
 
-export async function assertDataCollectionsAccess(
+export async function assertSequenceCollectionsAccess(
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
   laboratoryId: string,
 ): Promise<{ userId: string; laboratory: Laboratory }> {
