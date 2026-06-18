@@ -135,7 +135,7 @@ describe('buildSampleSheetFromSamples', () => {
       columns,
       [
         {
-          SequenceSetId: '1',
+          SampleId: '1',
           Name: 'SampleA',
           Layout: 'paired_end',
           FileKeys: ['org/lab/a_R1.fastq.gz', 'org/lab/a_R2.fastq.gz'],
