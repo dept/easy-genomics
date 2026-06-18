@@ -19,6 +19,9 @@ Every change — whether written by a human or with AI assistance — must follo
 **Architecture Rules** defined in `CLAUDE.md` at the repo root. `CLAUDE.md` is the authoritative source; the summary
 below is a pointer, not a replacement — read it before contributing.
 
+For codebase navigation with AI tools (Cursor, etc.), see **[Graphify](./graphify.md)** — the committed knowledge graph
+in `graphify-out/` and local setup via `pnpm graphify:setup`.
+
 - **Write for humans first** — descriptive names, explicit over clever, comment _why_ (not _what_).
 - **Be specific and consistent** — match the naming, structure, and patterns already in the codebase; don't invent new
   ones where an established one fits.
