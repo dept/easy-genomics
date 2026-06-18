@@ -22,7 +22,13 @@
 <template>
   <EGToasts class="top-[52px]" />
   <EGHeader :is-authed="true" key="routeKey" />
-  <main class="mb-4 mt-6 px-4" :class="{ 'has-sidebar': uiStore.hasSidebar }">
+  <main
+    class="mb-4 mt-6 px-4"
+    :class="{
+      'has-sidebar': uiStore.hasSidebar,
+      'has-sidebar--collapsed': uiStore.hasSidebar && uiStore.sidebarCollapsed,
+    }"
+  >
     <slot v-if="hasInit" />
   </main>
 </template>
@@ -37,6 +43,11 @@
       position: relative;
       margin-left: calc(var(--sidebar-width) + 2rem);
       margin-right: 2rem;
+      transition: margin-left 0.2s ease;
+
+      &.has-sidebar--collapsed {
+        margin-left: calc(var(--sidebar-width-collapsed) + 2rem);
+      }
     }
   }
 </style>

@@ -41,16 +41,16 @@
 
   const showWorkflowAccessTab = computed(() => props.superuser || props.orgAdmin);
 
-  const tabItems = computed(() => {
-    const items: { key: string; label: string }[] = [];
+  const tabItems = computed<{ key: string; label: string; icon: string }[]>(() => {
+    const items: { key: string; label: string; icon: string }[] = [];
     if (props.superuser) {
-      items.push({ key: 'labs', label: 'All Labs' });
+      items.push({ key: 'labs', label: 'All Labs', icon: 'i-heroicons-beaker' });
     }
-    items.push({ key: 'users', label: 'All users' });
+    items.push({ key: 'users', label: 'All users', icon: 'i-heroicons-users' });
     if (showWorkflowAccessTab.value) {
-      items.push({ key: 'workflow-access', label: 'Workflow access' });
+      items.push({ key: 'workflow-access', label: 'Workflow access', icon: 'i-heroicons-key' });
     }
-    items.push({ key: 'details', label: 'Settings' });
+    items.push({ key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth' });
     return items;
   });
 

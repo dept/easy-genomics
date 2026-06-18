@@ -249,6 +249,10 @@ export interface paths {
     /** Request Laboratory User */
     post: operations["requestLaboratoryUser"];
   };
+  "/easy-genomics/list-api-docs": {
+    /** List Api Docs */
+    get: operations["listApiDocs"];
+  };
   "/easy-genomics/list-buckets": {
     /** List Buckets */
     get: operations["listBuckets"];
@@ -4315,6 +4319,22 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["LaboratoryUser"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** List Api Docs */
+  listApiDocs: {
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
         };
       };
       400: components["responses"]["BadRequest"];
