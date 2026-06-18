@@ -23,7 +23,10 @@
     "cicd-build-deploy-back-end": "export CI_CD=true NX_SKIP_NX_CACHE=true && pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --outputStyle=stream",
     "cicd-build-deploy-front-end": "export CI_CD=true NX_SKIP_NX_CACHE=true && pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --outputStyle=stream",
     "prepare": "husky || true",
-    "pre-commit": "lint-staged"
+    "pre-commit": "lint-staged",
+    "graphify:setup": "bash scripts/graphify-setup.sh",
+    "graphify:build": "bash scripts/graphify-build.sh",
+    "graphify:docs": "bash scripts/graphify-docs.sh"
   },
   "author": {
     "name": "DEPT Agency",

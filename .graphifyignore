@@ -1,0 +1,31 @@
+# Graphify corpus scope for Easy Genomics.
+# Default: code-only (AST extraction, no LLM API key required).
+# To include docs/, run: pnpm graphify:docs (requires an LLM API key — see docs/development/graphify.md).
+*
+!packages/
+!packages/**
+
+# Markdown, YAML, HTML, and images need semantic LLM extraction — refresh via pnpm graphify:docs
+**/*.md
+**/*.mdx
+**/*.html
+**/*.yaml
+**/*.yml
+**/*.{png,jpg,jpeg,gif,svg,webp,ico}
+
+# Static assets (not useful in the code graph)
+**/public/**
+**/assets/**
+
+# Build artifacts and generated output
+**/node_modules/**
+**/coverage/**
+**/cdk.out/**
+**/.nuxt/**
+**/.output/**
+**/dist/**
+**/test-reports/**
+**/playwright-report/**
+**/design_mocks/**
+**/*.d.ts
+**/generated.d.ts
