@@ -1,9 +1,8 @@
 import * as fs from 'fs';
 import path from 'path';
 import { AssociativeArray, HttpRequest } from '@easy-genomics/shared-lib/src/app/utils/common';
-import { toPascalCase } from '@easy-genomics/shared-lib/src/app/utils/string-utils';
 import { aws_lambda, aws_lambda_nodejs, Duration } from 'aws-cdk-lib';
-import { CognitoUserPoolsAuthorizer, JsonSchema, LambdaIntegration, Resource } from 'aws-cdk-lib/aws-apigateway';
+import { JsonSchema } from 'aws-cdk-lib/aws-apigateway';
 import { MethodOptions } from 'aws-cdk-lib/aws-apigateway/lib/method';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { IEventSource, IFunction, Runtime } from 'aws-cdk-lib/aws-lambda';
@@ -13,11 +12,14 @@ import { CommonApiNestedStackProps } from '../types/back-end-stack';
 
 export const LAMBDA_FUNCTION_ROOT_DIR = 'src/app/controllers'; // DO NOT CHANGE
 
-// LambdaConstruct binds auto-discovered controllers to the RestApi that is
-// explicitly passed in. It deliberately does NOT extend any single domain's
+// LambdaConstruct auto-discovers controllers, builds a NodejsFunction for each,
+// wires event sources for `process-*` handlers, and exposes them by endpoint
+// path via `lambdaFunctions`. HTTP route registration is NOT done here — the
+// owning stack's `SpecRestApiConstruct` sources every method/integration/
+// authorizer from easy-genomics-api.yaml and resolves each route to a function
+// using this map. It deliberately does NOT extend any single domain's
 // nested-stack props, so no domain can accidentally inherit another domain's
-// API ownership just by sharing Cognito/VPC dependencies. If `restApi` is
-// undefined, only event-driven (`process-*`) lambdas are registered.
+// API ownership just by sharing Cognito/VPC dependencies.
 export interface LambdaConstructProps extends CommonApiNestedStackProps {
   lambdaFunctionsDir: string;
   lambdaFunctionsNamespace: string;
@@ -60,48 +62,20 @@ const ALLOWED_LAMBDA_FUNCTION_OPERATIONS: AssociativeArray<HttpRequest> = {
   ['remove']: 'POST',
 };
 
-// List of allowed Lambda Function operations requiring path parameter 'id' for specific resource
-const ALLOWED_LAMBDA_FUNCTION_OPERATIONS_WITH_RESOURCE_ID: AssociativeArray<HttpRequest> = {
-  ['read']: 'GET', // Read specific record
-  ['update']: 'PUT', // Update specific record
-  ['cancel']: 'PUT', // Update specific record
-  ['patch']: 'PATCH', // Patch specific record
-  ['delete']: 'DELETE', // Delete specific record
-};
-
 export class LambdaConstruct extends Construct {
   private props: LambdaConstructProps;
-  private readonly authorizer?: CognitoUserPoolsAuthorizer;
   readonly lambdaFunctions: Map<string, IFunction> = new Map();
 
   constructor(scope: Construct, id: string, props: LambdaConstructProps) {
     super(scope, id);
     this.props = props;
 
-    if (this.props.userPool) {
-      this.authorizer = new CognitoUserPoolsAuthorizer(this, `${id}-user-pool-authorizer`, {
-        cognitoUserPools: [this.props.userPool],
-      });
-    }
-
-    // Find all existing Lambda Functions within specified lambdaFunctionsDir and register them as REST APIs with API Gateway / Event Triggers
+    // Find all existing Lambda Functions within specified lambdaFunctionsDir, build each, and wire event triggers
     this.getLambdaFunctions(path.join(__dirname, `../../../${this.props.lambdaFunctionsDir}`)).forEach(
       (lambdaFunction: AssociativeArray<string>) => {
         this.registerLambdaFunction(lambdaFunction);
       },
     );
-
-    // Attach the Schema Models to API Gateway REST API
-    if (this.props.restApi) {
-      for (const value of Object.values(this.props.lambdaFunctionsResources)) {
-        value.schemas?.forEach((schema: JsonSchema) => {
-          this.props.restApi!.addModel(`${toPascalCase(schema.title!)}`, {
-            modelName: `${toPascalCase(schema.title!)}`,
-            schema: schema,
-          });
-        });
-      }
-    }
   }
 
   /**
@@ -118,7 +92,6 @@ export class LambdaConstruct extends Construct {
 
     const commonProcessEnv = this.props.environment || undefined;
     const lambdaProcessEnv = this.props.lambdaFunctionsResources[lambdaApiEndpoint]?.environment || undefined;
-    const lambdaMethodOptions = this.props.lambdaFunctionsResources[lambdaApiEndpoint]?.methodOptions || undefined;
     const lambdaTimeoutSeconds = this.props.lambdaFunctionsResources[lambdaApiEndpoint]?.timeoutSeconds || 30;
     const lambdaMemorySizeMb = this.props.lambdaFunctionsResources[lambdaApiEndpoint]?.memorySizeMb || 1024;
 
@@ -170,40 +143,13 @@ export class LambdaConstruct extends Construct {
       this.props.lambdaFunctionsResources[lambdaApiEndpoint]?.callbacks?.forEach((callback) => {
         callback(lambdaHandler);
       });
-    } else {
-      // Register Lambda Function Endpoint with API Gateway REST API
-      if (!this.props.restApi) {
-        // Route-bearing controller discovered but this LambdaConstruct wasn't
-        // wired to an API. Fail fast rather than silently drop the route,
-        // otherwise a stack-boundary refactor can hide routes without a build error.
-        throw new Error(
-          `LambdaConstruct "${this.node.id}" discovered HTTP controller "${lambdaApiEndpoint}" but no restApi was provided. ` +
-            'Ensure the owning stack passes its own RestApi, or move the controller to a directory owned by a stack that does.',
-        );
-      }
-      const pathResource = this.props.restApi.root.resourceForPath(lambdaApiEndpoint);
-      if (lambdaFunction.command in ALLOWED_LAMBDA_FUNCTION_OPERATIONS_WITH_RESOURCE_ID) {
-        const pathResourceWithId: Resource = pathResource.addResource('{id}');
-        pathResourceWithId.addMethod(
-          ALLOWED_LAMBDA_FUNCTION_OPERATIONS_WITH_RESOURCE_ID[lambdaFunction.command],
-          new LambdaIntegration(lambdaHandler),
-          {
-            authorizer: this.authorizer,
-            ...lambdaMethodOptions,
-          },
-        );
-      } else {
-        pathResource.addMethod(
-          ALLOWED_LAMBDA_FUNCTION_OPERATIONS[lambdaFunction.command],
-          new LambdaIntegration(lambdaHandler),
-          {
-            authorizer: this.authorizer,
-            ...lambdaMethodOptions,
-          },
-        );
-      }
     }
 
+    // HTTP route registration is handled by the owning stack's
+    // SpecRestApiConstruct, which sources every method/integration/authorizer
+    // from easy-genomics-api.yaml. Here we only expose the function by its
+    // endpoint path so that construct can resolve each spec operation to its
+    // backing Lambda ARN (and so Cognito triggers can find `process-*` handlers).
     this.lambdaFunctions.set(lambdaApiEndpoint, lambdaHandler);
   };
 

@@ -1,15 +1,16 @@
 import { BackEndStackProps } from '@easy-genomics/shared-lib/src/infra/types/main-stack';
 import { CfnOutput, RemovalPolicy, Stack } from 'aws-cdk-lib';
-import { RestApi } from 'aws-cdk-lib/aws-apigateway';
+import { SpecRestApi } from 'aws-cdk-lib/aws-apigateway';
 import { UserPool, UserPoolClient } from 'aws-cdk-lib/aws-cognito';
 import { IVpc } from 'aws-cdk-lib/aws-ec2';
 import { Key, KeySpec } from 'aws-cdk-lib/aws-kms';
+import { IFunction } from 'aws-cdk-lib/aws-lambda';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 import { AuthNestedStack } from './auth-nested-stack';
 import { AwsHealthOmicsNestedStack } from './aws-healthomics-nested-stack';
 import { NFTowerNestedStack } from './nf-tower-nested-stack';
-import { ApiGatewayConstruct } from '../constructs/api-gateway-construct';
+import { SpecRestApiConstruct } from '../constructs/spec-rest-api-construct';
 import { VpcConstruct, VpcConstructProps } from '../constructs/vpc-construct';
 import { AuthNestedStackProps, AwsHealthOmicsNestedStackProps, NFTowerNestedStackProps } from '../types/back-end-stack';
 
@@ -33,7 +34,7 @@ import { AuthNestedStackProps, AwsHealthOmicsNestedStackProps, NFTowerNestedStac
 export class BackEndStack extends Stack {
   readonly kmsKeys: Map<string, Key> = new Map();
   readonly props: BackEndStackProps;
-  protected apiGateway!: ApiGatewayConstruct;
+  protected apiGateway!: SpecRestApiConstruct;
   protected vpcConstruct: VpcConstruct;
 
   // Public surface exposed to other top-level stacks (currently EasyGenomicsApiStack).
@@ -46,7 +47,7 @@ export class BackEndStack extends Stack {
   public readonly cognitoIdpKmsKey: Key;
   // Exposed so a sibling `ApiDomainStack` can attach base-path mappings to the
   // AWS HealthOmics + NF-Tower REST API without taking over ownership.
-  public readonly apiGatewayRestApi: RestApi;
+  public readonly apiGatewayRestApi: SpecRestApi;
 
   constructor(scope: Construct, id: string, props: BackEndStackProps) {
     super(scope, id);
@@ -66,13 +67,6 @@ export class BackEndStack extends Stack {
     this.vpcConstruct = new VpcConstruct(this, `${this.props.constructNamespace}-vpc`, vpcConstructProps);
     this.vpc = this.vpcConstruct.vpc;
 
-    // Shared API Gateway for the remaining (smaller) back-end domains.
-    // Easy Genomics has its own API Gateway in EasyGenomicsApiStack.
-    this.apiGateway = new ApiGatewayConstruct(this, `${this.props.constructNamespace}-apigw`, {
-      description: 'Easy Genomics Platform API Gateway (AWS HealthOmics + NF-Tower)',
-    });
-    this.apiGatewayRestApi = this.apiGateway.restApi;
-
     // Auth nested stack owns Cognito and must be built before any stack that
     // needs the user pool (including EasyGenomicsApiStack).
     const authNestedStackProps: AuthNestedStackProps = {
@@ -86,15 +80,17 @@ export class BackEndStack extends Stack {
     this.userPoolClient = authNestedStack.cognito.userPoolClient;
     this.userPoolSystemAdminGroupName = authNestedStack.cognito.userPoolGroup.groupName;
 
+    // The AWS HealthOmics and NF-Tower nested stacks build their Lambda functions
+    // but no longer register HTTP routes; the shared SpecRestApiConstruct below
+    // wires API Gateway from easy-genomics-api.yaml using their function maps.
     const awsHealthOmicsNestedStackProps: AwsHealthOmicsNestedStackProps = {
       ...this.props,
       constructNamespace: `${this.props.namePrefix}-aws-healthomics`,
-      restApi: this.apiGateway.restApi,
       userPool: authNestedStack.cognito.userPool,
       userPoolClient: authNestedStack.cognito.userPoolClient,
       vpc: this.vpcConstruct.vpc,
     };
-    new AwsHealthOmicsNestedStack(
+    const awsHealthOmicsNestedStack = new AwsHealthOmicsNestedStack(
       this,
       `${this.props.envName}-aws-healthomics-nested-stack`,
       awsHealthOmicsNestedStackProps,
@@ -103,12 +99,31 @@ export class BackEndStack extends Stack {
     const nfTowerNestedStackProps: NFTowerNestedStackProps = {
       ...this.props,
       constructNamespace: `${this.props.namePrefix}-nf-tower`,
-      restApi: this.apiGateway.restApi,
       userPool: authNestedStack.cognito.userPool,
       userPoolClient: authNestedStack.cognito.userPoolClient,
       vpc: this.vpcConstruct.vpc,
     };
-    new NFTowerNestedStack(this, `${this.props.envName}-nf-tower-nested-stack`, nfTowerNestedStackProps);
+    const nfTowerNestedStack = new NFTowerNestedStack(
+      this,
+      `${this.props.envName}-nf-tower-nested-stack`,
+      nfTowerNestedStackProps,
+    );
+
+    // Shared API Gateway for the remaining (smaller) back-end domains, deployed
+    // from easy-genomics-api.yaml via SpecRestApi. Built after the nested stacks
+    // so it can resolve each spec operation to its backing Lambda. Easy Genomics
+    // has its own API Gateway in EasyGenomicsApiStack. Reusing the previous
+    // construct id preserves the REST API physical id / invoke URL on upgrade.
+    this.apiGateway = new SpecRestApiConstruct(this, `${this.props.constructNamespace}-apigw`, {
+      description: 'Easy Genomics Platform API Gateway (AWS HealthOmics + NF-Tower)',
+      lambdaFunctions: new Map<string, IFunction>([
+        ...awsHealthOmicsNestedStack.lambda.lambdaFunctions,
+        ...nfTowerNestedStack.lambda.lambdaFunctions,
+      ]),
+      userPool: authNestedStack.cognito.userPool,
+      includePathPrefixes: ['/aws-healthomics', '/nf-tower'],
+    });
+    this.apiGatewayRestApi = this.apiGateway.restApi;
 
     new CfnOutput(this, 'CognitoUserPoolId', {
       key: 'CognitoUserPoolId',
