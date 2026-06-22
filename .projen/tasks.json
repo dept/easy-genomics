@@ -174,7 +174,7 @@
           "exec": "pnpm i --no-frozen-lockfile"
         },
         {
-          "exec": "pnpm update @aws-sdk/types @commitlint/cli @commitlint/config-conventional @commitlint/cz-commitlint @nrwl/devkit @nrwl/workspace @types/aws-lambda @types/jest @types/node @types/uuid @typescript-eslint/eslint-plugin @typescript-eslint/parser aws-sdk-client-mock aws-sdk-client-mock-jest constructs cz-conventional-changelog eslint-config-prettier eslint-import-resolver-typescript eslint-plugin-import eslint-plugin-prettier eslint husky jest lint-staged nx prettier projen ts-jest ts-node typescript validate-branch-name"
+          "exec": "pnpm update @aws-sdk/types @commitlint/cli @commitlint/config-conventional @commitlint/cz-commitlint @nrwl/devkit @nrwl/workspace @types/aws-lambda @types/jest @types/node @types/uuid @typescript-eslint/eslint-plugin @typescript-eslint/parser @useoptic/optic aws-sdk-client-mock aws-sdk-client-mock-jest constructs cz-conventional-changelog eslint-config-prettier eslint-import-resolver-typescript eslint-plugin-import eslint-plugin-prettier eslint husky jest lint-staged nx prettier projen ts-jest ts-node typescript validate-branch-name"
         },
         {
           "exec": "pnpm exec projen"

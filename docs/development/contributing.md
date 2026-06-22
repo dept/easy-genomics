@@ -180,3 +180,27 @@ manual test log. For any change:
    re-test before requesting a human review.
 
 Keep PRs focused: one ticket, the minimal change to satisfy it, no unrelated refactoring.
+
+## API schema diff gate
+
+Every pull request is checked by the `api-diff-check` CI job, which uses [Optic](https://useoptic.com/) to compare the
+PR branch version of `packages/shared-lib/src/app/openapi/easy-genomics-api.yaml` against the base branch.
+
+**Breaking changes** (removing a route, removing a field, narrowing a type) fail CI with:
+
+> Breaking API changes detected. Add the 'breaking-change' label to the PR to bypass this check.
+
+**Non-breaking additions** (new optional fields, new routes) always pass.
+
+To bypass, add the `breaking-change` label to the pull request. A reviewer must acknowledge the breakage as intentional
+before merging.
+
+### One-time repo setup
+
+The `breaking-change` label must exist in the GitHub repository. Create it once:
+
+```bash
+gh label create breaking-change --color E4E669 --description "Intentional breaking API change"
+```
+
+Or via **Issues → Labels** in the GitHub UI.
