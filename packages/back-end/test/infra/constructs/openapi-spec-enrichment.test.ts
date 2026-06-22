@@ -152,6 +152,21 @@ describe('enrichSpecForApiGateway', () => {
     expect(document.paths['/easy-genomics/list-api-docs'].get.security).toEqual([]);
   });
 
+  it('flattens the root security requirement onto protected operations', () => {
+    const { document } = enrichSpecForApiGateway(baseSpec(), baseOptions());
+    expect(document.paths['/easy-genomics/organization/create-organization'].post.security).toEqual([
+      { cognitoJwt: [] },
+    ]);
+    expect(document.paths['/easy-genomics/organization/read-organization/{id}'].get.security).toEqual([
+      { cognitoJwt: [] },
+    ]);
+  });
+
+  it('does not overwrite an operation that is explicitly public', () => {
+    const { document } = enrichSpecForApiGateway(baseSpec(), baseOptions());
+    expect(document.paths['/easy-genomics/list-api-docs'].get.security).toEqual([]);
+  });
+
   it('adds a mock CORS preflight OPTIONS to every in-scope path', () => {
     const { document } = enrichSpecForApiGateway(baseSpec(), baseOptions());
     const options = document.paths['/easy-genomics/organization/create-organization'].options;

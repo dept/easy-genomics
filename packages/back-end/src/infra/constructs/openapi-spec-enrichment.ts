@@ -95,6 +95,12 @@ export function enrichSpecForApiGateway(spec: Record<string, any>, opts: EnrichS
     },
   };
 
+  // API Gateway's REST OpenAPI importer is not guaranteed to apply a root-level
+  // `security` as a per-operation default. Resolve it onto each in-scope
+  // operation so the Cognito authorizer attaches per method. Operations that
+  // declare their own `security` (e.g. `security: []` for public routes) win.
+  const defaultSecurity = document.security ?? [{ [schemeName]: [] }];
+
   const allPaths: Record<string, any> = document.paths ?? {};
   const keptPaths: Record<string, any> = {};
   const usedEndpoints: string[] = [];
@@ -123,6 +129,9 @@ export function enrichSpecForApiGateway(spec: Record<string, any>, opts: EnrichS
         uri: lambdaInvokeUri(opts.partition, opts.region, functionArn),
         passthroughBehavior: 'when_no_match',
       };
+      if (pathItem[method].security === undefined) {
+        pathItem[method].security = defaultSecurity;
+      }
       if (!usedEndpoints.includes(endpointKey)) {
         usedEndpoints.push(endpointKey);
       }
