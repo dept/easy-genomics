@@ -7,15 +7,23 @@
     type DataCollectionFileTypeFilter,
   } from '@FE/utils/data-collections-file-type';
 
-  const props = defineProps<{
-    files: Array<{ Key: string; Size?: number; LastModified?: string }>;
-    loading: boolean;
-    selectedKeys: string[];
-    search: string;
-    s3Bucket: string;
-    resolvedPrefix: string;
-    lastScanLabel: string;
-  }>();
+  const props = withDefaults(
+    defineProps<{
+      files: Array<{ Key: string; Size?: number; LastModified?: string }>;
+      loading: boolean;
+      selectedKeys: string[];
+      search: string;
+      s3Bucket: string;
+      resolvedPrefix: string;
+      lastScanLabel: string;
+      s3Configured?: boolean;
+      canEditLabDetails?: boolean;
+    }>(),
+    {
+      s3Configured: true,
+      canEditLabDetails: false,
+    },
+  );
 
   const emit = defineEmits<{
     'update:selectedKeys': [keys: string[]];
@@ -23,6 +31,7 @@
     rescan: [];
     'build-sample': [];
     'group-with-regex': [];
+    'open-settings': [];
   }>();
 
   const fileTypeFilter = ref<DataCollectionFileTypeFilter>({ fastq: true, fasta: false, other: false });
@@ -75,76 +84,98 @@
       />
       <EGDataCollectionsFileTypeFilter v-model="fileTypeFilter" :counts="fileTypeCounts" />
       <div class="flex-1" />
-      <UButton variant="outline" :loading="loading" @click="emit('rescan')">Rescan bucket</UButton>
+      <UButton variant="outline" :loading="loading" :disabled="!s3Configured" @click="emit('rescan')">
+        Rescan bucket
+      </UButton>
     </div>
 
-    <div class="border-b bg-gray-50 px-4 py-2 text-xs text-gray-500">
-      Scanned from
-      <span class="font-mono text-gray-800">s3://{{ s3Bucket }}/{{ resolvedPrefix }}</span>
-      ·
-      <strong>{{ files.length }}</strong>
-      unlinked files
-      <span v-if="lastScanLabel">· {{ lastScanLabel }}</span>
+    <div v-if="!s3Configured" class="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+      <p class="max-w-lg text-sm text-gray-600">
+        <template v-if="canEditLabDetails">
+          Configure a
+          <strong>default S3 bucket</strong>
+          in lab Settings to scan unlinked files in storage.
+        </template>
+        <template v-else>
+          Ask your organization administrator to configure the lab's
+          <strong>default S3 bucket</strong>
+          in Settings before files can be scanned.
+        </template>
+      </p>
+      <UButton v-if="canEditLabDetails" size="sm" variant="outline" @click="emit('open-settings')">
+        Open Settings
+      </UButton>
     </div>
 
-    <div class="flex-1 overflow-y-auto">
-      <table class="w-full text-sm">
-        <thead class="sticky top-0 bg-gray-50">
-          <tr>
-            <th class="w-10 p-3" />
-            <th class="p-3 text-left text-xs uppercase text-gray-400">File</th>
-            <th class="p-3 text-left text-xs uppercase text-gray-400">Type</th>
-            <th class="p-3 text-left text-xs uppercase text-gray-400">Size</th>
-            <th class="p-3 text-left text-xs uppercase text-gray-400">Last modified</th>
-            <th class="p-3 text-left text-xs uppercase text-gray-400">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="6" class="p-6 text-center text-gray-400">Scanning…</td>
-          </tr>
-          <tr v-else-if="!filtered.length">
-            <td colspan="6" class="p-6 text-center text-gray-400">No unlinked files match the current filters.</td>
-          </tr>
-          <tr
-            v-for="f in filtered"
-            :key="f.Key"
-            class="border-t border-gray-100 hover:bg-gray-50"
-            :class="{ 'bg-primary-50': selectedKeys.includes(f.Key) }"
-          >
-            <td class="p-3">
-              <input type="checkbox" :checked="selectedKeys.includes(f.Key)" @change="toggle(f.Key)" />
-            </td>
-            <td class="p-3 font-mono text-xs">{{ f.Key.split('/').pop() }}</td>
-            <td class="p-3 text-xs uppercase text-gray-500">{{ dataCollectionFileKind(f.Key) }}</td>
-            <td class="p-3 text-xs">{{ formatSize(f.Size) }}</td>
-            <td class="p-3 text-xs text-gray-400">
-              {{ f.LastModified ? new Date(f.LastModified).toLocaleString() : '—' }}
-            </td>
-            <td class="p-3">
-              <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">unlinked</span>
-            </td>
-          </tr>
-          <tr v-if="hiddenCount > 0">
-            <td colspan="6" class="p-3 text-center text-xs italic text-gray-400">
-              {{ hiddenCount }} file(s) hidden by type filter
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div v-if="selectedKeys.length" class="flex items-center justify-between border-t border-gray-200 bg-white p-3">
-      <span class="text-sm text-gray-500">
-        <strong>{{ selectedKeys.length }}</strong>
-        selected
-      </span>
-      <div class="flex gap-2">
-        <UButton variant="outline" :disabled="selectedKeys.length < 2" @click="emit('group-with-regex')">
-          Group with regex
-        </UButton>
-        <UButton @click="emit('build-sample')">Build sample</UButton>
+    <template v-else>
+      <div class="border-b bg-gray-50 px-4 py-2 text-xs text-gray-500">
+        Scanned from
+        <span class="font-mono text-gray-800">s3://{{ s3Bucket }}/{{ resolvedPrefix }}</span>
+        ·
+        <strong>{{ files.length }}</strong>
+        unlinked files
+        <span v-if="lastScanLabel">· {{ lastScanLabel }}</span>
       </div>
-    </div>
+
+      <div class="flex-1 overflow-y-auto">
+        <table class="w-full text-sm">
+          <thead class="sticky top-0 bg-gray-50">
+            <tr>
+              <th class="w-10 p-3" />
+              <th class="p-3 text-left text-xs uppercase text-gray-400">File</th>
+              <th class="p-3 text-left text-xs uppercase text-gray-400">Type</th>
+              <th class="p-3 text-left text-xs uppercase text-gray-400">Size</th>
+              <th class="p-3 text-left text-xs uppercase text-gray-400">Last modified</th>
+              <th class="p-3 text-left text-xs uppercase text-gray-400">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="loading">
+              <td colspan="6" class="p-6 text-center text-gray-400">Scanning…</td>
+            </tr>
+            <tr v-else-if="!filtered.length">
+              <td colspan="6" class="p-6 text-center text-gray-400">No unlinked files match the current filters.</td>
+            </tr>
+            <tr
+              v-for="f in filtered"
+              :key="f.Key"
+              class="border-t border-gray-100 hover:bg-gray-50"
+              :class="{ 'bg-primary-50': selectedKeys.includes(f.Key) }"
+            >
+              <td class="p-3">
+                <input type="checkbox" :checked="selectedKeys.includes(f.Key)" @change="toggle(f.Key)" />
+              </td>
+              <td class="p-3 font-mono text-xs">{{ f.Key.split('/').pop() }}</td>
+              <td class="p-3 text-xs uppercase text-gray-500">{{ dataCollectionFileKind(f.Key) }}</td>
+              <td class="p-3 text-xs">{{ formatSize(f.Size) }}</td>
+              <td class="p-3 text-xs text-gray-400">
+                {{ f.LastModified ? new Date(f.LastModified).toLocaleString() : '—' }}
+              </td>
+              <td class="p-3">
+                <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">unlinked</span>
+              </td>
+            </tr>
+            <tr v-if="hiddenCount > 0">
+              <td colspan="6" class="p-3 text-center text-xs italic text-gray-400">
+                {{ hiddenCount }} file(s) hidden by type filter
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div v-if="selectedKeys.length" class="flex items-center justify-between border-t border-gray-200 bg-white p-3">
+        <span class="text-sm text-gray-500">
+          <strong>{{ selectedKeys.length }}</strong>
+          selected
+        </span>
+        <div class="flex gap-2">
+          <UButton variant="outline" :disabled="selectedKeys.length < 2" @click="emit('group-with-regex')">
+            Group with regex
+          </UButton>
+          <UButton @click="emit('build-sample')">Build sample</UButton>
+        </div>
+      </div>
+    </template>
   </div>
 </template>

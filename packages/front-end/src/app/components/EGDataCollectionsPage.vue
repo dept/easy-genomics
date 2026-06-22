@@ -20,6 +20,7 @@
   import EGRunFromDataCollectionModal from '@FE/components/EGRunFromDataCollectionModal.vue';
   import EGSamplesTab from '@FE/components/EGSamplesTab.vue';
   import EGUnlinkedFilesTab from '@FE/components/EGUnlinkedFilesTab.vue';
+  import { isLaboratoryS3Configured, isMissingLaboratoryS3BucketError } from '@FE/utils/laboratory-s3';
 
   const props = defineProps<{ labId: string }>();
 
@@ -28,13 +29,17 @@
   }>();
 
   const { $api } = useNuxtApp();
+  const $router = useRouter();
   const labsStore = useLabsStore();
+  const userStore = useUserStore();
   const uiStore = useUiStore();
   const toast = useToastStore();
 
   type View = 'main' | 'import' | 'builder';
 
   const lab = computed<Laboratory | null>(() => labsStore.labs[props.labId] ?? null);
+  const isLabS3Configured = computed(() => isLaboratoryS3Configured(lab.value));
+  const canEditLabDetails = computed(() => userStore.canEditLabDetails());
   const view = ref<View>('main');
   const activeTab = ref<DataCollectionsTab>('samples');
 
@@ -134,7 +139,17 @@
     }
   }
 
+  function clearUnlinkedFiles(): void {
+    unlinkedFiles.value = [];
+    unlinkedMeta.value = { s3Bucket: '', resolvedPrefix: '', lastScanLabel: '' };
+  }
+
   async function loadUnlinkedFiles(): Promise<void> {
+    if (!isLabS3Configured.value) {
+      clearUnlinkedFiles();
+      return;
+    }
+
     uiStore.setRequestPending('dataCollectionsList');
     try {
       const res = await $api.dataCollections.requestUnlinkedBucketObjects({
@@ -147,7 +162,11 @@
         resolvedPrefix: res.ResolvedPrefix,
         lastScanLabel: `Last scan ${new Date().toLocaleTimeString()}`,
       };
-    } catch {
+    } catch (e: unknown) {
+      if (isMissingLaboratoryS3BucketError(e)) {
+        clearUnlinkedFiles();
+        return;
+      }
       toast.error('Failed to load unlinked files.');
     } finally {
       uiStore.setRequestComplete('dataCollectionsList');
@@ -177,7 +196,20 @@
     () => void refreshAll(),
   );
 
+  watch(
+    () => lab.value?.S3Bucket,
+    () => {
+      if (isLabS3Configured.value) void loadUnlinkedFiles();
+      else clearUnlinkedFiles();
+    },
+  );
+
+  function openLabSettings(): void {
+    void $router.push(`/labs/${props.labId}?tab=Settings`);
+  }
+
   function openImport(): void {
+    if (!isLabS3Configured.value) return;
     view.value = 'import';
   }
 
@@ -296,6 +328,31 @@
     />
 
     <template v-else>
+      <div
+        v-if="!isLabS3Configured"
+        class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+      >
+        <p v-if="canEditLabDetails">
+          This lab does not have a
+          <strong>default S3 bucket</strong>
+          configured. Import, unlinked-file scanning, and runs that use sample files require S3 storage. Open
+          <strong>Settings</strong>
+          and set
+          <strong>Default S3 bucket directory</strong>
+          .
+        </p>
+        <p v-else>
+          This lab does not have a default S3 bucket configured. Ask your
+          <strong>organization administrator</strong>
+          to set
+          <strong>Default S3 bucket directory</strong>
+          in lab Settings before importing data or scanning files.
+        </p>
+        <UButton v-if="canEditLabDetails" class="mt-3" size="sm" variant="outline" @click="openLabSettings">
+          Open Settings
+        </UButton>
+      </div>
+
       <EGDataCollectionsTabBar
         v-model:active-tab="activeTab"
         :collection-count="sequenceCollections.length"
@@ -318,6 +375,7 @@
       <EGSamplesTab
         v-else-if="activeTab === 'samples'"
         :lab-id="labId"
+        :s3-configured="isLabS3Configured"
         :samples="samples"
         :tags="tags"
         :sample-id-to-tag-ids="sampleIdToTagIds"
@@ -344,12 +402,15 @@
         :loading="loading"
         :selected-keys="selectedFileKeys"
         :search="fileSearch"
+        :s3-configured="isLabS3Configured"
+        :can-edit-lab-details="canEditLabDetails"
         :s3-bucket="unlinkedMeta.s3Bucket"
         :resolved-prefix="unlinkedMeta.resolvedPrefix"
         :last-scan-label="unlinkedMeta.lastScanLabel"
         @update:selected-keys="selectedFileKeys = $event"
         @update:search="fileSearch = $event"
         @rescan="loadUnlinkedFiles"
+        @open-settings="openLabSettings"
         @build-sample="showBuildSampleModal = true"
         @group-with-regex="showRegexGroupModal = true"
       />
