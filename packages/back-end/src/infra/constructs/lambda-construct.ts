@@ -2,8 +2,6 @@ import * as fs from 'fs';
 import path from 'path';
 import { AssociativeArray, HttpRequest } from '@easy-genomics/shared-lib/src/app/utils/common';
 import { aws_lambda, aws_lambda_nodejs, Duration } from 'aws-cdk-lib';
-import { JsonSchema } from 'aws-cdk-lib/aws-apigateway';
-import { MethodOptions } from 'aws-cdk-lib/aws-apigateway/lib/method';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { IEventSource, IFunction, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { RetentionDays } from 'aws-cdk-lib/aws-logs';
@@ -33,14 +31,12 @@ export interface LambdaConstructProps extends CommonApiNestedStackProps {
 }
 
 interface LambdaFunctionsResources {
-  schemas?: JsonSchema[];
   events?: IEventSource[];
   callbacks?: ((fn: IFunction) => void)[];
   environment?: {
     // Specific process.env settings
     [key: string]: string;
   };
-  methodOptions?: MethodOptions;
   timeoutSeconds?: number;
   memorySizeMb?: number;
 }
