@@ -1,18 +1,18 @@
 <script setup lang="ts">
-  export type DataCollectionsTab = 'collections' | 'sequence-sets' | 'files';
+  export type DataCollectionsTab = 'collections' | 'samples' | 'files';
 
   defineProps<{
     activeTab: DataCollectionsTab;
     collectionCount: number;
-    sequenceSetCount: number;
+    sampleCount: number;
     fileCount: number;
   }>();
 
   const emit = defineEmits<{ 'update:activeTab': [tab: DataCollectionsTab] }>();
 
   const tabs: { key: DataCollectionsTab; label: string }[] = [
-    { key: 'sequence-sets', label: 'Sequence Sets' },
-    { key: 'collections', label: 'Data Collections' },
+    { key: 'samples', label: 'Samples' },
+    { key: 'collections', label: 'Sequence Collections' },
     { key: 'files', label: 'Files' },
   ];
 </script>
@@ -34,7 +34,7 @@
       {{ tab.label }}
       <span class="ml-1 font-normal text-gray-400">
         ·
-        {{ tab.key === 'collections' ? collectionCount : tab.key === 'sequence-sets' ? sequenceSetCount : fileCount }}
+        {{ tab.key === 'collections' ? collectionCount : tab.key === 'samples' ? sampleCount : fileCount }}
       </span>
     </button>
   </div>

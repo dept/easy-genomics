@@ -3,7 +3,7 @@
   import { v4 as uuidv4 } from 'uuid';
   import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import type { LaboratoryDataTag } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
-  import type { SequenceSetLayout } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sequence-sets';
+  import type { SampleLayout } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
   import type {
     FileUploadManifest,
     FileUploadRequest,
@@ -11,11 +11,13 @@
   import {
     groupFilenamesByRegex,
     REGEX_GROUPING_PRESETS,
-    type ProposedSequenceSet,
-  } from '@easy-genomics/shared-lib/src/app/utils/sequence-set-regex-grouping';
+    type ProposedSample,
+  } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
   import { useToastStore, useUiStore } from '@FE/stores';
+  import { exceedsBatchNameMaxLength } from '@FE/utils/data-collections-name-validation';
 
   type ImportSourceKind = 's3' | 'upload';
+  type BatchMode = 'new' | 'existing';
 
   type PendingUploadFile = {
     file: File;
@@ -38,16 +40,21 @@
   const toast = useToastStore();
   const uiStore = useUiStore();
 
+  const IMPORT_STEPS = ['Source', 'Group files', 'Review samples', 'Confirm'] as const;
+
   const step = ref(1);
   const importSource = ref<ImportSourceKind>('s3');
   const sourcePath = ref('');
   const presetKey = ref<keyof typeof REGEX_GROUPING_PRESETS>('underscore_r1_r2');
   const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2);
   const sourceFiles = ref<string[]>([]);
-  const proposedSets = ref<ProposedSequenceSet[]>([]);
+  const proposedSets = ref<ProposedSample[]>([]);
   const excludedSamples = ref<Set<string>>(new Set());
   const setTagIds = ref<Record<string, string[]>>({});
   const submitting = ref(false);
+  const batchMode = ref<BatchMode>('new');
+  const newBatchName = ref('');
+  const selectedExistingBatchId = ref<string | undefined>(undefined);
 
   const uploadTransactionId = ref(uuidv4());
   const pendingUploadFiles = ref<PendingUploadFile[]>([]);
@@ -74,6 +81,30 @@
   });
 
   watch(regexPattern, () => refreshPreview());
+
+  watch(step, (n) => {
+    if (n === 4 && !newBatchName.value.trim()) {
+      newBatchName.value = importLabel.value;
+    }
+  });
+
+  const batchTags = computed(() => props.tags.filter((t) => t.Kind === 'batch'));
+
+  const newBatchNameInvalid = computed(() => exceedsBatchNameMaxLength(newBatchName.value));
+
+  const confirmBatchLabel = computed(() => {
+    if (batchMode.value === 'existing') {
+      const tag = batchTags.value.find((t) => t.TagId === selectedExistingBatchId.value);
+      return tag?.Name ?? '—';
+    }
+    return newBatchName.value.trim() || '—';
+  });
+
+  const canConfirmImport = computed(() => {
+    if (batchMode.value === 'existing') return !!selectedExistingBatchId.value;
+    const trimmed = newBatchName.value.trim();
+    return trimmed.length > 0 && !newBatchNameInvalid.value;
+  });
 
   const activeSets = computed(() => proposedSets.value.filter((s) => !excludedSamples.value.has(s.sampleId)));
 
@@ -262,7 +293,7 @@
 
       const sequenceSets = activeSets.value.map((s) => ({
         Name: s.sampleId,
-        Layout: s.layout as SequenceSetLayout,
+        Layout: s.layout as SampleLayout,
         Keys: s.files.map((f) => resolveDestKeyForFile(f.fileName, destPrefix)),
         TagIds: setTagIds.value[s.sampleId],
         FilenameRegex: regexPattern.value,
@@ -286,15 +317,18 @@
             )
           : undefined;
 
-      const res = await $api.dataCollections.bulkCreateSequenceSets({
+      const res = await $api.dataCollections.bulkCreateSamples({
         LaboratoryId: props.labId,
         S3Bucket: props.lab.S3Bucket,
         ImportLabel: importLabel.value,
-        SequenceSets: sequenceSets,
+        Samples: sequenceSets,
         CopyJobs: copyJobs,
+        ...(batchMode.value === 'new'
+          ? { NewBatchName: newBatchName.value.trim() }
+          : { BatchTagId: selectedExistingBatchId.value! }),
       });
 
-      toast.success(`Created ${res.CreatedCount} sequence sets`);
+      toast.success(`Created ${res.CreatedCount} samples`);
       emit('completed');
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Import failed');
@@ -311,17 +345,17 @@
       ← Back to Data Collections
     </button>
     <h1 class="mb-1 text-2xl font-medium">Import data</h1>
-    <p class="mb-4 text-sm text-gray-500">Bring files in and build sequence sets in one flow.</p>
+    <p class="mb-4 text-sm text-gray-500">Bring files in and build samples in one flow.</p>
 
     <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-xl border border-gray-200 bg-white">
       <div class="flex border-b border-gray-200 bg-gray-50 text-sm">
         <div
-          v-for="n in 4"
-          :key="n"
-          class="flex-1 border-r border-gray-100 px-4 py-3"
-          :class="{ 'bg-white font-medium': step === n }"
+          v-for="(title, index) in IMPORT_STEPS"
+          :key="title"
+          class="flex-1 border-r border-gray-100 px-4 py-3 last:border-r-0"
+          :class="{ 'bg-white font-medium': step === index + 1 }"
         >
-          Step {{ n }}
+          {{ title }}
         </div>
       </div>
 
@@ -436,7 +470,7 @@
         </UFormGroup>
         <p class="mt-4 text-sm text-gray-500">
           From {{ sourceFiles.length }} files →
-          <strong>{{ proposedSets.length }} sequence sets</strong>
+          <strong>{{ proposedSets.length }} samples</strong>
         </p>
       </div>
 
@@ -481,22 +515,63 @@
       </div>
 
       <!-- Step 4: Confirm -->
-      <div v-else class="flex-1 p-6">
+      <div v-else class="flex-1 overflow-y-auto p-6">
         <h3 class="mb-4 font-medium">Confirm &amp; create</h3>
-        <dl class="max-w-md space-y-2 text-sm">
+        <dl class="mb-6 max-w-md space-y-2 text-sm">
           <div class="flex justify-between gap-4">
             <dt class="shrink-0 text-gray-500">Source</dt>
             <dd class="break-all text-right font-mono text-xs">{{ confirmSourceLabel }}</dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-500">Sequence sets</dt>
+            <dt class="text-gray-500">Samples</dt>
             <dd>{{ stats.total }}</dd>
           </div>
           <div class="flex justify-between">
             <dt class="text-gray-500">Destination</dt>
             <dd class="font-mono">s3://{{ lab?.S3Bucket }}/</dd>
           </div>
+          <div class="flex justify-between">
+            <dt class="text-gray-500">Batch</dt>
+            <dd>{{ confirmBatchLabel }}</dd>
+          </div>
         </dl>
+
+        <div class="max-w-md space-y-4">
+          <h4 class="text-sm font-medium">Assign batch</h4>
+          <p class="text-sm text-gray-500">
+            All {{ stats.total }} samples in this import will be grouped under one batch.
+          </p>
+
+          <div class="flex flex-wrap gap-2">
+            <UButton size="xs" :variant="batchMode === 'new' ? 'solid' : 'outline'" @click="batchMode = 'new'">
+              Create new batch
+            </UButton>
+            <UButton
+              size="xs"
+              :variant="batchMode === 'existing' ? 'solid' : 'outline'"
+              :disabled="!batchTags.length"
+              @click="batchMode = 'existing'"
+            >
+              Use existing batch
+            </UButton>
+          </div>
+
+          <UFormGroup
+            v-if="batchMode === 'new'"
+            label="Batch name"
+            :error="newBatchNameInvalid ? 'Batch name is too long (max 250 characters)' : undefined"
+          >
+            <UInput v-model="newBatchName" placeholder="Enter batch name" />
+          </UFormGroup>
+
+          <UFormGroup v-else label="Existing batch">
+            <USelect
+              v-model="selectedExistingBatchId"
+              :options="batchTags.map((t) => ({ label: t.Name, value: t.TagId }))"
+              placeholder="Select a batch"
+            />
+          </UFormGroup>
+        </div>
       </div>
 
       <div class="flex justify-between border-t bg-white p-4">
@@ -507,10 +582,8 @@
         </UButton>
         <UButton v-else-if="step === 2" @click="step = 3">Continue to build</UButton>
         <UButton v-else-if="step === 3" @click="step = 4">Continue to confirm</UButton>
-        <UButton v-else :loading="submitting" @click="confirmImport">
-          {{
-            importSource === 's3' ? `Copy & create ${stats.total} sequence sets` : `Create ${stats.total} sequence sets`
-          }}
+        <UButton v-else :loading="submitting" :disabled="!canConfirmImport" @click="confirmImport">
+          {{ importSource === 's3' ? `Copy & create ${stats.total} samples` : `Create ${stats.total} samples` }}
         </UButton>
       </div>
     </div>

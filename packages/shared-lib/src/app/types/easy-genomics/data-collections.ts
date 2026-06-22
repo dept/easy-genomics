@@ -29,8 +29,8 @@ export type FileTagAssignment = {
   Key: string;
   /** Standard (non-batch, non-workflow, non-permanent) tags only. */
   TagIds: string[];
-  /** Sequence sets this file belongs to. */
-  SequenceSetIds?: string[];
+  /** Samples this file belongs to. */
+  SampleIds?: string[];
   /** At most one batch tag id if the file is assigned to a batch. */
   BatchTagId?: string;
   /** Workflow tag ids that have been associated with this file via run launches. */
@@ -65,7 +65,7 @@ export type LaboratoryRunUsageSummary = {
    * Mirror of the laboratory run's `ExpiresAt` (epoch seconds, DynamoDB TTL) at the time this
    * usage entry was recorded or last refreshed. Undefined when the run is non-expiring
    * (`Laboratory.RunRetentionMonths === 0`) or when the run had not yet reached a terminal
-   * status. Surfaced to the front-end so the data collections page can power the
+   * status. Surfaced to the front-end so the sequence collections page can power the
    * "Expiring soon" scope filter without an extra round trip to the run table.
    */
   ExpiresAt?: number;
@@ -93,8 +93,8 @@ export type UnlinkedBucketObjectsResponse = {
   ReturnedKeyCount?: number;
 };
 
-export type BulkCreateSequenceSetsResponse = {
+export type BulkCreateSamplesResponse = {
   CreatedCount: number;
-  SequenceSetIds: string[];
+  SampleIds: string[];
   Errors?: Array<{ Name: string; Message: string }>;
 };

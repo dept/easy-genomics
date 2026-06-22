@@ -1,7 +1,7 @@
 /**
  * Backfill `ExpiresAt` on every per-file `LaboratoryRunUsages` entry from the corresponding
  * `LaboratoryRun.ExpiresAt`. Earlier code paths recorded run usage without an `ExpiresAt`
- * mirror, so the data collections "Expiring soon" filter can be sparse on legacy data until
+ * mirror, so the sequence collections "Expiring soon" filter can be sparse on legacy data until
  * this script (or a natural status transition) refreshes them.
  *
  * Idempotent — re-runs simply re-write the same value. Runs in 0 retention months
