@@ -100,10 +100,8 @@ export class SpecRestApiConstruct extends Construct {
     // the source ARN to this API's execute-api ARN keeps each grant scoped.
     const sourceArn = this.restApi.arnForExecuteApi();
     for (const endpointKey of usedEndpoints) {
-      const lambdaFunction = props.lambdaFunctions.get(endpointKey);
-      if (!lambdaFunction) {
-        continue; // Unreachable: usedEndpoints only contains resolved endpoints.
-      }
+      // usedEndpoints only contains endpoints that already resolved to a function.
+      const lambdaFunction = props.lambdaFunctions.get(endpointKey)!;
       new CfnPermission(this, `invoke${endpointKey.replace(/[^a-zA-Z0-9]/g, '')}`, {
         action: 'lambda:InvokeFunction',
         functionName: lambdaFunction.functionArn,
