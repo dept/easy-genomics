@@ -204,6 +204,11 @@
     tabIndex.value = newIndex;
   }
 
+  function openLabSettingsFromDataCollections(): void {
+    const settingsIndex = tabItems.value.findIndex((tab) => tab.key === 'details');
+    if (settingsIndex !== -1) handleTabChange(settingsIndex);
+  }
+
   // Lab Runs Tab
 
   type LaboratoryRunTableItem = LaboratoryRun & { lastUpdated: string; searchIndex: string };
@@ -822,7 +827,11 @@
     class="mt-4"
   >
     <h2 class="sr-only">Sequence collections</h2>
-    <EGDataCollectionsPage :lab-id="labId" @update:explorer-tab="dataCollectionsExplorerTab = $event" />
+    <EGDataCollectionsPage
+      :lab-id="labId"
+      @update:explorer-tab="dataCollectionsExplorerTab = $event"
+      @open-settings="openLabSettingsFromDataCollections"
+    />
   </div>
 
   <!-- Runs tab -->

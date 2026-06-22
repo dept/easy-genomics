@@ -26,10 +26,10 @@
 
   const emit = defineEmits<{
     'update:explorerTab': [tab: DataCollectionsTab];
+    'open-settings': [];
   }>();
 
   const { $api } = useNuxtApp();
-  const $router = useRouter();
   const labsStore = useLabsStore();
   const userStore = useUserStore();
   const uiStore = useUiStore();
@@ -205,7 +205,7 @@
   );
 
   function openLabSettings(): void {
-    void $router.push(`/labs/${props.labId}?tab=Settings`);
+    emit('open-settings');
   }
 
   function openImport(): void {
@@ -335,18 +335,18 @@
         <p v-if="canEditLabDetails">
           This lab does not have a
           <strong>default S3 bucket</strong>
-          configured. Import, unlinked-file scanning, and runs that use sample files require S3 storage. Open
+          configured. Open
           <strong>Settings</strong>
           and set
           <strong>Default S3 bucket directory</strong>
-          .
+          to enable data collections features.
         </p>
         <p v-else>
           This lab does not have a default S3 bucket configured. Ask your
           <strong>organization administrator</strong>
           to set
           <strong>Default S3 bucket directory</strong>
-          in lab Settings before importing data or scanning files.
+          in lab settings to enable data collections features.
         </p>
         <UButton v-if="canEditLabDetails" class="mt-3" size="sm" variant="outline" @click="openLabSettings">
           Open Settings
