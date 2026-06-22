@@ -5,7 +5,7 @@ import {
   enrichSpecForApiGateway,
   EnrichSpecOptions,
   lambdaInvokeUri,
-} from '../../../src/infra/constructs/openapi-spec-enrichment';
+} from '../../../src/infra/utils/openapi-spec-enrichment';
 
 /** Minimal OpenAPI doc mirroring the relevant shape of easy-genomics-api.yaml. */
 const baseSpec = () => ({

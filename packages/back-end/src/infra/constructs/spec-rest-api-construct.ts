@@ -15,7 +15,7 @@ import { UserPool } from 'aws-cdk-lib/aws-cognito';
 import { CfnPermission, IFunction } from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
-import { enrichSpecForApiGateway } from './openapi-spec-enrichment';
+import { enrichSpecForApiGateway } from '../utils/openapi-spec-enrichment';
 
 export interface SpecRestApiConstructProps {
   description: string;
