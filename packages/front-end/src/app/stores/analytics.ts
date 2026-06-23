@@ -5,8 +5,9 @@ interface AnalyticsStoreState {
   /**
    * Device-level consent choice, persisted to localStorage. `unset` means the
    * user has not yet answered the in-app consent banner, so the banner shows.
-   * This is the device source of truth; it is synced from / to the user's
-   * DynamoDB record so the choice follows them across browsers.
+   * Cleared on sign-out so the next account on this browser is not opted in by
+   * default; re-synced from the JWT on login so a returning user's server-side
+   * choice is restored.
    */
   consent: AnalyticsConsent;
 }
@@ -29,8 +30,7 @@ const useAnalyticsStore = defineStore('analyticsStore', {
       this.consent = consent;
     },
     reset() {
-      // Intentionally does NOT reset consent on sign-out: the device-level
-      // choice should persist across sessions until the user changes it.
+      this.consent = 'unset';
     },
   },
   persist: true,

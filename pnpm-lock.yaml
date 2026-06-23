@@ -4045,6 +4045,12 @@ packages:
     resolution: {integrity: sha512-aQypoot0HPSJa6gDPEPTntc1GT6QINrSbgRlRhadGW2WaYqUK3tK4Bw9SBMZXhmxd3GeAlZjVcODHgiu+THY7A==}
     engines: {node: '>=18'}
 
+  '@posthog/core@1.36.0':
+    resolution: {integrity: sha512-ZZA1AgSVDpk+S1y+HBqzQwavMoJk/mJ050TYqj9BpcH3lw6Pxcb9cjN4PobAjtGIIAyFirKNU249vnj4Q3rgXg==}
+
+  '@posthog/types@1.391.0':
+    resolution: {integrity: sha512-oJ6jkqVMq+T4ax9F0rUllJc0KHpSgpaMwTNYWkE70iBiyXDVyhcNBmYnNKzSODgpzsaQNI6VfK8JrRYbkSJZZw==}
+
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
 
@@ -6834,6 +6840,9 @@ packages:
 
   core-js@3.32.1:
     resolution: {integrity: sha512-lqufgNn9NLnESg5mQeYsxQP5w7wrViSj0jr/kv6ECQiByzQkrn1MKvV0L3acttpDqfQrHLwr2KCMgX5b8X+lyQ==}
+
+  core-js@3.49.0:
+    resolution: {integrity: sha512-es1U2+YTtzpwkxVLwAFdSpaIMyQaq0PBgm3YD1W3Qpsn1NAmO3KSgZfu+oGSWVu6NvLHoHCV/aYcsE5wiB7ALg==}
 
   core-util-is@1.0.3:
     resolution: {integrity: sha512-ZQBvi1DcpJ4GDqanjucZ2Hj3wEO5pZDS89BWbkcrvdxksJorwUDDZamX9ldFkp9aw2lmBDLgkObEA4DWNJ9FYQ==}
@@ -10736,6 +10745,9 @@ packages:
     resolution: {integrity: sha512-dle9A3yYxlBSrt8Fu+IpjGT8SY8hN0mlaA6GY8t0P5PjIOZemULz/E2Bnm/2dcUOena75OTNkHI76uZBNUUq3A==}
     engines: {node: ^10 || ^12 || >=14}
 
+  posthog-js@1.386.7:
+    resolution: {integrity: sha512-dzlzMYbQNfZ9+yZjnLh8fI14qZPjWFZDtWMQ1oFPDkqOupL5k5DtOzW1oZHVh8RkkVPvRHDSNzDyDkwVDKYyuw==}
+
   postman-collection@4.5.0:
     resolution: {integrity: sha512-152JSW9pdbaoJihwjc7Q8lc3nPg/PC9lPTHdMk7SHnHhu/GBJB7b2yb9zG7Qua578+3PxkQ/HYBuXpDSvsf7GQ==}
     engines: {node: '>=10'}
@@ -10743,8 +10755,6 @@ packages:
   postman-url-encoder@3.0.5:
     resolution: {integrity: sha512-jOrdVvzUXBC7C+9gkIkpDJ3HIxOHTIqjpQ4C1EMt1ZGeMvSEpbFCKq23DEfgsj46vMnDgyQf+1ZLp2Wm+bKSsA==}
     engines: {node: '>=10'}
-  posthog-js@1.386.7:
-    resolution: {integrity: sha512-dzlzMYbQNfZ9+yZjnLh8fI14qZPjWFZDtWMQ1oFPDkqOupL5k5DtOzW1oZHVh8RkkVPvRHDSNzDyDkwVDKYyuw==}
 
   preact@10.29.2:
     resolution: {integrity: sha512-7tNmwg/7mzzAoB/8kSg6Hl37JraAZw3Z3A0JSY7VXlZwo82Xn0G7wKbNNs2qoF4ZEEsQGTwDAroNdqKs1ofJxQ==}
@@ -19144,6 +19154,12 @@ snapshots:
 
   '@poppinss/exception@1.2.1': {}
 
+  '@posthog/core@1.36.0':
+    dependencies:
+      '@posthog/types': 1.391.0
+
+  '@posthog/types@1.391.0': {}
+
   '@protobufjs/aspromise@1.1.2': {}
 
   '@protobufjs/base64@1.1.2': {}
@@ -23044,6 +23060,8 @@ snapshots:
       browserslist: 4.24.4
 
   core-js@3.32.1: {}
+
+  core-js@3.49.0: {}
 
   core-util-is@1.0.3: {}
 
@@ -27911,6 +27929,17 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
+  posthog-js@1.386.7:
+    dependencies:
+      '@posthog/core': 1.36.0
+      '@posthog/types': 1.391.0
+      core-js: 3.49.0
+      dompurify: 3.4.8
+      fflate: 0.4.8
+      preact: 10.29.2
+      query-selector-shadow-dom: 1.0.1
+      web-vitals: 5.3.0
+
   postman-collection@4.5.0:
     dependencies:
       '@faker-js/faker': 5.5.3
@@ -27928,17 +27957,6 @@ snapshots:
   postman-url-encoder@3.0.5:
     dependencies:
       punycode: 2.3.1
-
-  posthog-js@1.386.7:
-    dependencies:
-      '@posthog/core': 1.32.4
-      '@posthog/types': 1.386.4
-      core-js: 3.49.0
-      dompurify: 3.4.10
-      fflate: 0.4.8
-      preact: 10.29.2
-      query-selector-shadow-dom: 1.0.1
-      web-vitals: 5.3.0
 
   preact@10.29.2: {}
 

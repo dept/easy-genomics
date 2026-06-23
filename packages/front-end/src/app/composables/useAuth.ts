@@ -82,6 +82,9 @@ export default function useAuth() {
       const analytics = useAnalytics();
       analytics.track('signed_out', {});
       analytics.reset();
+      // Clear device consent so the next account on this browser is not opted in
+      // by default. Server-side consent is restored on next login via JWT sync.
+      useAnalyticsStore().reset();
       await Auth.signOut();
       useUserStore().reset();
     } catch (error) {
