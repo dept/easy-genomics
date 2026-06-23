@@ -154,4 +154,46 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
       ]),
     );
   });
+
+  it('adds IAM policy statements for request-unlinked-bucket-objects endpoint', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/data-collections/request-unlinked-bucket-objects',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['dynamodb:GetItem']),
+        }),
+        expect.objectContaining({
+          actions: expect.arrayContaining(['s3:ListBucket']),
+        }),
+      ]),
+    );
+  });
+
+  it('adds IAM policy statements for create-sample endpoint', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/data-collections/create-sample',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['dynamodb:GetItem']),
+        }),
+        expect.objectContaining({
+          actions: expect.arrayContaining(['s3:ListBucket']),
+        }),
+      ]),
+    );
+  });
 });
