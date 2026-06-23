@@ -80,6 +80,7 @@ export const handler: Handler = async (
         HealthOmicsLlmModelId: request.HealthOmicsLlmModelId,
         SeqeraLlmProvider: request.SeqeraLlmProvider,
         SeqeraLlmModelId: request.SeqeraLlmModelId,
+        HealthOmicsLogEnrichmentEnabled: request.HealthOmicsLogEnrichmentEnabled,
         CreatedAt: new Date().toISOString(),
         CreatedBy: currentUserId,
       })

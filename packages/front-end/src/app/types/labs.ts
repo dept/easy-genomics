@@ -59,6 +59,10 @@ const LabDetailsSchema = z.object({
   SeqeraLlmProvider: LlmProviderSchema.optional(),
   SeqeraLlmModelId: LlmModelIdSchema.optional(),
   SeqeraLlmApiKey: LlmApiKeySchema.optional(),
+  // When enabled, the failure classifier fetches the failed HealthOmics run's
+  // CloudWatch engine log, redacts PII + secrets, and sends a bounded excerpt to
+  // the configured LLM.
+  HealthOmicsLogEnrichmentEnabled: z.boolean().optional(),
 });
 type LabDetails = z.infer<typeof LabDetailsSchema>;
 

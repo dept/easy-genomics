@@ -82,6 +82,8 @@ export const handler: Handler = async (
           HealthOmicsLlmModelId: request.HealthOmicsLlmModelId,
           SeqeraLlmProvider: request.SeqeraLlmProvider,
           SeqeraLlmModelId: request.SeqeraLlmModelId,
+          // Same direct-mapping rationale: an unchecked toggle (undefined) clears the flag.
+          HealthOmicsLogEnrichmentEnabled: request.HealthOmicsLogEnrichmentEnabled,
           ModifiedAt: new Date().toISOString(),
           ModifiedBy: userId,
         },

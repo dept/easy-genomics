@@ -12,16 +12,19 @@ import {
 import { APIGatewayProxyResult, Handler, SQSRecord } from 'aws-lambda';
 import { SQSEvent } from 'aws-lambda/trigger/sqs';
 
+import { CloudWatchLogsService } from '@BE/services/cloudwatch-logs-service';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { ClassificationInput } from '@BE/services/llm-classification/llm-classification-provider';
 import { LLMClassificationService, ProviderConfig } from '@BE/services/llm-classification/llm-classification-service';
+import { fetchRedactedLogExcerpt } from '@BE/services/llm-classification/run-log-fetcher';
 import { SsmService } from '@BE/services/ssm-service';
 
 const laboratoryRunService = new LaboratoryRunService();
 const laboratoryService = new LaboratoryService();
 const llmClassificationService = new LLMClassificationService();
 const ssmService = new SsmService();
+const cloudWatchLogsService = new CloudWatchLogsService();
 
 export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxyResult> => {
   console.log('EVENT: \n' + JSON.stringify(event, null, 2));
@@ -100,26 +103,30 @@ async function resolveClassification(
   run: LaboratoryRun,
   laboratory: Laboratory | undefined,
 ): Promise<ResolvedClassification | null> {
-  // Deterministic lookup first — runs regardless of per-lab toggles because it
-  // is free and high-confidence.
-  if (run.Platform === 'AWS HealthOmics' && run.FailureReason) {
-    const lookup = classifyHealthOmicsFailure(run.FailureReason);
-    if (lookup) {
-      return { result: lookup, source: 'lookup' };
-    }
-  }
+  // Deterministic lookup first — free and high-confidence. Held (not returned
+  // immediately) so it can serve as a fallback if the LLM path runs and fails.
+  const lookup =
+    run.Platform === 'AWS HealthOmics' && run.FailureReason ? classifyHealthOmicsFailure(run.FailureReason) : null;
+  const lookupResult: ResolvedClassification | null = lookup ? { result: lookup, source: 'lookup' } : null;
 
-  if (!laboratory) return null;
+  if (!laboratory) return lookupResult;
 
-  // Setting a provider IS the enable signal — no separate toggle. If the lab
-  // hasn't configured a provider + model for this integration, skip the LLM.
+  // Setting a provider IS the enable signal for the LLM. Without one we can only
+  // offer the deterministic lookup (if any).
   const platformConfig = resolvePlatformConfig(laboratory, run.Platform);
   if (!platformConfig.provider || !platformConfig.modelId) {
-    return null;
+    return lookupResult;
+  }
+
+  // Log enrichment is opt-in per lab + platform. When off, a lookup hit wins
+  // immediately (today's behaviour) and the LLM only handles lookup misses.
+  const logEnrichmentEnabled = isLogEnrichmentEnabled(laboratory, run.Platform);
+  if (lookupResult && !logEnrichmentEnabled) {
+    return lookupResult;
   }
 
   const config = await buildProviderConfig(laboratory, run.Platform, platformConfig);
-  if (!config) return null;
+  if (!config) return lookupResult;
 
   const input: ClassificationInput = {
     platform: run.Platform,
@@ -130,11 +137,22 @@ async function resolveClassification(
     workflowName: run.WorkflowName,
   };
 
+  // Best-effort: a missing excerpt never blocks classification.
+  if (logEnrichmentEnabled) {
+    input.logExcerpt = await fetchRedactedLogExcerpt(run, { cloudWatchLogsService });
+  }
+
   const llmResult = await llmClassificationService.classify(input, config);
-  // The fallback path returns owner 'Ambiguous' with empty summary/action; only
-  // persist when the model produced usable text.
-  if (!llmResult.summary && !llmResult.action) return null;
+  // The fallback path returns owner 'Ambiguous' with empty summary/action; fall
+  // back to the deterministic lookup when the model produced nothing usable.
+  if (!llmResult.summary && !llmResult.action) return lookupResult;
   return { result: llmResult, source: 'llm' };
+}
+
+function isLogEnrichmentEnabled(laboratory: Laboratory, platform: LaboratoryRun['Platform']): boolean {
+  // Log enrichment is HealthOmics-only — its engine log lives in CloudWatch.
+  // Seqera log retrieval is not implemented (uncertain log storage/retention).
+  return platform === 'AWS HealthOmics' && laboratory.HealthOmicsLogEnrichmentEnabled === true;
 }
 
 type PlatformLlmConfig = {

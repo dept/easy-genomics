@@ -1294,6 +1294,15 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: ['ssm:GetParameter'],
         effect: Effect.ALLOW,
       }),
+      new PolicyStatement({
+        // HealthOmics log enrichment (opt-in per lab): read the failed run's
+        // engine log stream so the classifier can send a redacted excerpt to the LLM.
+        resources: [
+          `arn:aws:logs:${this.props.env.region!}:${this.props.env.account!}:log-group:/aws/omics/WorkflowLog:*`,
+        ],
+        actions: ['logs:GetLogEvents'],
+        effect: Effect.ALLOW,
+      }),
     ]);
 
     // /easy-genomics/laboratory/run/process-laboratory-run-stream

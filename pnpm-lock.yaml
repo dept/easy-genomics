@@ -119,6 +119,9 @@ importers:
       '@aws-sdk/client-cloudformation':
         specifier: ^3.786.0
         version: 3.1034.0
+      '@aws-sdk/client-cloudwatch-logs':
+        specifier: 3.782.0
+        version: 3.782.0
       '@aws-sdk/client-cognito-identity-provider':
         specifier: ^3.782.0
         version: 3.782.0
@@ -795,6 +798,10 @@ packages:
   '@aws-sdk/client-cloudwatch-logs@3.6.1':
     resolution: {integrity: sha512-QOxIDnlVTpnwJ26Gap6RGz61cDLH6TKrIp30VqwdMeT1pCGy8mn9rWln6XA+ymkofHy/08RfpGp+VN4axwd4Lw==}
     engines: {node: '>=10.0.0'}
+
+  '@aws-sdk/client-cloudwatch-logs@3.782.0':
+    resolution: {integrity: sha512-hUyMYWebb1HRCSK9jynWRQfNJoRhPaScvbePTPkNJybrVAo+7q2D5/nFP6burroRSWfYEaJXRNgr1besLjZZBA==}
+    engines: {node: '>=18.0.0'}
 
   '@aws-sdk/client-cognito-identity-provider@3.782.0':
     resolution: {integrity: sha512-6tCuiszExxzt96HCAppbepS2/73Vw6du7ZMLm6c/DwPJvPbLQ1SsCgD/HIdwV3C1RBETKCluUVSCOnxRzd3JBw==}
@@ -12007,6 +12014,55 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - react-native
+
+  '@aws-sdk/client-cloudwatch-logs@3.782.0':
+    dependencies:
+      '@aws-crypto/sha256-browser': 5.2.0
+      '@aws-crypto/sha256-js': 5.2.0
+      '@aws-sdk/core': 3.775.0
+      '@aws-sdk/credential-provider-node': 3.782.0
+      '@aws-sdk/middleware-host-header': 3.775.0
+      '@aws-sdk/middleware-logger': 3.775.0
+      '@aws-sdk/middleware-recursion-detection': 3.775.0
+      '@aws-sdk/middleware-user-agent': 3.782.0
+      '@aws-sdk/region-config-resolver': 3.775.0
+      '@aws-sdk/types': 3.775.0
+      '@aws-sdk/util-endpoints': 3.782.0
+      '@aws-sdk/util-user-agent-browser': 3.775.0
+      '@aws-sdk/util-user-agent-node': 3.782.0
+      '@smithy/config-resolver': 4.4.17
+      '@smithy/core': 3.24.5
+      '@smithy/eventstream-serde-browser': 4.0.2
+      '@smithy/eventstream-serde-config-resolver': 4.1.0
+      '@smithy/eventstream-serde-node': 4.0.2
+      '@smithy/fetch-http-handler': 5.4.5
+      '@smithy/hash-node': 4.2.14
+      '@smithy/invalid-dependency': 4.2.14
+      '@smithy/middleware-content-length': 4.2.14
+      '@smithy/middleware-endpoint': 4.4.31
+      '@smithy/middleware-retry': 4.5.4
+      '@smithy/middleware-serde': 4.2.19
+      '@smithy/middleware-stack': 4.2.14
+      '@smithy/node-config-provider': 4.3.14
+      '@smithy/node-http-handler': 4.7.5
+      '@smithy/protocol-http': 5.3.14
+      '@smithy/smithy-client': 4.12.12
+      '@smithy/types': 4.14.2
+      '@smithy/url-parser': 4.2.14
+      '@smithy/util-base64': 4.3.2
+      '@smithy/util-body-length-browser': 4.2.2
+      '@smithy/util-body-length-node': 4.2.3
+      '@smithy/util-defaults-mode-browser': 4.3.48
+      '@smithy/util-defaults-mode-node': 4.2.53
+      '@smithy/util-endpoints': 3.4.2
+      '@smithy/util-middleware': 4.2.14
+      '@smithy/util-retry': 4.3.3
+      '@smithy/util-utf8': 4.2.2
+      '@types/uuid': 9.0.8
+      tslib: 2.8.1
+      uuid: 9.0.1
+    transitivePeerDependencies:
+      - aws-crt
 
   '@aws-sdk/client-cognito-identity-provider@3.782.0':
     dependencies:

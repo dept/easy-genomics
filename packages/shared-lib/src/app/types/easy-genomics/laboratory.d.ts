@@ -75,6 +75,13 @@ export interface Laboratory extends BaseAttributes {
   SeqeraLlmProvider?: 'bedrock' | 'openai' | 'anthropic';
   SeqeraLlmModelId?: string;
 
+  /**
+   * When true, the failure classifier fetches the failed HealthOmics run's
+   * CloudWatch engine log, redacts PII + secrets, and sends a bounded excerpt to
+   * the configured LLM for deeper diagnosis. Requires a HealthOmics LLM provider.
+   */
+  HealthOmicsLogEnrichmentEnabled?: boolean;
+
   /** Boolean indicators returned by read-laboratory; the actual keys never leave SSM. */
   HasHealthOmicsLlmApiKey?: boolean;
   HasSeqeraLlmApiKey?: boolean;

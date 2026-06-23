@@ -30,6 +30,7 @@ Rules:
 - If the message references container, ECR, image, role assumption, resource limits, or workflow validation, choose "Bioinformatician".
 - If the message mentions capacity, throttling, or a transient AWS issue, choose "AWS".
 - If the only signal is a generic engine failure with no actionable detail, choose "Ambiguous" and tell the user to check CloudWatch logs.
+- A "logExcerpt" field, when present, is a redacted slice of the run log. Identifiers, paths, and secrets have been replaced with [REDACTED_*] placeholders — rely on the surrounding error wording, and never echo a placeholder back as if it were a real value.
 - Do NOT invent task names, file paths, or AWS resources that are not in the input.
 - Do NOT include any prose outside the JSON object.`;
 
@@ -41,6 +42,7 @@ export function buildUserMessage(input: ClassificationInput): string {
   if (input.statusMessage) parts.push(`statusMessage:\n${truncate(input.statusMessage)}`);
   if (input.errorMessage) parts.push(`errorMessage:\n${truncate(input.errorMessage)}`);
   if (input.errorReport) parts.push(`errorReport:\n${truncate(input.errorReport)}`);
+  if (input.logExcerpt) parts.push(`logExcerpt (redacted):\n${truncate(input.logExcerpt)}`);
   parts.push('Return only the JSON object described in the system prompt.');
   return parts.join('\n\n');
 }

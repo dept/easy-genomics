@@ -73,6 +73,7 @@
     SeqeraLlmProvider: undefined,
     SeqeraLlmModelId: '',
     SeqeraLlmApiKey: '',
+    HealthOmicsLogEnrichmentEnabled: false,
   };
 
   const state = ref({ ...defaultState } as Laboratory);
@@ -582,6 +583,7 @@
     'SeqeraLlmProvider',
     'SeqeraLlmModelId',
     'SeqeraLlmApiKey',
+    'HealthOmicsLogEnrichmentEnabled',
   ] as const;
 
   type LabEditCompareKey = (typeof LAB_DETAILS_EDIT_COMPARE_KEYS)[number];
@@ -905,6 +907,21 @@
               :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
               :disabled="!isEditing || isSubmittingFormData"
             />
+          </EGFormGroup>
+
+          <EGFormGroup
+            v-if="state.HealthOmicsLlmProvider"
+            name="HealthOmicsLogEnrichmentEnabled"
+            hint="Sends a redacted excerpt of the failed run's CloudWatch logs to the AI for deeper analysis. Identifiers, paths, and secrets are stripped before sending."
+          >
+            <div class="flex items-center">
+              <span class="text-sm text-black">Analyse run logs on failure</span>
+              <UToggle
+                class="ml-2"
+                v-model="state.HealthOmicsLogEnrichmentEnabled"
+                :disabled="!isEditing || isSubmittingFormData"
+              />
+            </div>
           </EGFormGroup>
         </div>
 

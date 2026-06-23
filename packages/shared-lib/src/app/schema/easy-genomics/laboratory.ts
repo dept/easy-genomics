@@ -30,6 +30,14 @@ export const LaboratorySchema = z
     HealthOmicsLlmModelId: z.string().optional(),
     SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
     SeqeraLlmModelId: z.string().optional(),
+    /**
+     * When true, the failure classifier fetches the failed HealthOmics run's
+     * CloudWatch engine log, redacts PII + secrets, and sends a bounded excerpt
+     * to the configured LLM for deeper diagnosis. Requires a HealthOmics LLM
+     * provider. Off/omitted preserves the lighter behaviour (deterministic
+     * lookup + LLM on failureReason only).
+     */
+    HealthOmicsLogEnrichmentEnabled: z.boolean().optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
@@ -56,6 +64,7 @@ export const CreateLaboratorySchema = z
     HealthOmicsLlmModelId: z.string().optional(),
     SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
     SeqeraLlmModelId: z.string().optional(),
+    HealthOmicsLogEnrichmentEnabled: z.boolean().optional(),
     /** Write-only on Create / Update. Persisted to SSM SecureString, never echoed back. */
     HealthOmicsLlmApiKey: z.string().optional(),
     SeqeraLlmApiKey: z.string().optional(),
@@ -83,6 +92,7 @@ export const ReadLaboratorySchema = z
     HealthOmicsLlmModelId: z.string().optional(),
     SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
     SeqeraLlmModelId: z.string().optional(),
+    HealthOmicsLogEnrichmentEnabled: z.boolean().optional(),
     /** Boolean indicators. The actual keys live in SSM and are never returned. */
     HasHealthOmicsLlmApiKey: z.boolean().optional(),
     HasSeqeraLlmApiKey: z.boolean().optional(),
@@ -118,6 +128,7 @@ export const UpdateLaboratorySchema = z.object({
   HealthOmicsLlmModelId: z.string().optional(),
   SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
   SeqeraLlmModelId: z.string().optional(),
+  HealthOmicsLogEnrichmentEnabled: z.boolean().optional(),
   /** Write-only on Update. Persisted to SSM SecureString. */
   HealthOmicsLlmApiKey: z.string().optional(),
   SeqeraLlmApiKey: z.string().optional(),

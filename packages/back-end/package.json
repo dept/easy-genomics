@@ -74,6 +74,7 @@
     "@aws-crypto/encrypt-node": "^4.2.0",
     "@aws-sdk/client-bedrock-runtime": "3.782.0",
     "@aws-sdk/client-cloudformation": "^3.786.0",
+    "@aws-sdk/client-cloudwatch-logs": "3.782.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.782.0",
     "@aws-sdk/client-dynamodb": "^3.786.0",
     "@aws-sdk/client-omics": "^3.1014.0",

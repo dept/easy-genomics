@@ -7,9 +7,17 @@ import { SQSEvent, SQSRecord } from 'aws-lambda/trigger/sqs';
 var mockClassify: jest.Mock;
 mockClassify = jest.fn();
 
+// eslint-disable-next-line no-var
+var mockFetchRedactedLogExcerpt: jest.Mock;
+mockFetchRedactedLogExcerpt = jest.fn();
+
 jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-run-service');
 jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../../src/app/services/ssm-service');
+jest.mock('../../../../../../src/app/services/cloudwatch-logs-service');
+jest.mock('../../../../../../src/app/services/llm-classification/run-log-fetcher', () => ({
+  fetchRedactedLogExcerpt: mockFetchRedactedLogExcerpt,
+}));
 jest.mock('../../../../../../src/app/services/llm-classification/llm-classification-service', () => ({
   LLMClassificationService: jest.fn().mockImplementation(() => ({
     classify: mockClassify,
@@ -58,6 +66,8 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
 
   beforeEach(() => {
     mockClassify.mockReset();
+    mockFetchRedactedLogExcerpt.mockReset();
+    mockFetchRedactedLogExcerpt.mockResolvedValue(undefined);
     mockQueryByRunId = jest.fn();
     mockUpdate = jest.fn().mockResolvedValue(undefined);
     mockQueryByLaboratoryId = jest.fn().mockResolvedValue(labMixedProviders);
@@ -283,6 +293,80 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
 
     expect(mockClassify).not.toHaveBeenCalled();
     expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('does NOT fetch logs when the enrichment toggle is off (HealthOmics LLM path)', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Platform: 'AWS HealthOmics',
+      Status: 'FAILED',
+      FailureReason: 'WORKFLOW_RUN_FAILED',
+    });
+    mockClassify.mockResolvedValue({ owner: 'Ambiguous', summary: 's', action: 'a' });
+
+    await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
+
+    expect(mockFetchRedactedLogExcerpt).not.toHaveBeenCalled();
+    expect(mockClassify.mock.calls[0][0].logExcerpt).toBeUndefined();
+  });
+
+  it('fetches a redacted log excerpt and passes it to the LLM when the toggle is on', async () => {
+    mockQueryByLaboratoryId.mockResolvedValue({ ...labMixedProviders, HealthOmicsLogEnrichmentEnabled: true });
+    mockFetchRedactedLogExcerpt.mockResolvedValue('Caused by: OutOfMemoryError in task FOO');
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Platform: 'AWS HealthOmics',
+      Status: 'FAILED',
+      FailureReason: 'WORKFLOW_RUN_FAILED',
+    });
+    mockClassify.mockResolvedValue({ owner: 'Bioinformatician', summary: 'OOM', action: 'Raise memory' });
+
+    await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
+
+    expect(mockFetchRedactedLogExcerpt).toHaveBeenCalled();
+    expect(mockClassify.mock.calls[0][0].logExcerpt).toBe('Caused by: OutOfMemoryError in task FOO');
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ FailureClassifiedBy: 'llm' }));
+  });
+
+  it('enriches even a lookup-matched HealthOmics code when the toggle is on', async () => {
+    mockQueryByLaboratoryId.mockResolvedValue({ ...labMixedProviders, HealthOmicsLogEnrichmentEnabled: true });
+    mockFetchRedactedLogExcerpt.mockResolvedValue('task FASTQC OOM-killed');
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Platform: 'AWS HealthOmics',
+      Status: 'FAILED',
+      FailureReason: 'OUT_OF_MEMORY_ERROR', // present in the deterministic lookup
+    });
+    mockClassify.mockResolvedValue({ owner: 'Bioinformatician', summary: 'FASTQC OOM', action: 'Raise memory' });
+
+    await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
+
+    expect(mockClassify).toHaveBeenCalled();
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ FailureSummary: 'FASTQC OOM', FailureClassifiedBy: 'llm' }),
+    );
+  });
+
+  it('falls back to the deterministic lookup when the enriched LLM call yields nothing usable', async () => {
+    mockQueryByLaboratoryId.mockResolvedValue({ ...labMixedProviders, HealthOmicsLogEnrichmentEnabled: true });
+    mockFetchRedactedLogExcerpt.mockResolvedValue('some logs');
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Platform: 'AWS HealthOmics',
+      Status: 'FAILED',
+      FailureReason: 'OUT_OF_MEMORY_ERROR',
+    });
+    mockClassify.mockResolvedValue({ owner: 'Ambiguous', summary: '', action: '' }); // unusable fallback
+
+    await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
+
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ FailureOwner: 'Bioinformatician', FailureClassifiedBy: 'lookup' }),
+    );
   });
 
   it('is idempotent when FailureOwner already set', async () => {

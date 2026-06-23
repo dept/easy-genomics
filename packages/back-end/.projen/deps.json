@@ -132,6 +132,11 @@
       "type": "runtime"
     },
     {
+      "name": "@aws-sdk/client-cloudwatch-logs",
+      "version": "3.782.0",
+      "type": "runtime"
+    },
+    {
       "name": "@aws-sdk/client-cognito-identity-provider",
       "type": "runtime"
     },

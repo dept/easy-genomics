@@ -11,6 +11,7 @@ export interface ClassificationInput {
   errorMessage?: string; // Seqera workflow.errorMessage (free-text Nextflow error)
   errorReport?: string; // Seqera workflow.errorReport (truncated by caller before passing in)
   workflowName?: string; // Hint for the LLM (e.g. 'nf-core/rnaseq')
+  logExcerpt?: string; // Redacted, bounded run-log excerpt (PII/secrets already stripped by caller)
 }
 
 /**
