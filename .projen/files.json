@@ -2,6 +2,7 @@
   "files": [
     ".eslintrc.json",
     ".gitattributes",
+    ".github/workflows/api-diff-check.yml",
     ".github/workflows/cicd-release-quality-uat.yml",
     ".github/workflows/cicd-release-quality.yml",
     ".github/workflows/cicd-release-sandbox.yml",

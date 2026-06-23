@@ -41,16 +41,16 @@
 
   const showWorkflowAccessTab = computed(() => props.superuser || props.orgAdmin);
 
-  const tabItems = computed(() => {
-    const items: { key: string; label: string }[] = [];
+  const tabItems = computed<{ key: string; label: string; icon: string }[]>(() => {
+    const items: { key: string; label: string; icon: string }[] = [];
     if (props.superuser) {
-      items.push({ key: 'labs', label: 'All Labs' });
+      items.push({ key: 'labs', label: 'All Labs', icon: 'i-heroicons-beaker' });
     }
-    items.push({ key: 'users', label: 'All users' });
+    items.push({ key: 'users', label: 'All users', icon: 'i-heroicons-users' });
     if (showWorkflowAccessTab.value) {
-      items.push({ key: 'workflow-access', label: 'Workflow access' });
+      items.push({ key: 'workflow-access', label: 'Workflow access', icon: 'i-heroicons-key' });
     }
-    items.push({ key: 'details', label: 'Settings' });
+    items.push({ key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth' });
     return items;
   });
 
@@ -174,6 +174,26 @@
 
   const lowerCasedSearch = computed(() => searchOutput.value.toLowerCase());
 
+  const usersSearchStatusMessage = computed(() => {
+    const q = searchOutput.value.trim();
+    if (!q || hasNoData.value) return '';
+    const count = filteredTableData.value.length;
+    if (count === 0) return `No users match "${q}"`;
+    const noun = count === 1 ? 'user' : 'users';
+    return `${count} ${noun} match "${q}"`;
+  });
+
+  watch(showInviteModule, (isOpen) => {
+    if (!isOpen) return;
+    nextTick(() => {
+      const panel = document.getElementById(invitePanelId);
+      const focusable = panel?.querySelector<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      focusable?.focus();
+    });
+  });
+
   onBeforeMount(async () => {
     await fetchOrgData();
   });
@@ -257,6 +277,8 @@
   const org = computed(() => useOrgsStore().orgs[props.orgId] || {});
 
   const invitePanelId = 'org-invite-users-panel';
+  const usersHeadingId = 'org-users-heading';
+  const workflowAccessHeadingId = 'org-workflow-access-heading';
 
   usePageTitle(() => (org.value.Name ? `${org.value.Name}` : 'Organization'));
 
@@ -341,6 +363,9 @@
 <template>
   <EGSidebarNav
     aria-label="Organization sections"
+    variant="dark"
+    callout-title="Admin view"
+    callout-description="You're managing organization-level settings, not a single lab."
     :items="tabItems"
     :model-value="tabIndex"
     @update:model-value="handleTabChange"
@@ -357,6 +382,7 @@
   >
     <EGButton
       v-if="activeTabKey === 'users'"
+      u-button-type="button"
       label="Invite users"
       :aria-expanded="showInviteModule"
       :aria-controls="invitePanelId"
@@ -403,91 +429,117 @@
     id="panel-workflow-access"
     aria-labelledby="tab-workflow-access"
     tabindex="0"
+    class="outline-none focus:outline-none"
   >
-    <h2 class="sr-only">Workflow access</h2>
-    <EGWorkflowLabAccessPage v-if="workflowAccessPanelMounted" :org-id="props.orgId" embedded />
+    <EGWorkflowLabAccessPage
+      v-if="workflowAccessPanelMounted"
+      :org-id="props.orgId"
+      embedded
+      :heading-id="workflowAccessHeadingId"
+    />
   </div>
 
   <!-- All users tab -->
-  <div v-if="activeTabKey === 'users'" role="tabpanel" id="panel-users" aria-labelledby="tab-users" tabindex="0">
-    <h2 class="sr-only">Organization users</h2>
-    <EGEmptyDataCTA
-      v-if="!isLoading && hasNoData"
-      message="You don't have any users in this organization yet."
-      img-src="/images/empty-state-user.jpg"
-    />
+  <div
+    v-if="activeTabKey === 'users'"
+    role="tabpanel"
+    id="panel-users"
+    aria-labelledby="tab-users"
+    tabindex="0"
+    class="outline-none focus:outline-none"
+    :aria-busy="isLoading || isRemovingUser"
+  >
+    <section :aria-labelledby="usersHeadingId">
+      <EGText :id="usersHeadingId" tag="h2" class="sr-only">Organization users</EGText>
 
-    <template v-if="!hasNoData">
-      <EGSearchInput
-        @input-event="updateSearchOutput"
-        label="Search users"
-        placeholder="Search user"
-        class="my-6 w-[408px]"
-        :disabled="isLoading"
+      <EGEmptyDataCTA
+        v-if="!isLoading && hasNoData"
+        message="You don't have any users in this organization yet."
+        img-src="/images/empty-state-user.jpg"
       />
 
-      <EGDialog
-        actionLabel="Remove User"
-        :actionVariant="ButtonVariantEnum.enum.destructive"
-        cancelLabel="Cancel"
-        :cancelVariant="ButtonVariantEnum.enum.secondary"
-        @action-triggered="handleRemoveOrgUser"
-        :primaryMessage="removeUserModalPrimaryMessage"
-        v-model="isRemoveUserModalOpen"
-      />
+      <template v-if="!hasNoData">
+        <EGSearchInput
+          @input-event="updateSearchOutput"
+          label="Search users"
+          placeholder="Search user"
+          class="my-6 w-[408px]"
+          :disabled="isLoading"
+        />
+        <p class="sr-only" aria-live="polite" aria-atomic="true">{{ usersSearchStatusMessage }}</p>
 
-      <EGTable
-        :table-data="filteredTableData"
-        :columns="tableColumns"
-        :is-loading="isLoading"
-        :action-items="actionItems"
-        :show-pagination="!isLoading"
-        :row-click-action="onRowClicked"
-      >
-        <template #displayName-data="{ row }">
-          <div class="flex items-center">
-            <EGUserDisplay
-              class="mr-4"
-              :name="row.displayName"
-              :email="row.UserEmail"
-              :inactive="row.OrganizationUserStatus !== 'Active'"
-            />
-          </div>
-        </template>
-        <template #status-data="{ row }">
-          <span class="text-muted">{{ (row as OrgUser).OrganizationUserStatus }}</span>
-        </template>
-        <template #labs-data="{ row }">
-          <span class="text-muted">{{ labsCount(row) }}</span>
-        </template>
-        <template #actions-data="{ row, index }">
-          <div class="flex items-center justify-end">
-            <EGButton
-              class="relative z-10"
-              size="sm"
-              variant="secondary"
-              label="Resend Invite"
-              v-if="isInvited((row as OrgUser).OrganizationUserStatus)"
-              @click="
-                $event.stopPropagation();
-                resend(row as OrgUser, index);
-              "
-              :disabled="isButtonDisabled(index) || isButtonRequestPending(index)"
-              :loading="isButtonRequestPending(index)"
-            />
-            <EGActionButton
-              menu-label="User actions"
-              @click="$event.stopPropagation()"
-              :items="actionItems(row)"
-              class="ml-2"
-            />
-          </div>
-        </template>
-      </EGTable>
+        <EGDialog
+          action-label="Remove User"
+          :action-variant="ButtonVariantEnum.enum.destructive"
+          cancel-label="Cancel"
+          :cancel-variant="ButtonVariantEnum.enum.secondary"
+          @action-triggered="handleRemoveOrgUser"
+          :primary-message="removeUserModalPrimaryMessage"
+          v-model="isRemoveUserModalOpen"
+        />
 
-      <div class="text-muted my-6 text-center text-xs">
-        This organization can only be removed by contacting your System administrator at: [System admin email]
-      </div>
-    </template>
+        <EGTable
+          :table-data="filteredTableData"
+          :columns="tableColumns"
+          :is-loading="isLoading"
+          :action-items="actionItems"
+          :show-pagination="!isLoading"
+          :row-click-action="onRowClicked"
+          :labelled-by="usersHeadingId"
+        >
+          <template #displayName-data="{ row }">
+            <div class="flex items-center">
+              <EGUserDisplay
+                class="mr-4"
+                :name="row.displayName"
+                :email="row.UserEmail"
+                :inactive="row.OrganizationUserStatus !== 'Active'"
+              />
+            </div>
+          </template>
+          <template #status-data="{ row }">
+            <span class="text-muted">
+              <span class="sr-only">Status:</span>
+              {{ (row as OrgUser).OrganizationUserStatus }}
+            </span>
+          </template>
+          <template #labs-data="{ row }">
+            <span class="text-muted">
+              <span class="sr-only">Labs:</span>
+              {{ labsCount(row) }}
+            </span>
+          </template>
+          <template #actions-data="{ row, index }">
+            <div class="flex items-center justify-end">
+              <EGButton
+                class="relative z-10"
+                u-button-type="button"
+                size="sm"
+                variant="secondary"
+                label="Resend Invite"
+                v-if="isInvited((row as OrgUser).OrganizationUserStatus)"
+                :aria-label="`Resend invite to ${(row as OrgUser).displayName}`"
+                @click="
+                  $event.stopPropagation();
+                  resend(row as OrgUser, index);
+                "
+                :disabled="isButtonDisabled(index) || isButtonRequestPending(index)"
+                :loading="isButtonRequestPending(index)"
+              />
+              <EGActionButton
+                :menu-label="`Actions for ${(row as OrgUser).displayName}`"
+                @click="$event.stopPropagation()"
+                :items="actionItems(row)"
+                class="ml-2"
+              />
+            </div>
+          </template>
+        </EGTable>
+
+        <div class="text-muted my-6 text-center text-xs" role="note">
+          This organization can only be removed by contacting your System administrator at: [System admin email]
+        </div>
+      </template>
+    </section>
   </div>
 </template>

@@ -343,6 +343,101 @@ export class LaboratoryRunNotFoundError extends HttpError {
 }
 
 /**
+ * Sequence set not found
+ *
+ * @param sequenceSetId
+ * @param messageOpt - optional additional message
+ * @deprecated Use {@link SampleNotFoundError}
+ */
+export class SequenceSetNotFoundError extends HttpError {
+  constructor(sequenceSetId: string, messageOpt?: string) {
+    super(`Sequence set '${sequenceSetId}' could not be found`, 404, 'EG-324', messageOpt);
+  }
+}
+
+/**
+ * Sample not found
+ *
+ * @param sampleId
+ * @param messageOpt - optional additional message
+ */
+export class SampleNotFoundError extends HttpError {
+  constructor(sampleId: string, messageOpt?: string) {
+    super(`Sample '${sampleId}' could not be found`, 404, 'EG-328', messageOpt);
+  }
+}
+
+/**
+ * Data collection not found
+ *
+ * @param collectionId
+ * @param messageOpt - optional additional message
+ * @deprecated Use {@link SequenceCollectionNotFoundError}
+ */
+export class DataCollectionNotFoundError extends HttpError {
+  constructor(collectionId: string, messageOpt?: string) {
+    super(`Data collection '${collectionId}' could not be found`, 404, 'EG-325', messageOpt);
+  }
+}
+
+/**
+ * Sequence collection not found
+ *
+ * @param collectionId
+ * @param messageOpt - optional additional message
+ */
+export class SequenceCollectionNotFoundError extends HttpError {
+  constructor(collectionId: string, messageOpt?: string) {
+    super(`Sequence collection '${collectionId}' could not be found`, 404, 'EG-329', messageOpt);
+  }
+}
+
+/**
+ * Batch tag not found
+ */
+export class BatchTagNotFoundError extends HttpError {
+  constructor(batchTagId: string, messageOpt?: string) {
+    super(`Unknown batch: ${batchTagId}`, 404, 'EG-330', messageOpt);
+  }
+}
+
+/**
+ * Tag is not a batch tag
+ */
+export class NotABatchTagError extends HttpError {
+  constructor(messageOpt?: string) {
+    super('Tag is not a batch', 400, 'EG-331', messageOpt);
+  }
+}
+
+/**
+ * Tag name already exists
+ */
+export class TagNameAlreadyExistsError extends HttpError {
+  constructor(messageOpt?: string) {
+    super('A tag with this name already exists', 409, 'EG-332', messageOpt);
+  }
+}
+
+/**
+ * S3 bucket does not match laboratory configuration
+ */
+export class S3BucketMismatchError extends HttpError {
+  constructor(messageOpt?: string) {
+    super('S3 bucket does not match laboratory configuration', 400, 'EG-326', messageOpt);
+  }
+}
+
+/**
+ * S3 key is outside the laboratory prefix
+ */
+export class S3KeyOutOfPrefixError extends HttpError {
+  constructor(messageOpt?: string) {
+    super('S3 key is outside the laboratory prefix', 400, 'EG-327', messageOpt);
+  }
+}
+
+/**
  * Laboratory Bucket not found
  *
  * @param laboratoryId

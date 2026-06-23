@@ -1,7 +1,7 @@
 import type {
   UploadedFileInfo,
   UploadedFilePairInfo,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/upload/s3-file-upload-sample-sheet';
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 
 /** Placeholder region; sample-sheet generation validates objects by bucket/key on the server. */
 export const DEFAULT_S3_REGION = 'us-east-1';

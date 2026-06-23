@@ -20,6 +20,19 @@
   const otherOrgUsers = ref<OrgUser[]>([]);
   const inviteSelectedUserIds = ref<string[]>([]);
   const selectId = useId();
+  const addUsersStatusId = 'add-lab-users-status';
+
+  const addUsersStatusMessage = computed(() => {
+    if (uiStore.isRequestPending('getLabUsers')) return 'Loading organization users…';
+    if (uiStore.isRequestPending('addUsersToLab')) return 'Adding users to lab…';
+    if (props.labUsers.length === 0 && otherOrgUsers.value.length === 0) {
+      return 'The organization has no users available to add.';
+    }
+    if (props.labUsers.length > 0 && otherOrgUsers.value.length === 0) {
+      return 'All organization users already have access to this lab.';
+    }
+    return '';
+  });
 
   // refresh org users without lab access if labUsers changes
   watch(
@@ -82,60 +95,67 @@
 </script>
 
 <template>
-  <EGCard :padding="4">
-    <div class="flex space-x-4">
-      <div class="grow">
-        <label :for="selectId" class="sr-only">Select users to add to {{ labName }}</label>
-        <USelectMenu
-          :id="selectId"
-          multiple
-          v-model="inviteSelectedUserIds"
-          :options="otherOrgUsers"
-          option-attribute="displayName"
-          value-attribute="UserId"
-          :disabled="uiStore.anyRequestPending(['getLabUsers', 'addUsersToLab'])"
-          :loading="uiStore.isRequestPending('getLabUsers')"
-          placeholder="Select User"
-          searchable
-          searchable-placeholder="Search all users..."
-          :search-attributes="['displayName', 'UserEmail']"
-          clear-search-on-close
-          class="w-full"
-          size="xl"
-          :ui="{
-            base: 'h-[52px] min-w-96',
-          }"
-          :aria-label="`Select users to add to ${labName}`"
-        >
-          <template #option="{ option: user }">
-            <EGUserDisplay
-              :initials="user.initials"
-              :name="user.displayName"
-              :email="user.UserEmail"
-              :inactive="user.OrganizationUserStatus !== UserStatusSchema.enum.Active"
-            />
-          </template>
+  <div :aria-busy="uiStore.anyRequestPending(['getLabUsers', 'addUsersToLab'])">
+    <EGCard :padding="4">
+      <p :id="addUsersStatusId" class="sr-only" aria-live="polite" aria-atomic="true">{{ addUsersStatusMessage }}</p>
+      <div class="flex space-x-4">
+        <div class="grow">
+          <label :for="selectId" class="sr-only">Select users to add to {{ labName }}</label>
+          <USelectMenu
+            :id="selectId"
+            multiple
+            v-model="inviteSelectedUserIds"
+            :options="otherOrgUsers"
+            option-attribute="displayName"
+            value-attribute="UserId"
+            :disabled="uiStore.anyRequestPending(['getLabUsers', 'addUsersToLab'])"
+            :loading="uiStore.isRequestPending('getLabUsers')"
+            placeholder="Select User"
+            searchable
+            searchable-placeholder="Search all users..."
+            :search-attributes="['displayName', 'UserEmail']"
+            clear-search-on-close
+            class="w-full"
+            size="xl"
+            :ui="{
+              base: 'h-[52px] min-w-96',
+            }"
+            :aria-label="`Select users to add to ${labName}`"
+          >
+            <template #option="{ option: user }">
+              <EGUserDisplay
+                :initials="user.initials"
+                :name="user.displayName"
+                :email="user.UserEmail"
+                :inactive="user.OrganizationUserStatus !== UserStatusSchema.enum.Active"
+              />
+            </template>
 
-          <template #option-empty="{ query }">
-            <span>{{ query }}</span>
-            not found
-          </template>
+            <template #option-empty="{ query }">
+              <span>{{ query }}</span>
+              not found
+            </template>
 
-          <template #empty>
-            <div v-if="props.labUsers.length === 0 && otherOrgUsers.length === 0">The organization has no users</div>
-            <div v-if="props.labUsers.length > 0 && otherOrgUsers.length === 0">
-              All organization users already have access to this lab
-            </div>
-          </template>
-        </USelectMenu>
+            <template #empty>
+              <div v-if="props.labUsers.length === 0 && otherOrgUsers.length === 0" role="status">
+                The organization has no users
+              </div>
+              <div v-if="props.labUsers.length > 0 && otherOrgUsers.length === 0" role="status">
+                All organization users already have access to this lab
+              </div>
+            </template>
+          </USelectMenu>
+        </div>
+        <EGButton
+          u-button-type="button"
+          label="Add"
+          :disabled="inviteSelectedUserIds.length < 1 || uiStore.anyRequestPending(['getLabUsers', 'addUsersToLab'])"
+          :loading="uiStore.isRequestPending('addUsersToLab')"
+          icon="i-heroicons-plus"
+          :aria-describedby="addUsersStatusId"
+          @click="handleAddSelectedUserToLab"
+        />
       </div>
-      <EGButton
-        label="Add"
-        :disabled="inviteSelectedUserIds.length < 1 || uiStore.anyRequestPending(['getLabUsers', 'addUsersToLab'])"
-        :loading="uiStore.isRequestPending('addUsersToLab')"
-        icon="i-heroicons-plus"
-        @click="handleAddSelectedUserToLab"
-      />
-    </div>
-  </EGCard>
+    </EGCard>
+  </div>
 </template>

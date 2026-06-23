@@ -27,7 +27,7 @@
  *
  *   1. Table-level arming check. If any easy-genomics DynamoDB table is
  *      missing deletion protection or PITR, auto-arm the Phase 0
- *      protections described in `docs/EASY_GENOMICS_PROD_MIGRATION.md`:
+ *      protections described in `docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md`:
  *
  *        a. Take an on-demand backup of each affected table
  *           (belt-and-braces safety net that survives even a rogue
@@ -81,7 +81,7 @@
  *    hard failures; the operator must resolve them (typically IAM) and
  *    rerun.
  *
- * See `docs/EASY_GENOMICS_PROD_MIGRATION.md` for the full migration
+ * See `docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md` for the full migration
  * runbook this guard protects.
  */
 
@@ -383,7 +383,9 @@ function printMigrationPendingReport(
   console.error('    of this message.');
   console.error('');
   console.error('What to do next:');
-  console.error('  1. Read docs/EASY_GENOMICS_PROD_MIGRATION.md. Phase 0 is already done.');
+  console.error(
+    '  1. Read docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md. Phase 0 is already done.',
+  );
   console.error(`  2. Execute Phases 1-5 for the "${namePrefix}" environment.`);
   console.error('  3. Rerun `pnpm run build-and-deploy`. The preflight will pass and');
   console.error('     `cdk deploy --all` will succeed.');
@@ -458,7 +460,7 @@ function printManualFailureReport(namePrefix: string, awsRegion: string, failure
   console.error('Or drop --no-auto-arm and let the preflight perform these Phase 0 steps');
   console.error('automatically.');
   console.error('');
-  console.error('Then follow docs/EASY_GENOMICS_PROD_MIGRATION.md starting at Phase 1');
+  console.error('Then follow docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md starting at Phase 1');
   console.error(`(retain bridge) to complete the migration for the "${namePrefix}" environment.`);
   console.error('');
   console.error(hr);
@@ -532,7 +534,9 @@ function printAutoArmReport(namePrefix: string, armResults: Map<string, ArmActio
   console.error('');
   console.error('What to do next');
   console.error('---------------');
-  console.error('1. Read docs/EASY_GENOMICS_PROD_MIGRATION.md. You can skip Phase 0 (done).');
+  console.error(
+    '1. Read docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md. You can skip Phase 0 (done).',
+  );
   console.error(`2. Execute Phases 1-5 for the "${namePrefix}" environment.`);
   console.error('3. Rerun `pnpm run build-and-deploy`. The preflight will pass silently and');
   console.error('   `cdk deploy --all` will succeed.');

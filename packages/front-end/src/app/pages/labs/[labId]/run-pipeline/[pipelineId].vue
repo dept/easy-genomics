@@ -192,13 +192,13 @@
 
     runStore.updateWipSeqeraRunParams(seqeraRunTempId.value, paramsToApply);
 
-    applyDataCollectionsPrepopulation();
+    applySequenceCollectionsPrepopulation();
 
     uiStore.setRequestComplete('loadSeqeraPipeline');
   }
 
   /** When opened from Data Collections with a pre-built sample sheet, skip to parameter configuration. */
-  function applyDataCollectionsPrepopulation(): void {
+  function applySequenceCollectionsPrepopulation(): void {
     if ($route.query.from !== 'data-collections') return;
 
     const wip = runStore.wipSeqeraRuns[seqeraRunTempId.value];

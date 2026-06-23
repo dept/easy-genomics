@@ -1,6 +1,6 @@
 <script setup lang="ts">
   /**
-   * Hover-triggered analysis history panel for a single file in the data collections explorer.
+   * Hover-triggered analysis history panel for a single file in the sequence collections explorer.
    * Card view: dot (+ count chip when N>1) + trailing chevron. Table view: dot + status text. Panel lists runs;
    * left opens run detail; right zone selects input files for that run.
    */
@@ -51,7 +51,7 @@
       if (runCount.value === 1) return 'Analyzed once — show analysis history';
       return `Analyzed ${runCount.value} times — show analysis history`;
     }
-    return `File analysis history: ${statusDescriptor.value.label}`;
+    return `Sample analysis history: ${statusDescriptor.value.label}`;
   });
 
   /** Subtitle string for the popover header: batch · standard tag names, joined by dots. */
@@ -215,7 +215,7 @@
               <button
                 type="button"
                 class="text-primary hover:bg-primary/10 flex w-12 shrink-0 flex-col items-center justify-center border-l border-gray-200 bg-gray-50/40 transition"
-                :aria-label="`Select ${run.InputFileCount} file(s) used in ${run.RunName || run.RunId}`"
+                :aria-label="`Select ${run.InputFileCount} sample(s) used in ${run.RunName || run.RunId}`"
                 @click.stop="onSelectRunSamples(run, close)"
               >
                 <span class="relative inline-flex h-5 w-5 shrink-0 items-center justify-center" aria-hidden="true">

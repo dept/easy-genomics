@@ -23,7 +23,7 @@ import { EasyGenomicsNestedStackProps } from '../types/back-end-stack';
  * `props.dynamoDBTables` so that:
  *   1. `cdk import` (which only walks a single template per invocation) can
  *      adopt the tables during the documented split-stack migration. See
- *      `docs/EASY_GENOMICS_PROD_MIGRATION.md`.
+ *      `docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md`.
  *   2. The same `Map<string, Table>` reference is shared in-process with
  *      `DataProvisioningNestedStack` without needing CloudFormation exports.
  *
@@ -159,6 +159,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
       lambdaFunctionsNamespace: `${this.props.constructNamespace}`,
       lambdaFunctionsResources: {
         // Used for setting specific resources for a given Lambda function (e.g. environment settings, trigger events)
+        '/easy-genomics/list-api-docs': {
+          methodOptions: {
+            authorizer: undefined, // Public API documentation page — no Cognito user required
+          },
+        },
         '/easy-genomics/user/create-user-invitation-request': {
           environment: {
             COGNITO_USER_POOL_CLIENT_ID: this.props.userPoolClient?.userPoolClientId!,
@@ -1808,7 +1813,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
       'dynamodb:BatchGetItem',
     ];
 
-    const laboratoryReadForDataCollections = [
+    const laboratoryReadForSequenceCollections = [
       new PolicyStatement({
         resources: [
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
@@ -1820,7 +1825,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
 
     // /easy-genomics/data-collections/list-tags
     this.iam.addPolicyStatements('/easy-genomics/data-collections/list-tags', [
-      ...laboratoryReadForDataCollections,
+      ...laboratoryReadForSequenceCollections,
       new PolicyStatement({
         resources: laboratoryDataTaggingDynamoResources,
         // GetItem + PutItem cover the lazy-create of the lab's singleton permanent TAG# row on
@@ -1831,7 +1836,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
 
     // /easy-genomics/data-collections/create-tag
     this.iam.addPolicyStatements('/easy-genomics/data-collections/create-tag', [
-      ...laboratoryReadForDataCollections,
+      ...laboratoryReadForSequenceCollections,
       new PolicyStatement({
         resources: laboratoryDataTaggingDynamoResources,
         actions: laboratoryDataTaggingDynamoActions,
@@ -1840,7 +1845,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
 
     // /easy-genomics/data-collections/update-tag
     this.iam.addPolicyStatements('/easy-genomics/data-collections/update-tag', [
-      ...laboratoryReadForDataCollections,
+      ...laboratoryReadForSequenceCollections,
       new PolicyStatement({
         resources: laboratoryDataTaggingDynamoResources,
         actions: laboratoryDataTaggingDynamoActions,
@@ -1849,7 +1854,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
 
     // /easy-genomics/data-collections/delete-tag
     this.iam.addPolicyStatements('/easy-genomics/data-collections/delete-tag', [
-      ...laboratoryReadForDataCollections,
+      ...laboratoryReadForSequenceCollections,
       new PolicyStatement({
         resources: laboratoryDataTaggingDynamoResources,
         actions: laboratoryDataTaggingDynamoActions,
@@ -1858,7 +1863,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
 
     // /easy-genomics/data-collections/request-list-file-tags
     this.iam.addPolicyStatements('/easy-genomics/data-collections/request-list-file-tags', [
-      ...laboratoryReadForDataCollections,
+      ...laboratoryReadForSequenceCollections,
       new PolicyStatement({
         resources: laboratoryDataTaggingDynamoResources,
         actions: laboratoryDataTaggingDynamoActions,
@@ -1867,7 +1872,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
 
     // /easy-genomics/data-collections/add-tags-to-files
     this.iam.addPolicyStatements('/easy-genomics/data-collections/add-tags-to-files', [
-      ...laboratoryReadForDataCollections,
+      ...laboratoryReadForSequenceCollections,
       new PolicyStatement({
         resources: laboratoryDataTaggingDynamoResources,
         actions: laboratoryDataTaggingDynamoActions,
@@ -1876,7 +1881,16 @@ export class EasyGenomicsNestedStack extends NestedStack {
 
     // /easy-genomics/data-collections/edit-batch
     this.iam.addPolicyStatements('/easy-genomics/data-collections/edit-batch', [
-      ...laboratoryReadForDataCollections,
+      ...laboratoryReadForSequenceCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+    ]);
+
+    // /easy-genomics/data-collections/edit-sample-batch
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/edit-sample-batch', [
+      ...laboratoryReadForSequenceCollections,
       new PolicyStatement({
         resources: laboratoryDataTaggingDynamoResources,
         actions: laboratoryDataTaggingDynamoActions,
@@ -1885,7 +1899,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
 
     // /easy-genomics/data-collections/list-files-by-tag
     this.iam.addPolicyStatements('/easy-genomics/data-collections/list-files-by-tag', [
-      ...laboratoryReadForDataCollections,
+      ...laboratoryReadForSequenceCollections,
       new PolicyStatement({
         resources: laboratoryDataTaggingDynamoResources,
         actions: laboratoryDataTaggingDynamoActions,
@@ -1894,10 +1908,93 @@ export class EasyGenomicsNestedStack extends NestedStack {
 
     // /easy-genomics/data-collections/request-laboratory-bucket-objects
     this.iam.addPolicyStatements('/easy-genomics/data-collections/request-laboratory-bucket-objects', [
-      ...laboratoryReadForDataCollections,
+      ...laboratoryReadForSequenceCollections,
       new PolicyStatement({
         resources: ['arn:aws:s3:::*'],
         actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    const sequenceSetDataCollectionRoutes = [
+      '/easy-genomics/data-collections/list-samples',
+      '/easy-genomics/data-collections/add-files-to-sample',
+      '/easy-genomics/data-collections/remove-files-from-sample',
+      '/easy-genomics/data-collections/list-sample-files',
+      '/easy-genomics/data-collections/list-sequence-collections',
+      '/easy-genomics/data-collections/list-sequence-collection-samples',
+      '/easy-genomics/data-collections/create-sequence-collection',
+      '/easy-genomics/data-collections/add-samples-to-sequence-collection',
+      '/easy-genomics/data-collections/update-sequence-collection-schema',
+      '/easy-genomics/data-collections/edit-sequence-collection',
+      '/easy-genomics/data-collections/delete-sequence-collection',
+      '/easy-genomics/data-collections/add-tags-to-samples',
+      '/easy-genomics/data-collections/edit-sample-batch',
+      '/easy-genomics/data-collections/request-list-sample-tags',
+      '/easy-genomics/data-collections/list-samples-by-tag',
+      '/easy-genomics/data-collections/create-bulk-samples',
+    ];
+    for (const route of sequenceSetDataCollectionRoutes) {
+      this.iam.addPolicyStatements(route, [
+        ...laboratoryReadForSequenceCollections,
+        new PolicyStatement({
+          resources: laboratoryDataTaggingDynamoResources,
+          actions: laboratoryDataTaggingDynamoActions,
+        }),
+      ]);
+    }
+
+    // create-sample may expand regex matches via lab bucket listing
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/create-sample', [
+      ...laboratoryReadForSequenceCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // request-unlinked-bucket-objects lists S3 inputs then reads file rows from the tagging table
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/request-unlinked-bucket-objects', [
+      ...laboratoryReadForSequenceCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/create-bulk-samples', [
+      ...laboratoryReadForSequenceCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*/*'],
+        actions: ['s3:CopyObject', 's3:PutObject', 's3:HeadObject'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/data-collections/request-sequence-collection-sample-sheet
+    this.iam.addPolicyStatements('/easy-genomics/data-collections/request-sequence-collection-sample-sheet', [
+      ...laboratoryReadForSequenceCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*/*'],
+        actions: ['s3:PutObject', 's3:HeadObject'],
         effect: Effect.ALLOW,
       }),
     ]);

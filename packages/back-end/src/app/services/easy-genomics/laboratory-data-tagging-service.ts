@@ -16,6 +16,19 @@ import {
   WorkflowPlatform,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import {
+  ListSampleTagsResponse,
+  ListSamplesByTagResponse,
+  SampleTagAssignment,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
+import {
+  BatchTagNotFoundError,
+  NotABatchTagError,
+  SampleNotFoundError,
+  S3BucketMismatchError,
+  S3KeyOutOfPrefixError,
+  TagNameAlreadyExistsError,
+} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { v5 as uuidv5 } from 'uuid';
 import { DynamoDBService } from '../dynamodb-service';
 
@@ -52,6 +65,8 @@ function isConditionalCheckFailed(e: unknown): boolean {
     (typeof e === 'object' && e !== null && (e as { name?: string }).name === 'ConditionalCheckFailedException')
   );
 }
+
+export { isConditionalCheckFailed };
 
 function deterministicWorkflowTagId(
   laboratoryId: string,
@@ -142,6 +157,14 @@ function skMap(tagId: string, ref: string): string {
   return `MAP#${tagId}#${ref}`;
 }
 
+export function skSample(setId: string): string {
+  return `SAMPLE#${setId}`;
+}
+
+function skMapSequenceSet(tagId: string, setId: string): string {
+  return `MAP#${tagId}#SAMPLE#${setId}`;
+}
+
 function gsi1PkForTag(laboratoryId: string, tagId: string): string {
   return `${laboratoryId}#TAG#${tagId}`;
 }
@@ -150,13 +173,13 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
   public assertKeyUnderLabPrefix(laboratory: Laboratory, key: string): void {
     const root = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
     if (!key.startsWith(root)) {
-      throw new Error('S3 key is outside the laboratory prefix');
+      throw new S3KeyOutOfPrefixError();
     }
   }
 
   public assertBucketMatchesLab(laboratory: Laboratory, bucket: string): void {
     if (!laboratory.S3Bucket || laboratory.S3Bucket !== bucket) {
-      throw new Error('S3 bucket does not match laboratory configuration');
+      throw new S3BucketMismatchError();
     }
   }
 
@@ -351,7 +374,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     if (
       existing.Tags.some((t) => (t.Kind ?? 'standard') !== 'workflow' && t.Name.trim().toLowerCase() === normalized)
     ) {
-      throw new Error('A tag with this name already exists');
+      throw new TagNameAlreadyExistsError();
     }
 
     const tagId = randomUUID();
@@ -548,7 +571,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
             t.TagId !== tagId && (t.Kind ?? 'standard') !== 'workflow' && t.Name.trim().toLowerCase() === normalized,
         )
       ) {
-        throw new Error('A tag with this name already exists');
+        throw new TagNameAlreadyExistsError();
       }
     }
 
@@ -637,7 +660,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       const nextIds = (fileRow.TagIds || []).filter((id) => id !== tagId);
       const hasUsages = !!fileRow.LaboratoryRunUsages && Object.keys(fileRow.LaboratoryRunUsages).length > 0;
       // Preserve the FILE# row whenever per-run usage history is recorded against it; otherwise
-      // deleting it would lose the analysis history surfaced in the data collections UI.
+      // deleting it would lose the analysis history surfaced in the sequence collections UI.
       if (nextIds.length === 0 && !hasUsages) {
         await this.deleteItem({
           TableName: TABLE_NAME,
@@ -791,10 +814,16 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         const usageList = usagesMap
           ? Object.values(usagesMap).sort((a, b) => (b.RunCreatedAt || '').localeCompare(a.RunCreatedAt || ''))
           : undefined;
+        const fileRow = items.find((item) => (unmarshall(item) as Record<string, unknown>).Sk === sk);
+        const sequenceSetIds =
+          fileRow != null
+            ? ((unmarshall(fileRow) as Record<string, unknown>).SampleIds as string[] | undefined)
+            : undefined;
         out.push({
           Key: key,
           TagIds: standard,
           WorkflowTagIds: workflowIds,
+          ...(sequenceSetIds?.length ? { SampleIds: sequenceSetIds } : {}),
           ...(batchTagId ? { BatchTagId: batchTagId } : {}),
           ...(isPermanent ? { IsPermanent: true } : {}),
           ...(usageList && usageList.length ? { LaboratoryRunUsages: usageList } : {}),
@@ -901,7 +930,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
 
   /**
    * Idempotently records a laboratory run's usage of a set of input file keys. Each (file, RunId)
-   * pair becomes an entry under the FILE# row's `LaboratoryRunUsages` map so the data collections
+   * pair becomes an entry under the FILE# row's `LaboratoryRunUsages` map so the sequence collections
    * UI can render a per-file analysis history regardless of whether the run participated in
    * workflow tagging (i.e. `WorkflowExternalId` may be missing). Re-invoking with the same RunId
    * is a no-op for already-recorded entries.
@@ -981,7 +1010,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
    * Patches the `ExpiresAt` value on every `LaboratoryRunUsages` entry for the given `RunId`,
    * across all of its recorded input file rows. Called when a laboratory run transitions to a
    * terminal status and `ExpiresAt` is computed (or recomputed via the retention policy
-   * lambda), so the data collections page sees an up-to-date expiry without re-reading the
+   * lambda), so the sequence collections page sees an up-to-date expiry without re-reading the
    * run table.
    *
    * `expiresAt === undefined` clears the attribute (used when retention is disabled or the
@@ -1350,8 +1379,8 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       targetBatchId = created.TagId;
     } else if (mode.type === 'existing') {
       const row = await this.getTagRow(laboratoryId, mode.batchTagId);
-      if (!row) throw new Error(`Unknown batch: ${mode.batchTagId}`);
-      if ((row.Kind ?? 'standard') !== 'batch') throw new Error('Tag is not a batch');
+      if (!row) throw new BatchTagNotFoundError(mode.batchTagId);
+      if ((row.Kind ?? 'standard') !== 'batch') throw new NotABatchTagError();
       targetBatchId = mode.batchTagId;
     }
 
@@ -1426,6 +1455,71 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     }
   }
 
+  /**
+   * Sets batch assignment for samples: at most one batch per sample. Does not modify standard tags.
+   */
+  public async setBatchForSamples(
+    laboratory: Laboratory,
+    userId: string,
+    sampleIds: string[],
+    mode: { type: 'clear' } | { type: 'existing'; batchTagId: string } | { type: 'new'; name: string },
+  ): Promise<void> {
+    const laboratoryId = laboratory.LaboratoryId;
+
+    let targetBatchId: string | undefined;
+    if (mode.type === 'clear') {
+      targetBatchId = undefined;
+    } else if (mode.type === 'new') {
+      const created = await this.createTag(laboratory, userId, mode.name, '#5B4FD4', 'batch');
+      targetBatchId = created.TagId;
+    } else {
+      const row = await this.getTagRow(laboratoryId, mode.batchTagId);
+      if (!row) throw new BatchTagNotFoundError(mode.batchTagId);
+      if ((row.Kind ?? 'standard') !== 'batch') throw new NotABatchTagError();
+      targetBatchId = mode.batchTagId;
+    }
+
+    const batchTagIds = await this.getBatchTagIdSet(laboratoryId);
+
+    for (const setId of sampleIds) {
+      const res = await this.getItem({
+        TableName: TABLE_NAME,
+        Key: marshall({ LaboratoryId: laboratoryId, Sk: skSample(setId) }),
+        ConsistentRead: true,
+      });
+      if (!res.Item) throw new SampleNotFoundError(setId);
+
+      const row = unmarshall(res.Item) as Record<string, unknown>;
+      const tagIds = new Set<string>((row.TagIds as string[]) || []);
+
+      for (const bid of [...tagIds]) {
+        if (batchTagIds.has(bid)) {
+          tagIds.delete(bid);
+          await this.deleteSequenceSetMapIfExists(laboratoryId, bid, setId);
+          await this.adjustTagFileCount(laboratoryId, bid, -1);
+        }
+      }
+
+      if (targetBatchId && !tagIds.has(targetBatchId)) {
+        tagIds.add(targetBatchId);
+        await this.putSequenceSetMapRow(laboratoryId, targetBatchId, setId);
+        await this.adjustTagFileCount(laboratoryId, targetBatchId, 1);
+      }
+
+      const now = new Date().toISOString();
+      await this.updateItem({
+        TableName: TABLE_NAME,
+        Key: marshall({ LaboratoryId: laboratoryId, Sk: skSample(setId) }),
+        UpdateExpression: 'SET TagIds = :tids, ModifiedAt = :ma, ModifiedBy = :mb',
+        ExpressionAttributeValues: marshall({
+          ':tids': [...tagIds],
+          ':ma': now,
+          ':mb': userId,
+        }),
+      });
+    }
+  }
+
   private async getBatchTagIdSet(laboratoryId: string): Promise<Set<string>> {
     const { Tags } = await this.listTags(laboratoryId);
     return new Set(Tags.filter((t) => (t.Kind ?? 'standard') === 'batch').map((t) => t.TagId));
@@ -1435,7 +1529,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
    * Single-pass tag listing that returns the batch / workflow / permanent tag id sets used to
    * partition file rows in `listFileTags`. Avoids two `listTags` round-trips on hot paths.
    */
-  private async getKindIndexedTagIds(
+  public async getKindIndexedTagIds(
     laboratoryId: string,
   ): Promise<{ batchTagIds: Set<string>; workflowTagIds: Set<string>; permanentTagIds: Set<string> }> {
     const { Tags } = await this.listTags(laboratoryId);
@@ -1559,6 +1653,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     TagIds: string[];
     S3Bucket: string;
     ObjectKey: string;
+    SampleIds?: string[];
     LaboratoryRunUsages?: Record<string, LaboratoryRunUsageSummary>;
   } | null> {
     const res = await this.getItem({
@@ -1572,7 +1667,303 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       TagIds: (row.TagIds as string[]) || [],
       S3Bucket: row.S3Bucket as string,
       ObjectKey: row.ObjectKey as string,
+      SampleIds: (row.SampleIds as string[]) || undefined,
       LaboratoryRunUsages: (row.LaboratoryRunUsages as Record<string, LaboratoryRunUsageSummary>) || undefined,
     };
+  }
+
+  /** Resolve distinct sample ids that contain any of the given S3 keys. */
+  public async resolveSampleIdsForKeys(laboratoryId: string, bucket: string, keys: string[]): Promise<string[]> {
+    const ids = new Set<string>();
+    for (const key of keys) {
+      const ref = encodeS3ObjectRef(bucket, key);
+      const row = await this.getFileRow(laboratoryId, ref);
+      for (const sid of row?.SampleIds || []) {
+        ids.add(sid);
+      }
+    }
+    return [...ids];
+  }
+
+  public async listSampleTagAssignments(
+    laboratoryId: string,
+    sequenceSetIds: string[],
+  ): Promise<ListSampleTagsResponse> {
+    const { batchTagIds, workflowTagIds, permanentTagIds } = await this.getKindIndexedTagIds(laboratoryId);
+    const permanentTagId = permanentTagIdForLaboratory(laboratoryId);
+    permanentTagIds.add(permanentTagId);
+
+    const out: SampleTagAssignment[] = [];
+    for (const setId of sequenceSetIds) {
+      const res = await this.getItem({
+        TableName: TABLE_NAME,
+        Key: marshall({ LaboratoryId: laboratoryId, Sk: skSample(setId) }),
+        ConsistentRead: true,
+      });
+      if (!res.Item) {
+        out.push({ SampleId: setId, TagIds: [], WorkflowTagIds: [] });
+        continue;
+      }
+      const row = unmarshall(res.Item) as Record<string, unknown>;
+      const allTagIds = (row.TagIds as string[]) || [];
+      const batchTagId = allTagIds.find((id) => batchTagIds.has(id));
+      const workflowIds = allTagIds.filter((id) => workflowTagIds.has(id));
+      const standard = allTagIds.filter(
+        (id) => !batchTagIds.has(id) && !workflowTagIds.has(id) && !permanentTagIds.has(id),
+      );
+      const isPermanent = allTagIds.some((id) => permanentTagIds.has(id));
+      const usages = row.LaboratoryRunUsages as Record<string, LaboratoryRunUsageSummary> | undefined;
+      const usageList = usages
+        ? Object.values(usages).sort((a, b) => b.RunCreatedAt.localeCompare(a.RunCreatedAt))
+        : undefined;
+
+      out.push({
+        SampleId: setId,
+        TagIds: standard,
+        ...(batchTagId ? { BatchTagId: batchTagId } : {}),
+        WorkflowTagIds: workflowIds,
+        ...(isPermanent ? { IsPermanent: true } : {}),
+        ...(usageList?.length ? { LaboratoryRunUsages: usageList } : {}),
+      });
+    }
+    return { Samples: out };
+  }
+
+  public async listSamplesByTag(
+    laboratoryId: string,
+    tagId: string,
+    limit: number,
+    cursor?: string,
+  ): Promise<ListSamplesByTagResponse> {
+    const gsiPk = gsi1PkForTag(laboratoryId, tagId);
+    const response: QueryCommandOutput = await this.queryItems({
+      TableName: TABLE_NAME,
+      IndexName: GSI1_NAME,
+      KeyConditionExpression: '#gpk = :gpk AND begins_with(#gsk, :prefix)',
+      ExpressionAttributeNames: { '#gpk': 'Gsi1Pk', '#gsk': 'Gsi1Sk' },
+      ExpressionAttributeValues: {
+        ':gpk': { S: gsiPk },
+        ':prefix': { S: 'SAMPLE#' },
+      },
+      Limit: limit,
+      ExclusiveStartKey: cursor ? (JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as never) : undefined,
+    });
+
+    const sequenceSetIds = (response.Items || [])
+      .map((item) => {
+        const row = unmarshall(item) as Record<string, string>;
+        return row.SampleId || row.Gsi1Sk?.replace(/^SAMPLE#/, '');
+      })
+      .filter((id): id is string => !!id);
+
+    const nextCursor = response.LastEvaluatedKey
+      ? Buffer.from(JSON.stringify(response.LastEvaluatedKey), 'utf8').toString('base64url')
+      : undefined;
+
+    return { SampleIds: sequenceSetIds, NextCursor: nextCursor };
+  }
+
+  public async applyTagsToSamples(
+    laboratory: Laboratory,
+    userId: string,
+    sequenceSetIds: string[],
+    addTagIds: string[],
+    removeTagIds: string[],
+  ): Promise<void> {
+    const laboratoryId = laboratory.LaboratoryId;
+    const add = addTagIds || [];
+    const remove = removeTagIds || [];
+
+    for (const tagId of add) {
+      const t = await this.getTagRow(laboratoryId, tagId);
+      if (!t) throw new Error(`Unknown tag: ${tagId}`);
+      if (t.Kind === 'workflow') throw new Error('Workflow tags are auto-managed');
+      if (t.Kind === 'batch') throw new Error('Batch tags are not supported on samples');
+    }
+    for (const tagId of remove) {
+      const t = await this.getTagRow(laboratoryId, tagId);
+      if (!t) throw new Error(`Unknown tag: ${tagId}`);
+      if (t.Kind === 'workflow') throw new Error('Workflow tags are auto-managed');
+    }
+
+    for (const setId of sequenceSetIds) {
+      const res = await this.getItem({
+        TableName: TABLE_NAME,
+        Key: marshall({ LaboratoryId: laboratoryId, Sk: skSample(setId) }),
+        ConsistentRead: true,
+      });
+      if (!res.Item) throw new SampleNotFoundError(setId);
+
+      const row = unmarshall(res.Item) as Record<string, unknown>;
+      const tagIds = new Set<string>((row.TagIds as string[]) || []);
+
+      for (const rid of remove) {
+        if (tagIds.delete(rid)) {
+          await this.deleteSequenceSetMapIfExists(laboratoryId, rid, setId);
+          await this.adjustTagFileCount(laboratoryId, rid, -1);
+        }
+      }
+
+      for (const aid of add) {
+        if (!tagIds.has(aid)) {
+          tagIds.add(aid);
+          await this.putSequenceSetMapRow(laboratoryId, aid, setId);
+          await this.adjustTagFileCount(laboratoryId, aid, 1);
+        }
+      }
+
+      const now = new Date().toISOString();
+      await this.updateItem({
+        TableName: TABLE_NAME,
+        Key: marshall({ LaboratoryId: laboratoryId, Sk: skSample(setId) }),
+        UpdateExpression: 'SET TagIds = :tids, ModifiedAt = :ma, ModifiedBy = :mb',
+        ExpressionAttributeValues: marshall({
+          ':tids': [...tagIds],
+          ':ma': now,
+          ':mb': userId,
+        }),
+      });
+    }
+  }
+
+  public async applyWorkflowToSamples(
+    laboratory: Laboratory,
+    userId: string,
+    workflowTagId: string,
+    sequenceSetIds: string[],
+  ): Promise<void> {
+    if (!sequenceSetIds.length) return;
+    const laboratoryId = laboratory.LaboratoryId;
+    const tagRow = await this.getTagRow(laboratoryId, workflowTagId);
+    if (!tagRow) throw new Error(`Unknown tag: ${workflowTagId}`);
+
+    for (const setId of sequenceSetIds) {
+      const res = await this.getItem({
+        TableName: TABLE_NAME,
+        Key: marshall({ LaboratoryId: laboratoryId, Sk: skSample(setId) }),
+        ConsistentRead: true,
+      });
+      if (!res.Item) continue;
+
+      const row = unmarshall(res.Item) as Record<string, unknown>;
+      const tagIds = new Set<string>((row.TagIds as string[]) || []);
+      if (tagIds.has(workflowTagId)) {
+        await this.putSequenceSetMapRowIfAbsent(laboratoryId, workflowTagId, setId);
+        continue;
+      }
+
+      tagIds.add(workflowTagId);
+      const now = new Date().toISOString();
+      await this.updateItem({
+        TableName: TABLE_NAME,
+        Key: marshall({ LaboratoryId: laboratoryId, Sk: skSample(setId) }),
+        UpdateExpression: 'SET TagIds = :tids, ModifiedAt = :ma, ModifiedBy = :mb',
+        ExpressionAttributeValues: marshall({
+          ':tids': [...tagIds],
+          ':ma': now,
+          ':mb': userId,
+        }),
+      });
+      const inserted = await this.putSequenceSetMapRowIfAbsent(laboratoryId, workflowTagId, setId);
+      if (inserted) await this.adjustTagFileCount(laboratoryId, workflowTagId, 1);
+    }
+  }
+
+  public async recordLaboratoryRunUsageForSamples(
+    laboratory: Laboratory,
+    userId: string,
+    sequenceSetIds: string[],
+    summary: LaboratoryRunUsageSummary,
+  ): Promise<void> {
+    const laboratoryId = laboratory.LaboratoryId;
+    const now = new Date().toISOString();
+
+    for (const setId of sequenceSetIds) {
+      try {
+        // Step 1: ensure the SAMPLE# row has a map at `LaboratoryRunUsages`. UpdateItem with
+        // a SET on a nested path requires the parent map to exist.
+        await this.updateItem({
+          TableName: TABLE_NAME,
+          Key: marshall({ LaboratoryId: laboratoryId, Sk: skSample(setId) }),
+          UpdateExpression: 'SET #lru = if_not_exists(#lru, :emptyMap)',
+          ExpressionAttributeNames: { '#lru': 'LaboratoryRunUsages', '#sk': 'Sk' },
+          ExpressionAttributeValues: marshall({ ':emptyMap': {} }),
+          ConditionExpression: 'attribute_exists(#sk)',
+        });
+
+        // Step 2: record this run's usage entry on the sequence set row.
+        await this.updateItem({
+          TableName: TABLE_NAME,
+          Key: marshall({ LaboratoryId: laboratoryId, Sk: skSample(setId) }),
+          UpdateExpression: 'SET LaboratoryRunUsages.#runId = :summary, ModifiedAt = :ma, ModifiedBy = :mb',
+          ExpressionAttributeNames: { '#runId': summary.RunId },
+          ExpressionAttributeValues: marshall({
+            ':summary': summary,
+            ':ma': now,
+            ':mb': userId,
+          }),
+        });
+      } catch (e: unknown) {
+        if (isConditionalCheckFailed(e)) {
+          // Set row does not exist — skip
+          continue;
+        }
+        console.warn(`Failed to record run usage for sequence set ${setId}:`, e);
+        throw e;
+      }
+    }
+  }
+
+  private async putSequenceSetMapRow(laboratoryId: string, tagId: string, setId: string): Promise<void> {
+    const now = new Date().toISOString();
+    await this.putItem({
+      TableName: TABLE_NAME,
+      Item: marshall(
+        {
+          LaboratoryId: laboratoryId,
+          Sk: skMapSequenceSet(tagId, setId),
+          Gsi1Pk: gsi1PkForTag(laboratoryId, tagId),
+          Gsi1Sk: `SAMPLE#${setId}`,
+          SampleId: setId,
+          TagId: tagId,
+          CreatedAt: now,
+        },
+        { removeUndefinedValues: true },
+      ),
+    });
+  }
+
+  private async putSequenceSetMapRowIfAbsent(laboratoryId: string, tagId: string, setId: string): Promise<boolean> {
+    const now = new Date().toISOString();
+    try {
+      await this.putItem({
+        TableName: TABLE_NAME,
+        Item: marshall(
+          {
+            LaboratoryId: laboratoryId,
+            Sk: skMapSequenceSet(tagId, setId),
+            Gsi1Pk: gsi1PkForTag(laboratoryId, tagId),
+            Gsi1Sk: `SAMPLE#${setId}`,
+            SampleId: setId,
+            TagId: tagId,
+            CreatedAt: now,
+          },
+          { removeUndefinedValues: true },
+        ),
+        ConditionExpression: 'attribute_not_exists(#sk)',
+        ExpressionAttributeNames: { '#sk': 'Sk' },
+      });
+      return true;
+    } catch (e: unknown) {
+      if (isConditionalCheckFailed(e)) return false;
+      throw e;
+    }
+  }
+
+  private async deleteSequenceSetMapIfExists(laboratoryId: string, tagId: string, setId: string): Promise<void> {
+    await this.deleteItem({
+      TableName: TABLE_NAME,
+      Key: marshall({ LaboratoryId: laboratoryId, Sk: skMapSequenceSet(tagId, setId) }),
+    });
   }
 }

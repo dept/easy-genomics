@@ -5,11 +5,13 @@ All notable changes to Easy Genomics are documented in this file.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
 
+> For step-by-step upgrade instructions, see [docs/deployment/upgrading.md](./docs/deployment/upgrading.md).
+
 ## [Unreleased] — Back-End API stack split
 
 > **DATA-LOSS HAZARD for existing deployments.** See
-> [`docs/EASY_GENOMICS_PROD_MIGRATION.md`](./docs/EASY_GENOMICS_PROD_MIGRATION.md) BEFORE merging or deploying this
-> release.
+> [`docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md`](./docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md)
+> BEFORE merging or deploying this release.
 
 ### Summary
 
@@ -59,9 +61,9 @@ DynamoDB tables must be migrated from the old nested stack to the new top-level 
   `dynamodb:UpdateContinuousBackups PointInTimeRecoveryEnabled=true` on every deploy. Redundant for freshly-created
   tables (CDK properties already set the same flags) but critical for tables adopted via `cdk import`, where
   CloudFormation otherwise leaves the physical flags untouched.
-- `docs/EASY_GENOMICS_PROD_MIGRATION.md` — full, environment-agnostic migration runbook covering pre-merge arming (Phase
-  0), post-merge CI behaviour, retain bridge (Phase 1), detach (Phase 2), `cdk import` (Phase 3), smoke-test (Phase 4),
-  cleanup (Phase 5), and rollback procedures.
+- `docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md` — full, environment-agnostic migration runbook
+  covering pre-merge arming (Phase 0), post-merge CI behaviour, retain bridge (Phase 1), detach (Phase 2), `cdk import`
+  (Phase 3), smoke-test (Phase 4), cleanup (Phase 5), and rollback procedures.
 - Front-end `EASY_GENOMICS_API_URL` runtime override so split deployments can route easy-genomics traffic to the new
   API's invoke URL without affecting `aws-healthomics` / `nf-tower` calls.
 

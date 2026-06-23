@@ -13,6 +13,7 @@ import {
 import { pathsToModuleNameMapper } from 'ts-jest';
 import { ApacheLicense } from './projenrc/apache-license';
 import { setupProjectFolders } from './projenrc/easy-genomics-project-setup';
+import { GithubActionsApiDiffCheck } from './projenrc/github-actions-api-diff-check';
 import { GithubActionsCICDRelease } from './projenrc/github-actions-cicd-release';
 import { Husky } from './projenrc/husky';
 import { Nx } from './projenrc/nx';
@@ -173,6 +174,7 @@ const root = new typescript.TypeScriptProject({
     '@types/uuid',
     '@typescript-eslint/eslint-plugin@^7',
     '@typescript-eslint/parser@^7',
+    '@useoptic/optic@^1.0.9',
     'aws-sdk-client-mock',
     'aws-sdk-client-mock-jest',
     'cz-conventional-changelog',
@@ -265,7 +267,17 @@ const sharedLib = new typescript.TypeScriptProject({
     'uuid',
     'zod',
   ],
-  devDeps: ['@types/aws-lambda', '@types/js-yaml', '@types/uuid', 'aws-cdk-lib', 'openapi-typescript'],
+  devDeps: [
+    '@types/aws-lambda',
+    '@types/js-yaml',
+    '@types/uuid',
+    '@redocly/cli@~1.34.15',
+    'aws-cdk-lib',
+    'openapi-typescript',
+    'tsx',
+    'typescript-json-schema',
+    'zod-to-json-schema@~3.24.6',
+  ],
   tsconfig: {
     ...tsConfigOptions,
     compilerOptions: {
@@ -282,6 +294,12 @@ const sharedLib = new typescript.TypeScriptProject({
 sharedLib.addScripts({
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
 });
+sharedLib.addTask('generate:openapi', { exec: 'tsx src/app/openapi/generate-openapi.ts' });
+sharedLib.addTask('lint:openapi', { exec: 'redocly lint src/app/openapi/easy-genomics-api.yaml' });
+sharedLib.addTask('generate:api-types', {
+  exec: 'openapi-typescript src/app/openapi/easy-genomics-api.yaml -o src/app/types/easy-genomics/generated.d.ts',
+});
+sharedLib.preCompileTask.prependExec('pnpm run generate:api-types');
 
 if (sharedLib.eslint) {
   sharedLib.eslint.addRules({ ...eslintGlobalRules });
@@ -394,7 +412,7 @@ backEndApp.addScripts({
   // stack-split migration. Missing tables (fresh / greenfield deploys)
   // are skipped, so there is no bypass flag; the guard is always on.
   // See `scripts/preflight-deletion-protection.ts` and
-  // `docs/EASY_GENOMICS_PROD_MIGRATION.md`.
+  // `docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md`.
   ['preflight-deletion-protection']: 'tsx scripts/preflight-deletion-protection.ts',
   // NOTE: `--all` is required now that the back-end synthesizes multiple
   // top-level stacks (`*-main-back-end-stack`, `*-easy-genomics-api-stack`,
@@ -446,6 +464,16 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
   defaultReleaseBranch: defaultReleaseBranch,
   docgen: false,
   eslint: true,
+  jest: true,
+  jestOptions: {
+    jestConfig: {
+      moduleNameMapper: {
+        '^@FE/(.*)$': '<rootDir>/src/app/$1',
+        '^@SharedLib/(.*)$': '<rootDir>/../shared-lib/src/app/$1',
+        '^@BE/(.*)$': '<rootDir>/../back-end/src/app/$1',
+      },
+    },
+  },
   lambdaAutoDiscover: false,
   requireApproval: awscdk.ApprovalLevel.NEVER,
   sampleCode: false,
@@ -593,6 +621,7 @@ new GithubActionsCICDRelease(root, {
   onPushBranch: 'infra/*',
   e2e: false,
 });
+new GithubActionsApiDiffCheck(root, { pnpmVersion });
 new ApacheLicense(root, licenseOptions);
 new ApacheLicense(backEndApp, licenseOptions);
 new ApacheLicense(frontEndApp, licenseOptions);
@@ -602,6 +631,7 @@ new ApacheLicense(sharedLib, licenseOptions);
 setupProjectFolders(root);
 
 root.package.addField('packageManager', `pnpm@${pnpmVersion}`);
+
 root.gitignore.addPatterns(
   '*.bkp',
   '*.dtmp',

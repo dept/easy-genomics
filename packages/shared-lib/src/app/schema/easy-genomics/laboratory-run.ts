@@ -92,6 +92,7 @@ export const LaboratoryRunSchema = z
     FailureClassifiedBy: z.enum(['lookup', 'llm']).optional(),
   })
   .strict();
+export type LaboratoryRun = z.infer<typeof LaboratoryRunSchema>;
 
 export const ReadLaboratoryRunSchema = z
   .object({

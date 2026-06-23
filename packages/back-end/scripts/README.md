@@ -113,6 +113,29 @@ pnpm run seed-workflow-tagging-test-runs:dry-run -- --laboratoryId <uuid> --rese
 GSI queries) on `laboratory-data-tagging-table` (+ indexes); `s3:ListBucket` (and `ListBucket` on the lab bucket) when
 discovering keys. No Omics or Tower API calls.
 
+## `migrate-samples-and-sequence-collections.ts`
+
+**Purpose:** Rewrites DynamoDB rows in `laboratory-data-tagging-table` after the sequence-set → sample and
+data-collection → sequence-collection rename (sort-key prefixes and attribute names). Does not delete lab data; rows
+with changed sort keys are deleted and re-written under the new key.
+
+**When to use:** Once per environment after deploying the renamed application code, if that environment already had
+sequence sets / data collections stored under the old `SEQUENCE_SET#` / `DATA_COLLECTION#` prefixes.
+
+**Usage:**
+
+```bash
+cd packages/back-end
+pnpm tsx scripts/migrate-samples-and-sequence-collections.ts --dry-run
+pnpm tsx scripts/migrate-samples-and-sequence-collections.ts
+```
+
+**Environment:** `NAME_PREFIX`, `REGION` in `.env.local` (or exported). Uses the AWS SDK default credential chain — see
+script header. Temporary console/SSO credentials (`ASIA…` access keys) require a valid `AWS_SESSION_TOKEN` and expire;
+refresh with `aws sso login` or new console credentials before running. Verify with `aws sts get-caller-identity`.
+
+**IAM:** `dynamodb:Scan`, `dynamodb:PutItem`, `dynamodb:DeleteItem` on `${NAME_PREFIX}-laboratory-data-tagging-table`.
+
 ## `recompute-laboratory-run-retention.ts`
 
 **Purpose:** Recomputes DynamoDB TTL-related fields on terminal laboratory runs for **one laboratory**: sets
@@ -139,7 +162,7 @@ LAB_ID=<uuid> RETENTION_MONTHS=<int> pnpm run recompute-laboratory-run-retention
 ## `build-import-mapping.ts`
 
 **Purpose:** Generates the `--resource-mapping` JSON file consumed by `cdk import` during the easy-genomics split-stack
-migration (`docs/EASY_GENOMICS_PROD_MIGRATION.md`, Phase 3.1). Reads
+migration (`docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md`, Phase 3.1). Reads
 `cdk.out/${namePrefix}-easy-genomics-api-stack.template.json` (produced by `pnpm cdk synth`), discovers every
 `AWS::DynamoDB::Table` resource, and writes a `LogicalResourceId → { TableName }` map. Fails closed if any of the eight
 expected easy-genomics tables are missing from the synthesized template, so an incomplete or wrong-stack mapping cannot

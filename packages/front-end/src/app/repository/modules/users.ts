@@ -11,15 +11,13 @@ import {
   CreateUserForgotPasswordRequestSchema,
   ConfirmUserForgotPasswordRequestSchema,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user-password';
-import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
-import {
-  ConfirmUserInvitationRequest,
-  CreateUserInvitationRequest,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-invitation';
 import {
   ConfirmUserForgotPasswordRequest,
+  ConfirmUserInvitationRequest,
   CreateUserForgotPasswordRequest,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-password';
+  CreateUserInvitationRequest,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
+import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import HttpFactory from '@FE/repository/factory';
 
 class UsersModule extends HttpFactory {

@@ -60,6 +60,8 @@
         variant="link"
         :padded="false"
         :icon="inputType === 'password' ? 'i-heroicons-eye-slash' : 'i-heroicons-eye'"
+        :aria-label="inputType === 'password' ? 'Show password' : 'Hide password'"
+        :aria-pressed="inputType === 'text'"
         @click="switchVisibility"
       />
     </template>

@@ -1,7 +1,7 @@
 import { CreateUserInvitationRequestSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user-invitation';
+import { CreateUserInvitationRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { OrganizationUserDetails } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization-user-details';
 import { OrganizationAccess } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
-import { CreateUserInvitationRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-invitation';
 import { VALIDATION_MESSAGES } from '@FE/constants/validation';
 import { useToastStore } from '@FE/stores';
 import { decodeJwt } from '@FE/utils/jwt-utils';

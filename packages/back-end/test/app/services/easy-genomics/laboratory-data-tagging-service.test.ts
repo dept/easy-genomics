@@ -867,6 +867,249 @@ describe('LaboratoryDataTaggingService.updateRunUsageExpiresAt', () => {
   });
 });
 
+describe('LaboratoryDataTaggingService.setBatchForSamples', () => {
+  let svc: LaboratoryDataTaggingService;
+  let mockGetItem: jest.Mock;
+  let mockUpdateItem: jest.Mock;
+  let mockPutItem: jest.Mock;
+  let mockDeleteItem: jest.Mock;
+  let mockQueryItems: jest.Mock;
+
+  const sampleId = 'sample-uuid-1';
+  const batchTagId = 'batch-uuid-1';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratoryDataTaggingService();
+    mockGetItem = jest.fn();
+    mockUpdateItem = jest.fn().mockResolvedValue({});
+    mockPutItem = jest.fn().mockResolvedValue({});
+    mockDeleteItem = jest.fn().mockResolvedValue({});
+    mockQueryItems = jest.fn().mockResolvedValue({ Items: [] });
+    (svc as unknown as { getItem: typeof mockGetItem }).getItem = mockGetItem;
+    (svc as unknown as { updateItem: typeof mockUpdateItem }).updateItem = mockUpdateItem;
+    (svc as unknown as { putItem: typeof mockPutItem }).putItem = mockPutItem;
+    (svc as unknown as { deleteItem: typeof mockDeleteItem }).deleteItem = mockDeleteItem;
+    (svc as unknown as { queryItems: typeof mockQueryItems }).queryItems = mockQueryItems;
+  });
+
+  it('creates a new batch tag and assigns it to samples', async () => {
+    const lab = labFixture();
+    let createdBatchTagId = '';
+
+    mockPutItem.mockImplementation(async (input: { Item?: Record<string, AttributeValue> }) => {
+      if (input.Item) {
+        const row = unmarshall(input.Item) as { Sk?: string; TagId?: string };
+        if (row.Sk?.startsWith('TAG#')) {
+          createdBatchTagId = row.TagId ?? '';
+        }
+      }
+    });
+
+    mockQueryItems.mockResolvedValue({ Items: [] });
+
+    mockGetItem.mockImplementation(async (input: { Key?: Record<string, AttributeValue> }) => {
+      const key = unmarshall(input.Key ?? {}) as { Sk?: string };
+      if (key.Sk === `SAMPLE#${sampleId}`) {
+        return {
+          Item: marshall({
+            LaboratoryId: lab.LaboratoryId,
+            Sk: `SAMPLE#${sampleId}`,
+            SampleId: sampleId,
+            TagIds: [],
+          }),
+        };
+      }
+      if (createdBatchTagId && key.Sk === `TAG#${createdBatchTagId}`) {
+        return {
+          Item: marshall({
+            LaboratoryId: lab.LaboratoryId,
+            Sk: `TAG#${createdBatchTagId}`,
+            TagId: createdBatchTagId,
+            Name: 'Run 2026-01',
+            Kind: 'batch',
+            FileCount: 0,
+          }),
+        };
+      }
+      return {};
+    });
+
+    await svc.setBatchForSamples(lab, 'user-1', [sampleId], { type: 'new', name: 'Run 2026-01' });
+
+    expect(mockPutItem).toHaveBeenCalled();
+    expect(mockUpdateItem).toHaveBeenCalled();
+    const sampleUpdate = mockUpdateItem.mock.calls.find((call) => unmarshall(call[0].Key).Sk === `SAMPLE#${sampleId}`);
+    expect(sampleUpdate).toBeDefined();
+    const tagIds = unmarshall(sampleUpdate![0].ExpressionAttributeValues)[':tids'] as string[];
+    expect(tagIds).toHaveLength(1);
+  });
+
+  it('assigns an existing batch tag without removing standard tags', async () => {
+    const lab = labFixture();
+    const stdTagId = 'std-tag-1';
+
+    mockGetItem.mockImplementation(async (input: { Key?: Record<string, AttributeValue> }) => {
+      const key = unmarshall(input.Key ?? {}) as { Sk?: string };
+      if (key.Sk === `TAG#${batchTagId}`) {
+        return {
+          Item: marshall({
+            LaboratoryId: lab.LaboratoryId,
+            Sk: `TAG#${batchTagId}`,
+            TagId: batchTagId,
+            Name: 'Existing Batch',
+            Kind: 'batch',
+            FileCount: 0,
+          }),
+        };
+      }
+      if (key.Sk === `SAMPLE#${sampleId}`) {
+        return {
+          Item: marshall({
+            LaboratoryId: lab.LaboratoryId,
+            Sk: `SAMPLE#${sampleId}`,
+            SampleId: sampleId,
+            TagIds: [stdTagId],
+          }),
+        };
+      }
+      return {};
+    });
+
+    mockQueryItems.mockResolvedValueOnce({
+      Items: [
+        marshall({
+          LaboratoryId: lab.LaboratoryId,
+          Sk: `TAG#${batchTagId}`,
+          TagId: batchTagId,
+          Name: 'Existing Batch',
+          Kind: 'batch',
+          FileCount: 0,
+        }),
+      ],
+    });
+
+    await svc.setBatchForSamples(lab, 'user-1', [sampleId], {
+      type: 'existing',
+      batchTagId,
+    });
+
+    const sampleUpdate = mockUpdateItem.mock.calls.find((call) => unmarshall(call[0].Key).Sk === `SAMPLE#${sampleId}`);
+    expect(sampleUpdate).toBeDefined();
+    const tagIds = unmarshall(sampleUpdate![0].ExpressionAttributeValues)[':tids'] as string[];
+    expect(tagIds).toContain(batchTagId);
+    expect(tagIds).toContain(stdTagId);
+  });
+
+  it('clears batch assignment from samples', async () => {
+    const lab = labFixture();
+    const stdTagId = 'std-tag-1';
+
+    mockGetItem.mockImplementation(async (input: { Key?: Record<string, AttributeValue> }) => {
+      const key = unmarshall(input.Key ?? {}) as { Sk?: string };
+      if (key.Sk === `SAMPLE#${sampleId}`) {
+        return {
+          Item: marshall({
+            LaboratoryId: lab.LaboratoryId,
+            Sk: `SAMPLE#${sampleId}`,
+            SampleId: sampleId,
+            TagIds: [batchTagId, stdTagId],
+          }),
+        };
+      }
+      if (key.Sk === `TAG#${batchTagId}`) {
+        return {
+          Item: marshall({
+            LaboratoryId: lab.LaboratoryId,
+            Sk: `TAG#${batchTagId}`,
+            TagId: batchTagId,
+            Name: 'Existing Batch',
+            Kind: 'batch',
+            FileCount: 1,
+          }),
+        };
+      }
+      return {};
+    });
+
+    mockQueryItems.mockResolvedValueOnce({
+      Items: [
+        marshall({
+          LaboratoryId: lab.LaboratoryId,
+          Sk: `TAG#${batchTagId}`,
+          TagId: batchTagId,
+          Name: 'Existing Batch',
+          Kind: 'batch',
+          FileCount: 1,
+        }),
+      ],
+    });
+
+    await svc.setBatchForSamples(lab, 'user-1', [sampleId], { type: 'clear' });
+
+    const sampleUpdate = mockUpdateItem.mock.calls.find((call) => unmarshall(call[0].Key).Sk === `SAMPLE#${sampleId}`);
+    expect(sampleUpdate).toBeDefined();
+    const tagIds = unmarshall(sampleUpdate![0].ExpressionAttributeValues)[':tids'] as string[];
+    expect(tagIds).toEqual([stdTagId]);
+  });
+});
+
+describe('LaboratoryDataTaggingService.listSampleTagAssignments', () => {
+  let svc: LaboratoryDataTaggingService;
+  let mockGetItem: jest.Mock;
+  let mockQueryItems: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratoryDataTaggingService();
+    mockGetItem = jest.fn();
+    mockQueryItems = jest.fn().mockResolvedValue({ Items: [] });
+    (svc as unknown as { getItem: typeof mockGetItem }).getItem = mockGetItem;
+    (svc as unknown as { queryItems: typeof mockQueryItems }).queryItems = mockQueryItems;
+  });
+
+  it('returns BatchTagId separately from standard TagIds', async () => {
+    const lab = labFixture();
+    const sampleId = 'sample-uuid-1';
+    const batchTagId = 'batch-uuid-1';
+    const stdTagId = 'std-tag-1';
+
+    mockQueryItems.mockResolvedValueOnce({
+      Items: [
+        marshall({
+          LaboratoryId: lab.LaboratoryId,
+          Sk: `TAG#${batchTagId}`,
+          TagId: batchTagId,
+          Name: 'Batch A',
+          Kind: 'batch',
+          FileCount: 1,
+        }),
+        marshall({
+          LaboratoryId: lab.LaboratoryId,
+          Sk: `TAG#${stdTagId}`,
+          TagId: stdTagId,
+          Name: 'Standard',
+          FileCount: 1,
+        }),
+      ],
+    });
+
+    mockGetItem.mockResolvedValueOnce({
+      Item: marshall({
+        LaboratoryId: lab.LaboratoryId,
+        Sk: `SAMPLE#${sampleId}`,
+        SampleId: sampleId,
+        TagIds: [batchTagId, stdTagId],
+      }),
+    });
+
+    const { Samples } = await svc.listSampleTagAssignments(lab.LaboratoryId, [sampleId]);
+    expect(Samples).toHaveLength(1);
+    expect(Samples[0].BatchTagId).toBe(batchTagId);
+    expect(Samples[0].TagIds).toEqual([stdTagId]);
+  });
+});
+
 describe('LaboratoryDataTaggingService.deleteFileRowAndAssociations', () => {
   let svc: LaboratoryDataTaggingService;
   let mockGetItem: jest.Mock;
@@ -915,5 +1158,106 @@ describe('LaboratoryDataTaggingService.removeLaboratoryRunUsageForRunIds preserv
     expect(mockUpdateItem).toHaveBeenCalledTimes(1);
     expect(mockGetItem).not.toHaveBeenCalled();
     expect(mockDeleteItem).not.toHaveBeenCalled();
+  });
+});
+
+describe('LaboratoryDataTaggingService.applyTagsToSamples', () => {
+  let svc: LaboratoryDataTaggingService;
+  let mockGetItem: jest.Mock;
+  let mockUpdateItem: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratoryDataTaggingService();
+    mockGetItem = jest.fn();
+    mockUpdateItem = jest.fn().mockResolvedValue({});
+    (svc as unknown as { getItem: typeof mockGetItem }).getItem = mockGetItem;
+    (svc as unknown as { getTagRow: jest.Mock }).getTagRow = jest.fn().mockResolvedValue({
+      TagId: 'tag-1',
+      Kind: 'standard',
+      Name: 'Tag 1',
+    });
+    (svc as unknown as { updateItem: typeof mockUpdateItem }).updateItem = mockUpdateItem;
+    (svc as unknown as { adjustTagFileCount: jest.Mock }).adjustTagFileCount = jest.fn().mockResolvedValue(undefined);
+    (svc as unknown as { putSequenceSetMapRow: jest.Mock }).putSequenceSetMapRow = jest
+      .fn()
+      .mockResolvedValue(undefined);
+    (svc as unknown as { deleteSequenceSetMapIfExists: jest.Mock }).deleteSequenceSetMapIfExists = jest
+      .fn()
+      .mockResolvedValue(undefined);
+  });
+
+  it('rejects auto-managed workflow tags', async () => {
+    (svc as unknown as { getTagRow: jest.Mock }).getTagRow = jest.fn().mockResolvedValue({
+      TagId: 'wf-1',
+      Kind: 'workflow',
+      Name: 'Workflow',
+    });
+    await expect(svc.applyTagsToSamples(labFixture(), 'user-1', ['set-1'], ['wf-1'], [])).rejects.toThrow(
+      'Workflow tags are auto-managed',
+    );
+  });
+});
+
+describe('LaboratoryDataTaggingService.listSamplesByTag', () => {
+  let svc: LaboratoryDataTaggingService;
+  let mockQueryItems: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratoryDataTaggingService();
+    mockQueryItems = jest.fn().mockResolvedValue({
+      Items: [marshall({ SampleId: 'set-1', Gsi1Pk: 'lab-1#TAG#tag-1', Gsi1Sk: 'SAMPLE#set-1' })],
+      LastEvaluatedKey: { LaboratoryId: { S: 'lab-1' } },
+    });
+    (svc as unknown as { queryItems: typeof mockQueryItems }).queryItems = mockQueryItems;
+  });
+
+  it('returns a cursor when more pages are available', async () => {
+    const res = await svc.listSamplesByTag('lab-1', 'tag-1', 1);
+    expect(res.SampleIds).toEqual(['set-1']);
+    expect(res.NextCursor).toBeDefined();
+  });
+});
+
+describe('LaboratoryDataTaggingService.recordLaboratoryRunUsageForSamples', () => {
+  let svc: LaboratoryDataTaggingService;
+  let mockUpdateItem: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratoryDataTaggingService();
+    mockUpdateItem = jest.fn().mockResolvedValue({});
+    (svc as unknown as { updateItem: typeof mockUpdateItem }).updateItem = mockUpdateItem;
+  });
+
+  it('initializes LaboratoryRunUsages before writing nested run usage', async () => {
+    const summary = {
+      RunId: 'run-1',
+      RunName: 'Run 1',
+      RunCreatedAt: '2026-01-01T00:00:00.000Z',
+      InputFileCount: 1,
+      InputFileKeys: ['org-1/lab-1/a.fq.gz'],
+    };
+
+    await svc.recordLaboratoryRunUsageForSamples(labFixture(), 'user-1', ['set-1'], summary);
+
+    expect(mockUpdateItem).toHaveBeenCalledTimes(2);
+    expect(mockUpdateItem.mock.calls[0][0].UpdateExpression).toContain('if_not_exists(#lru, :emptyMap)');
+    expect(mockUpdateItem.mock.calls[1][0].UpdateExpression).toContain('LaboratoryRunUsages.#runId');
+  });
+
+  it('skips missing sample rows without swallowing unexpected errors', async () => {
+    mockUpdateItem.mockRejectedValueOnce(new ConditionalCheckFailedException({ message: 'c', $metadata: {} }));
+    await expect(
+      svc.recordLaboratoryRunUsageForSamples(labFixture(), 'user-1', ['missing-set'], {
+        RunId: 'run-1',
+        RunName: 'Run 1',
+        RunCreatedAt: '2026-01-01T00:00:00.000Z',
+        InputFileCount: 1,
+        InputFileKeys: ['org-1/lab-1/a.fq.gz'],
+      }),
+    ).resolves.toBeUndefined();
+    expect(mockUpdateItem).toHaveBeenCalledTimes(1);
   });
 });

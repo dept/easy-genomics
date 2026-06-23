@@ -123,6 +123,11 @@
   "version": "0.0.0",
   "jest": {
     "coverageProvider": "v8",
+    "moduleNameMapper": {
+      "^@FE/(.*)$": "<rootDir>/src/app/$1",
+      "^@SharedLib/(.*)$": "<rootDir>/../shared-lib/src/app/$1",
+      "^@BE/(.*)$": "<rootDir>/../back-end/src/app/$1"
+    },
     "testMatch": [
       "<rootDir>/@(src|test)/**/*(*.)@(spec|test).ts?(x)",
       "<rootDir>/@(src|test)/**/__tests__/**/*.ts?(x)"

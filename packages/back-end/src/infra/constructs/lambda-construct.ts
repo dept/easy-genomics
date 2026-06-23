@@ -131,7 +131,7 @@ export class LambdaConstruct extends Construct {
       handler: 'handler',
       tracing: aws_lambda.Tracing.ACTIVE,
       bundling: {
-        loader: { '.hbs': 'text' },
+        loader: { '.hbs': 'text', '.yaml': 'text' },
         externalModules: ['@aws-sdk/*'],
       },
       logRetention: RetentionDays.ONE_DAY,
@@ -182,25 +182,26 @@ export class LambdaConstruct extends Construct {
         );
       }
       const pathResource = this.props.restApi.root.resourceForPath(lambdaApiEndpoint);
+      // Disable console test-invoke so CDK does not emit a second `test-invoke-stage`
+      // Lambda::Permission per method. That duplicate doubles this stack's permission count
+      // against CloudFormation's 500-resource-per-stack limit; real traffic uses the
+      // deployment-stage permission, which is unaffected.
+      const lambdaIntegration = new LambdaIntegration(lambdaHandler, { allowTestInvoke: false });
       if (lambdaFunction.command in ALLOWED_LAMBDA_FUNCTION_OPERATIONS_WITH_RESOURCE_ID) {
         const pathResourceWithId: Resource = pathResource.addResource('{id}');
         pathResourceWithId.addMethod(
           ALLOWED_LAMBDA_FUNCTION_OPERATIONS_WITH_RESOURCE_ID[lambdaFunction.command],
-          new LambdaIntegration(lambdaHandler),
+          lambdaIntegration,
           {
             authorizer: this.authorizer,
             ...lambdaMethodOptions,
           },
         );
       } else {
-        pathResource.addMethod(
-          ALLOWED_LAMBDA_FUNCTION_OPERATIONS[lambdaFunction.command],
-          new LambdaIntegration(lambdaHandler),
-          {
-            authorizer: this.authorizer,
-            ...lambdaMethodOptions,
-          },
-        );
+        pathResource.addMethod(ALLOWED_LAMBDA_FUNCTION_OPERATIONS[lambdaFunction.command], lambdaIntegration, {
+          authorizer: this.authorizer,
+          ...lambdaMethodOptions,
+        });
       }
     }
 

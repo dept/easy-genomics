@@ -6,8 +6,8 @@ import {
   UserNotFoundError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { CreateUserForgotPasswordRequestSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user-password';
+import { CreateUserForgotPasswordRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
-import { CreateUserForgotPasswordRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-password';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Handler } from 'aws-lambda';
 import { CognitoIdpService } from '@BE/services/cognito-idp-service';
 import { UserService } from '@BE/services/easy-genomics/user-service';

@@ -29,6 +29,8 @@ export type FileTagAssignment = {
   Key: string;
   /** Standard (non-batch, non-workflow, non-permanent) tags only. */
   TagIds: string[];
+  /** Samples this file belongs to. */
+  SampleIds?: string[];
   /** At most one batch tag id if the file is assigned to a batch. */
   BatchTagId?: string;
   /** Workflow tag ids that have been associated with this file via run launches. */
@@ -63,7 +65,7 @@ export type LaboratoryRunUsageSummary = {
    * Mirror of the laboratory run's `ExpiresAt` (epoch seconds, DynamoDB TTL) at the time this
    * usage entry was recorded or last refreshed. Undefined when the run is non-expiring
    * (`Laboratory.RunRetentionMonths === 0`) or when the run had not yet reached a terminal
-   * status. Surfaced to the front-end so the data collections page can power the
+   * status. Surfaced to the front-end so the sequence collections page can power the
    * "Expiring soon" scope filter without an extra round trip to the run table.
    */
   ExpiresAt?: number;
@@ -81,4 +83,18 @@ export type S3TaggedObjectRef = {
 export type ListFilesByTagResponse = {
   Files: S3TaggedObjectRef[];
   NextCursor?: string;
+};
+
+export type UnlinkedBucketObjectsResponse = {
+  Contents?: Array<{ Key: string; LastModified?: string; Size?: number }>;
+  IsTruncated: boolean;
+  S3Bucket: string;
+  ResolvedPrefix: string;
+  ReturnedKeyCount?: number;
+};
+
+export type BulkCreateSamplesResponse = {
+  CreatedCount: number;
+  SampleIds: string[];
+  Errors?: Array<{ Name: string; Message: string }>;
 };

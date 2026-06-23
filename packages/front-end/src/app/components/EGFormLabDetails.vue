@@ -48,6 +48,13 @@
 
   const labId: string = $route.params.labId as string;
 
+  const settingsHeadingId = 'lab-settings-heading';
+  const seqeraToggleLabelId = 'lab-settings-seqera-toggle-label';
+  const healthOmicsToggleLabelId = 'lab-settings-healthomics-toggle-label';
+  const retentionHelpId = 'lab-settings-retention-help';
+  const seqeraSectionId = 'lab-settings-seqera-section';
+  const healthOmicsSectionId = 'lab-settings-healthomics-section';
+
   const formMode = ref(props.formMode);
   const s3Directories = ref([]);
   const isLoadingBuckets = ref(false);
@@ -651,8 +658,21 @@
 </script>
 
 <template>
-  <USkeleton v-if="isLoadingFormData" class="min-h-96 w-full" />
-  <UForm v-else :validate="validate" :state="state" @submit="onSubmit">
+  <div v-if="isLoadingFormData" :aria-busy="true" aria-labelledby="lab-settings-loading-status">
+    <p id="lab-settings-loading-status" class="sr-only" role="status" aria-live="polite">Loading lab settings…</p>
+    <USkeleton class="min-h-96 w-full" aria-hidden="true" />
+  </div>
+  <UForm
+    v-else
+    :validate="validate"
+    :state="state"
+    :aria-labelledby="formMode !== LabDetailsFormModeEnum.enum.Create ? settingsHeadingId : undefined"
+    :aria-busy="isSubmittingFormData || isLoadingRetentionPreview"
+    @submit="onSubmit"
+  >
+    <EGText v-if="formMode !== LabDetailsFormModeEnum.enum.Create" :id="settingsHeadingId" tag="h2" class="sr-only">
+      Lab settings
+    </EGText>
     <EGCard>
       <!-- Lab Name -->
       <EGFormGroup label="Lab Name" name="Name" eager-validation required>
@@ -682,8 +702,9 @@
           step="1"
           :disabled="!isEditing || isSubmittingFormData"
           placeholder="Enter number of months (0 for never)"
+          :aria-describedby="retentionHelpId"
         />
-        <p class="text-muted mt-1 text-xs">0 = never delete run records</p>
+        <p :id="retentionHelpId" class="text-muted mt-1 text-xs">0 = never delete run records</p>
       </EGFormGroup>
 
       <EGFormGroup v-if="useUserStore().isOrgAdmin()" label="Default S3 bucket directory" name="S3Bucket" required>
@@ -696,116 +717,148 @@
         />
       </EGFormGroup>
 
-      <hr class="mb-6" />
+      <hr class="mb-6" role="presentation" />
 
-      <!-- Next Flow Tower: Toggle -->
-      <EGFormGroup
-        label="Enable Seqera Integration"
-        name="NextFlowTowerEnable"
-        eager-validation
-        class="flex justify-between"
-      >
-        <UToggle class="ml-2" v-model="state.NextFlowTowerEnabled" :disabled="!isEditing || isSubmittingFormData" />
-      </EGFormGroup>
+      <section :aria-labelledby="seqeraSectionId">
+        <h3 :id="seqeraSectionId" class="sr-only">Seqera integration</h3>
 
-      <!-- Next Flow Tower: Endpoint -->
-      <EGFormGroup
-        v-if="state.NextFlowTowerEnabled"
-        label="Seqera Endpoint URL"
-        name="NextFlowTowerApiBaseUrl"
-        eager-validation
-        required
-      >
-        <EGInput v-model="state.NextFlowTowerApiBaseUrl" :disabled="!isEditing || isSubmittingFormData" />
-      </EGFormGroup>
-
-      <!-- Next Flow Tower: Workspace ID -->
-      <EGFormGroup
-        v-if="state.NextFlowTowerEnabled"
-        label="Workspace ID"
-        name="NextFlowTowerWorkspaceId"
-        eager-validation
-      >
-        <EGInput
-          v-model="state.NextFlowTowerWorkspaceId"
-          placeholder="Defaults to the Next Flow Tower personal workspace if not specified."
-          :disabled="!isEditing || isSubmittingFormData"
-        />
-      </EGFormGroup>
-
-      <!-- Next Flow Tower: Access Token -->
-      <EGFormGroup
-        v-if="isEditing && state.NextFlowTowerEnabled"
-        label="Personal Access Token"
-        name="NextFlowTowerAccessToken"
-        eager-validation
-        :required="formMode === LabDetailsFormModeEnum.enum.Create"
-      >
-        <!-- Next Flow Tower: Access Token: Create  Mode -->
-        <EGPasswordInput
-          v-if="formMode === LabDetailsFormModeEnum.enum.Create"
-          v-model="state.NextFlowTowerAccessToken"
-          :password="true"
-          :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
-          :disabled="!isEditing || isSubmittingFormData"
-        />
-        <!-- Next Flow Tower: Access Token: Edit  Mode -->
-        <EGPasswordInput
-          v-if="formMode === LabDetailsFormModeEnum.enum.Edit"
-          v-model="state.NextFlowTowerAccessToken"
-          :select-on-focus="true"
-          :password="true"
-          placeholder="Add or update the Next Flow Tower personal access token. Note: A previously set token will never be shown."
-          :show-toggle-password-button="isEditingNextFlowTowerAccessToken"
-          :autocomplete="AutoCompleteOptionsEnum.enum.Off"
+        <!-- Next Flow Tower: Toggle -->
+        <EGFormGroup
+          label="Enable Seqera Integration"
+          name="NextFlowTowerEnable"
           eager-validation
-          :disabled="!isEditing || isSubmittingFormData"
-        />
-      </EGFormGroup>
+          class="flex items-center justify-between"
+        >
+          <label :id="seqeraToggleLabelId" :for="`${seqeraToggleLabelId}-input`" class="sr-only">
+            Enable Seqera Integration
+          </label>
+          <UToggle
+            :id="`${seqeraToggleLabelId}-input`"
+            class="ml-2"
+            v-model="state.NextFlowTowerEnabled"
+            :disabled="!isEditing || isSubmittingFormData"
+            :aria-labelledby="seqeraToggleLabelId"
+          />
+        </EGFormGroup>
 
-      <hr class="mb-6" />
-
-      <!-- HealthOmics Toggle -->
-      <EGFormGroup
-        label="Enable HealthOmics Integration"
-        name="HealthOmicsEnable"
-        eager-validation
-        class="flex justify-between"
-      >
-        <UToggle class="ml-2" v-model="state.AwsHealthOmicsEnabled" :disabled="!isEditing || isSubmittingFormData" />
-      </EGFormGroup>
-      <EGFormGroup
-        v-if="isEditing && state.AwsHealthOmicsEnabled"
-        label="GitHub Personal Access Token"
-        name="GitHubAccessToken"
-        eager-validation
-        :required="formMode === LabDetailsFormModeEnum.enum.Create"
-      >
-        <div v-if="formMode === LabDetailsFormModeEnum.enum.Edit" class="mb-2 flex items-center gap-2">
-          <UBadge size="sm" class="bg-alert-danger-muted text-alert-danger rounded-xl border-0 ring-0">
-            TOKEN SAVED
-          </UBadge>
-          <p class="text-alert-danger-dark text-xs font-medium">Saving a new value will replace the existing token.</p>
-        </div>
-        <EGPasswordInput
-          v-if="formMode === LabDetailsFormModeEnum.enum.Create"
-          v-model="state.GitHubAccessToken"
-          :password="true"
-          :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
-          :disabled="!isEditing || isSubmittingFormData"
-        />
-        <EGPasswordInput
-          v-if="formMode === LabDetailsFormModeEnum.enum.Edit"
-          v-model="state.GitHubAccessToken"
-          :select-on-focus="true"
-          :password="true"
-          placeholder="Add or update the GitHub personal access token. Note: A previously set token will never be shown."
-          :show-toggle-password-button="isEditingGitHubAccessToken"
-          :autocomplete="AutoCompleteOptionsEnum.enum.Off"
+        <!-- Next Flow Tower: Endpoint -->
+        <EGFormGroup
+          v-if="state.NextFlowTowerEnabled"
+          label="Seqera Endpoint URL"
+          name="NextFlowTowerApiBaseUrl"
           eager-validation
-          :disabled="!isEditing || isSubmittingFormData"
-        />
-      </EGFormGroup>
+          required
+        >
+          <EGInput v-model="state.NextFlowTowerApiBaseUrl" :disabled="!isEditing || isSubmittingFormData" />
+        </EGFormGroup>
+
+        <!-- Next Flow Tower: Workspace ID -->
+        <EGFormGroup
+          v-if="state.NextFlowTowerEnabled"
+          label="Workspace ID"
+          name="NextFlowTowerWorkspaceId"
+          eager-validation
+        >
+          <EGInput
+            v-model="state.NextFlowTowerWorkspaceId"
+            placeholder="Defaults to the Next Flow Tower personal workspace if not specified."
+            :disabled="!isEditing || isSubmittingFormData"
+          />
+        </EGFormGroup>
+
+        <!-- Next Flow Tower: Access Token -->
+        <EGFormGroup
+          v-if="isEditing && state.NextFlowTowerEnabled"
+          label="Personal Access Token"
+          name="NextFlowTowerAccessToken"
+          eager-validation
+          :required="formMode === LabDetailsFormModeEnum.enum.Create"
+        >
+          <!-- Next Flow Tower: Access Token: Create  Mode -->
+          <EGPasswordInput
+            v-if="formMode === LabDetailsFormModeEnum.enum.Create"
+            v-model="state.NextFlowTowerAccessToken"
+            :password="true"
+            :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
+            :disabled="!isEditing || isSubmittingFormData"
+          />
+          <!-- Next Flow Tower: Access Token: Edit  Mode -->
+          <EGPasswordInput
+            v-if="formMode === LabDetailsFormModeEnum.enum.Edit"
+            v-model="state.NextFlowTowerAccessToken"
+            :select-on-focus="true"
+            :password="true"
+            placeholder="Add or update the Next Flow Tower personal access token. Note: A previously set token will never be shown."
+            :show-toggle-password-button="isEditingNextFlowTowerAccessToken"
+            :autocomplete="AutoCompleteOptionsEnum.enum.Off"
+            eager-validation
+            :disabled="!isEditing || isSubmittingFormData"
+          />
+        </EGFormGroup>
+      </section>
+
+      <hr class="mb-6" role="presentation" />
+
+      <section :aria-labelledby="healthOmicsSectionId">
+        <h3 :id="healthOmicsSectionId" class="sr-only">HealthOmics integration</h3>
+
+        <!-- HealthOmics Toggle -->
+        <EGFormGroup
+          label="Enable HealthOmics Integration"
+          name="HealthOmicsEnable"
+          eager-validation
+          class="flex items-center justify-between"
+        >
+          <label :id="healthOmicsToggleLabelId" :for="`${healthOmicsToggleLabelId}-input`" class="sr-only">
+            Enable HealthOmics Integration
+          </label>
+          <UToggle
+            :id="`${healthOmicsToggleLabelId}-input`"
+            class="ml-2"
+            v-model="state.AwsHealthOmicsEnabled"
+            :disabled="!isEditing || isSubmittingFormData"
+            :aria-labelledby="healthOmicsToggleLabelId"
+          />
+        </EGFormGroup>
+        <EGFormGroup
+          v-if="isEditing && state.AwsHealthOmicsEnabled"
+          label="GitHub Personal Access Token"
+          name="GitHubAccessToken"
+          eager-validation
+          :required="formMode === LabDetailsFormModeEnum.enum.Create"
+        >
+          <div v-if="formMode === LabDetailsFormModeEnum.enum.Edit" class="mb-2 flex items-center gap-2">
+            <UBadge
+              size="sm"
+              class="bg-alert-danger-muted text-alert-danger rounded-xl border-0 ring-0"
+              aria-hidden="true"
+            >
+              TOKEN SAVED
+            </UBadge>
+            <p class="text-alert-danger-dark text-xs font-medium">
+              Saving a new value will replace the existing token.
+            </p>
+          </div>
+          <EGPasswordInput
+            v-if="formMode === LabDetailsFormModeEnum.enum.Create"
+            v-model="state.GitHubAccessToken"
+            :password="true"
+            :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
+            :disabled="!isEditing || isSubmittingFormData"
+          />
+          <EGPasswordInput
+            v-if="formMode === LabDetailsFormModeEnum.enum.Edit"
+            v-model="state.GitHubAccessToken"
+            :select-on-focus="true"
+            :password="true"
+            placeholder="Add or update the GitHub personal access token. Note: A previously set token will never be shown."
+            :show-toggle-password-button="isEditingGitHubAccessToken"
+            :autocomplete="AutoCompleteOptionsEnum.enum.Off"
+            eager-validation
+            :disabled="!isEditing || isSubmittingFormData"
+          />
+        </EGFormGroup>
+      </section>
 
       <!-- AI Failure Analysis: BYOK per integration. HealthOmics and Seqera each get
            their own provider/model/key + enable toggle. The deterministic HealthOmics
@@ -988,12 +1041,13 @@
         :disabled="!canSubmit || !isS3BucketValidForSubmit"
         :loading="isSubmittingFormData"
         :size="ButtonSizeEnum.enum.sm"
-        type="submit"
+        u-button-type="submit"
         label="Create Lab"
       />
       <EGButton
         :size="ButtonSizeEnum.enum.sm"
         :variant="ButtonVariantEnum.enum.secondary"
+        u-button-type="button"
         :disabled="useUiStore().anyRequestPending(['createLab', 'updateLab'])"
         label="Cancel"
         name="cancel"
@@ -1005,7 +1059,7 @@
     <div v-if="formMode === LabDetailsFormModeEnum.enum.ReadOnly" class="mt-6 flex space-x-2">
       <EGButton
         :size="ButtonSizeEnum.enum.sm"
-        type="submit"
+        u-button-type="button"
         label="Edit"
         :disabled="useUserStore().isSuperuser || !hasEditPermission"
         @click="switchToFormMode(LabDetailsFormModeEnum.enum.Edit)"
@@ -1018,12 +1072,13 @@
         :disabled="!canSubmit || !isS3BucketValidForSubmit || isLoadingRetentionPreview"
         :loading="isSubmittingFormData || isLoadingRetentionPreview"
         :size="ButtonSizeEnum.enum.sm"
-        type="submit"
+        u-button-type="submit"
         label="Save Changes"
       />
       <EGButton
         :size="ButtonSizeEnum.enum.sm"
         :variant="ButtonVariantEnum.enum.secondary"
+        u-button-type="button"
         :disabled="isSubmittingFormData"
         label="Cancel"
         name="cancel"
