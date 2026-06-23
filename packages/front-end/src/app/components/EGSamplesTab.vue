@@ -10,18 +10,24 @@
   import { SAMPLE_LAYOUT_LABELS } from '@FE/utils/data-collections-selection';
   import { exceedsTagNameMaxLength } from '@FE/utils/data-collections-name-validation';
 
-  const props = defineProps<{
-    labId: string;
-    samples: LaboratorySample[];
-    tags: LaboratoryDataTag[];
-    sampleIdToTagIds: Record<string, string[]>;
-    sampleIdToRunUsages: Record<string, LaboratoryRunUsageSummary[]>;
-    loading: boolean;
-    selectedIds: string[];
-    search: string;
-    tagsFilterUntagged: boolean;
-    tagsFilterTagIds: string[];
-  }>();
+  const props = withDefaults(
+    defineProps<{
+      labId: string;
+      samples: LaboratorySample[];
+      tags: LaboratoryDataTag[];
+      sampleIdToTagIds: Record<string, string[]>;
+      sampleIdToRunUsages: Record<string, LaboratoryRunUsageSummary[]>;
+      loading: boolean;
+      selectedIds: string[];
+      search: string;
+      tagsFilterUntagged: boolean;
+      tagsFilterTagIds: string[];
+      s3Configured?: boolean;
+    }>(),
+    {
+      s3Configured: true,
+    },
+  );
 
   const emit = defineEmits<{
     'update:selectedIds': [ids: string[]];
@@ -449,7 +455,16 @@
             />
           </div>
           <div class="ml-auto shrink-0">
-            <UButton size="sm" @click="emit('import')">Import data</UButton>
+            <UButton
+              size="sm"
+              :disabled="!s3Configured"
+              :title="
+                s3Configured ? undefined : 'Configure the lab default S3 bucket in Settings before importing data.'
+              "
+              @click="emit('import')"
+            >
+              Import data
+            </UButton>
           </div>
         </div>
 
