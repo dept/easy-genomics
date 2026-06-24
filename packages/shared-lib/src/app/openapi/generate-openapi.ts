@@ -335,9 +335,17 @@ string | any {
   const subPath = slashIndex === -1 ? '' : defPath.slice(slashIndex + 1);
 
   if (isValidComponentName(defName)) {
-    // Rewrite to components/schemas reference.
-    const base = `#/components/schemas/${defName}`;
-    return subPath ? `${base}/${subPath}` : base;
+    if (!subPath) {
+      return `#/components/schemas/${defName}`;
+    }
+    // Deep sub-path ref — API Gateway cannot resolve path-based model references.
+    // Resolve the nested schema from the current root and inline it instead.
+    const nested = resolveJsonPath(schemaRoot, subPath);
+    if (nested !== undefined) {
+      return postProcessSchema(nested, components, schemaRoot);
+    }
+    process.stderr.write(`Warning: Could not resolve deep ref "${ref}" from schema root — using empty schema\n`);
+    return {};
   }
 
   // Invalid name — inline the definition if we can find it in the schema root.

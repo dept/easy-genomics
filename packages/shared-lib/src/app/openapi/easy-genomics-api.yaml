@@ -2407,8 +2407,21 @@ components:
                 additionalProperties: false
               R2:
                 oneOf:
-                  - $ref: >-
-                      #/components/schemas/CreateFileUploadSampleSheetRequest/properties/UploadedFilePairs/items/properties/R1
+                  - type:
+                      - object
+                      - 'null'
+                    properties:
+                      Bucket:
+                        type: string
+                      Key:
+                        type: string
+                      Region:
+                        type: string
+                    required:
+                      - Bucket
+                      - Key
+                      - Region
+                    additionalProperties: false
                   - type: 'null'
             required:
               - SampleId
