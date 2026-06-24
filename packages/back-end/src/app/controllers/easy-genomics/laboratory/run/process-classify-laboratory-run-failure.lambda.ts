@@ -1,4 +1,5 @@
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
+import { LaboratoryNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import {
@@ -76,7 +77,16 @@ export async function processClassificationEvent(
   // Per-lab BYOK provider config lives on the Laboratory record. Deterministic
   // lookup still runs without needing the lab record; LLM path needs the lab's
   // provider + model + (for openai / anthropic) SSM API key.
-  const laboratory: Laboratory | undefined = await laboratoryService.queryByLaboratoryId(existingRun.LaboratoryId);
+  let laboratory: Laboratory | undefined;
+  try {
+    laboratory = await laboratoryService.queryByLaboratoryId(existingRun.LaboratoryId);
+  } catch (err) {
+    if (err instanceof LaboratoryNotFoundError) {
+      console.log(`Laboratory ${existingRun.LaboratoryId} not found; falling back to deterministic lookup.`);
+    } else {
+      throw err;
+    }
+  }
 
   const classification = await resolveClassification(existingRun, laboratory);
   if (!classification) {
