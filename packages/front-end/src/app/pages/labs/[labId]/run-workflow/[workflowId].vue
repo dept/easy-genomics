@@ -316,10 +316,10 @@
       :has-launched="hasLaunched"
       aria-label="Run HealthOmics workflow steps"
     >
-      <template #panel="{ item }">
+      <template #panel="{ selected }">
         <div v-if="!hasLaunched">
           <EGRunFormRunDetails
-            v-if="item.key === 'details' && activeStepKey === 'details'"
+            v-if="activeStepKey === 'details' && selected"
             platform="AWS HealthOmics"
             :wip-run-temp-id="omicsRunTempId"
             :pipeline-or-workflow-name="workflow?.name"
@@ -330,7 +330,7 @@
           />
 
           <EGRunFormUploadData
-            v-else-if="item.key === 'upload' && activeStepKey === 'upload'"
+            v-else-if="activeStepKey === 'upload' && selected"
             :lab-id="labId"
             :pipeline-or-workflow-name="workflow.name"
             platform="AWS HealthOmics"
@@ -341,7 +341,7 @@
           />
 
           <EGRunWorkflowFormEditParameters
-            v-else-if="item.key === 'parameters' && activeStepKey === 'parameters'"
+            v-else-if="activeStepKey === 'parameters' && selected"
             :key="`${omicsRunTempId}-${wipOmicsRun?.sampleSheetS3Url ?? ''}`"
             :params="wipOmicsRun?.params ?? {}"
             :schema="schema"
@@ -355,7 +355,7 @@
           />
 
           <EGRunWorkflowFormReview
-            v-else-if="item.key === 'review' && activeStepKey === 'review'"
+            v-else-if="activeStepKey === 'review' && selected"
             :schema="schema"
             :params="wipOmicsRun?.params"
             :lab-id="labId"
