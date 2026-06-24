@@ -304,8 +304,10 @@
   }
 
   async function onSubmit() {
+    runStore.updateWipOmicsRunParams(props.omicsRunTempId, localProps.params);
+
     const paramsRequired = wipOmicsRun.value?.paramsRequired || [];
-    const missingParams = paramsRequired.filter((paramName: string) => !wipOmicsRun.value?.params[paramName]);
+    const missingParams = paramsRequired.filter((paramName: string) => !localProps.params[paramName]);
 
     if (missingParams.length > 0) {
       useToastStore().error(`The '${missingParams.shift()}' field is required. Please try again.`);
