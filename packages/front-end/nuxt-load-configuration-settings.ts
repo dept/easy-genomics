@@ -8,7 +8,11 @@ import {
 import { ApiGatewayInfo } from '@easy-genomics/shared-lib/src/app/types/api-gateway-info';
 import { CognitoIdpInfo } from '@easy-genomics/shared-lib/src/app/types/cognito-idp-info';
 import { ConfigurationSettings } from '@easy-genomics/shared-lib/src/app/types/configuration';
-import { loadConfigurations } from '@easy-genomics/shared-lib/lib/src/app/utils/configuration';
+import {
+  findConfiguration,
+  getStackEnvName,
+  loadConfigurations,
+} from '@easy-genomics/shared-lib/lib/src/app/utils/configuration';
 import * as fs from 'fs';
 
 /**
@@ -117,29 +121,33 @@ void (async () => {
       );
       if (configurations.length === 0) {
         throw new Error('Easy Genomics Configuration missing / invalid, please update: easy-genomics.yaml');
-      } else if (configurations.length > 1) {
-        throw new Error('Too many Easy Genomics Configurations found, please update: easy-genomics.yaml');
-      } else {
-        const configuration: { [p: string]: ConfigurationSettings } | undefined = configurations.shift();
-
-        if (configuration) {
-          const envName: string | undefined = Object.keys(configuration).shift();
-          const configSettings: ConfigurationSettings | undefined = Object.values(configuration).shift();
-
-          if (!envName || !configSettings) {
-            throw new Error(
-              'Easy Genomics Configuration missing / invalid, please check the easy-genomics.yaml configuration',
-            );
-          }
-
-          const envType: string = configSettings['env-type']; // dev | pre-prod | prod
-          const awsRegion: string = configSettings['aws-region'];
-          const apiGatewayUrl: string | undefined = process.env.AWS_API_GATEWAY_URL;
-          const easyGenomicsApiUrl: string | undefined = configSettings['aws-easy-genomics-api-url'] ?? undefined;
-
-          await exportNuxtConfigurationSettings(awsRegion, envName, envType, apiGatewayUrl, easyGenomicsApiUrl);
-        }
       }
+
+      const stackEnvName = getStackEnvName() ?? process.env.ENV_NAME;
+      if (configurations.length > 1 && !stackEnvName) {
+        throw new Error(
+          'Multiple configurations found in easy-genomics.yaml, please specify argument: --stack {env-name} or set ENV_NAME',
+        );
+      }
+
+      const configuration =
+        configurations.length > 1 ? findConfiguration(stackEnvName!, configurations) : configurations[0];
+
+      const envName: string | undefined = Object.keys(configuration).shift();
+      const configSettings: ConfigurationSettings | undefined = Object.values(configuration).shift();
+
+      if (!envName || !configSettings) {
+        throw new Error(
+          'Easy Genomics Configuration missing / invalid, please check the easy-genomics.yaml configuration',
+        );
+      }
+
+      const envType: string = configSettings['env-type']; // dev | pre-prod | prod
+      const awsRegion: string = configSettings['aws-region'];
+      const apiGatewayUrl: string | undefined = process.env.AWS_API_GATEWAY_URL;
+      const easyGenomicsApiUrl: string | undefined = configSettings['aws-easy-genomics-api-url'] ?? undefined;
+
+      await exportNuxtConfigurationSettings(awsRegion, envName, envType, apiGatewayUrl, easyGenomicsApiUrl);
     }
   } catch (error) {
     if (isCredentialsError(error)) {

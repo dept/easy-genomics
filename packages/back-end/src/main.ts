@@ -1,7 +1,11 @@
 import { randomUUID } from 'crypto';
 import { join } from 'path';
 import { ConfigurationSettings } from '@easy-genomics/shared-lib/src/app/types/configuration';
-import { loadConfigurations } from '@easy-genomics/shared-lib/src/app/utils/configuration';
+import {
+  findConfiguration,
+  getStackEnvName,
+  loadConfigurations,
+} from '@easy-genomics/shared-lib/src/app/utils/configuration';
 import { TestUserDetails, VpcPeering } from '@easy-genomics/shared-lib/src/infra/types/main-stack';
 import { App, Aspects } from 'aws-cdk-lib';
 import { AwsSolutionsChecks } from 'cdk-nag';
@@ -152,15 +156,21 @@ if (process.env.CI_CD === 'true') {
   );
   if (configurations.length === 0) {
     throw new Error('Easy Genomics Configuration missing / invalid, please update: easy-genomics.yaml');
-  } else if (configurations.length > 1) {
-    throw new Error('Too many Easy Genomics Configurations found, please update: easy-genomics.yaml');
-  } else {
-    const configuration: { [p: string]: ConfigurationSettings } | undefined = configurations.shift();
+  }
 
-    if (configuration) {
-      envName = Object.keys(configuration).shift();
-      configSettings = Object.values(configuration).shift();
-    }
+  const stackEnvName = getStackEnvName() ?? process.env.ENV_NAME;
+  if (configurations.length > 1 && !stackEnvName) {
+    throw new Error(
+      'Multiple configurations found in easy-genomics.yaml, please specify argument: --stack {env-name} or set ENV_NAME',
+    );
+  }
+
+  const configuration =
+    configurations.length > 1 ? findConfiguration(stackEnvName!, configurations) : configurations[0];
+
+  if (configuration) {
+    envName = Object.keys(configuration).shift();
+    configSettings = Object.values(configuration).shift();
   }
 
   if (!envName || !configSettings) {

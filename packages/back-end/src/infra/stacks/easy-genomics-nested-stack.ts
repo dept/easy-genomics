@@ -1882,8 +1882,14 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: laboratoryDataTaggingDynamoActions,
       }),
       new PolicyStatement({
-        resources: ['arn:aws:s3:::*/*'],
-        actions: ['s3:PutObject', 's3:HeadObject'],
+        resources: ['arn:aws:s3:::*'],
+        actions: [
+          's3:GetBucketLocation',
+          's3:ListBucket', // Required for HeadObject command
+          's3:GetObject', // Required for HeadObject command
+          's3:HeadObject',
+          's3:PutObject',
+        ],
         effect: Effect.ALLOW,
       }),
     ]);
