@@ -148,11 +148,6 @@ export class EasyGenomicsNestedStack extends NestedStack {
       lambdaFunctionsNamespace: `${this.props.constructNamespace}`,
       lambdaFunctionsResources: {
         // Used for setting specific resources for a given Lambda function (e.g. environment settings, trigger events)
-        '/easy-genomics/list-api-docs': {
-          methodOptions: {
-            authorizer: undefined, // Public API documentation page — no Cognito user required
-          },
-        },
         '/easy-genomics/user/create-user-invitation-request': {
           environment: {
             COGNITO_USER_POOL_CLIENT_ID: this.props.userPoolClient?.userPoolClientId!,
@@ -182,19 +177,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
             COGNITO_USER_POOL_ID: this.props.userPool?.userPoolId!,
             JWT_SECRET_KEY: this.props.jwtSecretKey,
           },
-          methodOptions: {
-            // apiKeyRequired: true,
-            authorizer: undefined, // Explicitly remove authorizer
-          },
         },
         '/easy-genomics/user/create-user-forgot-password-request': {
           environment: {
             COGNITO_USER_POOL_CLIENT_ID: this.props.userPoolClient?.userPoolClientId!,
             COGNITO_USER_POOL_ID: this.props.userPool?.userPoolId!,
-          },
-          methodOptions: {
-            // apiKeyRequired: true,
-            authorizer: undefined, // Explicitly remove authorizer
           },
         },
         '/easy-genomics/user/confirm-user-forgot-password-request': {
@@ -204,10 +191,6 @@ export class EasyGenomicsNestedStack extends NestedStack {
             COGNITO_USER_POOL_CLIENT_ID: this.props.userPoolClient?.userPoolClientId!,
             COGNITO_USER_POOL_ID: this.props.userPool?.userPoolId!,
             JWT_SECRET_KEY: this.props.jwtSecretKey,
-          },
-          methodOptions: {
-            // apiKeyRequired: true,
-            authorizer: undefined, // Explicitly remove authorizer
           },
         },
         '/easy-genomics/user/delete-user-request': {

@@ -1,6 +1,5 @@
 import { NestedStackProps } from "aws-cdk-lib";
 import { BackEndStackProps } from '@easy-genomics/shared-lib/src/infra/types/main-stack';
-import { RestApi } from 'aws-cdk-lib/aws-apigateway';
 import { UserPool, UserPoolClient } from 'aws-cdk-lib/aws-cognito';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table } from "aws-cdk-lib/aws-dynamodb";
@@ -11,7 +10,6 @@ import { IVpc } from "aws-cdk-lib/aws-ec2";
 // against an API Gateway REST API. Domain-specific props extend this rather
 // than inheriting from each other, so API/route ownership is explicit per domain.
 export interface CommonApiNestedStackProps extends BackEndStackProps, NestedStackProps {
-    restApi?: RestApi,
     userPool?: UserPool,
     userPoolClient?: UserPoolClient,
     iamPolicyStatements?: Map<string, PolicyStatement[]>,
