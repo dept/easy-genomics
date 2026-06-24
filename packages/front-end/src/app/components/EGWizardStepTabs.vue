@@ -96,7 +96,7 @@
       </div>
     </template>
 
-    <template #item="{ item }">
+    <template #item="{ item, index, selected }">
       <div
         role="tabpanel"
         :id="panelId(item.key)"
@@ -104,7 +104,7 @@
         tabindex="0"
         class="outline-none focus:outline-none"
       >
-        <slot name="panel" :item="item" />
+        <slot name="panel" :item="item" :index="index" :selected="selected" />
       </div>
     </template>
   </UTabs>
