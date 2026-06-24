@@ -701,6 +701,7 @@
     () => {
       hasRefreshedLabForNullToken.value = false;
       lastProcessedLabRef.value = null;
+      void loadLabData();
     },
   );
 

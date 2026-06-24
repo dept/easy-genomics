@@ -20,7 +20,7 @@
   import EGRunFromDataCollectionModal from '@FE/components/EGRunFromDataCollectionModal.vue';
   import EGSamplesTab from '@FE/components/EGSamplesTab.vue';
   import EGUnlinkedFilesTab from '@FE/components/EGUnlinkedFilesTab.vue';
-  import { isLaboratoryS3Configured, isMissingLaboratoryS3BucketError } from '@FE/utils/laboratory-s3';
+  import { isLaboratoryS3Configured, shouldIgnoreUnlinkedBucketObjectsError } from '@FE/utils/laboratory-s3';
 
   const props = defineProps<{ labId: string }>();
 
@@ -144,7 +144,13 @@
     unlinkedMeta.value = { s3Bucket: '', resolvedPrefix: '', lastScanLabel: '' };
   }
 
+  async function ensureLabDetailsLoaded(): Promise<void> {
+    await labsStore.loadLab(props.labId);
+  }
+
   async function loadUnlinkedFiles(): Promise<void> {
+    await ensureLabDetailsLoaded();
+
     if (!isLabS3Configured.value) {
       clearUnlinkedFiles();
       return;
@@ -163,7 +169,7 @@
         lastScanLabel: `Last scan ${new Date().toLocaleTimeString()}`,
       };
     } catch (e: unknown) {
-      if (isMissingLaboratoryS3BucketError(e)) {
+      if (shouldIgnoreUnlinkedBucketObjectsError(e, lab.value)) {
         clearUnlinkedFiles();
         return;
       }
@@ -174,7 +180,14 @@
   }
 
   async function refreshAll(): Promise<void> {
-    await Promise.all([loadTags(), loadSamples(), loadSequenceCollections(), loadUnlinkedFiles()]);
+    await ensureLabDetailsLoaded();
+    const tasks = [loadTags(), loadSamples(), loadSequenceCollections()];
+    if (isLabS3Configured.value) {
+      tasks.push(loadUnlinkedFiles());
+    } else {
+      clearUnlinkedFiles();
+    }
+    await Promise.all(tasks);
   }
 
   async function onSampleTagsUpdated(): Promise<void> {

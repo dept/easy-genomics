@@ -38,6 +38,9 @@
 
   const wipSeqeraRun = computed<WipRun | undefined>(() => runStore.wipSeqeraRuns[seqeraRunTempId.value]);
 
+  /** Only mount the active wizard step panel content (see run-workflow page). */
+  const activeStepKey = computed(() => steps.value[selectedStepIndex.value]?.key);
+
   const pipeline = computed<SeqeraPipeline | null>(() => seqeraPipelinesStore.pipelines[pipelineId] || null);
 
   const hasLaunched = ref<boolean>(false);
@@ -317,10 +320,10 @@
       :has-launched="hasLaunched"
       aria-label="Run Seqera pipeline steps"
     >
-      <template #panel="{ item }">
+      <template #panel="{ selected }">
         <div v-if="!hasLaunched">
           <EGRunFormRunDetails
-            v-if="item.key === 'details'"
+            v-if="activeStepKey === 'details' && selected"
             platform="Seqera Cloud"
             :wip-run-temp-id="seqeraRunTempId"
             :pipeline-or-workflow-name="pipeline?.name"
@@ -330,7 +333,7 @@
           />
 
           <EGRunFormUploadData
-            v-else-if="item.key === 'upload'"
+            v-else-if="activeStepKey === 'upload' && selected"
             :lab-id="labId"
             :pipeline-or-workflow-name="pipeline.name"
             platform="Seqera Cloud"
@@ -341,7 +344,7 @@
           />
 
           <EGRunPipelineFormEditParameters
-            v-else-if="item.key === 'parameters'"
+            v-else-if="activeStepKey === 'parameters' && selected"
             :params="wipSeqeraRun?.params"
             :schema="schema"
             :lab-id="labId"
@@ -352,7 +355,7 @@
           />
 
           <EGRunPipelineFormReview
-            v-else-if="item.key === 'review'"
+            v-else-if="activeStepKey === 'review' && selected"
             :schema="schema"
             :params="wipSeqeraRun?.params"
             :lab-id="labId"

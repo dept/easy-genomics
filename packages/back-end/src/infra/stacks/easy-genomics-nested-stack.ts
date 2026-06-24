@@ -1807,7 +1807,6 @@ export class EasyGenomicsNestedStack extends NestedStack {
 
     const sequenceSetDataCollectionRoutes = [
       '/easy-genomics/data-collections/list-samples',
-      '/easy-genomics/data-collections/create-sample',
       '/easy-genomics/data-collections/add-files-to-sample',
       '/easy-genomics/data-collections/remove-files-from-sample',
       '/easy-genomics/data-collections/list-sample-files',
@@ -1822,7 +1821,6 @@ export class EasyGenomicsNestedStack extends NestedStack {
       '/easy-genomics/data-collections/edit-sample-batch',
       '/easy-genomics/data-collections/request-list-sample-tags',
       '/easy-genomics/data-collections/list-samples-by-tag',
-      '/easy-genomics/data-collections/request-unlinked-bucket-objects',
       '/easy-genomics/data-collections/create-bulk-samples',
     ];
     for (const route of sequenceSetDataCollectionRoutes) {
@@ -1837,6 +1835,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
 
     // create-sample may expand regex matches via lab bucket listing
     this.iam.addPolicyStatements('/easy-genomics/data-collections/create-sample', [
+      ...laboratoryReadForSequenceCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
       new PolicyStatement({
         resources: ['arn:aws:s3:::*'],
         actions: ['s3:ListBucket'],
@@ -1844,8 +1847,13 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
     ]);
 
+    // request-unlinked-bucket-objects lists S3 inputs then reads file rows from the tagging table
     this.iam.addPolicyStatements('/easy-genomics/data-collections/request-unlinked-bucket-objects', [
       ...laboratoryReadForSequenceCollections,
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
       new PolicyStatement({
         resources: ['arn:aws:s3:::*'],
         actions: ['s3:ListBucket'],
