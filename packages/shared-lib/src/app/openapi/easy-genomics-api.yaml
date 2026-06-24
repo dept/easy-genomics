@@ -92,7 +92,7 @@ components:
         - name
         - parameters
       additionalProperties: false
-    AddFilesToSequenceSetRequest:
+    AddFilesToSampleRequest:
       type: object
       properties:
         LaboratoryId:
@@ -101,7 +101,7 @@ components:
         S3Bucket:
           type: string
           minLength: 1
-        SequenceSetId:
+        SampleId:
           type: string
           format: uuid
         Keys:
@@ -114,19 +114,19 @@ components:
       required:
         - LaboratoryId
         - S3Bucket
-        - SequenceSetId
+        - SampleId
         - Keys
       additionalProperties: false
-    AddSequenceSetsToDataCollectionRequest:
+    AddSamplesToSequenceCollectionRequest:
       type: object
       properties:
         LaboratoryId:
           type: string
           minLength: 1
-        DataCollectionId:
+        SequenceCollectionId:
           type: string
           format: uuid
-        SequenceSetIds:
+        SampleIds:
           type: array
           items:
             type: string
@@ -135,8 +135,8 @@ components:
           maxItems: 500
       required:
         - LaboratoryId
-        - DataCollectionId
-        - SequenceSetIds
+        - SequenceCollectionId
+        - SampleIds
       additionalProperties: false
     AddTagsToFilesRequest:
       type: object
@@ -169,13 +169,13 @@ components:
         - S3Bucket
         - Keys
       additionalProperties: false
-    AddTagsToSequenceSetsRequest:
+    AddTagsToSamplesRequest:
       type: object
       properties:
         LaboratoryId:
           type: string
           minLength: 1
-        SequenceSetIds:
+        SampleIds:
           type: array
           items:
             type: string
@@ -196,9 +196,9 @@ components:
           maxItems: 50
       required:
         - LaboratoryId
-        - SequenceSetIds
+        - SampleIds
       additionalProperties: false
-    CreateBulkSequenceSetsRequest:
+    CreateBulkSamplesRequest:
       type: object
       properties:
         LaboratoryId:
@@ -211,7 +211,7 @@ components:
           type: string
           minLength: 1
           maxLength: 250
-        SequenceSets:
+        Samples:
           type: array
           items:
             type: object
@@ -273,13 +273,191 @@ components:
               - DestKey
             additionalProperties: false
           maxItems: 2000
+        BatchTagId:
+          type: string
+          minLength: 1
+        NewBatchName:
+          type: string
+          minLength: 1
+          maxLength: 250
       required:
         - LaboratoryId
         - S3Bucket
         - ImportLabel
-        - SequenceSets
+        - Samples
       additionalProperties: false
-    CreateDataCollectionRequest:
+    BulkCreateSamplesResponse:
+      type: object
+      properties:
+        CreatedCount:
+          type: number
+        SampleIds:
+          type: array
+          items:
+            type: string
+        Errors:
+          type: array
+          items:
+            type: object
+            properties:
+              Name:
+                type: string
+              Message:
+                type: string
+            required:
+              - Message
+              - Name
+      required:
+        - CreatedCount
+        - SampleIds
+    CreateSampleRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          minLength: 1
+        S3Bucket:
+          type: string
+          minLength: 1
+        Name:
+          type: string
+          minLength: 1
+          maxLength: 250
+        Layout:
+          type: string
+          enum:
+            - paired_end
+            - single_end
+            - long_reads
+            - paired_end_with_extras
+        FilenameRegex:
+          type: string
+          minLength: 1
+        SampleIdPattern:
+          type: string
+          minLength: 1
+        Keys:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          maxItems: 500
+        ExistingSampleId:
+          type: string
+          format: uuid
+        ExpandRegexFromListing:
+          type: boolean
+      required:
+        - LaboratoryId
+        - S3Bucket
+        - Layout
+      additionalProperties: false
+    SampleLayout:
+      enum:
+        - long_reads
+        - paired_end
+        - paired_end_with_extras
+        - single_end
+      type: string
+    LaboratorySample:
+      type: object
+      properties:
+        SampleId:
+          type: string
+        Name:
+          type: string
+        Layout:
+          $ref: '#/components/schemas/SampleLayout'
+        FilenameRegex:
+          type: string
+        SampleIdPattern:
+          type: string
+        FileCount:
+          type: number
+        TagIds:
+          description: Standard (non-workflow, non-permanent, non-batch) tags on this sample.
+          type: array
+          items:
+            type: string
+        BatchTagId:
+          description: At most one batch tag per sample.
+          type: string
+        WorkflowTagIds:
+          type: array
+          items:
+            type: string
+        IsPermanent:
+          type: boolean
+        ImportSource:
+          type: object
+          properties:
+            type:
+              enum:
+                - manual
+                - s3_import
+              type: string
+            label:
+              type: string
+            importedAt:
+              type: string
+          required:
+            - importedAt
+            - label
+            - type
+        ContentsSummary:
+          description: Human-readable summary for list UI, e.g. "2 files · R1 + R2".
+          type: string
+        LaboratoryRunUsages:
+          type: array
+          items:
+            type: object
+            properties:
+              RunId:
+                type: string
+              RunName:
+                type: string
+              WorkflowName:
+                description: 'Optional: omitted if the run was created without a WorkflowName.'
+                type: string
+              RunCreatedAt:
+                description: ISO timestamp of the laboratory run's `CreatedAt`.
+                type: string
+              InputFileCount:
+                description: Total number of input files recorded for this run at creation time.
+                type: number
+              InputFileKeys:
+                description: Full list of S3 object keys (lab-scoped) for the run, used by the tooltip's "select samples" action.
+                type: array
+                items:
+                  type: string
+              ExpiresAt:
+                description: |-
+                  Mirror of the laboratory run's `ExpiresAt` (epoch seconds, DynamoDB TTL) at the time this
+                  usage entry was recorded or last refreshed. Undefined when the run is non-expiring
+                  (`Laboratory.RunRetentionMonths === 0`) or when the run had not yet reached a terminal
+                  status. Surfaced to the front-end so the sequence collections page can power the
+                  "Expiring soon" scope filter without an extra round trip to the run table.
+                type: number
+            required:
+              - InputFileCount
+              - InputFileKeys
+              - RunCreatedAt
+              - RunId
+              - RunName
+        CreatedAt:
+          type: string
+        CreatedBy:
+          type: string
+        ModifiedAt:
+          type: string
+        ModifiedBy:
+          type: string
+      required:
+        - FileCount
+        - Layout
+        - Name
+        - SampleId
+    CreateSequenceCollectionRequest:
       type: object
       properties:
         LaboratoryId:
@@ -324,62 +502,74 @@ components:
             additionalProperties: false
           minItems: 1
           maxItems: 30
-        SequenceSetIds:
+        SampleIds:
           type: array
           items:
             type: string
             format: uuid
           maxItems: 500
-        ExistingDataCollectionId:
+        ExistingSequenceCollectionId:
           type: string
           format: uuid
       required:
         - LaboratoryId
         - Columns
       additionalProperties: false
-    CreateSequenceSetRequest:
+    SampleSheetColumnRole:
+      enum:
+        - custom_uri
+        - input_bam
+        - input_cram
+        - input_vcf
+        - metadata
+        - read1
+        - read2
+        - reads
+        - reference_bed
+        - reference_fasta
+        - reference_gff
+        - reference_gtf
+        - sample_id
+      type: string
+    LaboratorySequenceCollection:
       type: object
       properties:
-        LaboratoryId:
+        SequenceCollectionId:
           type: string
-          minLength: 1
-        S3Bucket:
-          type: string
-          minLength: 1
         Name:
           type: string
-          minLength: 1
-          maxLength: 250
-        Layout:
-          type: string
-          enum:
-            - paired_end
-            - single_end
-            - long_reads
-            - paired_end_with_extras
-        FilenameRegex:
-          type: string
-          minLength: 1
-          maxLength: 500
-        SampleIdPattern:
-          type: string
-          minLength: 1
-        Keys:
+        Columns:
           type: array
           items:
-            type: string
-            minLength: 1
-          maxItems: 500
-        ExistingSequenceSetId:
+            type: object
+            properties:
+              columnName:
+                type: string
+              role:
+                $ref: '#/components/schemas/SampleSheetColumnRole'
+              required:
+                type: boolean
+            required:
+              - columnName
+              - required
+              - role
+        SampleCount:
+          type: number
+        LastSampleSheetS3Url:
           type: string
-          format: uuid
-        ExpandRegexFromListing:
-          type: boolean
+        CreatedAt:
+          type: string
+        CreatedBy:
+          type: string
+        ModifiedAt:
+          type: string
+        ModifiedBy:
+          type: string
       required:
-        - LaboratoryId
-        - S3Bucket
-        - Layout
-      additionalProperties: false
+        - Columns
+        - Name
+        - SampleCount
+        - SequenceCollectionId
     CreateTagRequest:
       type: object
       properties:
@@ -476,6 +666,94 @@ components:
         - S3Bucket
         - Keys
       additionalProperties: false
+    EditSampleBatchRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          minLength: 1
+        SampleIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          maxItems: 100
+        ClearBatch:
+          type: boolean
+        BatchTagId:
+          type: string
+          minLength: 1
+        NewBatchName:
+          type: string
+          minLength: 1
+          maxLength: 250
+      required:
+        - LaboratoryId
+        - SampleIds
+      additionalProperties: false
+    EditSequenceCollectionRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          minLength: 1
+        SequenceCollectionId:
+          type: string
+          format: uuid
+        Name:
+          type: string
+          minLength: 1
+          maxLength: 250
+        Columns:
+          type: array
+          items:
+            type: object
+            properties:
+              columnName:
+                type: string
+                minLength: 1
+                maxLength: 64
+                pattern: ^[a-zA-Z][a-zA-Z0-9_]*$
+              role:
+                type: string
+                enum:
+                  - sample_id
+                  - read1
+                  - read2
+                  - reads
+                  - reference_fasta
+                  - reference_gtf
+                  - reference_gff
+                  - reference_bed
+                  - input_bam
+                  - input_cram
+                  - input_vcf
+                  - metadata
+                  - custom_uri
+              required:
+                type: boolean
+            required:
+              - columnName
+              - role
+              - required
+            additionalProperties: false
+          minItems: 1
+          maxItems: 30
+        SampleIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          maxItems: 500
+      required:
+        - LaboratoryId
+        - SequenceCollectionId
+        - Name
+        - Columns
+        - SampleIds
+      additionalProperties: false
     ListFilesByTagResponse:
       type: object
       properties:
@@ -495,6 +773,172 @@ components:
           type: string
       required:
         - Files
+    ListSampleFilesResponse: {}
+    ListSamplesByTagResponse:
+      type: object
+      properties:
+        SampleIds:
+          type: array
+          items:
+            type: string
+        NextCursor:
+          type: string
+      required:
+        - SampleIds
+    ListLaboratorySamplesResponse:
+      type: object
+      properties:
+        Samples:
+          type: array
+          items:
+            type: object
+            properties:
+              SampleId:
+                type: string
+              Name:
+                type: string
+              Layout:
+                $ref: '#/components/schemas/SampleLayout'
+              FilenameRegex:
+                type: string
+              SampleIdPattern:
+                type: string
+              FileCount:
+                type: number
+              TagIds:
+                description: Standard (non-workflow, non-permanent, non-batch) tags on this sample.
+                type: array
+                items:
+                  type: string
+              BatchTagId:
+                description: At most one batch tag per sample.
+                type: string
+              WorkflowTagIds:
+                type: array
+                items:
+                  type: string
+              IsPermanent:
+                type: boolean
+              ImportSource:
+                type: object
+                properties:
+                  type:
+                    enum:
+                      - manual
+                      - s3_import
+                    type: string
+                  label:
+                    type: string
+                  importedAt:
+                    type: string
+                required:
+                  - importedAt
+                  - label
+                  - type
+              ContentsSummary:
+                description: Human-readable summary for list UI, e.g. "2 files · R1 + R2".
+                type: string
+              LaboratoryRunUsages:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    RunId:
+                      type: string
+                    RunName:
+                      type: string
+                    WorkflowName:
+                      description: 'Optional: omitted if the run was created without a WorkflowName.'
+                      type: string
+                    RunCreatedAt:
+                      description: ISO timestamp of the laboratory run's `CreatedAt`.
+                      type: string
+                    InputFileCount:
+                      description: Total number of input files recorded for this run at creation time.
+                      type: number
+                    InputFileKeys:
+                      description: >-
+                        Full list of S3 object keys (lab-scoped) for the run, used by the tooltip's "select samples"
+                        action.
+                      type: array
+                      items:
+                        type: string
+                    ExpiresAt:
+                      description: |-
+                        Mirror of the laboratory run's `ExpiresAt` (epoch seconds, DynamoDB TTL) at the time this
+                        usage entry was recorded or last refreshed. Undefined when the run is non-expiring
+                        (`Laboratory.RunRetentionMonths === 0`) or when the run had not yet reached a terminal
+                        status. Surfaced to the front-end so the sequence collections page can power the
+                        "Expiring soon" scope filter without an extra round trip to the run table.
+                      type: number
+                  required:
+                    - InputFileCount
+                    - InputFileKeys
+                    - RunCreatedAt
+                    - RunId
+                    - RunName
+              CreatedAt:
+                type: string
+              CreatedBy:
+                type: string
+              ModifiedAt:
+                type: string
+              ModifiedBy:
+                type: string
+            required:
+              - FileCount
+              - Layout
+              - Name
+              - SampleId
+      required:
+        - Samples
+    ListSequenceCollectionSamplesResponse: {}
+    ListLaboratorySequenceCollectionsResponse:
+      type: object
+      properties:
+        SequenceCollections:
+          type: array
+          items:
+            type: object
+            properties:
+              SequenceCollectionId:
+                type: string
+              Name:
+                type: string
+              Columns:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    columnName:
+                      type: string
+                    role:
+                      $ref: '#/components/schemas/SampleSheetColumnRole'
+                    required:
+                      type: boolean
+                  required:
+                    - columnName
+                    - required
+                    - role
+              SampleCount:
+                type: number
+              LastSampleSheetS3Url:
+                type: string
+              CreatedAt:
+                type: string
+              CreatedBy:
+                type: string
+              ModifiedAt:
+                type: string
+              ModifiedBy:
+                type: string
+            required:
+              - Columns
+              - Name
+              - SampleCount
+              - SequenceCollectionId
+      required:
+        - SequenceCollections
     ListLaboratoryDataTagsResponse:
       type: object
       properties:
@@ -546,7 +990,7 @@ components:
               - TagId
       required:
         - Tags
-    RemoveFilesFromSequenceSetRequest:
+    RemoveFilesFromSampleRequest:
       type: object
       properties:
         LaboratoryId:
@@ -555,7 +999,7 @@ components:
         S3Bucket:
           type: string
           minLength: 1
-        SequenceSetId:
+        SampleId:
           type: string
           format: uuid
         Keys:
@@ -568,7 +1012,7 @@ components:
       required:
         - LaboratoryId
         - S3Bucket
-        - SequenceSetId
+        - SampleId
         - Keys
       additionalProperties: false
     RequestLaboratoryBucketObjectsRequest:
@@ -630,8 +1074,8 @@ components:
                 type: array
                 items:
                   type: string
-              SequenceSetIds:
-                description: Sequence sets this file belongs to.
+              SampleIds:
+                description: Samples this file belongs to.
                 type: array
                 items:
                   type: string
@@ -684,7 +1128,7 @@ components:
                         Mirror of the laboratory run's `ExpiresAt` (epoch seconds, DynamoDB TTL) at the time this
                         usage entry was recorded or last refreshed. Undefined when the run is non-expiring
                         (`Laboratory.RunRetentionMonths === 0`) or when the run had not yet reached a terminal
-                        status. Surfaced to the front-end so the data collections page can power the
+                        status. Surfaced to the front-end so the sequence collections page can power the
                         "Expiring soon" scope filter without an extra round trip to the run table.
                       type: number
                   required:
@@ -699,13 +1143,13 @@ components:
               - WorkflowTagIds
       required:
         - Files
-    RequestListSequenceSetTagsRequest:
+    RequestListSampleTagsRequest:
       type: object
       properties:
         LaboratoryId:
           type: string
           minLength: 1
-        SequenceSetIds:
+        SampleIds:
           type: array
           items:
             type: string
@@ -714,8 +1158,123 @@ components:
           maxItems: 500
       required:
         - LaboratoryId
-        - SequenceSetIds
+        - SampleIds
       additionalProperties: false
+    ListSampleTagsResponse:
+      type: object
+      properties:
+        Samples:
+          type: array
+          items:
+            type: object
+            properties:
+              SampleId:
+                type: string
+              TagIds:
+                type: array
+                items:
+                  type: string
+              BatchTagId:
+                type: string
+              WorkflowTagIds:
+                type: array
+                items:
+                  type: string
+              IsPermanent:
+                type: boolean
+              LaboratoryRunUsages:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    RunId:
+                      type: string
+                    RunName:
+                      type: string
+                    WorkflowName:
+                      description: 'Optional: omitted if the run was created without a WorkflowName.'
+                      type: string
+                    RunCreatedAt:
+                      description: ISO timestamp of the laboratory run's `CreatedAt`.
+                      type: string
+                    InputFileCount:
+                      description: Total number of input files recorded for this run at creation time.
+                      type: number
+                    InputFileKeys:
+                      description: >-
+                        Full list of S3 object keys (lab-scoped) for the run, used by the tooltip's "select samples"
+                        action.
+                      type: array
+                      items:
+                        type: string
+                    ExpiresAt:
+                      description: |-
+                        Mirror of the laboratory run's `ExpiresAt` (epoch seconds, DynamoDB TTL) at the time this
+                        usage entry was recorded or last refreshed. Undefined when the run is non-expiring
+                        (`Laboratory.RunRetentionMonths === 0`) or when the run had not yet reached a terminal
+                        status. Surfaced to the front-end so the sequence collections page can power the
+                        "Expiring soon" scope filter without an extra round trip to the run table.
+                      type: number
+                  required:
+                    - InputFileCount
+                    - InputFileKeys
+                    - RunCreatedAt
+                    - RunId
+                    - RunName
+            required:
+              - SampleId
+              - TagIds
+              - WorkflowTagIds
+      required:
+        - Samples
+    RequestSequenceCollectionSampleSheetRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          minLength: 1
+        S3Bucket:
+          type: string
+          minLength: 1
+        SequenceCollectionId:
+          type: string
+          format: uuid
+        Platform:
+          type: string
+          enum:
+            - AWS HealthOmics
+            - Seqera Cloud
+        TransactionId:
+          type: string
+          format: uuid
+        SampleSheetName:
+          type: string
+          pattern: ^[a-zA-Z0-9._:!@#$%^()-]+\.csv$
+        ValidateS3FilesExist:
+          type: boolean
+      required:
+        - LaboratoryId
+        - S3Bucket
+        - SequenceCollectionId
+        - Platform
+        - TransactionId
+        - SampleSheetName
+      additionalProperties: false
+    GenerateSequenceCollectionSampleSheetResponse:
+      type: object
+      properties:
+        SampleSheetS3Url:
+          type: string
+        InputFileKeys:
+          type: array
+          items:
+            type: string
+        CsvPreview:
+          type: string
+      required:
+        - CsvPreview
+        - InputFileKeys
+        - SampleSheetS3Url
     RequestUnlinkedBucketObjectsRequest:
       type: object
       properties:
@@ -739,13 +1298,41 @@ components:
       required:
         - LaboratoryId
       additionalProperties: false
-    UpdateDataCollectionSchemaRequest:
+    UnlinkedBucketObjectsResponse:
+      type: object
+      properties:
+        Contents:
+          type: array
+          items:
+            type: object
+            properties:
+              Key:
+                type: string
+              LastModified:
+                type: string
+              Size:
+                type: number
+            required:
+              - Key
+        IsTruncated:
+          type: boolean
+        S3Bucket:
+          type: string
+        ResolvedPrefix:
+          type: string
+        ReturnedKeyCount:
+          type: number
+      required:
+        - IsTruncated
+        - ResolvedPrefix
+        - S3Bucket
+    UpdateSequenceCollectionSchemaRequest:
       type: object
       properties:
         LaboratoryId:
           type: string
           minLength: 1
-        DataCollectionId:
+        SequenceCollectionId:
           type: string
           format: uuid
         Columns:
@@ -785,70 +1372,8 @@ components:
           maxItems: 30
       required:
         - LaboratoryId
-        - DataCollectionId
+        - SequenceCollectionId
         - Columns
-      additionalProperties: false
-    UpdateDataCollectionRequest:
-      type: object
-      properties:
-        LaboratoryId:
-          type: string
-          minLength: 1
-        DataCollectionId:
-          type: string
-          format: uuid
-        Name:
-          type: string
-          minLength: 1
-          maxLength: 250
-        Columns:
-          type: array
-          items:
-            type: object
-            properties:
-              columnName:
-                type: string
-                minLength: 1
-                maxLength: 64
-                pattern: ^[a-zA-Z][a-zA-Z0-9_]*$
-              role:
-                type: string
-                enum:
-                  - sample_id
-                  - read1
-                  - read2
-                  - reads
-                  - reference_fasta
-                  - reference_gtf
-                  - reference_gff
-                  - reference_bed
-                  - input_bam
-                  - input_cram
-                  - input_vcf
-                  - metadata
-                  - custom_uri
-              required:
-                type: boolean
-            required:
-              - columnName
-              - role
-              - required
-            additionalProperties: false
-          minItems: 1
-          maxItems: 30
-        SequenceSetIds:
-          type: array
-          items:
-            type: string
-            format: uuid
-          minItems: 1
-          maxItems: 500
-      required:
-        - LaboratoryId
-        - DataCollectionId
-        - Name
-        - Columns
-        - SequenceSetIds
       additionalProperties: false
     UpdateTagRequest:
       type: object
@@ -1882,8 +2407,21 @@ components:
                 additionalProperties: false
               R2:
                 oneOf:
-                  - $ref: >-
-                      #/components/schemas/CreateFileUploadSampleSheetRequest/properties/UploadedFilePairs/items/properties/R1
+                  - type:
+                      - object
+                      - 'null'
+                    properties:
+                      Bucket:
+                        type: string
+                      Key:
+                        type: string
+                      Region:
+                        type: string
+                    required:
+                      - Bucket
+                      - Key
+                      - Region
+                    additionalProperties: false
                   - type: 'null'
             required:
               - SampleId
@@ -6243,16 +6781,16 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /easy-genomics/data-collections/add-files-to-sequence-set:
+  /easy-genomics/data-collections/add-files-to-sample:
     post:
-      operationId: addFilesToSequenceSet
-      summary: Add Files To Sequence Set
+      operationId: addFilesToSample
+      summary: Add Files To Sample
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddFilesToSequenceSetRequest'
+              $ref: '#/components/schemas/AddFilesToSampleRequest'
       responses:
         '200':
           description: Success
@@ -6269,16 +6807,16 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /easy-genomics/data-collections/add-sequence-sets-to-data-collection:
+  /easy-genomics/data-collections/add-samples-to-sequence-collection:
     post:
-      operationId: addSequenceSetsToDataCollection
-      summary: Add Sequence Sets To Data Collection
+      operationId: addSamplesToSequenceCollection
+      summary: Add Samples To Sequence Collection
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddSequenceSetsToDataCollectionRequest'
+              $ref: '#/components/schemas/AddSamplesToSequenceCollectionRequest'
       responses:
         '200':
           description: Success
@@ -6321,16 +6859,16 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /easy-genomics/data-collections/add-tags-to-sequence-sets:
+  /easy-genomics/data-collections/add-tags-to-samples:
     post:
-      operationId: addTagsToSequenceSets
-      summary: Add Tags To Sequence Sets
+      operationId: addTagsToSamples
+      summary: Add Tags To Samples
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddTagsToSequenceSetsRequest'
+              $ref: '#/components/schemas/AddTagsToSamplesRequest'
       responses:
         '200':
           description: Success
@@ -6347,22 +6885,23 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /easy-genomics/data-collections/create-bulk-sequence-sets:
+  /easy-genomics/data-collections/create-bulk-samples:
     post:
-      operationId: createBulkSequenceSets
-      summary: Create Bulk Sequence Sets
+      operationId: createBulkSamples
+      summary: Create Bulk Samples
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateBulkSequenceSetsRequest'
+              $ref: '#/components/schemas/CreateBulkSamplesRequest'
       responses:
         '200':
           description: Success
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/BulkCreateSamplesResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -6373,22 +6912,23 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /easy-genomics/data-collections/create-data-collection:
+  /easy-genomics/data-collections/create-sample:
     post:
-      operationId: createDataCollection
-      summary: Create Data Collection
+      operationId: createSample
+      summary: Create Sample
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateDataCollectionRequest'
+              $ref: '#/components/schemas/CreateSampleRequest'
       responses:
         '200':
           description: Success
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/LaboratorySample'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -6399,22 +6939,23 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /easy-genomics/data-collections/create-sequence-set:
+  /easy-genomics/data-collections/create-sequence-collection:
     post:
-      operationId: createSequenceSet
-      summary: Create Sequence Set
+      operationId: createSequenceCollection
+      summary: Create Sequence Collection
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateSequenceSetRequest'
+              $ref: '#/components/schemas/CreateSequenceCollectionRequest'
       responses:
         '200':
           description: Success
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/LaboratorySequenceCollection'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -6442,6 +6983,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LaboratoryDataTag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/data-collections/delete-sequence-collection/{id}:
+    delete:
+      operationId: deleteSequenceCollection
+      summary: Delete Sequence Collection
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: laboratoryId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Laboratory that owns the sequence collection
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -6504,23 +7077,16 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /easy-genomics/data-collections/list-data-collection-sequence-sets:
-    get:
-      operationId: listDataCollectionSequenceSets
-      summary: List Data Collection Sequence Sets
-      parameters:
-        - name: laboratoryId
-          in: query
-          required: true
-          schema:
-            type: string
-          description: Laboratory to query
-        - name: dataCollectionId
-          in: query
-          required: true
-          schema:
-            type: string
-          description: Data collection to list sequence sets for
+  /easy-genomics/data-collections/edit-sample-batch:
+    post:
+      operationId: editSampleBatch
+      summary: Edit Sample Batch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditSampleBatchRequest'
       responses:
         '200':
           description: Success
@@ -6537,23 +7103,23 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /easy-genomics/data-collections/list-data-collections:
-    get:
-      operationId: listDataCollections
-      summary: List Data Collections
-      parameters:
-        - name: laboratoryId
-          in: query
-          required: true
-          schema:
-            type: string
-          description: Laboratory to list data collections for
+  /easy-genomics/data-collections/edit-sequence-collection:
+    post:
+      operationId: editSequenceCollection
+      summary: Edit Sequence Collection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditSequenceCollectionRequest'
       responses:
         '200':
           description: Success
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/LaboratorySequenceCollection'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -6610,23 +7176,23 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /easy-genomics/data-collections/list-sequence-set-files:
+  /easy-genomics/data-collections/list-sample-files:
     get:
-      operationId: listSequenceSetFiles
-      summary: List Sequence Set Files
+      operationId: listSampleFiles
+      summary: List Sample Files
       parameters:
         - name: laboratoryId
           in: query
-          required: true
+          required: false
           schema:
             type: string
           description: Laboratory to query
-        - name: sequenceSetId
+        - name: sampleId
           in: query
-          required: true
+          required: false
           schema:
             type: string
-          description: Sequence set to list files for
+          description: Sample to list files for
         - name: limit
           in: query
           required: false
@@ -6644,7 +7210,8 @@ paths:
           description: Success
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/ListSampleFilesResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -6655,23 +7222,23 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /easy-genomics/data-collections/list-sequence-sets-by-tag:
+  /easy-genomics/data-collections/list-samples-by-tag:
     get:
-      operationId: listSequenceSetsByTag
-      summary: List Sequence Sets By Tag
+      operationId: listSamplesByTag
+      summary: List Samples By Tag
       parameters:
         - name: laboratoryId
           in: query
-          required: true
+          required: false
           schema:
             type: string
           description: Laboratory to query
         - name: tagId
           in: query
-          required: true
+          required: false
           schema:
             type: string
-          description: Tag to list sequence sets for
+          description: Tag to list samples for
         - name: limit
           in: query
           required: false
@@ -6689,7 +7256,8 @@ paths:
           description: Success
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/ListSamplesByTagResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -6700,23 +7268,86 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /easy-genomics/data-collections/list-sequence-sets:
+  /easy-genomics/data-collections/list-samples:
     get:
-      operationId: listSequenceSets
-      summary: List Sequence Sets
+      operationId: listSamples
+      summary: List Samples
       parameters:
         - name: laboratoryId
           in: query
-          required: true
+          required: false
           schema:
             type: string
-          description: Laboratory to list sequence sets for
+          description: Laboratory to list samples for
       responses:
         '200':
           description: Success
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/ListLaboratorySamplesResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/data-collections/list-sequence-collection-samples:
+    get:
+      operationId: listSequenceCollectionSamples
+      summary: List Sequence Collection Samples
+      parameters:
+        - name: laboratoryId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Laboratory to query
+        - name: sequenceCollectionId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Sequence collection to list samples for
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSequenceCollectionSamplesResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/data-collections/list-sequence-collections:
+    get:
+      operationId: listSequenceCollections
+      summary: List Sequence Collections
+      parameters:
+        - name: laboratoryId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Laboratory to list sequence collections for
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListLaboratorySequenceCollectionsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -6755,16 +7386,16 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /easy-genomics/data-collections/remove-files-from-sequence-set:
+  /easy-genomics/data-collections/remove-files-from-sample:
     post:
-      operationId: removeFilesFromSequenceSet
-      summary: Remove Files From Sequence Set
+      operationId: removeFilesFromSample
+      summary: Remove Files From Sample
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RemoveFilesFromSequenceSetRequest'
+              $ref: '#/components/schemas/RemoveFilesFromSampleRequest'
       responses:
         '200':
           description: Success
@@ -6834,22 +7465,50 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /easy-genomics/data-collections/request-list-sequence-set-tags:
+  /easy-genomics/data-collections/request-list-sample-tags:
     post:
-      operationId: requestListSequenceSetTags
-      summary: Request List Sequence Set Tags
+      operationId: requestListSampleTags
+      summary: Request List Sample Tags
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RequestListSequenceSetTagsRequest'
+              $ref: '#/components/schemas/RequestListSampleTagsRequest'
       responses:
         '200':
           description: Success
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/ListSampleTagsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/data-collections/request-sequence-collection-sample-sheet:
+    post:
+      operationId: requestSequenceCollectionSampleSheet
+      summary: Request Sequence Collection Sample Sheet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestSequenceCollectionSampleSheetRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateSequenceCollectionSampleSheetResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -6875,7 +7534,8 @@ paths:
           description: Success
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/UnlinkedBucketObjectsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -6886,10 +7546,10 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /easy-genomics/data-collections/update-data-collection-schema/{id}:
+  /easy-genomics/data-collections/update-sequence-collection-schema/{id}:
     put:
-      operationId: updateDataCollectionSchema
-      summary: Update Data Collection Schema
+      operationId: updateSequenceCollectionSchema
+      summary: Update Sequence Collection Schema
       parameters:
         - name: id
           in: path
@@ -6901,45 +7561,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateDataCollectionSchemaRequest'
+              $ref: '#/components/schemas/UpdateSequenceCollectionSchemaRequest'
       responses:
         '200':
           description: Success
           content:
             application/json:
-              schema: {}
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /easy-genomics/data-collections/update-data-collection/{id}:
-    put:
-      operationId: updateDataCollection
-      summary: Update Data Collection
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateDataCollectionRequest'
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/LaboratorySequenceCollection'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

@@ -49,37 +49,41 @@ export interface paths {
     /** Read Workflow Schema */
     get: operations["readWorkflowSchema"];
   };
-  "/easy-genomics/data-collections/add-files-to-sequence-set": {
-    /** Add Files To Sequence Set */
-    post: operations["addFilesToSequenceSet"];
+  "/easy-genomics/data-collections/add-files-to-sample": {
+    /** Add Files To Sample */
+    post: operations["addFilesToSample"];
   };
-  "/easy-genomics/data-collections/add-sequence-sets-to-data-collection": {
-    /** Add Sequence Sets To Data Collection */
-    post: operations["addSequenceSetsToDataCollection"];
+  "/easy-genomics/data-collections/add-samples-to-sequence-collection": {
+    /** Add Samples To Sequence Collection */
+    post: operations["addSamplesToSequenceCollection"];
   };
   "/easy-genomics/data-collections/add-tags-to-files": {
     /** Add Tags To Files */
     post: operations["addTagsToFiles"];
   };
-  "/easy-genomics/data-collections/add-tags-to-sequence-sets": {
-    /** Add Tags To Sequence Sets */
-    post: operations["addTagsToSequenceSets"];
+  "/easy-genomics/data-collections/add-tags-to-samples": {
+    /** Add Tags To Samples */
+    post: operations["addTagsToSamples"];
   };
-  "/easy-genomics/data-collections/create-bulk-sequence-sets": {
-    /** Create Bulk Sequence Sets */
-    post: operations["createBulkSequenceSets"];
+  "/easy-genomics/data-collections/create-bulk-samples": {
+    /** Create Bulk Samples */
+    post: operations["createBulkSamples"];
   };
-  "/easy-genomics/data-collections/create-data-collection": {
-    /** Create Data Collection */
-    post: operations["createDataCollection"];
+  "/easy-genomics/data-collections/create-sample": {
+    /** Create Sample */
+    post: operations["createSample"];
   };
-  "/easy-genomics/data-collections/create-sequence-set": {
-    /** Create Sequence Set */
-    post: operations["createSequenceSet"];
+  "/easy-genomics/data-collections/create-sequence-collection": {
+    /** Create Sequence Collection */
+    post: operations["createSequenceCollection"];
   };
   "/easy-genomics/data-collections/create-tag": {
     /** Create Tag */
     post: operations["createTag"];
+  };
+  "/easy-genomics/data-collections/delete-sequence-collection/{id}": {
+    /** Delete Sequence Collection */
+    delete: operations["deleteSequenceCollection"];
   };
   "/easy-genomics/data-collections/delete-tag/{id}": {
     /** Delete Tag */
@@ -89,37 +93,45 @@ export interface paths {
     /** Edit Batch */
     post: operations["editBatch"];
   };
-  "/easy-genomics/data-collections/list-data-collection-sequence-sets": {
-    /** List Data Collection Sequence Sets */
-    get: operations["listDataCollectionSequenceSets"];
+  "/easy-genomics/data-collections/edit-sample-batch": {
+    /** Edit Sample Batch */
+    post: operations["editSampleBatch"];
   };
-  "/easy-genomics/data-collections/list-data-collections": {
-    /** List Data Collections */
-    get: operations["listDataCollections"];
+  "/easy-genomics/data-collections/edit-sequence-collection": {
+    /** Edit Sequence Collection */
+    post: operations["editSequenceCollection"];
   };
   "/easy-genomics/data-collections/list-files-by-tag": {
     /** List Files By Tag */
     get: operations["listFilesByTag"];
   };
-  "/easy-genomics/data-collections/list-sequence-set-files": {
-    /** List Sequence Set Files */
-    get: operations["listSequenceSetFiles"];
+  "/easy-genomics/data-collections/list-sample-files": {
+    /** List Sample Files */
+    get: operations["listSampleFiles"];
   };
-  "/easy-genomics/data-collections/list-sequence-sets-by-tag": {
-    /** List Sequence Sets By Tag */
-    get: operations["listSequenceSetsByTag"];
+  "/easy-genomics/data-collections/list-samples-by-tag": {
+    /** List Samples By Tag */
+    get: operations["listSamplesByTag"];
   };
-  "/easy-genomics/data-collections/list-sequence-sets": {
-    /** List Sequence Sets */
-    get: operations["listSequenceSets"];
+  "/easy-genomics/data-collections/list-samples": {
+    /** List Samples */
+    get: operations["listSamples"];
+  };
+  "/easy-genomics/data-collections/list-sequence-collection-samples": {
+    /** List Sequence Collection Samples */
+    get: operations["listSequenceCollectionSamples"];
+  };
+  "/easy-genomics/data-collections/list-sequence-collections": {
+    /** List Sequence Collections */
+    get: operations["listSequenceCollections"];
   };
   "/easy-genomics/data-collections/list-tags": {
     /** List Tags */
     get: operations["listTags"];
   };
-  "/easy-genomics/data-collections/remove-files-from-sequence-set": {
-    /** Remove Files From Sequence Set */
-    post: operations["removeFilesFromSequenceSet"];
+  "/easy-genomics/data-collections/remove-files-from-sample": {
+    /** Remove Files From Sample */
+    post: operations["removeFilesFromSample"];
   };
   "/easy-genomics/data-collections/request-laboratory-bucket-objects": {
     /** Request Laboratory Bucket Objects */
@@ -129,21 +141,21 @@ export interface paths {
     /** Request List File Tags */
     post: operations["requestListFileTags"];
   };
-  "/easy-genomics/data-collections/request-list-sequence-set-tags": {
-    /** Request List Sequence Set Tags */
-    post: operations["requestListSequenceSetTags"];
+  "/easy-genomics/data-collections/request-list-sample-tags": {
+    /** Request List Sample Tags */
+    post: operations["requestListSampleTags"];
+  };
+  "/easy-genomics/data-collections/request-sequence-collection-sample-sheet": {
+    /** Request Sequence Collection Sample Sheet */
+    post: operations["requestSequenceCollectionSampleSheet"];
   };
   "/easy-genomics/data-collections/request-unlinked-bucket-objects": {
     /** Request Unlinked Bucket Objects */
     post: operations["requestUnlinkedBucketObjects"];
   };
-  "/easy-genomics/data-collections/update-data-collection-schema/{id}": {
-    /** Update Data Collection Schema */
-    put: operations["updateDataCollectionSchema"];
-  };
-  "/easy-genomics/data-collections/update-data-collection/{id}": {
-    /** Update Data Collection */
-    put: operations["updateDataCollection"];
+  "/easy-genomics/data-collections/update-sequence-collection-schema/{id}": {
+    /** Update Sequence Collection Schema */
+    put: operations["updateSequenceCollectionSchema"];
   };
   "/easy-genomics/data-collections/update-tag/{id}": {
     /** Update Tag */
@@ -448,18 +460,18 @@ export interface components {
       workflowOwnerId?: string;
       workflowVersionName?: string;
     };
-    AddFilesToSequenceSetRequest: {
+    AddFilesToSampleRequest: {
       LaboratoryId: string;
       S3Bucket: string;
       /** Format: uuid */
-      SequenceSetId: string;
+      SampleId: string;
       Keys: string[];
     };
-    AddSequenceSetsToDataCollectionRequest: {
+    AddSamplesToSequenceCollectionRequest: {
       LaboratoryId: string;
       /** Format: uuid */
-      DataCollectionId: string;
-      SequenceSetIds: string[];
+      SequenceCollectionId: string;
+      SampleIds: string[];
     };
     AddTagsToFilesRequest: {
       LaboratoryId: string;
@@ -468,17 +480,17 @@ export interface components {
       AddTagIds?: string[];
       RemoveTagIds?: string[];
     };
-    AddTagsToSequenceSetsRequest: {
+    AddTagsToSamplesRequest: {
       LaboratoryId: string;
-      SequenceSetIds: string[];
+      SampleIds: string[];
       AddTagIds?: string[];
       RemoveTagIds?: string[];
     };
-    CreateBulkSequenceSetsRequest: {
+    CreateBulkSamplesRequest: {
       LaboratoryId: string;
       S3Bucket: string;
       ImportLabel: string;
-      SequenceSets: ({
+      Samples: ({
           Name: string;
           /** @enum {string} */
           Layout: "paired_end" | "single_end" | "long_reads" | "paired_end_with_extras";
@@ -492,21 +504,18 @@ export interface components {
           SourceKey: string;
           DestKey: string;
         }[];
+      BatchTagId?: string;
+      NewBatchName?: string;
     };
-    CreateDataCollectionRequest: {
-      LaboratoryId: string;
-      Name?: string;
-      Columns: ({
-          columnName: string;
-          /** @enum {string} */
-          role: "sample_id" | "read1" | "read2" | "reads" | "reference_fasta" | "reference_gtf" | "reference_gff" | "reference_bed" | "input_bam" | "input_cram" | "input_vcf" | "metadata" | "custom_uri";
-          required: boolean;
-        })[];
-      SequenceSetIds?: string[];
-      /** Format: uuid */
-      ExistingDataCollectionId?: string;
+    BulkCreateSamplesResponse: {
+      CreatedCount: number;
+      SampleIds: string[];
+      Errors?: {
+          Name: string;
+          Message: string;
+        }[];
     };
-    CreateSequenceSetRequest: {
+    CreateSampleRequest: {
       LaboratoryId: string;
       S3Bucket: string;
       Name?: string;
@@ -516,8 +525,86 @@ export interface components {
       SampleIdPattern?: string;
       Keys?: string[];
       /** Format: uuid */
-      ExistingSequenceSetId?: string;
+      ExistingSampleId?: string;
       ExpandRegexFromListing?: boolean;
+    };
+    /** @enum {string} */
+    SampleLayout: "long_reads" | "paired_end" | "paired_end_with_extras" | "single_end";
+    LaboratorySample: {
+      SampleId: string;
+      Name: string;
+      Layout: components["schemas"]["SampleLayout"];
+      FilenameRegex?: string;
+      SampleIdPattern?: string;
+      FileCount: number;
+      /** @description Standard (non-workflow, non-permanent, non-batch) tags on this sample. */
+      TagIds?: string[];
+      /** @description At most one batch tag per sample. */
+      BatchTagId?: string;
+      WorkflowTagIds?: string[];
+      IsPermanent?: boolean;
+      ImportSource?: {
+        /** @enum {string} */
+        type: "manual" | "s3_import";
+        label: string;
+        importedAt: string;
+      };
+      /** @description Human-readable summary for list UI, e.g. "2 files · R1 + R2". */
+      ContentsSummary?: string;
+      LaboratoryRunUsages?: {
+          RunId: string;
+          RunName: string;
+          /** @description Optional: omitted if the run was created without a WorkflowName. */
+          WorkflowName?: string;
+          /** @description ISO timestamp of the laboratory run's `CreatedAt`. */
+          RunCreatedAt: string;
+          /** @description Total number of input files recorded for this run at creation time. */
+          InputFileCount: number;
+          /** @description Full list of S3 object keys (lab-scoped) for the run, used by the tooltip's "select samples" action. */
+          InputFileKeys: string[];
+          /**
+           * @description Mirror of the laboratory run's `ExpiresAt` (epoch seconds, DynamoDB TTL) at the time this
+           * usage entry was recorded or last refreshed. Undefined when the run is non-expiring
+           * (`Laboratory.RunRetentionMonths === 0`) or when the run had not yet reached a terminal
+           * status. Surfaced to the front-end so the sequence collections page can power the
+           * "Expiring soon" scope filter without an extra round trip to the run table.
+           */
+          ExpiresAt?: number;
+        }[];
+      CreatedAt?: string;
+      CreatedBy?: string;
+      ModifiedAt?: string;
+      ModifiedBy?: string;
+    };
+    CreateSequenceCollectionRequest: {
+      LaboratoryId: string;
+      Name?: string;
+      Columns: ({
+          columnName: string;
+          /** @enum {string} */
+          role: "sample_id" | "read1" | "read2" | "reads" | "reference_fasta" | "reference_gtf" | "reference_gff" | "reference_bed" | "input_bam" | "input_cram" | "input_vcf" | "metadata" | "custom_uri";
+          required: boolean;
+        })[];
+      SampleIds?: string[];
+      /** Format: uuid */
+      ExistingSequenceCollectionId?: string;
+    };
+    /** @enum {string} */
+    SampleSheetColumnRole: "custom_uri" | "input_bam" | "input_cram" | "input_vcf" | "metadata" | "read1" | "read2" | "reads" | "reference_bed" | "reference_fasta" | "reference_gff" | "reference_gtf" | "sample_id";
+    LaboratorySequenceCollection: {
+      SequenceCollectionId: string;
+      Name: string;
+      Columns: {
+          columnName: string;
+          role: components["schemas"]["SampleSheetColumnRole"];
+          required: boolean;
+        }[];
+      SampleCount: number;
+      LastSampleSheetS3Url?: string;
+      CreatedAt?: string;
+      CreatedBy?: string;
+      ModifiedAt?: string;
+      ModifiedBy?: string;
     };
     CreateTagRequest: {
       LaboratoryId: string;
@@ -558,12 +645,103 @@ export interface components {
       BatchTagId?: string;
       NewBatchName?: string;
     };
+    EditSampleBatchRequest: {
+      LaboratoryId: string;
+      SampleIds: string[];
+      ClearBatch?: boolean;
+      BatchTagId?: string;
+      NewBatchName?: string;
+    };
+    EditSequenceCollectionRequest: {
+      LaboratoryId: string;
+      /** Format: uuid */
+      SequenceCollectionId: string;
+      Name: string;
+      Columns: ({
+          columnName: string;
+          /** @enum {string} */
+          role: "sample_id" | "read1" | "read2" | "reads" | "reference_fasta" | "reference_gtf" | "reference_gff" | "reference_bed" | "input_bam" | "input_cram" | "input_vcf" | "metadata" | "custom_uri";
+          required: boolean;
+        })[];
+      SampleIds: string[];
+    };
     ListFilesByTagResponse: {
       Files: {
           Bucket: string;
           Key: string;
         }[];
       NextCursor?: string;
+    };
+    ListSampleFilesResponse: unknown;
+    ListSamplesByTagResponse: {
+      SampleIds: string[];
+      NextCursor?: string;
+    };
+    ListLaboratorySamplesResponse: {
+      Samples: ({
+          SampleId: string;
+          Name: string;
+          Layout: components["schemas"]["SampleLayout"];
+          FilenameRegex?: string;
+          SampleIdPattern?: string;
+          FileCount: number;
+          /** @description Standard (non-workflow, non-permanent, non-batch) tags on this sample. */
+          TagIds?: string[];
+          /** @description At most one batch tag per sample. */
+          BatchTagId?: string;
+          WorkflowTagIds?: string[];
+          IsPermanent?: boolean;
+          ImportSource?: {
+            /** @enum {string} */
+            type: "manual" | "s3_import";
+            label: string;
+            importedAt: string;
+          };
+          /** @description Human-readable summary for list UI, e.g. "2 files · R1 + R2". */
+          ContentsSummary?: string;
+          LaboratoryRunUsages?: {
+              RunId: string;
+              RunName: string;
+              /** @description Optional: omitted if the run was created without a WorkflowName. */
+              WorkflowName?: string;
+              /** @description ISO timestamp of the laboratory run's `CreatedAt`. */
+              RunCreatedAt: string;
+              /** @description Total number of input files recorded for this run at creation time. */
+              InputFileCount: number;
+              /** @description Full list of S3 object keys (lab-scoped) for the run, used by the tooltip's "select samples" action. */
+              InputFileKeys: string[];
+              /**
+               * @description Mirror of the laboratory run's `ExpiresAt` (epoch seconds, DynamoDB TTL) at the time this
+               * usage entry was recorded or last refreshed. Undefined when the run is non-expiring
+               * (`Laboratory.RunRetentionMonths === 0`) or when the run had not yet reached a terminal
+               * status. Surfaced to the front-end so the sequence collections page can power the
+               * "Expiring soon" scope filter without an extra round trip to the run table.
+               */
+              ExpiresAt?: number;
+            }[];
+          CreatedAt?: string;
+          CreatedBy?: string;
+          ModifiedAt?: string;
+          ModifiedBy?: string;
+        })[];
+    };
+    ListSequenceCollectionSamplesResponse: unknown;
+    ListLaboratorySequenceCollectionsResponse: {
+      SequenceCollections: {
+          SequenceCollectionId: string;
+          Name: string;
+          Columns: {
+              columnName: string;
+              role: components["schemas"]["SampleSheetColumnRole"];
+              required: boolean;
+            }[];
+          SampleCount: number;
+          LastSampleSheetS3Url?: string;
+          CreatedAt?: string;
+          CreatedBy?: string;
+          ModifiedAt?: string;
+          ModifiedBy?: string;
+        }[];
     };
     ListLaboratoryDataTagsResponse: {
       Tags: ({
@@ -591,11 +769,11 @@ export interface components {
           ModifiedBy?: string;
         })[];
     };
-    RemoveFilesFromSequenceSetRequest: {
+    RemoveFilesFromSampleRequest: {
       LaboratoryId: string;
       S3Bucket: string;
       /** Format: uuid */
-      SequenceSetId: string;
+      SampleId: string;
       Keys: string[];
     };
     RequestLaboratoryBucketObjectsRequest: {
@@ -615,8 +793,8 @@ export interface components {
           Key: string;
           /** @description Standard (non-batch, non-workflow, non-permanent) tags only. */
           TagIds: string[];
-          /** @description Sequence sets this file belongs to. */
-          SequenceSetIds?: string[];
+          /** @description Samples this file belongs to. */
+          SampleIds?: string[];
           /** @description At most one batch tag id if the file is assigned to a batch. */
           BatchTagId?: string;
           /** @description Workflow tag ids that have been associated with this file via run launches. */
@@ -648,16 +826,62 @@ export interface components {
                * @description Mirror of the laboratory run's `ExpiresAt` (epoch seconds, DynamoDB TTL) at the time this
                * usage entry was recorded or last refreshed. Undefined when the run is non-expiring
                * (`Laboratory.RunRetentionMonths === 0`) or when the run had not yet reached a terminal
-               * status. Surfaced to the front-end so the data collections page can power the
+               * status. Surfaced to the front-end so the sequence collections page can power the
                * "Expiring soon" scope filter without an extra round trip to the run table.
                */
               ExpiresAt?: number;
             }[];
         }[];
     };
-    RequestListSequenceSetTagsRequest: {
+    RequestListSampleTagsRequest: {
       LaboratoryId: string;
-      SequenceSetIds: string[];
+      SampleIds: string[];
+    };
+    ListSampleTagsResponse: {
+      Samples: {
+          SampleId: string;
+          TagIds: string[];
+          BatchTagId?: string;
+          WorkflowTagIds: string[];
+          IsPermanent?: boolean;
+          LaboratoryRunUsages?: {
+              RunId: string;
+              RunName: string;
+              /** @description Optional: omitted if the run was created without a WorkflowName. */
+              WorkflowName?: string;
+              /** @description ISO timestamp of the laboratory run's `CreatedAt`. */
+              RunCreatedAt: string;
+              /** @description Total number of input files recorded for this run at creation time. */
+              InputFileCount: number;
+              /** @description Full list of S3 object keys (lab-scoped) for the run, used by the tooltip's "select samples" action. */
+              InputFileKeys: string[];
+              /**
+               * @description Mirror of the laboratory run's `ExpiresAt` (epoch seconds, DynamoDB TTL) at the time this
+               * usage entry was recorded or last refreshed. Undefined when the run is non-expiring
+               * (`Laboratory.RunRetentionMonths === 0`) or when the run had not yet reached a terminal
+               * status. Surfaced to the front-end so the sequence collections page can power the
+               * "Expiring soon" scope filter without an extra round trip to the run table.
+               */
+              ExpiresAt?: number;
+            }[];
+        }[];
+    };
+    RequestSequenceCollectionSampleSheetRequest: {
+      LaboratoryId: string;
+      S3Bucket: string;
+      /** Format: uuid */
+      SequenceCollectionId: string;
+      /** @enum {string} */
+      Platform: "AWS HealthOmics" | "Seqera Cloud";
+      /** Format: uuid */
+      TransactionId: string;
+      SampleSheetName: string;
+      ValidateS3FilesExist?: boolean;
+    };
+    GenerateSequenceCollectionSampleSheetResponse: {
+      SampleSheetS3Url: string;
+      InputFileKeys: string[];
+      CsvPreview: string;
     };
     RequestUnlinkedBucketObjectsRequest: {
       LaboratoryId: string;
@@ -666,29 +890,27 @@ export interface components {
       MaxTransactionFolders?: number;
       MaxKeys?: number;
     };
-    UpdateDataCollectionSchemaRequest: {
-      LaboratoryId: string;
-      /** Format: uuid */
-      DataCollectionId: string;
-      Columns: ({
-          columnName: string;
-          /** @enum {string} */
-          role: "sample_id" | "read1" | "read2" | "reads" | "reference_fasta" | "reference_gtf" | "reference_gff" | "reference_bed" | "input_bam" | "input_cram" | "input_vcf" | "metadata" | "custom_uri";
-          required: boolean;
-        })[];
+    UnlinkedBucketObjectsResponse: {
+      Contents?: {
+          Key: string;
+          LastModified?: string;
+          Size?: number;
+        }[];
+      IsTruncated: boolean;
+      S3Bucket: string;
+      ResolvedPrefix: string;
+      ReturnedKeyCount?: number;
     };
-    UpdateDataCollectionRequest: {
+    UpdateSequenceCollectionSchemaRequest: {
       LaboratoryId: string;
       /** Format: uuid */
-      DataCollectionId: string;
-      Name: string;
+      SequenceCollectionId: string;
       Columns: ({
           columnName: string;
           /** @enum {string} */
           role: "sample_id" | "read1" | "read2" | "reads" | "reference_fasta" | "reference_gtf" | "reference_gff" | "reference_bed" | "input_bam" | "input_cram" | "input_vcf" | "metadata" | "custom_uri";
           required: boolean;
         })[];
-      SequenceSetIds: string[];
     };
     UpdateTagRequest: {
       LaboratoryId: string;
@@ -3234,11 +3456,11 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
-  /** Add Files To Sequence Set */
-  addFilesToSequenceSet: {
+  /** Add Files To Sample */
+  addFilesToSample: {
     requestBody: {
       content: {
-        "application/json": components["schemas"]["AddFilesToSequenceSetRequest"];
+        "application/json": components["schemas"]["AddFilesToSampleRequest"];
       };
     };
     responses: {
@@ -3255,11 +3477,11 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
-  /** Add Sequence Sets To Data Collection */
-  addSequenceSetsToDataCollection: {
+  /** Add Samples To Sequence Collection */
+  addSamplesToSequenceCollection: {
     requestBody: {
       content: {
-        "application/json": components["schemas"]["AddSequenceSetsToDataCollectionRequest"];
+        "application/json": components["schemas"]["AddSamplesToSequenceCollectionRequest"];
       };
     };
     responses: {
@@ -3297,11 +3519,11 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
-  /** Add Tags To Sequence Sets */
-  addTagsToSequenceSets: {
+  /** Add Tags To Samples */
+  addTagsToSamples: {
     requestBody: {
       content: {
-        "application/json": components["schemas"]["AddTagsToSequenceSetsRequest"];
+        "application/json": components["schemas"]["AddTagsToSamplesRequest"];
       };
     };
     responses: {
@@ -3318,18 +3540,18 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
-  /** Create Bulk Sequence Sets */
-  createBulkSequenceSets: {
+  /** Create Bulk Samples */
+  createBulkSamples: {
     requestBody: {
       content: {
-        "application/json": components["schemas"]["CreateBulkSequenceSetsRequest"];
+        "application/json": components["schemas"]["CreateBulkSamplesRequest"];
       };
     };
     responses: {
       /** @description Success */
       200: {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["BulkCreateSamplesResponse"];
         };
       };
       400: components["responses"]["BadRequest"];
@@ -3339,18 +3561,18 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
-  /** Create Data Collection */
-  createDataCollection: {
+  /** Create Sample */
+  createSample: {
     requestBody: {
       content: {
-        "application/json": components["schemas"]["CreateDataCollectionRequest"];
+        "application/json": components["schemas"]["CreateSampleRequest"];
       };
     };
     responses: {
       /** @description Success */
       200: {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["LaboratorySample"];
         };
       };
       400: components["responses"]["BadRequest"];
@@ -3360,18 +3582,18 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
-  /** Create Sequence Set */
-  createSequenceSet: {
+  /** Create Sequence Collection */
+  createSequenceCollection: {
     requestBody: {
       content: {
-        "application/json": components["schemas"]["CreateSequenceSetRequest"];
+        "application/json": components["schemas"]["CreateSequenceCollectionRequest"];
       };
     };
     responses: {
       /** @description Success */
       200: {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["LaboratorySequenceCollection"];
         };
       };
       400: components["responses"]["BadRequest"];
@@ -3393,6 +3615,31 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["LaboratoryDataTag"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Delete Sequence Collection */
+  deleteSequenceCollection: {
+    parameters: {
+      query: {
+        /** @description Laboratory that owns the sequence collection */
+        laboratoryId: string;
+      };
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
         };
       };
       400: components["responses"]["BadRequest"];
@@ -3444,14 +3691,11 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
-  /** List Data Collection Sequence Sets */
-  listDataCollectionSequenceSets: {
-    parameters: {
-      query: {
-        /** @description Laboratory to query */
-        laboratoryId: string;
-        /** @description Data collection to list sequence sets for */
-        dataCollectionId: string;
+  /** Edit Sample Batch */
+  editSampleBatch: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EditSampleBatchRequest"];
       };
     };
     responses: {
@@ -3468,19 +3712,18 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
-  /** List Data Collections */
-  listDataCollections: {
-    parameters: {
-      query: {
-        /** @description Laboratory to list data collections for */
-        laboratoryId: string;
+  /** Edit Sequence Collection */
+  editSequenceCollection: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EditSequenceCollectionRequest"];
       };
     };
     responses: {
       /** @description Success */
       200: {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["LaboratorySequenceCollection"];
         };
       };
       400: components["responses"]["BadRequest"];
@@ -3518,14 +3761,14 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
-  /** List Sequence Set Files */
-  listSequenceSetFiles: {
+  /** List Sample Files */
+  listSampleFiles: {
     parameters: {
-      query: {
+      query?: {
         /** @description Laboratory to query */
-        laboratoryId: string;
-        /** @description Sequence set to list files for */
-        sequenceSetId: string;
+        laboratoryId?: string;
+        /** @description Sample to list files for */
+        sampleId?: string;
         /** @description Max number of results (1-500) */
         limit?: string;
         /** @description Pagination cursor */
@@ -3536,7 +3779,7 @@ export interface operations {
       /** @description Success */
       200: {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ListSampleFilesResponse"];
         };
       };
       400: components["responses"]["BadRequest"];
@@ -3546,14 +3789,14 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
-  /** List Sequence Sets By Tag */
-  listSequenceSetsByTag: {
+  /** List Samples By Tag */
+  listSamplesByTag: {
     parameters: {
-      query: {
+      query?: {
         /** @description Laboratory to query */
-        laboratoryId: string;
-        /** @description Tag to list sequence sets for */
-        tagId: string;
+        laboratoryId?: string;
+        /** @description Tag to list samples for */
+        tagId?: string;
         /** @description Max number of results (1-500) */
         limit?: string;
         /** @description Pagination cursor */
@@ -3564,7 +3807,7 @@ export interface operations {
       /** @description Success */
       200: {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ListSamplesByTagResponse"];
         };
       };
       400: components["responses"]["BadRequest"];
@@ -3574,19 +3817,65 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
-  /** List Sequence Sets */
-  listSequenceSets: {
+  /** List Samples */
+  listSamples: {
     parameters: {
-      query: {
-        /** @description Laboratory to list sequence sets for */
-        laboratoryId: string;
+      query?: {
+        /** @description Laboratory to list samples for */
+        laboratoryId?: string;
       };
     };
     responses: {
       /** @description Success */
       200: {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ListLaboratorySamplesResponse"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** List Sequence Collection Samples */
+  listSequenceCollectionSamples: {
+    parameters: {
+      query?: {
+        /** @description Laboratory to query */
+        laboratoryId?: string;
+        /** @description Sequence collection to list samples for */
+        sequenceCollectionId?: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["ListSequenceCollectionSamplesResponse"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** List Sequence Collections */
+  listSequenceCollections: {
+    parameters: {
+      query?: {
+        /** @description Laboratory to list sequence collections for */
+        laboratoryId?: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["ListLaboratorySequenceCollectionsResponse"];
         };
       };
       400: components["responses"]["BadRequest"];
@@ -3618,11 +3907,11 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
-  /** Remove Files From Sequence Set */
-  removeFilesFromSequenceSet: {
+  /** Remove Files From Sample */
+  removeFilesFromSample: {
     requestBody: {
       content: {
-        "application/json": components["schemas"]["RemoveFilesFromSequenceSetRequest"];
+        "application/json": components["schemas"]["RemoveFilesFromSampleRequest"];
       };
     };
     responses: {
@@ -3681,18 +3970,39 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
-  /** Request List Sequence Set Tags */
-  requestListSequenceSetTags: {
+  /** Request List Sample Tags */
+  requestListSampleTags: {
     requestBody: {
       content: {
-        "application/json": components["schemas"]["RequestListSequenceSetTagsRequest"];
+        "application/json": components["schemas"]["RequestListSampleTagsRequest"];
       };
     };
     responses: {
       /** @description Success */
       200: {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ListSampleTagsResponse"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Request Sequence Collection Sample Sheet */
+  requestSequenceCollectionSampleSheet: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RequestSequenceCollectionSampleSheetRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["GenerateSequenceCollectionSampleSheetResponse"];
         };
       };
       400: components["responses"]["BadRequest"];
@@ -3713,7 +4023,7 @@ export interface operations {
       /** @description Success */
       200: {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["UnlinkedBucketObjectsResponse"];
         };
       };
       400: components["responses"]["BadRequest"];
@@ -3723,8 +4033,8 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
-  /** Update Data Collection Schema */
-  updateDataCollectionSchema: {
+  /** Update Sequence Collection Schema */
+  updateSequenceCollectionSchema: {
     parameters: {
       path: {
         id: string;
@@ -3732,40 +4042,14 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["UpdateDataCollectionSchemaRequest"];
+        "application/json": components["schemas"]["UpdateSequenceCollectionSchemaRequest"];
       };
     };
     responses: {
       /** @description Success */
       200: {
         content: {
-          "application/json": unknown;
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      500: components["responses"]["InternalError"];
-    };
-  };
-  /** Update Data Collection */
-  updateDataCollection: {
-    parameters: {
-      path: {
-        id: string;
-      };
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["UpdateDataCollectionRequest"];
-      };
-    };
-    responses: {
-      /** @description Success */
-      200: {
-        content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["LaboratorySequenceCollection"];
         };
       };
       400: components["responses"]["BadRequest"];
