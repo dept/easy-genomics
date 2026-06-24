@@ -66,6 +66,9 @@
  * -----
  *  - `--stack <name>`: override the synthesized stack name to read.
  *    Defaults to `${namePrefix}-easy-genomics-api-stack`.
+ *  - `--env-name <name>`: yaml env-name when easy-genomics.yaml has multiple
+ *    configurations (alternative to ENV_NAME). Do not use --stack for this;
+ *    that flag is reserved for the CDK stack name above.
  *  - `--cdk-out <path>`: override the cloud-assembly directory. Defaults
  *    to `<this package>/cdk.out`.
  *  - `--output <path>`: override the output file path.
@@ -86,11 +89,7 @@
 import { readFileSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { ConfigurationSettings } from '@easy-genomics/shared-lib/src/app/types/configuration';
-import {
-  findConfiguration,
-  getStackEnvName,
-  loadConfigurations,
-} from '@easy-genomics/shared-lib/src/app/utils/configuration';
+import { findConfiguration, loadConfigurations } from '@easy-genomics/shared-lib/src/app/utils/configuration';
 
 const EXPECTED_TABLE_SUFFIXES = [
   'organization-table',
@@ -124,6 +123,7 @@ type ImportMapping = Record<string, { TableName: string }>;
 
 type Args = {
   stackName?: string;
+  envName?: string;
   cdkOut?: string;
   output?: string;
   print: boolean;
@@ -136,6 +136,9 @@ function parseArgs(argv: string[]): Args {
     switch (arg) {
       case '--stack':
         args.stackName = argv[++i];
+        break;
+      case '--env-name':
+        args.envName = argv[++i];
         break;
       case '--cdk-out':
         args.cdkOut = argv[++i];
@@ -169,6 +172,8 @@ function printHelp(): void {
       'Options:',
       '  --stack <name>       Stack name to read from cdk.out (defaults',
       '                       to "${namePrefix}-easy-genomics-api-stack").',
+      '  --env-name <name>    Yaml env-name when multiple configurations exist',
+      '                       (alternative to ENV_NAME; not the same as --stack).',
       '  --cdk-out <dir>      Cloud assembly directory (default: cdk.out).',
       '  --output <path>      Where to write the mapping JSON (default:',
       '                       cdk.out/${stack}.import-mapping.json).',
@@ -179,7 +184,7 @@ function printHelp(): void {
   );
 }
 
-function resolveDeployEnv(): DeployEnv {
+function resolveDeployEnv(yamlEnvName?: string): DeployEnv {
   // Mirror `packages/back-end/src/main.ts` and `preflight-deletion-protection.ts`
   // so this script targets exactly the deployment that `cdk synth` just
   // produced. We intentionally re-implement (rather than import) the resolve
@@ -201,16 +206,16 @@ function resolveDeployEnv(): DeployEnv {
     );
   }
 
-  const stackEnvName = getStackEnvName() ?? process.env.ENV_NAME;
-  if (configurations.length > 1 && !stackEnvName) {
+  const selectedEnvName = yamlEnvName ?? process.env.ENV_NAME;
+  if (configurations.length > 1 && !selectedEnvName) {
     throw new Error(
       'build-import-mapping: multiple configurations found in easy-genomics.yaml. ' +
-        'Specify --stack {env-name} or set ENV_NAME.',
+        'Set ENV_NAME or pass --env-name {env-name}. (--stack is the CDK stack name in cdk.out.)',
     );
   }
 
   const configuration =
-    configurations.length > 1 ? findConfiguration(stackEnvName!, configurations) : configurations[0];
+    configurations.length > 1 ? findConfiguration(selectedEnvName!, configurations) : configurations[0];
   const envName = Object.keys(configuration)[0];
   const settings = Object.values(configuration)[0];
   const envType = settings['env-type'];
@@ -265,7 +270,7 @@ function buildMapping(template: CfnTemplate, namePrefix: string): { mapping: Imp
 
 function main(): void {
   const args = parseArgs(process.argv);
-  const env = resolveDeployEnv();
+  const env = resolveDeployEnv(args.envName);
 
   const stackName = args.stackName ?? `${env.namePrefix}-easy-genomics-api-stack`;
   const cdkOut = resolve(args.cdkOut ?? join(__dirname, '..', 'cdk.out'));
