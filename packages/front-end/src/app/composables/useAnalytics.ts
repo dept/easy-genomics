@@ -14,7 +14,11 @@ import { useAnalyticsStore } from '@FE/stores';
  * Identifier rules are enforced here, never per call-site:
  *  - every id passed to {@link hashId} is one-way SHA-256 hashed together with
  *    the per-deployment salt, so raw ids never leave the browser and the same
- *    person at two deployments hashes to two unrelated values;
+ *    person at two deployments hashes to two unrelated values. NB: the salt is
+ *    shipped in the bundle, so it is not secret from someone who loads this
+ *    deployment's app — the hashing gives cross-deployment unlinkability at the
+ *    central project, not protection against a local attacker re-identifying an
+ *    id they can already see in this deployment's UI (see docs/deployment/analytics.md);
  *  - no event is ever sent unless BOTH the institution opted in
  *    (ANALYTICS_ENABLED) AND the end user granted consent;
  *  - analytics is force-disabled when DNT / GPC is set, in dev, or on
@@ -346,6 +350,8 @@ export default function useAnalytics() {
   }
 
   return {
+    appVersion,
+    envType,
     isInstitutionEnabled,
     isForceDisabled,
     canShowConsentBanner,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { toCountBucket, toSizeBucket } from '@easy-genomics/shared-lib/src/app/types/analytics';
+  import { toCountBucket, toSizeBucket } from '@easy-genomics/shared-lib/src/app/utils/analytics-buckets';
   import { useRunStore } from '@FE/stores';
   import { ButtonVariantEnum } from '@FE/types/buttons';
   import { v4 as uuidv4 } from 'uuid';

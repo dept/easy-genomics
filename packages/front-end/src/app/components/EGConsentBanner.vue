@@ -16,25 +16,18 @@
   // Recomputed reactively as the consent choice / route changes.
   const visible = computed<boolean>(() => analytics.canShowConsentBanner() && analyticsStore.consent === 'unset');
 
-  async function accept(): Promise<void> {
+  async function handleConsent(choose: () => Promise<void>): Promise<void> {
     if (submitting.value) return;
     submitting.value = true;
     try {
-      await analytics.optIn();
+      await choose();
     } finally {
       submitting.value = false;
     }
   }
 
-  async function reject(): Promise<void> {
-    if (submitting.value) return;
-    submitting.value = true;
-    try {
-      await analytics.optOut();
-    } finally {
-      submitting.value = false;
-    }
-  }
+  const accept = (): Promise<void> => handleConsent(() => analytics.optIn());
+  const reject = (): Promise<void> => handleConsent(() => analytics.optOut());
 </script>
 
 <template>

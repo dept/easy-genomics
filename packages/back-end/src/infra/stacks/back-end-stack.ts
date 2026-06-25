@@ -10,8 +10,8 @@ import { Construct } from 'constructs';
 import { AuthNestedStack } from './auth-nested-stack';
 import { AwsHealthOmicsNestedStack } from './aws-healthomics-nested-stack';
 import { NFTowerNestedStack } from './nf-tower-nested-stack';
-import { SpecRestApiConstruct } from '../constructs/spec-rest-api-construct';
 import { AnalyticsConstruct } from '../constructs/analytics/analytics-construct';
+import { SpecRestApiConstruct } from '../constructs/spec-rest-api-construct';
 import { VpcConstruct, VpcConstructProps } from '../constructs/vpc-construct';
 import { AuthNestedStackProps, AwsHealthOmicsNestedStackProps, NFTowerNestedStackProps } from '../types/back-end-stack';
 

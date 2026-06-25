@@ -27,6 +27,16 @@ Every event carries only:
 **Never sent:** emails, names, run names, file names, S3 keys, sample ids, sample-sheet contents, workflow parameters,
 free-text search queries, JWTs, raw IPs, AWS account ids, domain names or hostnames.
 
+> **Threat model for the hashed ids.** The per-deployment salt is embedded in the front-end bundle, so it is _not_
+> secret from someone who can load that deployment's app and open devtools. Its purpose is **cross-deployment
+> unlinkability**: because each deployment uses a different salt, the central PostHog project (and anyone analysing it)
+> cannot link the same person across two deployments, and cannot reverse a hash without first obtaining that specific
+> deployment's bundle. It does **not** guarantee that a party who already has the deployment's bundle cannot re-identify
+> an id that is itself visible in that deployment's UI (e.g. a lab/run UUID in the URL): they could hash the known id
+> with the bundled salt and match it. The hashing protects against linkage at the central project and against casual
+> reversal, not against a local attacker brute-forcing ids they can already see. If stronger guarantees are required,
+> hash identifiers server-side with a key that never reaches the browser.
+
 Analytics is additionally **forced off** when any of the following is true:
 
 - the browser sends `DNT: 1` (Do Not Track) or `Sec-GPC` / Global Privacy Control;

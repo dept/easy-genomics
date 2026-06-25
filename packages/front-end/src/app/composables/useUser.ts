@@ -132,6 +132,14 @@ export default function useUser() {
         await useAnalytics().optOut();
       } else if (tokenConsent === 'granted' && analyticsStore.consent === 'unset') {
         analyticsStore.setConsent('granted');
+        // The boot plugin only loads the SDK when consent is already granted on
+        // this device. When consent is adopted from the JWT (e.g. a returning
+        // user on a new browser), the SDK is still uninitialized, so load it now
+        // and emit the deferred app_loaded — otherwise nothing is captured for
+        // the rest of the session despite the user having consented.
+        const analytics = useAnalytics();
+        await analytics.load();
+        analytics.track('app_loaded', { app_version: analytics.appVersion, env_type: analytics.envType });
       }
 
       // check and set superuser status

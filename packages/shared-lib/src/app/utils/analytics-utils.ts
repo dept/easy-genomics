@@ -23,8 +23,6 @@ export interface AnalyticsDeploymentInfo {
   salt: string;
 }
 
-const secretsManagerClient: SecretsManagerClient = new SecretsManagerClient();
-
 /** Conventional Secrets Manager secret name holding the deployment id. */
 export function getAnalyticsDeploymentIdSecretName(namePrefix: string): string {
   return `${namePrefix}-easy-genomics-analytics-deployment-id`;
@@ -35,9 +33,9 @@ export function getAnalyticsSaltSecretName(namePrefix: string): string {
   return `${namePrefix}-easy-genomics-analytics-salt`;
 }
 
-async function getSecretString(secretName: string): Promise<string | undefined> {
+async function getSecretString(client: SecretsManagerClient, secretName: string): Promise<string | undefined> {
   try {
-    const response: GetSecretValueCommandOutput = await secretsManagerClient.send(
+    const response: GetSecretValueCommandOutput = await client.send(
       new GetSecretValueCommand({ SecretId: secretName }),
     );
     return response.SecretString ?? undefined;
@@ -58,11 +56,17 @@ async function getSecretString(secretName: string): Promise<string | undefined> 
  * next build/deploy will pick them up.
  *
  * @param namePrefix `${envType}-${envName}` for the deployment.
+ * @param client Optional Secrets Manager client. Created lazily when omitted so
+ *   importing this module never instantiates an AWS client as a side effect
+ *   (callers control instantiation, and pure helpers stay importable in tests).
  */
-export async function getAnalyticsDeploymentInfo(namePrefix: string): Promise<AnalyticsDeploymentInfo | undefined> {
+export async function getAnalyticsDeploymentInfo(
+  namePrefix: string,
+  client: SecretsManagerClient = new SecretsManagerClient(),
+): Promise<AnalyticsDeploymentInfo | undefined> {
   const [deploymentId, salt] = await Promise.all([
-    getSecretString(getAnalyticsDeploymentIdSecretName(namePrefix)),
-    getSecretString(getAnalyticsSaltSecretName(namePrefix)),
+    getSecretString(client, getAnalyticsDeploymentIdSecretName(namePrefix)),
+    getSecretString(client, getAnalyticsSaltSecretName(namePrefix)),
   ]);
 
   if (!deploymentId || !salt) {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
   import axios from 'axios';
-  import { toSizeBucket } from '@easy-genomics/shared-lib/src/app/types/analytics';
+  import { toSizeBucket } from '@easy-genomics/shared-lib/src/app/utils/analytics-buckets';
   import { ButtonSizeEnum } from '@FE/types/buttons';
   import type {
     FileUploadInfo,

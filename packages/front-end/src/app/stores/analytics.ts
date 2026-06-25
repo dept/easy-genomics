@@ -21,10 +21,6 @@ const initialState = (): AnalyticsStoreState => ({
  */
 const useAnalyticsStore = defineStore('analyticsStore', {
   state: initialState,
-  getters: {
-    hasGrantedConsent: (state: AnalyticsStoreState): boolean => state.consent === 'granted',
-    hasDecidedConsent: (state: AnalyticsStoreState): boolean => state.consent !== 'unset',
-  },
   actions: {
     setConsent(consent: AnalyticsConsent) {
       this.consent = consent;

@@ -35,7 +35,8 @@ const useToastStore = defineStore('toastStore', {
       try {
         useAnalytics().track('error_toast_shown', { error_code: errorCode || 'unspecified' });
       } catch (e) {
-        // Analytics must never break the toast pipeline.
+        // Analytics must never break the toast pipeline, but don't swallow silently.
+        console.error('Failed to track error_toast_shown analytics event', e);
       }
     },
   },

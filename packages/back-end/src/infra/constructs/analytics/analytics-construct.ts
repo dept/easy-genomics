@@ -7,8 +7,6 @@ import { CfnOutput, RemovalPolicy } from 'aws-cdk-lib';
 import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 
-export interface AnalyticsConstructProps extends BackEndStackProps {}
-
 /**
  * Provisions the anonymous, per-deployment identifiers used by the privacy-safe
  * upstream analytics layer.
@@ -26,11 +24,11 @@ export interface AnalyticsConstructProps extends BackEndStackProps {}
  * values will be generated and the front-end build will pick them up.
  */
 export class AnalyticsConstruct extends Construct {
-  readonly props: AnalyticsConstructProps;
+  readonly props: BackEndStackProps;
   readonly deploymentIdSecret: Secret;
   readonly saltSecret: Secret;
 
-  constructor(scope: Construct, id: string, props: AnalyticsConstructProps) {
+  constructor(scope: Construct, id: string, props: BackEndStackProps) {
     super(scope, id);
     this.props = props;
 

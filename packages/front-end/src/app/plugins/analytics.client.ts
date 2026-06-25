@@ -27,10 +27,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   // Returning user who previously granted consent: load the SDK and record boot.
   if (analytics.getConsent() === 'granted') {
     await analytics.load();
-    analytics.track('app_loaded', {
-      app_version: (useRuntimeConfig().public as { GITHUB_RUN_NUMBER?: string }).GITHUB_RUN_NUMBER || 'Unknown',
-      env_type: (useRuntimeConfig().public as { ENV_TYPE?: string }).ENV_TYPE || 'dev',
-    });
+    analytics.track('app_loaded', { app_version: analytics.appVersion, env_type: analytics.envType });
   }
 
   // Expose the analytics API to the app for convenience/debugging.

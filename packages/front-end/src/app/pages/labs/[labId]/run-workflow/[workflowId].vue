@@ -1,6 +1,6 @@
 <script setup lang="ts">
   import { ReadWorkflow } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
-  import { toCountBucket, toSizeBucket } from '@easy-genomics/shared-lib/src/app/types/analytics';
+  import { toCountBucket, toSizeBucket } from '@easy-genomics/shared-lib/src/app/utils/analytics-buckets';
   import { useRunStore } from '@FE/stores';
   import { ButtonVariantEnum } from '@FE/types/buttons';
   import { WorkflowParameter } from '@aws-sdk/client-omics';
