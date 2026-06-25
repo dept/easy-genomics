@@ -90,19 +90,35 @@ function sanitizePath(path: string): string {
 }
 
 /**
- * Strips the query string and fragment (which can carry emails on auth routes)
- * from a URL and masks identifying path segments. Falls back to treating the
- * input as a bare path when it is not an absolute URL.
+ * Reduces a URL to a sanitized pathname only. Drops the origin (so the
+ * hostname/domain — which would identify the deployment/institution — never
+ * leaves the browser), strips the query string and fragment (which can carry
+ * emails on auth routes), and masks identifying path segments. Falls back to
+ * treating the input as a bare path when it is not an absolute URL.
  */
 function sanitizeUrl(rawUrl: string): string {
   try {
     const url = new URL(rawUrl);
-    return `${url.origin}${sanitizePath(url.pathname)}`;
+    return sanitizePath(url.pathname);
   } catch {
     const [pathOnly] = rawUrl.split(/[?#]/);
     return sanitizePath(pathOnly);
   }
 }
+
+/**
+ * PostHog auto-attaches several properties that contain the hostname/domain
+ * (which would identify the deployment). They carry no analytics value for us,
+ * so they are dropped entirely rather than sanitized.
+ */
+const HOST_BEARING_PROPERTIES = [
+  '$host',
+  '$referring_domain',
+  '$initial_host',
+  '$initial_referring_domain',
+  '$initial_referrer',
+  '$initial_current_url',
+];
 
 export default function useAnalytics() {
   const config = useRuntimeConfig().public as unknown as {
@@ -200,9 +216,11 @@ export default function useAnalytics() {
           capture_pageleave: false,
           disable_session_recording: true,
           persistence: 'localStorage',
-          // Defense-in-depth: PostHog auto-attaches $current_url / $referrer to
-          // every event, so strip query strings (which can contain emails on
-          // auth routes) and mask identifying path segments on all properties.
+          // Defense-in-depth: PostHog auto-attaches URL/host properties to every
+          // event. Reduce $current_url / $referrer to a sanitized pathname (no
+          // origin, so no hostname leaks; query strings — which can contain
+          // emails on auth routes — stripped; identifying segments masked) and
+          // drop the host-bearing properties entirely.
           sanitize_properties: (properties: Record<string, unknown>) => {
             const sanitized = { ...properties };
             if (typeof sanitized.$current_url === 'string') {
@@ -213,6 +231,9 @@ export default function useAnalytics() {
             }
             if (typeof sanitized.$pathname === 'string') {
               sanitized.$pathname = sanitizePath(sanitized.$pathname);
+            }
+            for (const key of HOST_BEARING_PROPERTIES) {
+              delete sanitized[key];
             }
             return sanitized;
           },
