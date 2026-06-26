@@ -97,7 +97,11 @@ import {
   UpdateTableCommand,
 } from '@aws-sdk/client-dynamodb';
 import { ConfigurationSettings } from '@easy-genomics/shared-lib/src/app/types/configuration';
-import { loadConfigurations } from '@easy-genomics/shared-lib/src/app/utils/configuration';
+import {
+  getStackEnvName,
+  loadConfigurations,
+  resolveConfiguration,
+} from '@easy-genomics/shared-lib/src/app/utils/configuration';
 
 const EG_TABLE_SUFFIXES = [
   'organization-table',
@@ -171,13 +175,7 @@ function resolveDeployEnv(): DeployEnv {
 
   const configPath = join(__dirname, '../../../config/easy-genomics.yaml');
   const configurations: { [p: string]: ConfigurationSettings }[] = loadConfigurations(configPath);
-  if (configurations.length !== 1) {
-    throw new Error(
-      `Preflight: expected exactly one configuration collection in easy-genomics.yaml, found ${configurations.length}. ` +
-        'Fix the configuration before running `build-and-deploy`.',
-    );
-  }
-  const [configuration] = configurations;
+  const configuration = resolveConfiguration(configurations, getStackEnvName() ?? process.env.ENV_NAME);
   const envName = Object.keys(configuration)[0];
   const settings = Object.values(configuration)[0];
   const envType = settings['env-type'];
