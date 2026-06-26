@@ -1,9 +1,9 @@
 import { join } from 'path';
 import { ConfigurationSettings } from '@easy-genomics/shared-lib/src/app/types/configuration';
 import {
-  findConfiguration,
   getStackEnvName,
   loadConfigurations,
+  resolveConfiguration,
 } from '@easy-genomics/shared-lib/src/app/utils/configuration';
 import { App, Aspects } from 'aws-cdk-lib';
 import { AwsSolutionsChecks } from 'cdk-nag';
@@ -55,28 +55,12 @@ if (process.env.CI_CD === 'true') {
 } else {
   console.log('Loading Front-End easy-genomics.yaml settings...');
 
-  let configSettings: ConfigurationSettings | undefined;
   const configurations: { [p: string]: ConfigurationSettings }[] = loadConfigurations(
     join(__dirname, '../../../config/easy-genomics.yaml'),
   );
-  if (configurations.length === 0) {
-    throw new Error('Easy Genomics Configuration missing / invalid, please update: easy-genomics.yaml');
-  }
-
-  const stackEnvName = getStackEnvName() ?? process.env.ENV_NAME;
-  if (configurations.length > 1 && !stackEnvName) {
-    throw new Error(
-      'Multiple configurations found in easy-genomics.yaml, please specify argument: --stack {env-name} or set ENV_NAME',
-    );
-  }
-
-  const configuration =
-    configurations.length > 1 ? findConfiguration(stackEnvName!, configurations) : configurations[0];
-
-  if (configuration) {
-    envName = Object.keys(configuration).shift();
-    configSettings = Object.values(configuration).shift();
-  }
+  const configuration = resolveConfiguration(configurations, getStackEnvName() ?? process.env.ENV_NAME);
+  envName = Object.keys(configuration).shift();
+  const configSettings: ConfigurationSettings | undefined = Object.values(configuration).shift();
 
   if (!envName || !configSettings) {
     throw new Error('Easy Genomics Configuration missing / invalid, please check the easy-genomics.yaml configuration');

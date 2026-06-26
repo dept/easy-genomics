@@ -98,9 +98,9 @@ import {
 } from '@aws-sdk/client-dynamodb';
 import { ConfigurationSettings } from '@easy-genomics/shared-lib/src/app/types/configuration';
 import {
-  findConfiguration,
   getStackEnvName,
   loadConfigurations,
+  resolveConfiguration,
 } from '@easy-genomics/shared-lib/src/app/utils/configuration';
 
 const EG_TABLE_SUFFIXES = [
@@ -175,20 +175,7 @@ function resolveDeployEnv(): DeployEnv {
 
   const configPath = join(__dirname, '../../../config/easy-genomics.yaml');
   const configurations: { [p: string]: ConfigurationSettings }[] = loadConfigurations(configPath);
-  if (configurations.length === 0) {
-    throw new Error('Preflight: Easy Genomics Configuration missing / invalid, please update: easy-genomics.yaml');
-  }
-
-  const stackEnvName = getStackEnvName() ?? process.env.ENV_NAME;
-  if (configurations.length > 1 && !stackEnvName) {
-    throw new Error(
-      'Preflight: multiple configurations found in easy-genomics.yaml. ' +
-        'Specify --stack {env-name} or set ENV_NAME before running deploy.',
-    );
-  }
-
-  const configuration =
-    configurations.length > 1 ? findConfiguration(stackEnvName!, configurations) : configurations[0];
+  const configuration = resolveConfiguration(configurations, getStackEnvName() ?? process.env.ENV_NAME);
   const envName = Object.keys(configuration)[0];
   const settings = Object.values(configuration)[0];
   const envType = settings['env-type'];

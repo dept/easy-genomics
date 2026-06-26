@@ -89,7 +89,7 @@
 import { readFileSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { ConfigurationSettings } from '@easy-genomics/shared-lib/src/app/types/configuration';
-import { findConfiguration, loadConfigurations } from '@easy-genomics/shared-lib/src/app/utils/configuration';
+import { loadConfigurations, resolveConfiguration } from '@easy-genomics/shared-lib/src/app/utils/configuration';
 
 const EXPECTED_TABLE_SUFFIXES = [
   'organization-table',
@@ -200,22 +200,11 @@ function resolveDeployEnv(yamlEnvName?: string): DeployEnv {
 
   const configPath = join(__dirname, '../../../config/easy-genomics.yaml');
   const configurations: { [p: string]: ConfigurationSettings }[] = loadConfigurations(configPath);
-  if (configurations.length === 0) {
-    throw new Error(
-      'build-import-mapping: Easy Genomics Configuration missing / invalid, please update: easy-genomics.yaml',
-    );
-  }
 
+  // For this script the yaml env-name comes from --env-name / ENV_NAME (not --stack, which is
+  // the CDK stack name in cdk.out). resolveConfiguration centralises the 0 / 1 / many handling.
   const selectedEnvName = yamlEnvName ?? process.env.ENV_NAME;
-  if (configurations.length > 1 && !selectedEnvName) {
-    throw new Error(
-      'build-import-mapping: multiple configurations found in easy-genomics.yaml. ' +
-        'Set ENV_NAME or pass --env-name {env-name}. (--stack is the CDK stack name in cdk.out.)',
-    );
-  }
-
-  const configuration =
-    configurations.length > 1 ? findConfiguration(selectedEnvName!, configurations) : configurations[0];
+  const configuration = resolveConfiguration(configurations, selectedEnvName);
   const envName = Object.keys(configuration)[0];
   const settings = Object.values(configuration)[0];
   const envType = settings['env-type'];
