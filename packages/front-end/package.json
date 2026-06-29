@@ -108,6 +108,7 @@
     "playwright": "^1.51.1",
     "playwright-core": "^1.51.1",
     "playwright-slack-report": "^1.1.89",
+    "posthog-js": "^1.386.7",
     "prettier-plugin-tailwindcss": "^0.6.11",
     "sass": "^1.86.3",
     "tailwind-merge": "^2.6.0",

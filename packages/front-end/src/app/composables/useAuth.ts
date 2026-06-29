@@ -21,7 +21,13 @@ export default function useAuth() {
       if (user) {
         await useUser().setCurrentUserDataFromToken();
         await useOrgsStore().loadOrgs();
+        // Navigate into the app before emitting analytics so events fire on a
+        // non-sensitive route (auth routes like /signin can carry an email in
+        // the query string).
         await navigateTo('/');
+        const analytics = useAnalytics();
+        await analytics.identify(useUserStore().currentUserDetails.id);
+        analytics.track('signed_in', { method: 'password' });
       }
     } catch (error: any) {
       if (error.code === 'NotAuthorizedException') {
@@ -73,6 +79,12 @@ export default function useAuth() {
 
   async function signOut() {
     try {
+      const analytics = useAnalytics();
+      analytics.track('signed_out', {});
+      analytics.reset();
+      // Clear device consent so the next account on this browser is not opted in
+      // by default. Server-side consent is restored on next login via JWT sync.
+      useAnalyticsStore().reset();
       await Auth.signOut();
       useUserStore().reset();
     } catch (error) {

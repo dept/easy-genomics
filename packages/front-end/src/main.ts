@@ -18,6 +18,7 @@ let envType: string | undefined;
 let appDomainName: string | undefined;
 let awsHostedZoneId: string | undefined;
 let awsCertificateArn: string | undefined;
+let analyticsEnabled: boolean = false;
 
 if (process.env.CI_CD === 'true') {
   console.log('Loading Front-End environment settings for CI/CD Pipeline...');
@@ -30,6 +31,7 @@ if (process.env.CI_CD === 'true') {
   appDomainName = process.env.APP_DOMAIN_NAME;
   awsHostedZoneId = process.env.AWS_HOSTED_ZONE_ID;
   awsCertificateArn = process.env.AWS_CERTIFICATE_ARN;
+  analyticsEnabled = process.env.ANALYTICS_ENABLED === 'true';
 
   if (!awsAccountId) {
     throw new Error('"AWS_ACCOUNT_ID" undefined, please check the CI/CD environment configuration');
@@ -73,6 +75,7 @@ if (process.env.CI_CD === 'true') {
   appDomainName = configSettings['app-domain-name'];
   awsHostedZoneId = configSettings['aws-hosted-zone-id'];
   awsCertificateArn = configSettings['aws-certificate-arn'];
+  analyticsEnabled = configSettings.analytics?.enabled === true;
 
   if (!awsAccountId) {
     throw new Error('"aws-account-id" undefined, please check the easy-genomics.yaml configuration');
@@ -112,6 +115,7 @@ new FrontEndStack(app, `${namePrefix}-main-front-end-stack`, {
   appDomainName,
   awsHostedZoneId,
   awsCertificateArn,
+  analyticsEnabled,
 });
 
 if (process.env.CDK_AUDIT === 'true') {

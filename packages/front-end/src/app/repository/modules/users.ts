@@ -137,6 +137,7 @@ class UsersModule extends HttpFactory {
         Platform: 'Seqera Cloud' | 'AWS HealthOmics';
         LaboratoryId: string;
       }>;
+      AnalyticsConsent?: 'unset' | 'granted' | 'denied';
     },
   ) {
     const parseResult = UpdateUserSchema.safeParse(data);

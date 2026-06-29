@@ -65,6 +65,15 @@ export default defineNuxtConfig({
       COGNITO_CALLBACK_URLS: process.env.COGNITO_CALLBACK_URLS,
       COGNITO_LOGOUT_URLS: process.env.COGNITO_LOGOUT_URLS,
       GOOGLE_SIGNIN_ENABLED: process.env.GOOGLE_SIGNIN_ENABLED === 'true',
+      // Privacy-safe upstream analytics (institution opt-in). When ANALYTICS_ENABLED
+      // is not 'true' the analytics SDK is never loaded. The deployment id + salt
+      // are anonymous, per-deployment values injected at build time.
+      ANALYTICS_ENABLED: process.env.ANALYTICS_ENABLED === 'true',
+      // Opt-in escape hatch to allow analytics on a 'dev' env-type deployment
+      // (e.g. the project's own dev demo). Local dev stays off unless explicitly set.
+      ANALYTICS_ALLOW_DEV: process.env.ANALYTICS_ALLOW_DEV === 'true',
+      ANALYTICS_DEPLOYMENT_ID: process.env.ANALYTICS_DEPLOYMENT_ID || '',
+      ANALYTICS_SALT: process.env.ANALYTICS_SALT || '',
     },
   },
 
