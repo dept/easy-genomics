@@ -61,6 +61,18 @@
   /** While a sample's analysis popover is open, that card/row is stacked above siblings. */
   const analysisPopoverOpenKey = ref<string | null>(null);
 
+  const scrollEl = ref<HTMLElement | null>(null);
+  const lassoActive = ref(false);
+  const lassoStyle = ref({
+    display: 'none' as string,
+    left: '0px',
+    top: '0px',
+    width: '0px',
+    height: '0px',
+  });
+  let lx0 = 0;
+  let ly0 = 0;
+
   const BATCH_HEADER_DOT_NOT_ANALYZED = '#EF9F27';
   const BATCH_HEADER_DOT_ANALYZED = '#2DB48F';
 
@@ -281,6 +293,68 @@
     emit('update:selectedIds', []);
   }
 
+  function onScrollHostMouseDown(e: MouseEvent): void {
+    const t = e.target as HTMLElement;
+    if (t.closest('[data-file-card]')) return;
+    if (e.button !== 0) return;
+    lassoActive.value = true;
+    lx0 = e.clientX;
+    ly0 = e.clientY;
+    lassoStyle.value = {
+      display: 'block',
+      left: `${lx0}px`,
+      top: `${ly0}px`,
+      width: '0px',
+      height: '0px',
+    };
+    e.preventDefault();
+  }
+
+  function onWindowMouseMove(e: MouseEvent): void {
+    if (!lassoActive.value) return;
+    const x = Math.min(e.clientX, lx0);
+    const y = Math.min(e.clientY, ly0);
+    const w = Math.abs(e.clientX - lx0);
+    const h = Math.abs(e.clientY - ly0);
+    lassoStyle.value = { display: 'block', left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` };
+    const lr = { left: x, top: y, right: x + w, bottom: y + h };
+    scrollEl.value?.querySelectorAll('[data-file-card]').forEach((el) => {
+      const r = (el as HTMLElement).getBoundingClientRect();
+      const hit = r.left < lr.right && r.right > lr.left && r.top < lr.bottom && r.bottom > lr.top;
+      /** Lasso-only class — never strip Vue-bound `ring-*` on selected cards (Vue may not re-patch if props unchanged). */
+      (el as HTMLElement).classList.toggle('eg-data-collections-lasso-hit', hit);
+    });
+  }
+
+  function onWindowMouseUp(): void {
+    if (!lassoActive.value) return;
+    lassoActive.value = false;
+    lassoStyle.value = { ...lassoStyle.value, display: 'none' };
+    const added: string[] = [];
+    scrollEl.value?.querySelectorAll('[data-file-card]').forEach((el) => {
+      const h = el as HTMLElement;
+      if (h.classList.contains('eg-data-collections-lasso-hit')) {
+        const id = h.dataset.key;
+        if (id) added.push(id);
+      }
+      h.classList.remove('eg-data-collections-lasso-hit');
+    });
+    if (added.length) {
+      const merged = new Set([...props.selectedIds, ...added]);
+      emit('update:selectedIds', [...merged]);
+    }
+  }
+
+  onMounted(() => {
+    window.addEventListener('mousemove', onWindowMouseMove);
+    window.addEventListener('mouseup', onWindowMouseUp);
+  });
+
+  onBeforeUnmount(() => {
+    window.removeEventListener('mousemove', onWindowMouseMove);
+    window.removeEventListener('mouseup', onWindowMouseUp);
+  });
+
   function onSampleItemKeydown(e: KeyboardEvent, setId: string): void {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -495,8 +569,17 @@
           </div>
         </div>
 
-        <div class="relative min-h-0 flex-1 overflow-auto p-2" role="region" aria-label="Samples">
-          <p class="sr-only">Use Enter or Space on a sample card or table row to toggle selection.</p>
+        <div
+          ref="scrollEl"
+          class="relative min-h-0 flex-1 overflow-auto p-2"
+          role="region"
+          aria-label="Samples"
+          @mousedown="onScrollHostMouseDown"
+        >
+          <p class="sr-only">
+            Drag on empty space to select multiple samples with the mouse. Use Enter or Space on a sample card or table
+            row to toggle selection.
+          </p>
           <div
             v-if="loading"
             class="absolute inset-0 z-20 flex min-h-[14rem] flex-col items-center justify-center gap-3 bg-white/90 p-6 backdrop-blur-[1px]"
@@ -571,6 +654,8 @@
               <div
                 v-for="s in sec.samples"
                 :key="s.SampleId"
+                data-file-card
+                :data-key="s.SampleId"
                 role="listitem"
                 tabindex="0"
                 class="border-border-muted focus-visible:ring-primary relative min-w-0 cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
@@ -697,6 +782,8 @@
                   <tr
                     v-for="s in sec.samples"
                     :key="s.SampleId"
+                    data-file-card
+                    :data-key="s.SampleId"
                     tabindex="0"
                     class="border-t border-gray-100 hover:bg-gray-50 focus:outline-none focus-visible:bg-gray-50"
                     :class="{
@@ -758,6 +845,11 @@
               </tbody>
             </table>
           </div>
+
+          <div
+            class="border-primary bg-primary/10 pointer-events-none fixed z-[9999] rounded border-2"
+            :style="lassoStyle"
+          />
         </div>
       </div>
     </div>
@@ -905,3 +997,11 @@
     </div>
   </div>
 </template>
+
+<style scoped>
+  /** Lasso drag highlight only — selection rings come from Vue `:class` on `[data-file-card]`. */
+  [data-file-card].eg-data-collections-lasso-hit {
+    box-shadow: 0 0 0 2px #5524e0;
+    background-color: #eee9fc;
+  }
+</style>
