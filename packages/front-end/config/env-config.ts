@@ -1,8 +1,8 @@
 import { join } from 'path';
 import {
-  findConfiguration,
   getStackEnvName,
   loadConfigurations,
+  resolveConfiguration,
 } from '@easy-genomics/shared-lib/src/app/utils/configuration';
 
 interface EnvConfig {
@@ -61,22 +61,8 @@ function getConfigurationSettings(): EnvConfig {
     // Load the configurations from local configuration file
     const configurations = loadConfigurations(join(__dirname, '../../../config/easy-genomics.yaml'));
 
-    if (configurations.length === 0) {
-      throw new Error('Easy Genomics Configuration(s) missing / invalid, please update: easy-genomics.yaml');
-    }
-
-    // Determine the stack environment name
-    const stackEnvName = getStackEnvName();
-
-    if (configurations.length > 1 && !stackEnvName) {
-      throw new Error(
-        'Multiple configurations found in easy-genomics.yaml, please specify argument: --stack {env-name}',
-      );
-    }
-
-    // Find or select the appropriate configuration
-    const configuration =
-      configurations.length > 1 ? findConfiguration(stackEnvName!, configurations) : configurations[0];
+    // Find or select the appropriate configuration for the current environment
+    const configuration = resolveConfiguration(configurations, getStackEnvName() ?? process.env.ENV_NAME);
 
     // Extract and validate the environment configuration
     const envConfig = Object.values(configuration)[0];
