@@ -394,26 +394,45 @@ currently-deployed CloudFormation template for `OLD_STACK`_, without removing th
 metadata Phase 2 needs to detach the tables cleanly (via `DELETE_SKIPPED`) rather than relying on deletion protection's
 hard rejection.
 
-Because the split PR is already merged to `development`, the tip of that branch cannot be used directly for this step —
-`pnpm run build-and-deploy` from that tip will halt at the preflight's "migration pending" check, and even if the
+Because the split PR is already merged to the deployment branch, the tip of that branch cannot be used directly for this
+step — `pnpm run build-and-deploy` from that tip will halt at the preflight's "migration pending" check, and even if the
 preflight were bypassed, deletion protection from Phase 0 would reject the `DeleteTable` calls and force a noisy
 CloudFormation rollback. Instead, build a short-lived "retain bridge" working tree that keeps the old stack topology but
 picks up the new `dynamodb-construct.ts`.
 
 ### 1.1 Assemble the retain-bridge working tree
 
+Both pieces of the bridge — the pre-split stack topology **and** the new `dynamodb-construct.ts` — must come from the
+**same split PR**. Pin everything to that PR's merge commit. Do **not** pull `dynamodb-construct.ts` from the live
+`development`/`main` tip: that branch keeps moving, and the file's `DynamoDBTableDetails` type has drifted from the
+pre-split stacks since the migration was written. A mismatched overlay produces a hard `tsc` failure during
+`pnpm run build`, e.g.:
+
+```text
+src/infra/stacks/easy-genomics-nested-stack.ts:1664:7 - error TS2353: Object literal may only specify known
+properties, and 'timeToLiveAttribute' does not exist in type 'DynamoDBTableDetails'.
+```
+
+(The pre-split `easy-genomics-nested-stack.ts` sets `timeToLiveAttribute`, but an out-of-lineage `dynamodb-construct.ts`
+no longer declares that field on the type.) Pinning both sides to the split merge commit avoids this entirely.
+
 ```bash
-# Identify the last commit on the deployment branch BEFORE the split PR was merged.
-# Concretely: the first parent of the merge commit on `development`.
-#   git log --first-parent development   # find the merge commit
-#   git log --pretty=%P -n 1 <merge-sha> # first SHA printed is the pre-PR parent
-export PRE_PR_SHA=<sha>
+# Identify the split PR's MERGE COMMIT on the branch this environment deploys from
+# (the PR titled "refactor aws cdk stacks to avoid cf limit" — it both creates
+# `easy-genomics-api-stack.ts` and introduces the new `dynamodb-construct.ts`).
+# On `development` it is PR #718; on `main` it shipped as release v1.4.
+#   git log --oneline --merges <deploy-branch>   # locate that PR's merge commit
+export SPLIT_MERGE_SHA=<merge-sha>
+
+# The pre-PR state is the merge commit's FIRST parent.
+export PRE_PR_SHA="$(git rev-parse "${SPLIT_MERGE_SHA}^1")"
 
 # Create a throwaway branch pinned to that pre-PR state.
 git switch -c retain-bridge-${ENV_TYPE}-${ENV_NAME} "$PRE_PR_SHA"
 
-# Pull ONLY the new dynamodb-construct.ts file out of the merged PR.
-git checkout development -- packages/back-end/src/infra/constructs/dynamodb-construct.ts
+# Pull ONLY the new dynamodb-construct.ts out of the SAME split commit (NOT a branch tip),
+# so its `DynamoDBTableDetails` type stays compatible with the pre-split stacks.
+git checkout "$SPLIT_MERGE_SHA" -- packages/back-end/src/infra/constructs/dynamodb-construct.ts
 
 # Sanity-check: the ONLY staged/modified file should be dynamodb-construct.ts.
 git status
