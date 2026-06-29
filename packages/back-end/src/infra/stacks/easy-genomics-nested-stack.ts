@@ -1715,14 +1715,17 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: ['dynamodb:Query'],
       }),
       new PolicyStatement({
+        // Bucket-level action: this handler calls s3:GetBucketLocation on the bucket itself.
         resources: ['arn:aws:s3:::*'],
-        actions: [
-          's3:GetBucketLocation',
-          's3:ListBucket', // Required for HeadObject command
-          's3:GetObject', // Required for HeadObject command
-          's3:HeadObject',
-          's3:PutObject',
-        ],
+        actions: ['s3:GetBucketLocation'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        // Object-level actions must target the object ARN (bucket/key), not the bucket ARN.
+        // s3:GetObject authorises the HeadObject existence check (S3 has no s3:HeadObject action);
+        // s3:PutObject writes the generated sample sheet.
+        resources: ['arn:aws:s3:::*/*'],
+        actions: ['s3:GetObject', 's3:PutObject'],
         effect: Effect.ALLOW,
       }),
     ]);
@@ -1976,8 +1979,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: laboratoryDataTaggingDynamoActions,
       }),
       new PolicyStatement({
+        // Object-level actions must target the object ARN (bucket/key), not the bucket ARN.
+        // s3:GetObject authorises the HeadObject existence check (S3 has no s3:HeadObject action);
+        // s3:PutObject writes the generated sample sheet.
         resources: ['arn:aws:s3:::*/*'],
-        actions: ['s3:PutObject', 's3:HeadObject'],
+        actions: ['s3:GetObject', 's3:PutObject'],
         effect: Effect.ALLOW,
       }),
     ]);

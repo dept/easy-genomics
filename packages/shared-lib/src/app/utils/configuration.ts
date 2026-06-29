@@ -67,6 +67,42 @@ export function findConfiguration(
 }
 
 /**
+ * Shared function to resolve the single applicable configuration from the loaded
+ * configurations list. Centralises the selection logic previously duplicated across
+ * the deployment entry-point scripts:
+ *
+ *  - 0 configurations  -> throws (configuration file missing / invalid).
+ *  - 1 configuration   -> returns it directly (envName is ignored).
+ *  - >1 configurations -> requires envName and returns the matching entry
+ *                         (throws if envName is missing, or via findConfiguration
+ *                         if it does not match any configuration).
+ *
+ * @param configurations
+ * @param envName
+ */
+export function resolveConfiguration(
+  configurations: { [p: string]: ConfigurationSettings }[],
+  envName?: string,
+): { [p: string]: ConfigurationSettings } {
+  if (configurations.length === 0) {
+    throw new Error('Easy Genomics Configuration(s) missing / invalid, please update: easy-genomics.yaml');
+  }
+
+  if (configurations.length === 1) {
+    return configurations[0];
+  }
+
+  if (!envName) {
+    throw new Error(
+      'Multiple configurations found in easy-genomics.yaml; a target environment name is required but was not ' +
+        'provided. Set the ENV_NAME environment variable or pass the environment name argument for this command.',
+    );
+  }
+
+  return findConfiguration(envName, configurations);
+}
+
+/**
  * Private function reading specified YAML configuration file.
  * @param filePath
  */
