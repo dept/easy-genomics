@@ -3,14 +3,13 @@ import { join } from 'path';
 import {
   AnalyticsDeploymentInfo,
   getAnalyticsDeploymentInfo,
-} from '@easy-genomics/shared-lib/lib/src/app/utils/analytics-utils';
+} from '@easy-genomics/shared-lib/src/app/utils/analytics-utils';
 import { getApiGatewayInfo } from '@easy-genomics/shared-lib/lib/src/app/utils/api-gateway-utils';
 import {
   getCognitoClientUrls,
   getCognitoDomainInfo,
   getCognitoIdpInfo,
 } from '@easy-genomics/shared-lib/lib/src/app/utils/cognito-idp-utils';
-import { loadConfigurations } from '@easy-genomics/shared-lib/lib/src/app/utils/configuration';
 import { ApiGatewayInfo } from '@easy-genomics/shared-lib/src/app/types/api-gateway-info';
 import { CognitoIdpInfo } from '@easy-genomics/shared-lib/src/app/types/cognito-idp-info';
 import { ConfigurationSettings } from '@easy-genomics/shared-lib/src/app/types/configuration';
@@ -18,15 +17,14 @@ import {
   getStackEnvName,
   loadConfigurations,
   resolveConfiguration,
-} from '@easy-genomics/shared-lib/lib/src/app/utils/configuration';
-import * as fs from 'fs';
+} from '@easy-genomics/shared-lib/src/app/utils/configuration';
 
 /**
  * This script is required to simplify the easy-genomics.yaml configuration and deployment workflow for customers and
  * for the Easy Genomics development team to easily work on various parts of the system in parallel.
  *
  * This script reads the {easy-genomics root dir}/config/easy-genomics.yaml file for the configured shared settings to
- * then asynchronously queries the relevant AWS services for the existing:
+ * then asynchronously queries the relevant AWS services for the existing:44
  *  - API Gateway URL
  *  - Cognito IDP User Pool ID
  *  - Cognito IDP User Pool Client ID
@@ -172,7 +170,9 @@ void (async () => {
       const configuration = resolveConfiguration(configurations, getStackEnvName() ?? process.env.ENV_NAME);
 
       const envName: string | undefined = Object.keys(configuration).shift();
-      const configSettings: ConfigurationSettings | undefined = Object.values(configuration).shift();
+      const configSettings: ConfigurationSettings | undefined = Object.values(configuration).shift() as
+        | ConfigurationSettings
+        | undefined;
 
       if (!envName || !configSettings) {
         throw new Error(
@@ -180,24 +180,22 @@ void (async () => {
         );
       }
 
-          const envType: string = configSettings['env-type']; // dev | pre-prod | prod
-          const awsRegion: string = configSettings['aws-region'];
-          const apiGatewayUrl: string | undefined = process.env.AWS_API_GATEWAY_URL;
-          const easyGenomicsApiUrl: string | undefined = configSettings['aws-easy-genomics-api-url'] ?? undefined;
-          const analyticsEnabled: boolean = configSettings.analytics?.enabled === true;
-          const analyticsAllowDev: boolean = configSettings.analytics?.['allow-dev'] === true;
+      const envType: string = configSettings['env-type']; // dev | pre-prod | prod
+      const awsRegion: string = configSettings['aws-region'];
+      const apiGatewayUrl: string | undefined = process.env.AWS_API_GATEWAY_URL;
+      const easyGenomicsApiUrl: string | undefined = configSettings['aws-easy-genomics-api-url'] ?? undefined;
+      const analyticsEnabled: boolean = configSettings.analytics?.enabled === true;
+      const analyticsAllowDev: boolean = configSettings.analytics?.['allow-dev'] === true;
 
-          await exportNuxtConfigurationSettings(
-            awsRegion,
-            envName,
-            envType,
-            apiGatewayUrl,
-            easyGenomicsApiUrl,
-            analyticsEnabled,
-            analyticsAllowDev,
-          );
-        }
-      }
+      await exportNuxtConfigurationSettings(
+        awsRegion,
+        envName,
+        envType,
+        apiGatewayUrl,
+        easyGenomicsApiUrl,
+        analyticsEnabled,
+        analyticsAllowDev,
+      );
     }
   } catch (error) {
     if (isCredentialsError(error)) {
