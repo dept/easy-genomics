@@ -1,3 +1,4 @@
+import useAnalyticsStore from './analytics';
 import useLabsStore from './labs';
 import useOmicsWorkflowsStore from './omicsWorkflows';
 import useOrgsStore from './orgs';
@@ -18,6 +19,7 @@ function resetStores() {
 }
 export {
   resetStores,
+  useAnalyticsStore,
   useOrgsStore,
   useToastStore,
   useUserStore,

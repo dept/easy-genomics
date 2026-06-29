@@ -99,6 +99,8 @@
 
   function handleSuccess() {
     useToastStore().success(`Welcome to Easy Genomics!`);
+    // Analytics: invitation accepted (role only, no identifying details).
+    useAnalytics().track('invitation_accepted', { role: 'OrganizationUser' });
   }
 
   /**

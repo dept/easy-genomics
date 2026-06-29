@@ -13,7 +13,12 @@ export interface BaseStackProps extends StackProps {
 }
 
 // Defines Front-End Stack props
-export interface FrontEndStackProps extends BaseStackProps {}
+export interface FrontEndStackProps extends BaseStackProps {
+  // Privacy-safe upstream analytics opt-in (institution-level). When true, the
+  // front-end build embeds the anonymous deployment identifiers so the browser
+  // can send events directly to PostHog. Defaults to false / undefined (off).
+  analyticsEnabled?: boolean;
+}
 
 export interface VpcPeering {
   externalVpcId: string;
@@ -38,6 +43,10 @@ export interface BackEndStackProps extends BaseStackProps {
   cognitoDomainPrefix?: string;
   callbackUrls?: string;
   logoutUrls?: string;
+  // Privacy-safe upstream analytics opt-in (institution-level). When true, the
+  // back-end provisions the anonymous per-deployment identifier secrets.
+  // Defaults to false / undefined (off).
+  analyticsEnabled?: boolean;
 }
 
 // Defines Test User Accounts to provision for DevEnv deployments
