@@ -97,6 +97,14 @@
     }
 
     await updateDefaultLab(props.labId);
+
+    // Analytics: lab viewed (lab id hashed, never sent raw).
+    const analytics = useAnalytics();
+    const labIdHash = await analytics.hashId(props.labId);
+    analytics.track('lab_viewed', {
+      lab_id_hash: labIdHash,
+      tab: activeTabKey.value,
+    });
   });
 
   onBeforeRouteLeave(() => {
@@ -200,8 +208,13 @@
   }
 
   function handleTabChange(newIndex: number) {
+    const fromTab = tabItems.value[tabIndex.value]?.key || '';
+    const toTab = tabItems.value[newIndex]?.key || '';
     $router.push({ query: { ...$router.currentRoute.query, tab: tabItems.value[newIndex].label } });
     tabIndex.value = newIndex;
+
+    // Analytics: lab tab navigation.
+    useAnalytics().track('lab_tab_changed', { from_tab: fromTab, to_tab: toTab });
   }
 
   function openLabSettingsFromDataCollections(): void {
@@ -665,6 +678,8 @@
       throw new Error('runToCancel is missing required information');
     }
 
+    const statusAtCancel = runToCancel.value?.Status || 'unknown';
+
     try {
       if (runPlatform === 'Seqera Cloud') {
         uiStore.setRequestPending('cancelSeqeraRun');
@@ -673,6 +688,11 @@
         uiStore.setRequestPending('cancelOmicsRun');
         await $api.omicsRuns.cancelWorkflowRun(props.labId, runId);
       }
+      // Analytics: run cancelled (platform + status only; no run name / id).
+      useAnalytics().track('run_cancelled', {
+        platform: runPlatform === 'Seqera Cloud' ? 'seqera' : 'omics',
+        status_at_cancel: statusAtCancel,
+      });
     } catch (e) {
       useToastStore().error('Failed to cancel run');
     }

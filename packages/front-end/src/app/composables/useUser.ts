@@ -3,7 +3,7 @@ import { CreateUserInvitationRequest } from '@easy-genomics/shared-lib/src/app/t
 import { OrganizationUserDetails } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization-user-details';
 import { OrganizationAccess } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import { VALIDATION_MESSAGES } from '@FE/constants/validation';
-import { useToastStore } from '@FE/stores';
+import { useAnalyticsStore, useToastStore } from '@FE/stores';
 import { decodeJwt } from '@FE/utils/jwt-utils';
 
 export type NameOptions = {
@@ -69,6 +69,10 @@ export default function useUser() {
     try {
       await $api.users.invite(orgId, email);
       useToastStore().success(toastSuccessMessage);
+      // Analytics: user invited (no email; just role + count bucket).
+      if (action === 'send') {
+        useAnalytics().track('user_invited', { role: 'OrganizationUser', count_bucket: '1' });
+      }
     } catch (error) {
       useToastStore().error(toastErrorMessage);
       console.error(error);
@@ -115,6 +119,28 @@ export default function useUser() {
       // retrieve and set account id and email
       userStore.currentUserDetails.id = decodedToken['cognito:username'];
       userStore.currentUserDetails.email = decodedToken.email;
+
+      // Sync the server-side analytics consent choice so it follows the user
+      // across browsers. Revocation always wins: a server 'denied' is honored
+      // on every device even if this browser previously granted consent, and we
+      // tell the SDK to stop capturing immediately. A server 'granted' is only
+      // adopted when this device has not yet made its own choice.
+      const analyticsStore = useAnalyticsStore();
+      const tokenConsent = decodedToken.AnalyticsConsent;
+      if (tokenConsent === 'denied' && analyticsStore.consent !== 'denied') {
+        analyticsStore.setConsent('denied');
+        await useAnalytics().optOut();
+      } else if (tokenConsent === 'granted' && analyticsStore.consent === 'unset') {
+        analyticsStore.setConsent('granted');
+        // The boot plugin only loads the SDK when consent is already granted on
+        // this device. When consent is adopted from the JWT (e.g. a returning
+        // user on a new browser), the SDK is still uninitialized, so load it now
+        // and emit the deferred app_loaded — otherwise nothing is captured for
+        // the rest of the session despite the user having consented.
+        const analytics = useAnalytics();
+        await analytics.load();
+        analytics.track('app_loaded', { app_version: analytics.appVersion, env_type: analytics.envType });
+      }
 
       // check and set superuser status
       userStore.currentUserPermissions.isSuperuser = decodedToken['cognito:groups']?.includes('SystemAdmin');

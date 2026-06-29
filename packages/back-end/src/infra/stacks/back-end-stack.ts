@@ -10,6 +10,7 @@ import { Construct } from 'constructs';
 import { AuthNestedStack } from './auth-nested-stack';
 import { AwsHealthOmicsNestedStack } from './aws-healthomics-nested-stack';
 import { NFTowerNestedStack } from './nf-tower-nested-stack';
+import { AnalyticsConstruct } from '../constructs/analytics/analytics-construct';
 import { SpecRestApiConstruct } from '../constructs/spec-rest-api-construct';
 import { VpcConstruct, VpcConstructProps } from '../constructs/vpc-construct';
 import { AuthNestedStackProps, AwsHealthOmicsNestedStackProps, NFTowerNestedStackProps } from '../types/back-end-stack';
@@ -124,6 +125,14 @@ export class BackEndStack extends Stack {
       includePathPrefixes: ['/aws-healthomics', '/nf-tower'],
     });
     this.apiGatewayRestApi = this.apiGateway.restApi;
+
+    // Privacy-safe upstream analytics: only provision the anonymous per-deployment
+    // identifier secrets when the institution has opted in via analytics.enabled.
+    if (this.props.analyticsEnabled) {
+      new AnalyticsConstruct(this, `${this.props.constructNamespace}-analytics`, {
+        ...this.props,
+      });
+    }
 
     new CfnOutput(this, 'CognitoUserPoolId', {
       key: 'CognitoUserPoolId',

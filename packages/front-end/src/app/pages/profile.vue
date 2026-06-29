@@ -4,6 +4,28 @@
   const { $api } = useNuxtApp();
   const userStore = useUserStore();
   const uiStore = useUiStore();
+  const analytics = useAnalytics();
+  const analyticsStore = useAnalyticsStore();
+
+  // Only surface the privacy control when the institution has opted in.
+  const showAnalyticsControl = computed<boolean>(() => analytics.isInstitutionEnabled());
+  const analyticsForceDisabled = computed<boolean>(() => analytics.isForceDisabled());
+  const analyticsConsentGranted = computed<boolean>(() => analyticsStore.consent === 'granted');
+  const analyticsUpdating = ref(false);
+
+  async function onToggleAnalytics(granted: boolean): Promise<void> {
+    if (analyticsUpdating.value) return;
+    analyticsUpdating.value = true;
+    try {
+      if (granted) {
+        await analytics.optIn();
+      } else {
+        await analytics.optOut();
+      }
+    } finally {
+      analyticsUpdating.value = false;
+    }
+  }
 
   const state = ref<ProfileDetails>({
     firstName: userStore.currentUserDetails.firstName || '',
@@ -76,5 +98,29 @@
         <EGButton type="submit" label="Save Changes" :disabled="!allowSubmit" />
       </div>
     </UForm>
+
+    <div v-if="showAnalyticsControl" class="border-stroke-light mt-12 rounded border bg-white p-4">
+      <div class="flex flex-row items-start justify-between gap-4">
+        <div class="flex flex-col gap-1">
+          <EGText tag="h4" class="font-semibold">Privacy</EGText>
+          <EGText tag="p" class="text-muted text-sm">
+            Send anonymous usage data to DEPT to help improve Easy Genomics. No names, emails, file names, sample data
+            or run parameters are ever sent.
+            <a href="https://easy-genomics.org/privacy" class="text-primary underline" target="_blank" rel="noopener">
+              Learn more
+            </a>
+          </EGText>
+          <EGText v-if="analyticsForceDisabled" tag="p" class="text-muted text-xs">
+            Analytics is currently disabled by your browser's privacy settings or the environment.
+          </EGText>
+        </div>
+        <UToggle
+          :model-value="analyticsConsentGranted"
+          :disabled="analyticsForceDisabled || analyticsUpdating"
+          aria-label="Share anonymous usage analytics"
+          @update:model-value="onToggleAnalytics"
+        />
+      </div>
+    </div>
   </div>
 </template>
