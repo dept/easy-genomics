@@ -28,7 +28,11 @@ export class GithubActionsApiDiffCheck extends Component {
           HAS_BREAKING_LABEL: "${{ contains(github.event.pull_request.labels.*.name, 'breaking-change') }}",
         },
         steps: [
-          { name: 'Checkout', uses: 'actions/checkout@v4', with: { 'fetch-depth': 0 } },
+          {
+            name: 'Checkout',
+            uses: 'actions/checkout@v4',
+            with: { 'fetch-depth': 0, ref: '${{ github.event.pull_request.head.sha }}' },
+          },
           { name: 'Install pnpm', uses: 'pnpm/action-setup@v4', with: { version: this.pnpmVersion } },
           {
             name: 'Setup node',
