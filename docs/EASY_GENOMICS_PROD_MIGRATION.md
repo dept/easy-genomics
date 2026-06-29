@@ -25,8 +25,8 @@ A naive `cdk deploy --all` of the split-stack code against an un-migrated enviro
 currently-deployed template has `DeletionPolicy: Delete` on every easy-genomics table in envs that were created with
 `envType != prod`) and is **broken even where it is non-destructive** (tables with `DeletionPolicy: Retain` orphan
 cleanly, but the new stack then fails to create because the old physical names are still in use). Because we cannot
-reliably promote PRs through environments in a strict order — an unrelated PR to `development` can trigger an
-auto-deploy at any time — the migration model below relies on a pre-deploy guard
+reliably promote PRs through environments in a strict order — an unrelated PR to your deployment branch can trigger an
+auto-deploy at any time (if you wire CI/CD to it) — the migration model below relies on a pre-deploy guard
 ([`packages/back-end/scripts/preflight-deletion-protection.ts`](../packages/back-end/scripts/preflight-deletion-protection.ts))
 that runs **before every `cdk deploy`**. On the first deploy against a given environment the guard automatically arms
 deletion protection + PITR on every easy-genomics table and halts the deploy; on every subsequent deploy it halts the
@@ -169,6 +169,10 @@ a bucket that no longer exists.
   `iam:PassRole`.
 - Local clone of this repo on the commit that is about to be deployed.
 - `aws-cdk` ≥ 2.176.0 (matches `packages/back-end/package.json`).
+- A **deployment branch** — the branch your environments are deployed from. This runbook defaults to `main` (the branch
+  that carries tagged open-source releases), which is what most self-hosted/client deployments track. The upstream
+  project develops on `development` / `staging` instead; if that's you, set `DEPLOY_BRANCH` accordingly below and read
+  every `main` reference as your deployment branch.
 - A short maintenance window for the easy-genomics REST API. HealthOmics, NF-Tower and Cognito stay available
   throughout. Typical duration: 15–30 min in non-prod, 30–45 min in prod depending on data size.
 
@@ -179,6 +183,7 @@ you're migrating:
 export AWS_REGION=us-east-1
 export ENV_NAME=acme               # value of env-name in easy-genomics.yaml
 export ENV_TYPE=dev                # dev | demo | pre-prod | prod
+export DEPLOY_BRANCH=main          # branch your environments deploy from (upstream: development / staging)
 export NAME_PREFIX="${ENV_TYPE}-${ENV_NAME}"
 export OLD_STACK="${NAME_PREFIX}-main-back-end-stack"
 export NEW_STACK="${NAME_PREFIX}-easy-genomics-api-stack"
@@ -209,16 +214,18 @@ any `cdk deploy` of the split-stack code touches that environment.**
 
 This phase is performed **once per environment**. It is idempotent and zero-downtime; rerunning it is always safe. It
 must be completed for every environment the split PR will eventually deploy to (`dev`, `demo`, `pre-prod`, `prod`), but
-the timing — before or after the split PR lands on `development` — is flexible. See the two paths below.
+the timing — before or after the split PR lands on your deployment branch (`main` by default) — is flexible. See the two
+paths below.
 
 ### Why this phase is mandatory
 
-Once the split PR is merged to `development`, any push to that branch (including the split PR itself) triggers
-`cicd-release-quality.yml`, which runs the back-end deploy against the target environment. If deletion protection is not
-already on by the time CloudFormation starts, CFN will happily call `DeleteTable` on every easy-genomics table during
-the nested-stack removal. In an environment created with `envType: dev` / `demo` / `pre-prod`, the currently-deployed
-template has `DeletionPolicy: Delete` on those tables (that was the pre-split default), so the delete call **succeeds**
-and the data is gone.
+Once the split PR is merged to your deployment branch, any push to that branch (including the split PR itself) triggers
+whatever CI/CD you have wired to it (in the upstream project this is `cicd-release-quality.yml` on `development`), which
+runs the back-end deploy against the target environment. If deletion protection is not already on by the time
+CloudFormation starts, CFN will happily call `DeleteTable` on every easy-genomics table during the nested-stack removal.
+In an environment created with `envType: dev` / `demo` / `pre-prod`, the currently-deployed template has
+`DeletionPolicy: Delete` on those tables (that was the pre-split default), so the delete call **succeeds** and the data
+is gone.
 
 Arming deletion protection via the AWS API — out-of-band from CloudFormation — is what prevents this.
 
@@ -347,9 +354,9 @@ during the nested-stack removal. Phase 1 handles that, but only at migration tim
 
 ## What CI does after the split PR merges
 
-As soon as the PR is merged, the existing `cicd-release-quality.yml` pipeline fires on the target branch and runs
-`pnpm run cicd-build-deploy-back-end`. The per-environment behaviour depends on whether Phase 0 arming has already
-happened against that environment.
+As soon as the PR is merged, any deploy pipeline wired to your deployment branch fires (in the upstream project this is
+`cicd-release-quality.yml` on `development`) and runs `pnpm run cicd-build-deploy-back-end`. The per-environment
+behaviour depends on whether Phase 0 arming has already happened against that environment.
 
 ### First post-merge run against an un-armed environment
 
@@ -609,14 +616,14 @@ Most teams should rely on **1.5.2 + 3.5** instead of retention; document whichev
 
 ```bash
 cd <repo-root>
-git switch development
+git switch "$DEPLOY_BRANCH"
 git branch -D retain-bridge-${ENV_TYPE}-${ENV_NAME}   # throw away the bridge branch
 pnpm install --frozen-lockfile
 cd packages/back-end
 pnpm run build
 ```
 
-Phases 2–5 all run from `development` (the merged split code).
+Phases 2–5 all run from your deployment branch (`main` by default — the merged split code).
 
 ---
 
@@ -638,7 +645,7 @@ NF-Tower routes stay live because they're served from a different API Gateway in
 
 ```bash
 cd <repo-root>
-git switch development
+git switch "$DEPLOY_BRANCH"
 git pull --ff-only
 pnpm install --frozen-lockfile
 cd packages/back-end
