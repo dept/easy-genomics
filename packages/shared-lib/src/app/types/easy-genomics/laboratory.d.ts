@@ -56,4 +56,33 @@ export interface Laboratory extends BaseAttributes {
    * - 0 means "never delete run records" (no TTL expiration).
    */
   RunRetentionMonths?: number;
+
+  /**
+   * BYOK LLM provider selection per integration. Each lab can pick a different
+   * provider/model/key for HealthOmics vs Seqera. Setting a provider IS the
+   * enable signal — when set, ambiguous HealthOmics failures and free-text
+   * Seqera errors are routed to the configured LLM. The deterministic
+   * HealthOmics lookup table runs regardless. Bedrock uses the platform Lambda
+   * IAM; OpenAI / Anthropic read the lab's own API key from SSM at classify
+   * time.
+   *
+   * SSM paths for the API keys:
+   *   `/easy-genomics/organization/{OrganizationId}/laboratory/{LaboratoryId}/llm-api-key-healthomics`
+   *   `/easy-genomics/organization/{OrganizationId}/laboratory/{LaboratoryId}/llm-api-key-seqera`
+   */
+  HealthOmicsLlmProvider?: 'bedrock' | 'openai' | 'anthropic';
+  HealthOmicsLlmModelId?: string;
+  SeqeraLlmProvider?: 'bedrock' | 'openai' | 'anthropic';
+  SeqeraLlmModelId?: string;
+
+  /**
+   * When true, the failure classifier fetches the failed HealthOmics run's
+   * CloudWatch engine log, redacts PII + secrets, and sends a bounded excerpt to
+   * the configured LLM for deeper diagnosis. Requires a HealthOmics LLM provider.
+   */
+  HealthOmicsLogEnrichmentEnabled?: boolean;
+
+  /** Boolean indicators returned by read-laboratory; the actual keys never leave SSM. */
+  HasHealthOmicsLlmApiKey?: boolean;
+  HasSeqeraLlmApiKey?: boolean;
 }

@@ -42,6 +42,10 @@ easy-genomics:
             #test-access-token: 'dummy-access-token-example-donotuse-1234567890'
             #test-s3-url: '123456789012-dev-example-lab-bucket'
             #test-invite-email: 'your-test-email@your-domain.org'
+            ## Failure classification (AI Failure Analysis) is configured per-Laboratory in
+            ## the UI under Lab Settings → AI Failure Analysis. Each lab brings its own
+            ## provider (Bedrock / OpenAI / Anthropic), model id, and (for OpenAI /
+            ## Anthropic) API key. No operator-level YAML configuration is required.
 
         ## Optional: Privacy-safe upstream usage analytics. OFF by default.
         ##
