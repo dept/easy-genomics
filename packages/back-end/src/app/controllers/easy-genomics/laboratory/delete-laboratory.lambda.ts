@@ -54,6 +54,16 @@ export const handler: Handler = async (
         Name: `/easy-genomics/organization/${existingLaboratory.OrganizationId}/laboratory/${existingLaboratory.LaboratoryId}/nf-access-token`,
       })
       .catch(() => {});
+    await ssmService
+      .deleteParameter({
+        Name: `/easy-genomics/organization/${existingLaboratory.OrganizationId}/laboratory/${existingLaboratory.LaboratoryId}/llm-api-key-healthomics`,
+      })
+      .catch(() => {});
+    await ssmService
+      .deleteParameter({
+        Name: `/easy-genomics/organization/${existingLaboratory.OrganizationId}/laboratory/${existingLaboratory.LaboratoryId}/llm-api-key-seqera`,
+      })
+      .catch(() => {});
 
     return buildResponse(200, JSON.stringify({ Status: 'Success' }), event);
   } catch (err: any) {

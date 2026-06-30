@@ -1,5 +1,8 @@
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
-import { InvalidRequestError, SequenceCollectionNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import {
+  InvalidRequestError,
+  SequenceCollectionNotFoundError,
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { CreateSequenceCollectionSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/data-collections/create-sequence-collection';
 import { validateSampleSheetSchema } from '@easy-genomics/shared-lib/src/app/utils/data-collection-sample-sheet';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';

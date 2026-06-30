@@ -57,6 +57,39 @@ export const LaboratoryRunSchema = z
      * or AWS HealthOmics `stopTime - startTime`.
      */
     RunDurationSeconds: z.number().nonnegative().optional(),
+    /**
+     * Top-level failure reason reported by the platform when a run reaches FAILED state.
+     * Sourced from HealthOmics `failureReason` or Seqera `workflow.errorMessage`.
+     * Absent on runs that failed before this field was introduced.
+     */
+    FailureReason: z.string().optional(),
+    /**
+     * HealthOmics human-readable `statusMessage` (often carries the failing task name
+     * and a CloudWatch log link). Kept separate from the machine-code `FailureReason`
+     * so the classifier receives both signals.
+     */
+    FailureStatusMessage: z.string().optional(),
+    /**
+     * Seqera `workflow.errorReport` — the richer Nextflow stack-trace / error detail,
+     * distinct from the one-line `workflow.errorMessage` stored in `FailureReason`.
+     */
+    FailureErrorReport: z.string().optional(),
+    /**
+     * Party responsible for resolving a failure: Lab user (input/data), Bioinformatician
+     * (workflow definition), AWS (transient, retry), or Ambiguous (needs investigation).
+     * Populated asynchronously by the classification pipeline after a FAILED transition.
+     */
+    FailureOwner: z.enum(['Bioinformatician', 'Lab', 'AWS', 'Ambiguous']).optional(),
+    /** One-line human summary of the failure suitable for inline display. */
+    FailureSummary: z.string().optional(),
+    /** Suggested next step, imperative voice (e.g. "Increase memory allocation"). */
+    FailureAction: z.string().optional(),
+    /**
+     * Provenance of the classification: `lookup` = deterministic table hit,
+     * `llm` = produced by the configured LLM provider. Used to render an
+     * AI-assisted disclaimer in the UI and for ops debugging.
+     */
+    FailureClassifiedBy: z.enum(['lookup', 'llm']).optional(),
   })
   .strict();
 export type LaboratoryRun = z.infer<typeof LaboratoryRunSchema>;
@@ -88,6 +121,13 @@ export const ReadLaboratoryRunSchema = z
     TerminalAt: z.string().optional(),
     ExpiresAt: z.number().optional(),
     RunDurationSeconds: z.number().nonnegative().optional(),
+    FailureReason: z.string().optional(),
+    FailureStatusMessage: z.string().optional(),
+    FailureErrorReport: z.string().optional(),
+    FailureOwner: z.enum(['Bioinformatician', 'Lab', 'AWS', 'Ambiguous']).optional(),
+    FailureSummary: z.string().optional(),
+    FailureAction: z.string().optional(),
+    FailureClassifiedBy: z.enum(['lookup', 'llm']).optional(),
   })
   .strict();
 export type ReadLaboratoryRun = z.infer<typeof ReadLaboratoryRunSchema>;

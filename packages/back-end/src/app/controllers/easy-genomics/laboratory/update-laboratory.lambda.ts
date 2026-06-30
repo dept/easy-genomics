@@ -76,6 +76,14 @@ export const handler: Handler = async (
           NextFlowTowerWorkspaceId: request.NextFlowTowerWorkspaceId,
           RunRetentionMonths: request.RunRetentionMonths,
           EnableNewWorkflowsByDefault: request.EnableNewWorkflowsByDefault ?? existing.EnableNewWorkflowsByDefault,
+          // Map LLM settings directly from the request (not `?? existing`) so selecting
+          // "None" (sent as undefined) clears the field via the full-item PUT overwrite.
+          HealthOmicsLlmProvider: request.HealthOmicsLlmProvider,
+          HealthOmicsLlmModelId: request.HealthOmicsLlmModelId,
+          SeqeraLlmProvider: request.SeqeraLlmProvider,
+          SeqeraLlmModelId: request.SeqeraLlmModelId,
+          // Same direct-mapping rationale: an unchecked toggle (undefined) clears the flag.
+          HealthOmicsLogEnrichmentEnabled: request.HealthOmicsLogEnrichmentEnabled,
           ModifiedAt: new Date().toISOString(),
           ModifiedBy: userId,
         },
@@ -116,6 +124,27 @@ export const handler: Handler = async (
         Name: `/easy-genomics/organization/${existing.OrganizationId}/laboratory/${existing.LaboratoryId}/github-access-token`,
         Description: `Easy Genomics Laboratory ${existing.LaboratoryId} GitHub AccessToken`,
         Value: request.GitHubAccessToken,
+        Type: 'SecureString',
+        Overwrite: true,
+      });
+    }
+
+    // Update BYOK LLM API keys per integration if new values were supplied.
+    // Absent on requests that only flip toggles, so existing keys are preserved.
+    if (request.HealthOmicsLlmApiKey) {
+      await ssmService.putParameter({
+        Name: `/easy-genomics/organization/${existing.OrganizationId}/laboratory/${existing.LaboratoryId}/llm-api-key-healthomics`,
+        Description: `Easy Genomics Laboratory ${existing.LaboratoryId} HealthOmics BYOK LLM API key`,
+        Value: request.HealthOmicsLlmApiKey,
+        Type: 'SecureString',
+        Overwrite: true,
+      });
+    }
+    if (request.SeqeraLlmApiKey) {
+      await ssmService.putParameter({
+        Name: `/easy-genomics/organization/${existing.OrganizationId}/laboratory/${existing.LaboratoryId}/llm-api-key-seqera`,
+        Description: `Easy Genomics Laboratory ${existing.LaboratoryId} Seqera BYOK LLM API key`,
+        Value: request.SeqeraLlmApiKey,
         Type: 'SecureString',
         Overwrite: true,
       });

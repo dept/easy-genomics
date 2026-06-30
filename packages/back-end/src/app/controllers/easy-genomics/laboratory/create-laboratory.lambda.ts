@@ -76,6 +76,11 @@ export const handler: Handler = async (
         NextFlowTowerEnabled: request.NextFlowTowerEnabled ?? organization.NextFlowTowerEnabled ?? false,
         NextFlowTowerApiBaseUrl: request.NextFlowTowerApiBaseUrl,
         NextFlowTowerWorkspaceId: request.NextFlowTowerWorkspaceId,
+        HealthOmicsLlmProvider: request.HealthOmicsLlmProvider,
+        HealthOmicsLlmModelId: request.HealthOmicsLlmModelId,
+        SeqeraLlmProvider: request.SeqeraLlmProvider,
+        SeqeraLlmModelId: request.SeqeraLlmModelId,
+        HealthOmicsLogEnrichmentEnabled: request.HealthOmicsLogEnrichmentEnabled,
         CreatedAt: new Date().toISOString(),
         CreatedBy: currentUserId,
       })
@@ -95,6 +100,28 @@ export const handler: Handler = async (
         Name: `/easy-genomics/organization/${organization.OrganizationId}/laboratory/${laboratoryId}/nf-access-token`,
         Description: `Easy Genomics Laboratory ${laboratoryId} NF AccessToken`,
         Value: request.NextFlowTowerAccessToken,
+        Type: 'SecureString',
+        Overwrite: false,
+      });
+    }
+
+    // Store BYOK LLM API keys in SSM per integration. Bedrock doesn't need a key
+    // (uses platform Lambda IAM); openai / anthropic do. HealthOmics and Seqera
+    // use independent keys so a lab can mix providers across integrations.
+    if (request.HealthOmicsLlmApiKey) {
+      await ssmService.putParameter({
+        Name: `/easy-genomics/organization/${organization.OrganizationId}/laboratory/${laboratoryId}/llm-api-key-healthomics`,
+        Description: `Easy Genomics Laboratory ${laboratoryId} HealthOmics BYOK LLM API key`,
+        Value: request.HealthOmicsLlmApiKey,
+        Type: 'SecureString',
+        Overwrite: false,
+      });
+    }
+    if (request.SeqeraLlmApiKey) {
+      await ssmService.putParameter({
+        Name: `/easy-genomics/organization/${organization.OrganizationId}/laboratory/${laboratoryId}/llm-api-key-seqera`,
+        Description: `Easy Genomics Laboratory ${laboratoryId} Seqera BYOK LLM API key`,
+        Value: request.SeqeraLlmApiKey,
         Type: 'SecureString',
         Overwrite: false,
       });

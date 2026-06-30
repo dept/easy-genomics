@@ -1,4 +1,5 @@
 <script setup lang="ts">
+  import type { TableSort } from '@FE/components/EGTable.vue';
   import EGDataCollectionsFileTypeFilter from '@FE/components/EGDataCollectionsFileTypeFilter.vue';
   import {
     dataCollectionFileKind,
@@ -7,9 +8,12 @@
     type DataCollectionFileTypeFilter,
   } from '@FE/utils/data-collections-file-type';
 
+  type UnlinkedFile = { Key: string; Size?: number; LastModified?: string };
+  type SortColumn = 'file' | 'type' | 'size' | 'lastModified';
+
   const props = withDefaults(
     defineProps<{
-      files: Array<{ Key: string; Size?: number; LastModified?: string }>;
+      files: UnlinkedFile[];
       loading: boolean;
       selectedKeys: string[];
       search: string;
@@ -37,12 +41,88 @@
   const fileTypeFilter = ref<DataCollectionFileTypeFilter>({ fastq: true, fasta: false, other: false });
   const enabledKinds = computed(() => enabledFileTypeKinds(fileTypeFilter.value));
 
+  const sortHelpers = useSort();
+  const tableSort = ref<TableSort>({ column: 'file', direction: 'asc' });
+
   const filtered = computed(() => {
     let rows = props.files.filter((f) => fileMatchesFileTypeFilter(f.Key, enabledKinds.value));
     const q = props.search.trim().toLowerCase();
     if (q) rows = rows.filter((f) => f.Key.toLowerCase().includes(q));
     return rows;
   });
+
+  function fileName(key: string): string {
+    return key.split('/').pop() ?? key;
+  }
+
+  /** Rows with no lastModified sort after dated rows for a stable column sort. */
+  function compareLastModified(
+    a: string | undefined,
+    b: string | undefined,
+    direction: 'asc' | 'desc' = 'asc',
+  ): number {
+    const toTime = (s?: string): number | null => {
+      if (!s) return null;
+      const ms = new Date(s).getTime();
+      return Number.isNaN(ms) ? null : ms;
+    };
+    const ta = toTime(a);
+    const tb = toTime(b);
+    if (ta === null && tb === null) return 0;
+    if (ta === null) return 1;
+    if (tb === null) return -1;
+    const result = ta - tb;
+    return direction === 'asc' ? result : -result;
+  }
+
+  const sorted = computed(() => {
+    const rows = [...filtered.value];
+    const { column, direction } = tableSort.value as { column: SortColumn; direction: 'asc' | 'desc' };
+
+    rows.sort((rowA, rowB) => {
+      let cmp = 0;
+      switch (column) {
+        case 'file':
+          cmp = sortHelpers.stringSortCompare(fileName(rowA.Key), fileName(rowB.Key), direction);
+          break;
+        case 'type':
+          cmp = sortHelpers.stringSortCompare(
+            dataCollectionFileKind(rowA.Key),
+            dataCollectionFileKind(rowB.Key),
+            direction,
+          );
+          break;
+        case 'size':
+          cmp = sortHelpers.numberSortCompare(rowA.Size ?? 0, rowB.Size ?? 0, direction);
+          break;
+        case 'lastModified':
+          cmp = compareLastModified(rowA.LastModified, rowB.LastModified, direction);
+          break;
+      }
+      if (cmp !== 0) return cmp;
+      return sortHelpers.stringSortCompare(rowA.Key, rowB.Key, direction);
+    });
+
+    return rows;
+  });
+
+  function toggleSort(column: SortColumn): void {
+    if (tableSort.value.column === column) {
+      tableSort.value = { column, direction: tableSort.value.direction === 'asc' ? 'desc' : 'asc' };
+      return;
+    }
+    tableSort.value = { column, direction: 'asc' };
+  }
+
+  function sortIcon(column: SortColumn): string {
+    if (tableSort.value.column !== column) return 'i-heroicons-chevron-up-down';
+    return tableSort.value.direction === 'asc' ? 'i-heroicons-chevron-up' : 'i-heroicons-chevron-down';
+  }
+
+  function ariaSort(column: SortColumn): 'ascending' | 'descending' | 'none' {
+    if (tableSort.value.column !== column) return 'none';
+    return tableSort.value.direction === 'asc' ? 'ascending' : 'descending';
+  }
 
   const hiddenCount = computed(() => {
     const all = props.files.length;
@@ -122,22 +202,61 @@
           <thead class="sticky top-0 bg-gray-50">
             <tr>
               <th class="w-10 p-3" />
-              <th class="p-3 text-left text-xs uppercase text-gray-400">File</th>
-              <th class="p-3 text-left text-xs uppercase text-gray-400">Type</th>
-              <th class="p-3 text-left text-xs uppercase text-gray-400">Size</th>
-              <th class="p-3 text-left text-xs uppercase text-gray-400">Last modified</th>
-              <th class="p-3 text-left text-xs uppercase text-gray-400">Status</th>
+              <th class="p-3 text-left text-xs uppercase text-gray-400" scope="col" :aria-sort="ariaSort('file')">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 uppercase hover:text-gray-600"
+                  @click="toggleSort('file')"
+                >
+                  File
+                  <UIcon :name="sortIcon('file')" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                </button>
+              </th>
+              <th class="p-3 text-left text-xs uppercase text-gray-400" scope="col" :aria-sort="ariaSort('type')">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 uppercase hover:text-gray-600"
+                  @click="toggleSort('type')"
+                >
+                  Type
+                  <UIcon :name="sortIcon('type')" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                </button>
+              </th>
+              <th class="p-3 text-left text-xs uppercase text-gray-400" scope="col" :aria-sort="ariaSort('size')">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 uppercase hover:text-gray-600"
+                  @click="toggleSort('size')"
+                >
+                  Size
+                  <UIcon :name="sortIcon('size')" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                </button>
+              </th>
+              <th
+                class="p-3 text-left text-xs uppercase text-gray-400"
+                scope="col"
+                :aria-sort="ariaSort('lastModified')"
+              >
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 uppercase hover:text-gray-600"
+                  @click="toggleSort('lastModified')"
+                >
+                  Last modified
+                  <UIcon :name="sortIcon('lastModified')" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                </button>
+              </th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="6" class="p-6 text-center text-gray-400">Scanning…</td>
+              <td colspan="5" class="p-6 text-center text-gray-400">Scanning…</td>
             </tr>
             <tr v-else-if="!filtered.length">
-              <td colspan="6" class="p-6 text-center text-gray-400">No unlinked files match the current filters.</td>
+              <td colspan="5" class="p-6 text-center text-gray-400">No unlinked files match the current filters.</td>
             </tr>
             <tr
-              v-for="f in filtered"
+              v-for="f in sorted"
               :key="f.Key"
               class="border-t border-gray-100 hover:bg-gray-50"
               :class="{ 'bg-primary-50': selectedKeys.includes(f.Key) }"
@@ -145,18 +264,15 @@
               <td class="p-3">
                 <input type="checkbox" :checked="selectedKeys.includes(f.Key)" @change="toggle(f.Key)" />
               </td>
-              <td class="p-3 font-mono text-xs">{{ f.Key.split('/').pop() }}</td>
+              <td class="p-3 font-mono text-xs">{{ fileName(f.Key) }}</td>
               <td class="p-3 text-xs uppercase text-gray-500">{{ dataCollectionFileKind(f.Key) }}</td>
               <td class="p-3 text-xs">{{ formatSize(f.Size) }}</td>
               <td class="p-3 text-xs text-gray-400">
                 {{ f.LastModified ? new Date(f.LastModified).toLocaleString() : '—' }}
               </td>
-              <td class="p-3">
-                <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">unlinked</span>
-              </td>
             </tr>
             <tr v-if="hiddenCount > 0">
-              <td colspan="6" class="p-3 text-center text-xs italic text-gray-400">
+              <td colspan="5" class="p-3 text-center text-xs italic text-gray-400">
                 {{ hiddenCount }} file(s) hidden by type filter
               </td>
             </tr>

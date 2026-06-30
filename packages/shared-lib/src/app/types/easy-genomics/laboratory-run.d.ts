@@ -83,4 +83,47 @@ export interface LaboratoryRun extends BaseAttributes {
    * which is bumped by unrelated background updates (retention, tags, etc.).
    */
   RunDurationSeconds?: number;
+
+  /**
+   * Top-level machine-code failure reason reported by the platform when the run reached
+   * FAILED state. Sourced from HealthOmics `failureReason` or Seqera `workflow.errorMessage`.
+   * The human-readable detail lives in `FailureStatusMessage` / `FailureErrorReport`.
+   * Absent on runs that failed before this field was introduced.
+   */
+  FailureReason?: string;
+
+  /**
+   * HealthOmics human-readable `statusMessage` (often carries the failing task name and a
+   * CloudWatch log link). Kept separate from the machine-code `FailureReason` so the
+   * classifier receives both signals.
+   */
+  FailureStatusMessage?: string;
+
+  /**
+   * Seqera `workflow.errorReport` — the richer Nextflow stack-trace / error detail,
+   * distinct from the one-line `workflow.errorMessage` stored in `FailureReason`.
+   */
+  FailureErrorReport?: string;
+
+  /**
+   * Party responsible for resolving the failure. Populated asynchronously by the
+   * failure-classification pipeline after a FAILED transition.
+   * - `Lab` — user-provided inputs or data (sample sheet, S3 paths, file size)
+   * - `Bioinformatician` — workflow definition, container image, or resource config
+   * - `AWS` — transient AWS-side issue; retry recommended
+   * - `Ambiguous` — could not be confidently attributed; needs CloudWatch investigation
+   */
+  FailureOwner?: 'Bioinformatician' | 'Lab' | 'AWS' | 'Ambiguous';
+
+  /** One-line human-readable summary of the failure suitable for inline display. */
+  FailureSummary?: string;
+
+  /** Imperative-voice suggested next step (e.g. "Increase memory allocation"). */
+  FailureAction?: string;
+
+  /**
+   * Provenance of the classification: `lookup` = deterministic table hit (high confidence),
+   * `llm` = produced by the configured LLM provider (display "AI-assisted" disclaimer).
+   */
+  FailureClassifiedBy?: 'lookup' | 'llm';
 }

@@ -13,12 +13,14 @@ import {
 jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-run-service');
 jest.mock('../../../../../../src/app/services/ssm-service');
+jest.mock('../../../../../../src/app/services/sns-service');
 jest.mock('../../../../../../src/app/services/omics-lab-factory');
 jest.mock('../../../../../../src/app/utils/rest-api-utils');
 
 import { LaboratoryRunService } from '../../../../../../src/app/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '../../../../../../src/app/services/easy-genomics/laboratory-service';
 import { createOmicsServiceForLab } from '../../../../../../src/app/services/omics-lab-factory';
+import { SnsService } from '../../../../../../src/app/services/sns-service';
 import { SsmService } from '../../../../../../src/app/services/ssm-service';
 import { getNextFlowApiQueryParameters, httpRequest } from '../../../../../../src/app/utils/rest-api-utils';
 
@@ -26,12 +28,14 @@ describe('process-update-laboratory-run.lambda', () => {
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
   let mockRunService: jest.MockedClass<typeof LaboratoryRunService>;
   let mockSsmService: jest.MockedClass<typeof SsmService>;
+  let mockSnsService: jest.MockedClass<typeof SnsService>;
 
   let mockQueryByRunId: jest.Mock;
   let mockUpdateRun: jest.Mock;
   let mockQueryByLaboratoryId: jest.Mock;
   let mockGetParameter: jest.Mock;
   let mockGetRun: jest.Mock;
+  let mockPublish: jest.Mock;
 
   const createEvent = (records: SQSRecord[]): SQSEvent =>
     ({
@@ -61,17 +65,20 @@ describe('process-update-laboratory-run.lambda', () => {
     mockLabService = LaboratoryService as jest.MockedClass<typeof LaboratoryService>;
     mockRunService = LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>;
     mockSsmService = SsmService as jest.MockedClass<typeof SsmService>;
+    mockSnsService = SnsService as jest.MockedClass<typeof SnsService>;
 
     mockQueryByRunId = jest.fn();
     mockUpdateRun = jest.fn();
     mockQueryByLaboratoryId = jest.fn();
     mockGetParameter = jest.fn();
     mockGetRun = jest.fn();
+    mockPublish = jest.fn().mockResolvedValue({});
 
     mockRunService.prototype.queryByRunId = mockQueryByRunId;
     mockRunService.prototype.update = mockUpdateRun;
     mockLabService.prototype.queryByLaboratoryId = mockQueryByLaboratoryId;
     mockSsmService.prototype.getParameter = mockGetParameter;
+    mockSnsService.prototype.publish = mockPublish;
     (createOmicsServiceForLab as jest.Mock).mockResolvedValue({ getRun: mockGetRun });
 
     mockQueryByLaboratoryId.mockResolvedValue({
@@ -430,5 +437,279 @@ describe('process-update-laboratory-run.lambda', () => {
     mockQueryByRunId.mockRejectedValue(new Error('lookup failed'));
 
     await expect(processStatusCheckEvent('UPDATE', { RunId: 'run-err' } as any)).rejects.toThrow('lookup failed');
+  });
+
+  it('getAWSHealthOmicsStatus returns failureReason and statusMessage as separate fields', async () => {
+    mockGetRun.mockResolvedValue({
+      status: 'FAILED',
+      failureReason: 'ECR_PERMISSION_ERROR',
+      statusMessage: 'Cannot access ECR image (human-readable)',
+    } as any);
+
+    const snapshot = await getAWSHealthOmicsStatus({ RunId: 'run-1', ExternalRunId: 'ext-1' } as any);
+
+    expect(snapshot.status).toBe('FAILED');
+    expect(snapshot.failureReason).toBe('ECR_PERMISSION_ERROR');
+    expect(snapshot.statusMessage).toBe('Cannot access ECR image (human-readable)');
+  });
+
+  it('getAWSHealthOmicsStatus keeps statusMessage distinct and does not collapse it into failureReason', async () => {
+    mockGetRun.mockResolvedValue({
+      status: 'FAILED',
+      statusMessage: 'Engine failure — see CloudWatch',
+    } as any);
+
+    const snapshot = await getAWSHealthOmicsStatus({ RunId: 'run-1', ExternalRunId: 'ext-1' } as any);
+
+    expect(snapshot.failureReason).toBeUndefined();
+    expect(snapshot.statusMessage).toBe('Engine failure — see CloudWatch');
+  });
+
+  it('getAWSHealthOmicsStatus leaves both failure fields undefined when neither is present', async () => {
+    mockGetRun.mockResolvedValue({ status: 'SUCCEEDED' } as any);
+
+    const snapshot = await getAWSHealthOmicsStatus({ RunId: 'run-1', ExternalRunId: 'ext-1' } as any);
+
+    expect(snapshot.failureReason).toBeUndefined();
+    expect(snapshot.statusMessage).toBeUndefined();
+  });
+
+  it('getSeqeraCloudStatus returns failureReason from workflow.errorMessage', async () => {
+    mockQueryByLaboratoryId.mockResolvedValue({
+      OrganizationId: 'org-1',
+      LaboratoryId: 'lab-1',
+      NextFlowTowerWorkspaceId: 'ws-1',
+    });
+
+    const ssmResponse: GetParameterCommandOutput = {
+      $metadata: {},
+      Parameter: { Value: 'token' },
+    };
+    mockGetParameter.mockResolvedValue(ssmResponse);
+
+    (httpRequest as jest.Mock).mockResolvedValue({
+      workflow: {
+        status: 'FAILED',
+        errorMessage: 'Process samplesheet_check failed with exit code 1',
+        errorReport: 'Caused by:\n  Process `samplesheet_check` terminated with an error exit status (1)',
+      },
+    });
+
+    const snapshot = await getSeqeraCloudStatus({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      ExternalRunId: 'ext-1',
+    } as any);
+
+    expect(snapshot.status).toBe('FAILED');
+    expect(snapshot.failureReason).toBe('Process samplesheet_check failed with exit code 1');
+    expect(snapshot.errorReport).toBe(
+      'Caused by:\n  Process `samplesheet_check` terminated with an error exit status (1)',
+    );
+  });
+
+  it('processStatusCheckEvent persists FailureReason on FAILED transition for HealthOmics', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      ExternalRunId: 'ext-1',
+      Status: 'RUNNING',
+      Platform: 'AWS HealthOmics',
+    });
+
+    mockGetRun.mockResolvedValue({
+      status: 'FAILED',
+      failureReason: 'OUT_OF_MEMORY_ERROR',
+      statusMessage: 'Task nf-core/rnaseq:FASTQC ran out of memory — see CloudWatch',
+    } as any);
+
+    mockUpdateRun.mockResolvedValue({ RunId: 'run-1', Status: 'FAILED' });
+
+    await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
+
+    expect(mockUpdateRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Status: 'FAILED',
+        FailureReason: 'OUT_OF_MEMORY_ERROR',
+        FailureStatusMessage: 'Task nf-core/rnaseq:FASTQC ran out of memory — see CloudWatch',
+      }),
+    );
+  });
+
+  it('processStatusCheckEvent persists FailureReason on FAILED transition for Seqera Cloud', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      ExternalRunId: 'ext-1',
+      Status: 'RUNNING',
+      Platform: 'Seqera Cloud',
+    });
+
+    mockQueryByLaboratoryId.mockResolvedValue({
+      OrganizationId: 'org-1',
+      LaboratoryId: 'lab-1',
+      NextFlowTowerWorkspaceId: 'ws-1',
+    });
+
+    const ssmResponse: GetParameterCommandOutput = {
+      $metadata: {},
+      Parameter: { Value: 'token' },
+    };
+    mockGetParameter.mockResolvedValue(ssmResponse);
+
+    (httpRequest as jest.Mock).mockResolvedValue({
+      workflow: {
+        status: 'FAILED',
+        errorMessage: 'Sample sheet parsing failed',
+        errorReport: 'Caused by:\n  Missing required column "sample" in samplesheet.csv',
+      },
+    });
+
+    mockUpdateRun.mockResolvedValue({ RunId: 'run-1', Status: 'FAILED' });
+
+    await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
+
+    expect(mockUpdateRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Status: 'FAILED',
+        FailureReason: 'Sample sheet parsing failed',
+        FailureErrorReport: 'Caused by:\n  Missing required column "sample" in samplesheet.csv',
+      }),
+    );
+  });
+
+  it('processStatusCheckEvent does not overwrite existing FailureReason on subsequent FAILED status checks', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      ExternalRunId: 'ext-1',
+      Status: 'RUNNING',
+      Platform: 'AWS HealthOmics',
+      FailureReason: 'ECR_PERMISSION_ERROR',
+    });
+
+    mockGetRun.mockResolvedValue({
+      status: 'FAILED',
+      failureReason: 'SHOULD_NOT_OVERWRITE',
+    } as any);
+
+    mockUpdateRun.mockResolvedValue({ RunId: 'run-1', Status: 'FAILED' });
+
+    await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
+
+    const updateArg = mockUpdateRun.mock.calls[0][0];
+    expect(updateArg.FailureReason).toBe('ECR_PERMISSION_ERROR');
+  });
+
+  it('processStatusCheckEvent does not write FailureReason on non-FAILED transitions', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      ExternalRunId: 'ext-1',
+      Status: 'RUNNING',
+      Platform: 'AWS HealthOmics',
+    });
+
+    mockGetRun.mockResolvedValue({
+      status: 'SUCCEEDED',
+      failureReason: 'IRRELEVANT',
+    } as any);
+
+    mockUpdateRun.mockResolvedValue({ RunId: 'run-1', Status: 'SUCCEEDED' });
+
+    await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
+
+    const updateArg = mockUpdateRun.mock.calls[0][0];
+    expect(updateArg.FailureReason).toBeUndefined();
+  });
+
+  it('safePublishForClassification: publishes to SNS when run transitions to FAILED and FailureOwner is unset', async () => {
+    process.env.SNS_LABORATORY_RUN_FAILURE_CLASSIFICATION_TOPIC = 'arn:aws:sns:us-east-1:123:classify.fifo';
+
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      ExternalRunId: 'ext-1',
+      Status: 'RUNNING',
+      Platform: 'AWS HealthOmics',
+    });
+
+    mockGetRun.mockResolvedValue({ status: 'FAILED', failureReason: 'OUT_OF_MEMORY_ERROR' } as any);
+    mockUpdateRun.mockResolvedValue({ RunId: 'run-1', Status: 'FAILED' });
+
+    await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
+
+    expect(mockPublish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        TopicArn: 'arn:aws:sns:us-east-1:123:classify.fifo',
+        MessageGroupId: 'classify-laboratory-run-run-1',
+      }),
+    );
+  });
+
+  it('safePublishForClassification: skips publish when FailureOwner is already set', async () => {
+    process.env.SNS_LABORATORY_RUN_FAILURE_CLASSIFICATION_TOPIC = 'arn:aws:sns:us-east-1:123:classify.fifo';
+
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      ExternalRunId: 'ext-1',
+      Status: 'RUNNING',
+      Platform: 'AWS HealthOmics',
+      FailureOwner: 'Bioinformatician',
+    });
+
+    mockGetRun.mockResolvedValue({ status: 'FAILED', failureReason: 'ECR_PERMISSION_ERROR' } as any);
+    mockUpdateRun.mockResolvedValue({ RunId: 'run-1', Status: 'FAILED' });
+
+    await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
+
+    expect(mockPublish).not.toHaveBeenCalled();
+  });
+
+  it('safePublishForClassification: skips publish when topic ARN env var is unset', async () => {
+    delete process.env.SNS_LABORATORY_RUN_FAILURE_CLASSIFICATION_TOPIC;
+
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      ExternalRunId: 'ext-1',
+      Status: 'RUNNING',
+      Platform: 'AWS HealthOmics',
+    });
+
+    mockGetRun.mockResolvedValue({ status: 'FAILED', failureReason: 'OUT_OF_MEMORY_ERROR' } as any);
+    mockUpdateRun.mockResolvedValue({ RunId: 'run-1', Status: 'FAILED' });
+
+    await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
+
+    expect(mockPublish).not.toHaveBeenCalled();
+  });
+
+  it('safePublishForClassification: swallows SNS errors so the status-check pipeline completes', async () => {
+    process.env.SNS_LABORATORY_RUN_FAILURE_CLASSIFICATION_TOPIC = 'arn:aws:sns:us-east-1:123:classify.fifo';
+    mockPublish.mockRejectedValue(new Error('SNS unavailable'));
+
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      ExternalRunId: 'ext-1',
+      Status: 'RUNNING',
+      Platform: 'AWS HealthOmics',
+    });
+
+    mockGetRun.mockResolvedValue({ status: 'FAILED', failureReason: 'OUT_OF_MEMORY_ERROR' } as any);
+    mockUpdateRun.mockResolvedValue({ RunId: 'run-1', Status: 'FAILED' });
+
+    await expect(processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any)).resolves.toBe(true);
+    expect(mockPublish).toHaveBeenCalled();
   });
 });

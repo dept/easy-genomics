@@ -1,6 +1,7 @@
 process.env.NAME_PREFIX = 'unit-test';
 
 import { marshall } from '@aws-sdk/util-dynamodb';
+import { LaboratoryNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { Context, DynamoDBStreamEvent } from 'aws-lambda';
 
 const mockRemove: jest.Mock = jest.fn().mockResolvedValue(undefined);
@@ -18,7 +19,6 @@ jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-data-tagg
   })),
 }));
 
-import { LaboratoryNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { handler } from '../../../../../../src/app/controllers/easy-genomics/laboratory/run/process-laboratory-run-stream.lambda';
 
 function buildEvent(

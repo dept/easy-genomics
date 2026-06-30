@@ -8,9 +8,9 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
-// eslint-disable-next-line import/no-extraneous-dependencies
+// eslint-disable-next-line import/no-extraneous-dependencies, import/no-unresolved
 import * as TJS from 'typescript-json-schema';
-// eslint-disable-next-line import/no-extraneous-dependencies
+// eslint-disable-next-line import/no-extraneous-dependencies, import/no-unresolved
 import { zodToJsonSchema } from 'zod-to-json-schema';
 
 import { ROUTE_SCHEMAS } from './route-schemas';

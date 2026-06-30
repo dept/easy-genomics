@@ -11,11 +11,12 @@ import {
 import { DescribeWorkflowResponse } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
 import { APIGatewayProxyResult, Handler, SQSRecord } from 'aws-lambda';
 import { SQSEvent } from 'aws-lambda/trigger/sqs';
-//import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryDataTaggingService } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
+import { SnsService } from '@BE/services/sns-service';
 import { SsmService } from '@BE/services/ssm-service';
 import {
   calculateExpiresAtEpochSeconds,
@@ -29,7 +30,34 @@ import { getNextFlowApiQueryParameters, httpRequest, REST_API_METHOD } from '@BE
 const laboratoryService = new LaboratoryService();
 const laboratoryRunService = new LaboratoryRunService();
 const laboratoryDataTaggingService = new LaboratoryDataTaggingService();
+const snsService = new SnsService();
 const ssmService = new SsmService();
+
+/**
+ * Best-effort SNS publish that hands off a freshly-failed run to the
+ * classification pipeline. Failures here are swallowed because classification
+ * is a downstream enhancement — the status-check pipeline must never break if
+ * the topic is misconfigured or SNS is temporarily unavailable.
+ */
+async function safePublishForClassification(run: LaboratoryRun): Promise<void> {
+  const topicArn = process.env.SNS_LABORATORY_RUN_FAILURE_CLASSIFICATION_TOPIC;
+  if (!topicArn) return;
+  try {
+    const record: SnsProcessingEvent = {
+      Operation: 'UPDATE',
+      Type: 'LaboratoryRun',
+      Record: run,
+    };
+    await snsService.publish({
+      TopicArn: topicArn,
+      Message: JSON.stringify(record),
+      MessageGroupId: `classify-laboratory-run-${run.RunId}`,
+      MessageDeduplicationId: uuidv4(),
+    });
+  } catch (err) {
+    console.warn('Failed to publish FAILED run to classification topic (continuing):', err);
+  }
+}
 
 /**
  * Best-effort mirror of a run's ExpiresAt into each input file's `LaboratoryRunUsages` entry.
@@ -91,6 +119,11 @@ export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxy
 type PlatformRunSnapshot = {
   status: string;
   durationSeconds?: number;
+  failureReason?: string;
+  // Human-readable failure detail kept separate from the machine-code `failureReason`:
+  // HealthOmics surfaces it as `statusMessage`, Seqera as `workflow.errorReport`.
+  statusMessage?: string;
+  errorReport?: string;
 };
 
 function toMsIfPresent(value: Date | string | undefined): number | undefined {
@@ -189,10 +222,22 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         ...(snapshot.durationSeconds != null && existingRun.RunDurationSeconds == null
           ? { RunDurationSeconds: snapshot.durationSeconds }
           : {}),
+        ...(newStatusNormalized === 'FAILED' && snapshot.failureReason && existingRun.FailureReason == null
+          ? { FailureReason: snapshot.failureReason }
+          : {}),
+        ...(newStatusNormalized === 'FAILED' && snapshot.statusMessage && existingRun.FailureReason == null
+          ? { FailureStatusMessage: snapshot.statusMessage }
+          : {}),
+        ...(newStatusNormalized === 'FAILED' && snapshot.errorReport && existingRun.FailureReason == null
+          ? { FailureErrorReport: snapshot.errorReport }
+          : {}),
         ModifiedAt: now.toISOString(),
         ModifiedBy: 'Status Check',
       });
       await safePropagateExpiresAt(laboratory, laboratoryRun, newExpiresAt);
+      if (newStatusNormalized === 'FAILED' && existingRun.FailureOwner == null) {
+        await safePublishForClassification(laboratoryRun);
+      }
     } else if (snapshot.durationSeconds != null && existingRun.RunDurationSeconds == null) {
       // No status change, but the platform now reports a duration we hadn't captured yet.
       const now = new Date();
@@ -242,6 +287,8 @@ export async function getAWSHealthOmicsStatus(laboratoryRun: LaboratoryRun): Pro
   return {
     status: response.status || 'UNKNOWN',
     durationSeconds,
+    failureReason: response.failureReason,
+    statusMessage: response.statusMessage,
   };
 }
 
@@ -297,5 +344,7 @@ export async function getSeqeraCloudStatus(laboratoryRun: LaboratoryRun): Promis
   return {
     status: workflow?.status || 'UNKNOWN',
     durationSeconds,
+    failureReason: workflow?.errorMessage,
+    errorReport: workflow?.errorReport,
   };
 }

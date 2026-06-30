@@ -54,12 +54,26 @@ export const handler: Handler = async (
       .catch(() => {
         return false;
       });
+    const hasHealthOmicsLlmApiKey: boolean = await ssmService
+      .getParameter({
+        Name: `/easy-genomics/organization/${existing.OrganizationId}/laboratory/${existing.LaboratoryId}/llm-api-key-healthomics`,
+      })
+      .then((value: GetParameterCommandOutput) => !!value.Parameter)
+      .catch(() => false);
+    const hasSeqeraLlmApiKey: boolean = await ssmService
+      .getParameter({
+        Name: `/easy-genomics/organization/${existing.OrganizationId}/laboratory/${existing.LaboratoryId}/llm-api-key-seqera`,
+      })
+      .then((value: GetParameterCommandOutput) => !!value.Parameter)
+      .catch(() => false);
 
-    // Return Laboratory details with boolean indicator instead of actual NextFlowTowerAccessToken
+    // Return Laboratory details with boolean indicators in place of any secret values.
     const response: ReadLaboratory = {
       ...existing,
       HasNextFlowTowerAccessToken: hasNextFlowAccessToken,
       HasGitHubAccessToken: hasGitHubAccessToken,
+      HasHealthOmicsLlmApiKey: hasHealthOmicsLlmApiKey,
+      HasSeqeraLlmApiKey: hasSeqeraLlmApiKey,
     };
     return buildResponse(200, JSON.stringify(response), event);
   } catch (err: any) {
