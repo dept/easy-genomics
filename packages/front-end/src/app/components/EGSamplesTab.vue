@@ -70,8 +70,8 @@
     width: '0px',
     height: '0px',
   });
-  let lx0 = 0;
-  let ly0 = 0;
+  let lassoStartX = 0;
+  let lassoStartY = 0;
 
   const BATCH_HEADER_DOT_NOT_ANALYZED = '#EF9F27';
   const BATCH_HEADER_DOT_ANALYZED = '#2DB48F';
@@ -294,16 +294,16 @@
   }
 
   function onScrollHostMouseDown(e: MouseEvent): void {
-    const t = e.target as HTMLElement;
-    if (t.closest('[data-file-card]')) return;
+    const targetEl = e.target as HTMLElement;
+    if (targetEl.closest('[data-file-card]')) return;
     if (e.button !== 0) return;
     lassoActive.value = true;
-    lx0 = e.clientX;
-    ly0 = e.clientY;
+    lassoStartX = e.clientX;
+    lassoStartY = e.clientY;
     lassoStyle.value = {
       display: 'block',
-      left: `${lx0}px`,
-      top: `${ly0}px`,
+      left: `${lassoStartX}px`,
+      top: `${lassoStartY}px`,
       width: '0px',
       height: '0px',
     };
@@ -312,47 +312,85 @@
 
   function onWindowMouseMove(e: MouseEvent): void {
     if (!lassoActive.value) return;
-    const x = Math.min(e.clientX, lx0);
-    const y = Math.min(e.clientY, ly0);
-    const w = Math.abs(e.clientX - lx0);
-    const h = Math.abs(e.clientY - ly0);
-    lassoStyle.value = { display: 'block', left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` };
-    const lr = { left: x, top: y, right: x + w, bottom: y + h };
+    const lassoLeft = Math.min(e.clientX, lassoStartX);
+    const lassoTop = Math.min(e.clientY, lassoStartY);
+    const lassoWidth = Math.abs(e.clientX - lassoStartX);
+    const lassoHeight = Math.abs(e.clientY - lassoStartY);
+    lassoStyle.value = {
+      display: 'block',
+      left: `${lassoLeft}px`,
+      top: `${lassoTop}px`,
+      width: `${lassoWidth}px`,
+      height: `${lassoHeight}px`,
+    };
+    const lassoBounds = {
+      left: lassoLeft,
+      top: lassoTop,
+      right: lassoLeft + lassoWidth,
+      bottom: lassoTop + lassoHeight,
+    };
     scrollEl.value?.querySelectorAll('[data-file-card]').forEach((el) => {
-      const r = (el as HTMLElement).getBoundingClientRect();
-      const hit = r.left < lr.right && r.right > lr.left && r.top < lr.bottom && r.bottom > lr.top;
+      const cardRect = (el as HTMLElement).getBoundingClientRect();
+      const hit =
+        cardRect.left < lassoBounds.right &&
+        cardRect.right > lassoBounds.left &&
+        cardRect.top < lassoBounds.bottom &&
+        cardRect.bottom > lassoBounds.top;
       /** Lasso-only class — never strip Vue-bound `ring-*` on selected cards (Vue may not re-patch if props unchanged). */
       (el as HTMLElement).classList.toggle('eg-data-collections-lasso-hit', hit);
     });
   }
 
-  function onWindowMouseUp(): void {
-    if (!lassoActive.value) return;
+  function clearLassoVisualState(): void {
     lassoActive.value = false;
     lassoStyle.value = { ...lassoStyle.value, display: 'none' };
+    scrollEl.value?.querySelectorAll('[data-file-card]').forEach((el) => {
+      (el as HTMLElement).classList.remove('eg-data-collections-lasso-hit');
+    });
+  }
+
+  function cancelLasso(): void {
+    if (!lassoActive.value) return;
+    clearLassoVisualState();
+  }
+
+  function onWindowMouseUp(): void {
+    if (!lassoActive.value) return;
     const added: string[] = [];
     scrollEl.value?.querySelectorAll('[data-file-card]').forEach((el) => {
-      const h = el as HTMLElement;
-      if (h.classList.contains('eg-data-collections-lasso-hit')) {
-        const id = h.dataset.key;
+      const cardEl = el as HTMLElement;
+      if (cardEl.classList.contains('eg-data-collections-lasso-hit')) {
+        const id = cardEl.dataset.key;
         if (id) added.push(id);
       }
-      h.classList.remove('eg-data-collections-lasso-hit');
     });
+    clearLassoVisualState();
     if (added.length) {
       const merged = new Set([...props.selectedIds, ...added]);
       emit('update:selectedIds', [...merged]);
     }
   }
 
+  function onWindowBlur(): void {
+    cancelLasso();
+  }
+
+  function onDocumentVisibilityChange(): void {
+    if (document.visibilityState === 'hidden') cancelLasso();
+  }
+
   onMounted(() => {
     window.addEventListener('mousemove', onWindowMouseMove);
     window.addEventListener('mouseup', onWindowMouseUp);
+    window.addEventListener('blur', onWindowBlur);
+    document.addEventListener('visibilitychange', onDocumentVisibilityChange);
   });
 
   onBeforeUnmount(() => {
     window.removeEventListener('mousemove', onWindowMouseMove);
     window.removeEventListener('mouseup', onWindowMouseUp);
+    window.removeEventListener('blur', onWindowBlur);
+    document.removeEventListener('visibilitychange', onDocumentVisibilityChange);
   });
 
   function onSampleItemKeydown(e: KeyboardEvent, setId: string): void {
