@@ -69,7 +69,7 @@ async function signInAndSaveState(
   await page.goto(`${baseURL}/signin`);
   await page.getByLabel('Email').click();
   await page.keyboard.type(credentials.email);
-  await page.getByLabel('Password').click();
+  await page.getByLabel('Password', { exact: true }).click();
   await page.keyboard.type(credentials.password);
 
   console.log('Clicking Sign In as ' + userType + '...');

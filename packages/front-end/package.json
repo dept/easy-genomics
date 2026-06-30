@@ -28,7 +28,7 @@
     "nuxt-prepare": "nuxt prepare",
     "nuxt-preview": "nuxt preview",
     "nuxt-postinstall": "nuxt prepare",
-    "test-e2e": "pnpm run test-e2e:sys-admin || true && pnpm run test-e2e:org-admin || true && pnpm run test-e2e:lab-manager || true && pnpm run test-e2e:lab-technician || true",
+    "test-e2e": "pnpm run test-e2e:sys-admin && pnpm run test-e2e:org-admin && pnpm run test-e2e:lab-manager && pnpm run test-e2e:lab-technician",
     "test-e2e:sys-admin": "USER_TYPE=sys-admin npx playwright test --project=sys-admin",
     "test-e2e:org-admin": "USER_TYPE=org-admin npx playwright test --project=org-admin",
     "test-e2e:lab-manager": "USER_TYPE=lab-manager npx playwright test --project=lab-manager",
