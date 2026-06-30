@@ -3,7 +3,7 @@ import { join } from 'path';
 import {
   AnalyticsDeploymentInfo,
   getAnalyticsDeploymentInfo,
-} from '@easy-genomics/shared-lib/src/app/utils/analytics-utils';
+} from '@easy-genomics/shared-lib/lib/src/app/utils/analytics-utils';
 import { getApiGatewayInfo } from '@easy-genomics/shared-lib/lib/src/app/utils/api-gateway-utils';
 import {
   getCognitoClientUrls,
@@ -17,7 +17,7 @@ import {
   getStackEnvName,
   loadConfigurations,
   resolveConfiguration,
-} from '@easy-genomics/shared-lib/src/app/utils/configuration';
+} from '@easy-genomics/shared-lib/lib/src/app/utils/configuration';
 
 /**
  * This script is required to simplify the easy-genomics.yaml configuration and deployment workflow for customers and
