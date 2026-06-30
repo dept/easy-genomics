@@ -315,12 +315,46 @@
       uiStore.setRequestComplete('dataCollectionsMutate');
     }
   }
+
+  const rootEl = ref<HTMLElement | null>(null);
+  const rootHeightPx = ref<number | null>(null);
+
+  /** Fill remaining viewport below the lab page header so explorer tabs can scroll internally. */
+  function syncRootHeight(): void {
+    if (!rootEl.value) return;
+    const { top } = rootEl.value.getBoundingClientRect();
+    const bottomMarginPx = 16;
+    const minHeightPx = 28 * 16;
+    rootHeightPx.value = Math.max(window.innerHeight - top - bottomMarginPx, minHeightPx);
+  }
+
+  onMounted(() => {
+    syncRootHeight();
+    window.addEventListener('resize', syncRootHeight);
+  });
+
+  onUnmounted(() => {
+    window.removeEventListener('resize', syncRootHeight);
+  });
+
+  watch(activeTab, () => {
+    nextTick(() => {
+      syncRootHeight();
+      requestAnimationFrame(syncRootHeight);
+    });
+  });
+  watch(view, () => nextTick(syncRootHeight));
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-1 flex-col">
+  <div
+    ref="rootEl"
+    class="data-collections-page flex min-h-0 flex-col overflow-hidden"
+    :style="rootHeightPx != null ? { height: `${rootHeightPx}px` } : undefined"
+  >
     <EGImportDataWizard
       v-if="view === 'import'"
+      class="min-h-0 flex-1"
       :lab-id="labId"
       :lab="lab"
       :tags="tags"
@@ -330,6 +364,7 @@
 
     <EGDataCollectionBuilder
       v-else-if="view === 'builder'"
+      class="min-h-0 flex-1"
       :lab-id="labId"
       :lab="lab"
       :samples="samples"
@@ -341,92 +376,95 @@
     />
 
     <template v-else>
-      <div
-        v-if="!isLabS3Configured"
-        class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-      >
-        <p v-if="canEditLabDetails">
-          This lab does not have a
-          <strong>default S3 bucket</strong>
-          configured. Open
-          <strong>Settings</strong>
-          and set
-          <strong>Default S3 bucket directory</strong>
-          to enable data collections features.
-        </p>
-        <p v-else>
-          This lab does not have a default S3 bucket configured. Ask your
-          <strong>organization administrator</strong>
-          to set
-          <strong>Default S3 bucket directory</strong>
-          in lab settings to enable data collections features.
-        </p>
-        <UButton v-if="canEditLabDetails" class="mt-3" size="sm" variant="outline" @click="openLabSettings">
-          Open Settings
-        </UButton>
+      <div class="flex min-h-0 flex-1 flex-col">
+        <div
+          v-if="!isLabS3Configured"
+          class="mb-3 shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+          <p v-if="canEditLabDetails">
+            This lab does not have a
+            <strong>default S3 bucket</strong>
+            configured. Open
+            <strong>Settings</strong>
+            and set
+            <strong>Default S3 bucket directory</strong>
+            to enable data collections features.
+          </p>
+          <p v-else>
+            This lab does not have a default S3 bucket configured. Ask your
+            <strong>organization administrator</strong>
+            to set
+            <strong>Default S3 bucket directory</strong>
+            in lab settings to enable data collections features.
+          </p>
+          <UButton v-if="canEditLabDetails" class="mt-3" size="sm" variant="outline" @click="openLabSettings">
+            Open Settings
+          </UButton>
+        </div>
+
+        <EGDataCollectionsTabBar
+          v-model:active-tab="activeTab"
+          class="shrink-0"
+          :collection-count="sequenceCollections.length"
+          :sample-count="samples.length"
+          :file-count="unlinkedFiles.length"
+        />
+
+        <EGSequenceCollectionsListTab
+          v-if="activeTab === 'collections'"
+          :collections="sequenceCollections"
+          :loading="loading"
+          :search="collectionSearch"
+          @update:search="collectionSearch = $event"
+          @new-collection="openBuilder()"
+          @launch-workflow="launchWorkflow"
+          @edit-collection="openBuilderForEdit"
+          @delete-collection="openDeleteCollectionDialog"
+        />
+
+        <EGSamplesTab
+          v-else-if="activeTab === 'samples'"
+          :lab-id="labId"
+          :s3-configured="isLabS3Configured"
+          :samples="samples"
+          :tags="tags"
+          :sample-id-to-tag-ids="sampleIdToTagIds"
+          :sample-id-to-run-usages="sampleIdToRunUsages"
+          :loading="loading"
+          :selected-ids="selectedSampleIds"
+          :search="sampleSearch"
+          :tags-filter-untagged="tagsFilterUntagged"
+          :tags-filter-tag-ids="tagsFilterTagIds"
+          @update:selected-ids="selectedSampleIds = $event"
+          @update:search="sampleSearch = $event"
+          @update:tags-filter-untagged="tagsFilterUntagged = $event"
+          @update:tags-filter-tag-ids="tagsFilterTagIds = $event"
+          @import="openImport"
+          @build-collection="openBuilder(selectedSampleIds)"
+          @tags-updated="onSampleTagsUpdated"
+          @tag-created="onSampleTagCreated"
+          @tag-deleted="onSampleTagDeleted"
+        />
+
+        <EGUnlinkedFilesTab
+          v-else
+          :files="unlinkedFiles"
+          :loading="loading"
+          :selected-keys="selectedFileKeys"
+          :search="fileSearch"
+          :s3-configured="isLabS3Configured"
+          :can-edit-lab-details="canEditLabDetails"
+          :s3-bucket="unlinkedMeta.s3Bucket"
+          :resolved-prefix="unlinkedMeta.resolvedPrefix"
+          :last-scan-label="unlinkedMeta.lastScanLabel"
+          @update:selected-keys="selectedFileKeys = $event"
+          @update:search="fileSearch = $event"
+          @rescan="loadUnlinkedFiles"
+          @open-settings="openLabSettings"
+          @build-sample="showBuildSampleModal = true"
+          @group-with-regex="showRegexGroupModal = true"
+        />
       </div>
-
-      <EGDataCollectionsTabBar
-        v-model:active-tab="activeTab"
-        :collection-count="sequenceCollections.length"
-        :sample-count="samples.length"
-        :file-count="unlinkedFiles.length"
-      />
-
-      <EGSequenceCollectionsListTab
-        v-if="activeTab === 'collections'"
-        :collections="sequenceCollections"
-        :loading="loading"
-        :search="collectionSearch"
-        @update:search="collectionSearch = $event"
-        @new-collection="openBuilder()"
-        @launch-workflow="launchWorkflow"
-        @edit-collection="openBuilderForEdit"
-        @delete-collection="openDeleteCollectionDialog"
-      />
-
-      <EGSamplesTab
-        v-else-if="activeTab === 'samples'"
-        :lab-id="labId"
-        :s3-configured="isLabS3Configured"
-        :samples="samples"
-        :tags="tags"
-        :sample-id-to-tag-ids="sampleIdToTagIds"
-        :sample-id-to-run-usages="sampleIdToRunUsages"
-        :loading="loading"
-        :selected-ids="selectedSampleIds"
-        :search="sampleSearch"
-        :tags-filter-untagged="tagsFilterUntagged"
-        :tags-filter-tag-ids="tagsFilterTagIds"
-        @update:selected-ids="selectedSampleIds = $event"
-        @update:search="sampleSearch = $event"
-        @update:tags-filter-untagged="tagsFilterUntagged = $event"
-        @update:tags-filter-tag-ids="tagsFilterTagIds = $event"
-        @import="openImport"
-        @build-collection="openBuilder(selectedSampleIds)"
-        @tags-updated="onSampleTagsUpdated"
-        @tag-created="onSampleTagCreated"
-        @tag-deleted="onSampleTagDeleted"
-      />
-
-      <EGUnlinkedFilesTab
-        v-else
-        :files="unlinkedFiles"
-        :loading="loading"
-        :selected-keys="selectedFileKeys"
-        :search="fileSearch"
-        :s3-configured="isLabS3Configured"
-        :can-edit-lab-details="canEditLabDetails"
-        :s3-bucket="unlinkedMeta.s3Bucket"
-        :resolved-prefix="unlinkedMeta.resolvedPrefix"
-        :last-scan-label="unlinkedMeta.lastScanLabel"
-        @update:selected-keys="selectedFileKeys = $event"
-        @update:search="fileSearch = $event"
-        @rescan="loadUnlinkedFiles"
-        @open-settings="openLabSettings"
-        @build-sample="showBuildSampleModal = true"
-        @group-with-regex="showRegexGroupModal = true"
-      />
     </template>
 
     <EGBuildSampleModal

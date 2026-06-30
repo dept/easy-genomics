@@ -531,7 +531,7 @@
 
       <div class="flex min-h-0 min-w-0 flex-1 flex-col">
         <div
-          class="border-border-muted flex flex-wrap items-center gap-3 border-b px-4 py-3"
+          class="border-border-muted flex shrink-0 flex-wrap items-center gap-3 border-b px-4 py-3"
           role="toolbar"
           aria-label="Sample explorer tools"
         >
@@ -580,7 +580,7 @@
           </div>
         </div>
 
-        <div class="border-border-muted flex flex-wrap items-center gap-2 border-b bg-gray-50 px-4 py-2">
+        <div class="border-border-muted flex shrink-0 flex-wrap items-center gap-2 border-b bg-gray-50 px-4 py-2">
           <span class="text-xs font-semibold leading-snug text-gray-900" aria-live="polite" aria-atomic="true">
             {{ filtered.length }} sample{{ filtered.length === 1 ? '' : 's' }}
           </span>
@@ -914,7 +914,7 @@
     <div
       v-if="bulkPanelOpen"
       ref="bulkPanelContentEl"
-      class="border-border-muted relative border-t bg-white px-4 pb-4 pt-3"
+      class="border-border-muted relative max-h-[min(40vh,24rem)] shrink-0 overflow-y-auto border-t bg-white px-4 pb-4 pt-3"
       role="region"
       aria-label="Bulk tag editor"
     >
