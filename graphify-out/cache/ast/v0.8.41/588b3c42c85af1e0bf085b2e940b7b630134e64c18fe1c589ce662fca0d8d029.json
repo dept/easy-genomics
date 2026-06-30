@@ -1,0 +1,1643 @@
+{
+  "nodes": [
+    {
+      "id": "users_ignacionistal_documents_easy_genomics_packages_shared_lib_package_json",
+      "label": "package.json",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L1"
+    },
+    {
+      "id": "shared_lib_package_name",
+      "label": "name",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L2"
+    },
+    {
+      "id": "shared_lib_package_scripts",
+      "label": "scripts",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L3"
+    },
+    {
+      "id": "shared_lib_package_scripts_build",
+      "label": "build",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L4"
+    },
+    {
+      "id": "shared_lib_package_scripts_compile",
+      "label": "compile",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L5"
+    },
+    {
+      "id": "shared_lib_package_scripts_default",
+      "label": "default",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L6"
+    },
+    {
+      "id": "shared_lib_package_scripts_eslint",
+      "label": "eslint",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L7"
+    },
+    {
+      "id": "shared_lib_package_scripts_generate_api_types",
+      "label": "generate:api-types",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L8"
+    },
+    {
+      "id": "shared_lib_package_scripts_generate_openapi",
+      "label": "generate:openapi",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L9"
+    },
+    {
+      "id": "shared_lib_package_scripts_lint_openapi",
+      "label": "lint:openapi",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L10"
+    },
+    {
+      "id": "shared_lib_package_scripts_package",
+      "label": "package",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L11"
+    },
+    {
+      "id": "shared_lib_package_scripts_post_compile",
+      "label": "post-compile",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L12"
+    },
+    {
+      "id": "shared_lib_package_scripts_post_upgrade",
+      "label": "post-upgrade",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L13"
+    },
+    {
+      "id": "shared_lib_package_scripts_pre_compile",
+      "label": "pre-compile",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L14"
+    },
+    {
+      "id": "shared_lib_package_scripts_test",
+      "label": "test",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L15"
+    },
+    {
+      "id": "shared_lib_package_scripts_test_watch",
+      "label": "test:watch",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L16"
+    },
+    {
+      "id": "shared_lib_package_scripts_upgrade",
+      "label": "upgrade",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L17"
+    },
+    {
+      "id": "shared_lib_package_scripts_watch",
+      "label": "watch",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L18"
+    },
+    {
+      "id": "shared_lib_package_scripts_projen",
+      "label": "projen",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L19"
+    },
+    {
+      "id": "shared_lib_package_scripts_lint",
+      "label": "lint",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L20"
+    },
+    {
+      "id": "shared_lib_package_author",
+      "label": "author",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L22"
+    },
+    {
+      "id": "shared_lib_package_author_name",
+      "label": "name",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L23"
+    },
+    {
+      "id": "shared_lib_package_author_organization",
+      "label": "organization",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L24"
+    },
+    {
+      "id": "shared_lib_package_devdependencies",
+      "label": "devDependencies",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L26"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_redocly_cli",
+      "label": "@redocly/cli",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L27"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_types_aws_lambda",
+      "label": "@types/aws-lambda",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L28"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_types_jest",
+      "label": "@types/jest",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L29"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_types_js_yaml",
+      "label": "@types/js-yaml",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L30"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_types_node",
+      "label": "@types/node",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L31"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_types_uuid",
+      "label": "@types/uuid",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L32"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_typescript_eslint_eslint_plugin",
+      "label": "@typescript-eslint/eslint-plugin",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L33"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_typescript_eslint_parser",
+      "label": "@typescript-eslint/parser",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L34"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_aws_cdk_lib",
+      "label": "aws-cdk-lib",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L35"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_eslint",
+      "label": "eslint",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L36"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_eslint_import_resolver_typescript",
+      "label": "eslint-import-resolver-typescript",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L37"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_eslint_plugin_import",
+      "label": "eslint-plugin-import",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L38"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_jest",
+      "label": "jest",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L39"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_jest_junit",
+      "label": "jest-junit",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L40"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_openapi_typescript",
+      "label": "openapi-typescript",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L41"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_ts_jest",
+      "label": "ts-jest",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L42"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_tsx",
+      "label": "tsx",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L43"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_typescript",
+      "label": "typescript",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L44"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_typescript_json_schema",
+      "label": "typescript-json-schema",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L45"
+    },
+    {
+      "id": "shared_lib_package_devdependencies_zod_to_json_schema",
+      "label": "zod-to-json-schema",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L46"
+    },
+    {
+      "id": "shared_lib_package_dependencies",
+      "label": "dependencies",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L48"
+    },
+    {
+      "id": "shared_lib_package_dependencies_aws_sdk_client_api_gateway",
+      "label": "@aws-sdk/client-api-gateway",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L49"
+    },
+    {
+      "id": "shared_lib_package_dependencies_aws_sdk_client_cognito_identity_provider",
+      "label": "@aws-sdk/client-cognito-identity-provider",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L50"
+    },
+    {
+      "id": "shared_lib_package_dependencies_aws_sdk_client_omics",
+      "label": "@aws-sdk/client-omics",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L51"
+    },
+    {
+      "id": "shared_lib_package_dependencies_aws_sdk_client_s3",
+      "label": "@aws-sdk/client-s3",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L52"
+    },
+    {
+      "id": "shared_lib_package_dependencies_aws_cdk",
+      "label": "aws-cdk",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L53"
+    },
+    {
+      "id": "shared_lib_package_dependencies_aws_cdk_lib",
+      "label": "aws-cdk-lib",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L54"
+    },
+    {
+      "id": "shared_lib_package_dependencies_aws_lambda",
+      "label": "aws-lambda",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L55"
+    },
+    {
+      "id": "shared_lib_package_dependencies_js_yaml",
+      "label": "js-yaml",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L56"
+    },
+    {
+      "id": "shared_lib_package_dependencies_strnum",
+      "label": "strnum",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L57"
+    },
+    {
+      "id": "shared_lib_package_dependencies_uuid",
+      "label": "uuid",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L58"
+    },
+    {
+      "id": "shared_lib_package_dependencies_zod",
+      "label": "zod",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L59"
+    },
+    {
+      "id": "shared_lib_package_engines",
+      "label": "engines",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L61"
+    },
+    {
+      "id": "shared_lib_package_engines_node",
+      "label": "node",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L62"
+    },
+    {
+      "id": "shared_lib_package_main",
+      "label": "main",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L64"
+    },
+    {
+      "id": "shared_lib_package_license",
+      "label": "license",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L65"
+    },
+    {
+      "id": "shared_lib_package_version",
+      "label": "version",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L66"
+    },
+    {
+      "id": "shared_lib_package_jest",
+      "label": "jest",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L67"
+    },
+    {
+      "id": "shared_lib_package_jest_coverageprovider",
+      "label": "coverageProvider",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L68"
+    },
+    {
+      "id": "shared_lib_package_jest_testmatch",
+      "label": "testMatch",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L69"
+    },
+    {
+      "id": "shared_lib_package_jest_clearmocks",
+      "label": "clearMocks",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L73"
+    },
+    {
+      "id": "shared_lib_package_jest_collectcoverage",
+      "label": "collectCoverage",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L74"
+    },
+    {
+      "id": "shared_lib_package_jest_coveragereporters",
+      "label": "coverageReporters",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L75"
+    },
+    {
+      "id": "shared_lib_package_jest_coveragedirectory",
+      "label": "coverageDirectory",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L82"
+    },
+    {
+      "id": "shared_lib_package_jest_coveragepathignorepatterns",
+      "label": "coveragePathIgnorePatterns",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L83"
+    },
+    {
+      "id": "shared_lib_package_jest_testpathignorepatterns",
+      "label": "testPathIgnorePatterns",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L86"
+    },
+    {
+      "id": "shared_lib_package_jest_watchpathignorepatterns",
+      "label": "watchPathIgnorePatterns",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L89"
+    },
+    {
+      "id": "shared_lib_package_jest_reporters",
+      "label": "reporters",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L92"
+    },
+    {
+      "id": "shared_lib_package_jest_transform",
+      "label": "transform",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L101"
+    },
+    {
+      "id": "shared_lib_package_transform_t_sx",
+      "label": "^.+\\\\.[t]sx?$",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L102"
+    },
+    {
+      "id": "shared_lib_package_types",
+      "label": "types",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L110"
+    },
+    {
+      "id": "shared_lib_package",
+      "label": "//",
+      "file_type": "code",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L111"
+    }
+  ],
+  "edges": [
+    {
+      "source": "users_ignacionistal_documents_easy_genomics_packages_shared_lib_package_json",
+      "target": "shared_lib_package_name",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "users_ignacionistal_documents_easy_genomics_packages_shared_lib_package_json",
+      "target": "shared_lib_package_scripts",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_build",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_compile",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_default",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_eslint",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_generate_api_types",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_generate_openapi",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_lint_openapi",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_package",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_post_compile",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L12",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_post_upgrade",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L13",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_pre_compile",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L14",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_test",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L15",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_test_watch",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L16",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_upgrade",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L17",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_watch",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_projen",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L19",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_scripts",
+      "target": "shared_lib_package_scripts_lint",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L20",
+      "weight": 1.0
+    },
+    {
+      "source": "users_ignacionistal_documents_easy_genomics_packages_shared_lib_package_json",
+      "target": "shared_lib_package_author",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L22",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_author",
+      "target": "shared_lib_package_author_name",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_author",
+      "target": "shared_lib_package_author_organization",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L24",
+      "weight": 1.0
+    },
+    {
+      "source": "users_ignacionistal_documents_easy_genomics_packages_shared_lib_package_json",
+      "target": "shared_lib_package_devdependencies",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L26",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_redocly_cli",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L27",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_redocly_cli",
+      "target": "redocly_cli",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L27",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_types_aws_lambda",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L28",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_types_aws_lambda",
+      "target": "types_aws_lambda",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L28",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_types_jest",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L29",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_types_jest",
+      "target": "types_jest",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L29",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_types_js_yaml",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L30",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_types_js_yaml",
+      "target": "types_js_yaml",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L30",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_types_node",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L31",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_types_node",
+      "target": "types_node",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L31",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_types_uuid",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L32",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_types_uuid",
+      "target": "types_uuid",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L32",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_typescript_eslint_eslint_plugin",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L33",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_typescript_eslint_eslint_plugin",
+      "target": "typescript_eslint_eslint_plugin",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L33",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_typescript_eslint_parser",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L34",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_typescript_eslint_parser",
+      "target": "typescript_eslint_parser",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L34",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_aws_cdk_lib",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L35",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_aws_cdk_lib",
+      "target": "aws_cdk_lib",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L35",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_eslint",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L36",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_eslint",
+      "target": "eslint",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L36",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_eslint_import_resolver_typescript",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L37",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_eslint_import_resolver_typescript",
+      "target": "eslint_import_resolver_typescript",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L37",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_eslint_plugin_import",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_eslint_plugin_import",
+      "target": "eslint_plugin_import",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L38",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_jest",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L39",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_jest",
+      "target": "jest",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L39",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_jest_junit",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L40",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_jest_junit",
+      "target": "jest_junit",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L40",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_openapi_typescript",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L41",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_openapi_typescript",
+      "target": "openapi_typescript",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L41",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_ts_jest",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L42",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_ts_jest",
+      "target": "ts_jest",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L42",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_tsx",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L43",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_tsx",
+      "target": "tsx",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L43",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_typescript",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L44",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_typescript",
+      "target": "typescript",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L44",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_typescript_json_schema",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L45",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_typescript_json_schema",
+      "target": "typescript_json_schema",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L45",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_devdependencies",
+      "target": "shared_lib_package_devdependencies_zod_to_json_schema",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L46",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_devdependencies_zod_to_json_schema",
+      "target": "zod_to_json_schema",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L46",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "users_ignacionistal_documents_easy_genomics_packages_shared_lib_package_json",
+      "target": "shared_lib_package_dependencies",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L48",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_dependencies",
+      "target": "shared_lib_package_dependencies_aws_sdk_client_api_gateway",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L49",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_dependencies_aws_sdk_client_api_gateway",
+      "target": "aws_sdk_client_api_gateway",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L49",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_dependencies",
+      "target": "shared_lib_package_dependencies_aws_sdk_client_cognito_identity_provider",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L50",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_dependencies_aws_sdk_client_cognito_identity_provider",
+      "target": "aws_sdk_client_cognito_identity_provider",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L50",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_dependencies",
+      "target": "shared_lib_package_dependencies_aws_sdk_client_omics",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L51",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_dependencies_aws_sdk_client_omics",
+      "target": "aws_sdk_client_omics",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L51",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_dependencies",
+      "target": "shared_lib_package_dependencies_aws_sdk_client_s3",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L52",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_dependencies_aws_sdk_client_s3",
+      "target": "aws_sdk_client_s3",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L52",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_dependencies",
+      "target": "shared_lib_package_dependencies_aws_cdk",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L53",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_dependencies_aws_cdk",
+      "target": "aws_cdk",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L53",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_dependencies",
+      "target": "shared_lib_package_dependencies_aws_cdk_lib",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_dependencies_aws_cdk_lib",
+      "target": "aws_cdk_lib",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L54",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_dependencies",
+      "target": "shared_lib_package_dependencies_aws_lambda",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L55",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_dependencies_aws_lambda",
+      "target": "aws_lambda",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L55",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_dependencies",
+      "target": "shared_lib_package_dependencies_js_yaml",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L56",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_dependencies_js_yaml",
+      "target": "js_yaml",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L56",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_dependencies",
+      "target": "shared_lib_package_dependencies_strnum",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L57",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_dependencies_strnum",
+      "target": "strnum",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L57",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_dependencies",
+      "target": "shared_lib_package_dependencies_uuid",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L58",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_dependencies_uuid",
+      "target": "uuid",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L58",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_dependencies",
+      "target": "shared_lib_package_dependencies_zod",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L59",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_dependencies_zod",
+      "target": "zod",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L59",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "users_ignacionistal_documents_easy_genomics_packages_shared_lib_package_json",
+      "target": "shared_lib_package_engines",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L61",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_engines",
+      "target": "shared_lib_package_engines_node",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L62",
+      "weight": 1.0
+    },
+    {
+      "source": "users_ignacionistal_documents_easy_genomics_packages_shared_lib_package_json",
+      "target": "shared_lib_package_main",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L64",
+      "weight": 1.0
+    },
+    {
+      "source": "users_ignacionistal_documents_easy_genomics_packages_shared_lib_package_json",
+      "target": "shared_lib_package_license",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L65",
+      "weight": 1.0
+    },
+    {
+      "source": "users_ignacionistal_documents_easy_genomics_packages_shared_lib_package_json",
+      "target": "shared_lib_package_version",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L66",
+      "weight": 1.0
+    },
+    {
+      "source": "users_ignacionistal_documents_easy_genomics_packages_shared_lib_package_json",
+      "target": "shared_lib_package_jest",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L67",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_jest",
+      "target": "shared_lib_package_jest_coverageprovider",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_jest",
+      "target": "shared_lib_package_jest_testmatch",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L69",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_jest_testmatch",
+      "target": "ref_rootdir_src_test_spec_test_ts_x",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L69",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_jest_testmatch",
+      "target": "ref_rootdir_src_test_tests_ts_x",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L69",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_jest",
+      "target": "shared_lib_package_jest_clearmocks",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L73",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_jest",
+      "target": "shared_lib_package_jest_collectcoverage",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L74",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_jest",
+      "target": "shared_lib_package_jest_coveragereporters",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L75",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_jest_coveragereporters",
+      "target": "ref_json",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L75",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_jest_coveragereporters",
+      "target": "ref_lcov",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L75",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_jest_coveragereporters",
+      "target": "ref_clover",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L75",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_jest_coveragereporters",
+      "target": "ref_cobertura",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L75",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_jest_coveragereporters",
+      "target": "ref_text",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L75",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_jest",
+      "target": "shared_lib_package_jest_coveragedirectory",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L82",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_jest",
+      "target": "shared_lib_package_jest_coveragepathignorepatterns",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L83",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_jest_coveragepathignorepatterns",
+      "target": "ref_node_modules",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L83",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_jest",
+      "target": "shared_lib_package_jest_testpathignorepatterns",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L86",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_jest_testpathignorepatterns",
+      "target": "ref_node_modules",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L86",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_jest",
+      "target": "shared_lib_package_jest_watchpathignorepatterns",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L89",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_jest_watchpathignorepatterns",
+      "target": "ref_node_modules",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L89",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_jest",
+      "target": "shared_lib_package_jest_reporters",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L92",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_jest_reporters",
+      "target": "ref_default",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L92",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "shared_lib_package_jest",
+      "target": "shared_lib_package_jest_transform",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L101",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_jest_transform",
+      "target": "shared_lib_package_transform_t_sx",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L102",
+      "weight": 1.0
+    },
+    {
+      "source": "shared_lib_package_transform_t_sx",
+      "target": "ref_ts_jest",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L102",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "users_ignacionistal_documents_easy_genomics_packages_shared_lib_package_json",
+      "target": "shared_lib_package_types",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L110",
+      "weight": 1.0
+    },
+    {
+      "source": "users_ignacionistal_documents_easy_genomics_packages_shared_lib_package_json",
+      "target": "shared_lib_package",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/shared-lib/package.json",
+      "source_location": "L111",
+      "weight": 1.0
+    }
+  ]
+}

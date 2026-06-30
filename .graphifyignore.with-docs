@@ -1,0 +1,26 @@
+# Graphify corpus: packages + docs + OpenAPI (used by pnpm graphify:docs).
+# Requires an LLM API key for markdown/yaml semantic extraction.
+*
+!packages/
+!packages/**
+!docs/
+!docs/**
+!packages/shared-lib/src/app/openapi/
+
+# Static assets (not useful in the graph)
+**/public/**
+**/assets/**
+
+# Build artifacts and generated output
+**/node_modules/**
+**/coverage/**
+**/cdk.out/**
+**/.nuxt/**
+**/.output/**
+**/dist/**
+**/test-reports/**
+**/playwright-report/**
+**/design_mocks/**
+**/*.d.ts
+**/generated.d.ts
+**/*.{png,jpg,jpeg,gif,svg,webp,ico}

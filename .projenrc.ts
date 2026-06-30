@@ -228,6 +228,9 @@ root.addScripts({
   ['prepare']: 'husky || true', // Enable Husky each time projen is synthesized
   ['projen']: 'nx reset; pnpm exec projen', // Clear NX cache each time projen is synthesized to avoid cache disk-space overconsumption
   ['pre-commit']: 'lint-staged',
+  ['graphify:setup']: 'bash scripts/graphify-setup.sh',
+  ['graphify:build']: 'bash scripts/graphify-build.sh',
+  ['graphify:docs']: 'bash scripts/graphify-docs.sh',
 });
 
 root.addFields({
@@ -652,9 +655,12 @@ root.gitignore.addPatterns(
   'packages/front-end/tests/e2e/.auth/*.json',
   'packages/front-end/playwright-report',
   '.pnpm-store',
+  'graphify-out/cost.json',
 );
 // Exception: Include .env example files (used for local dev setup documentation)
 root.gitignore.addPatterns('!packages/back-end/.env.local.example', '!config/.env.nuxt.local.example');
+
+root.gitattributes.addAttributes('graphify-out/graph.json', 'merge=graphify');
 
 // Synthesize the project
 root.synth();

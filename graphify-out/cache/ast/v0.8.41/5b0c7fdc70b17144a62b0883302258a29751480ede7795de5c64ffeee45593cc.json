@@ -1,0 +1,45 @@
+{
+  "nodes": [
+    {
+      "id": "users_ignacionistal_documents_easy_genomics_packages_back_end_projen_deps_json",
+      "label": "deps.json",
+      "file_type": "code",
+      "source_file": "packages/back-end/.projen/deps.json",
+      "source_location": "L1"
+    },
+    {
+      "id": "projen_deps_dependencies",
+      "label": "dependencies",
+      "file_type": "code",
+      "source_file": "packages/back-end/.projen/deps.json",
+      "source_location": "L2"
+    },
+    {
+      "id": "projen_deps",
+      "label": "//",
+      "file_type": "code",
+      "source_file": "packages/back-end/.projen/deps.json",
+      "source_location": "L239"
+    }
+  ],
+  "edges": [
+    {
+      "source": "users_ignacionistal_documents_easy_genomics_packages_back_end_projen_deps_json",
+      "target": "projen_deps_dependencies",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/back-end/.projen/deps.json",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "users_ignacionistal_documents_easy_genomics_packages_back_end_projen_deps_json",
+      "target": "projen_deps",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/back-end/.projen/deps.json",
+      "source_location": "L239",
+      "weight": 1.0
+    }
+  ]
+}
