@@ -691,6 +691,19 @@ root.addFields({
       'simple-git': '>=3.36.0',
       // CVE-2025-29244 + 3 others + XMLBuilder comment/CDATA injection: entity expansion / encoding bypass DoS and XSS
       'fast-xml-parser': '>=5.7.0',
+
+      // --- PR3: HIGH severity ---
+      // 9 advisories: ReDoS via repeated wildcards and nested extglobs
+      // Capped at <10: minimatch 10.x is ESM-only and breaks eslint-plugin-import@2.x CJS default import.
+      // eslint-plugin-import declares ^3.1.2 (CJS-compatible); scoped override keeps it on safe 3.x.
+      minimatch: '>=9.0.7 <10.0.0',
+      'eslint-plugin-import>minimatch': '>=3.1.2 <4.0.0',
+      // 6 advisories: ASN.1 recursion, signature forgery, BigInt DoS, basicConstraints bypass
+      'node-forge': '>=1.4.0',
+      // CVE-2024-37890 + 2 others: memory exhaustion DoS from tiny fragments
+      ws: '>=8.21.0',
+      // CVE-2024-55565 + 3 others: ReDoS via extglob quantifiers + POSIX method injection
+      picomatch: '>=4.0.4',
     },
   },
 });
