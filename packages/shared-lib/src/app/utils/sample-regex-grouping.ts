@@ -14,11 +14,31 @@ export type ProposedSample = {
   layout: SampleLayout;
 };
 
-export const REGEX_GROUPING_PRESETS: Record<string, string> = {
-  underscore_r1_r2: '(?<sample>.+?)_(?<read>R[12])(?:_001)?\\.fastq\\.gz',
-  dot_r1_r2: '(?<sample>.+?)\\.(?<read>R[12])\\.fastq\\.gz',
-  illumina_lane: '(?<sample>.+?)_S\\d+_L(?<lane>\\d{3})_(?<read>R[12])(?:_\\d+)?\\.fastq\\.gz',
+export type RegexGroupingPreset = {
+  label: string;
+  pattern: string;
 };
+
+export const REGEX_GROUPING_PRESETS = {
+  dash_1_2: {
+    label: '-1 and -2',
+    pattern: '(?<sample>.+?)-(?<read>[12])(?:_001)?\\.fastq\\.gz',
+  },
+  underscore_1_2: {
+    label: '_1 and _2',
+    pattern: '(?<sample>.+?)_(?<read>[12])(?:_001)?\\.fastq\\.gz',
+  },
+  dash_r1_r2: {
+    label: '-R1 and -R2',
+    pattern: '(?<sample>.+?)-(?<read>R[12])(?:_001)?\\.fastq\\.gz',
+  },
+  underscore_r1_r2: {
+    label: '_R1 and _R2',
+    pattern: '(?<sample>.+?)_(?<read>R[12])(?:_001)?\\.fastq\\.gz',
+  },
+} as const satisfies Record<string, RegexGroupingPreset>;
+
+export type RegexGroupingPresetKey = keyof typeof REGEX_GROUPING_PRESETS;
 
 function isFasta(name: string): boolean {
   return /\.(fasta|fa|fna)(?:\\.gz)?$/i.test(name);
@@ -48,8 +68,8 @@ function inferStatus(files: ProposedSampleFile[]): SampleGroupingStatus {
 function classifyFileRole(fileName: string, groups: Record<string, string | undefined>): RegexGroupingFileRole {
   if (isFasta(fileName)) return 'reference_fasta';
   const read = groups.read?.toUpperCase();
-  if (read === 'R1') return 'read1';
-  if (read === 'R2') return 'read2';
+  if (read === 'R1' || read === '1') return 'read1';
+  if (read === 'R2' || read === '2') return 'read2';
   if (/\.fastq|\.fq/i.test(fileName)) return 'reads';
   return 'extra';
 }

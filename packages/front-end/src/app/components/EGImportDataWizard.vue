@@ -12,6 +12,7 @@
     groupFilenamesByRegex,
     REGEX_GROUPING_PRESETS,
     type ProposedSample,
+    type RegexGroupingPresetKey,
   } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
   import { useToastStore, useUiStore } from '@FE/stores';
   import { exceedsBatchNameMaxLength } from '@FE/utils/data-collections-name-validation';
@@ -45,8 +46,8 @@
   const step = ref(1);
   const importSource = ref<ImportSourceKind>('s3');
   const sourcePath = ref('');
-  const presetKey = ref<keyof typeof REGEX_GROUPING_PRESETS>('underscore_r1_r2');
-  const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2);
+  const presetKey = ref<RegexGroupingPresetKey>('underscore_r1_r2');
+  const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern);
   const sourceFiles = ref<string[]>([]);
   const proposedSets = ref<ProposedSample[]>([]);
   const excludedSamples = ref<Set<string>>(new Set());
@@ -76,7 +77,7 @@
   });
 
   watch(presetKey, (k) => {
-    regexPattern.value = REGEX_GROUPING_PRESETS[k];
+    regexPattern.value = REGEX_GROUPING_PRESETS[k].pattern;
     refreshPreview();
   });
 
@@ -456,13 +457,13 @@
         <h3 class="mb-2 font-medium">How are files grouped?</h3>
         <div class="mb-4 flex flex-wrap gap-2">
           <UButton
-            v-for="(pattern, key) in REGEX_GROUPING_PRESETS"
+            v-for="(preset, key) in REGEX_GROUPING_PRESETS"
             :key="key"
             size="xs"
             :variant="presetKey === key ? 'solid' : 'outline'"
-            @click="presetKey = key as keyof typeof REGEX_GROUPING_PRESETS"
+            @click="presetKey = key as RegexGroupingPresetKey"
           >
-            {{ key.replace(/_/g, ' ') }}
+            {{ preset.label }}
           </UButton>
         </div>
         <UFormGroup label="Regex">
