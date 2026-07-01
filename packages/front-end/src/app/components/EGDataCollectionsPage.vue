@@ -315,43 +315,10 @@
       uiStore.setRequestComplete('dataCollectionsMutate');
     }
   }
-
-  const rootEl = ref<HTMLElement | null>(null);
-  const rootHeightPx = ref<number | null>(null);
-
-  /** Fill remaining viewport below the lab page header so explorer tabs can scroll internally. */
-  function syncRootHeight(): void {
-    if (!rootEl.value) return;
-    const { top } = rootEl.value.getBoundingClientRect();
-    const bottomMarginPx = 16;
-    const minHeightPx = 28 * 16;
-    rootHeightPx.value = Math.max(window.innerHeight - top - bottomMarginPx, minHeightPx);
-  }
-
-  onMounted(() => {
-    syncRootHeight();
-    window.addEventListener('resize', syncRootHeight);
-  });
-
-  onUnmounted(() => {
-    window.removeEventListener('resize', syncRootHeight);
-  });
-
-  watch(activeTab, () => {
-    nextTick(() => {
-      syncRootHeight();
-      requestAnimationFrame(syncRootHeight);
-    });
-  });
-  watch(view, () => nextTick(syncRootHeight));
 </script>
 
 <template>
-  <div
-    ref="rootEl"
-    class="data-collections-page flex min-h-0 flex-col overflow-hidden"
-    :style="rootHeightPx != null ? { height: `${rootHeightPx}px` } : undefined"
-  >
+  <div class="data-collections-page flex min-h-0 flex-1 flex-col overflow-hidden">
     <EGImportDataWizard
       v-if="view === 'import'"
       class="min-h-0 flex-1"
