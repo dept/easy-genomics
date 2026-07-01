@@ -691,6 +691,9 @@ root.addFields({
       'simple-git': '>=3.36.0',
       // CVE-2025-29244 + 3 others + XMLBuilder comment/CDATA injection: entity expansion / encoding bypass DoS and XSS
       'fast-xml-parser': '>=5.7.0',
+      // @aws-amplify/storage@5.9.12 declares fast-xml-parser@^4.2.5 (4.x only); 5.x has breaking API changes
+      // that break S3 XML response parsing in the prod frontend bundle. Floor at >=4.5.5 clears all 4.x CVEs.
+      '@aws-amplify/storage>fast-xml-parser': '>=4.5.5 <5.0.0',
 
       // --- PR3: HIGH severity ---
       // 9 advisories: ReDoS via repeated wildcards and nested extglobs
@@ -713,7 +716,8 @@ root.addFields({
       // CVE-2024-55970: prototype pollution in fromJS()
       immutable: '>=5.1.5',
       // CVE-2022-24045: HMAC signature not verified — auth bypass
-      jws: '>=3.2.3',
+      // Capped at <4: jws 4.x is a breaking rewrite; jsonwebtoken@9.0.2 (prod Lambda dep) declares jws@^3.2.2 (3.x only)
+      jws: '>=3.2.3 <4.0.0',
       // CVE-2023-26136: per-instance prototype hijack via cookie.set()
       'js-cookie': '>=3.0.7',
       // CVE-2024-55964: CLI command injection via -c/--cmd flag
