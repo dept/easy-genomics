@@ -196,6 +196,10 @@
           <strong>{{ unmatchedFiles.length }}</strong>
           file(s) did not match the pattern and will be skipped:
           <span class="mt-1 block truncate font-mono">{{ unmatchedFiles.map(basename).join(', ') }}</span>
+          <p v-if="!proposedSets.length" class="mt-2">
+            None of the selected files match the grouping regex. Please modify the regex or the files selected and try
+            again.
+          </p>
         </div>
         <div
           v-if="proposedSets.length"
