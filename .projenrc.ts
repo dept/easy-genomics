@@ -722,7 +722,7 @@ root.addFields({
       koa: '>=2.16.4',
       // CVE-2025-31136: attribute values with unescaped XML special chars
       'fast-xml-builder': '>=1.1.7',
-      // CVE-2024-21501: DoS via DOCTYPE entity expansion (billion laughs variant)
+      // GHSA-r9p9-qp4c-cf58: DoS via DOCTYPE entity expansion in SVG (billion laughs variant)
       svgo: '>=3.3.3',
       // CVE-2021-23337, CVE-2020-28500, CVE-2019-10744: template injection + prototype pollution
       lodash: '>=4.17.23',
