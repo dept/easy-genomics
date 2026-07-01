@@ -38,7 +38,7 @@ overrides:
   brace-expansion: '>=2.0.3'
   bn.js: '>=5.2.3'
   yaml: '>=2.8.3'
-  nanoid: '>=3.3.8'
+  nanoid: '>=3.3.8 <4.0.0'
   postcss: '>=8.5.10'
   uuid: '>=11.1.1 <12.0.0'
   joi: '>=17.13.4'
@@ -9771,9 +9771,9 @@ packages:
   mz@2.7.0:
     resolution: {integrity: sha512-z81GNO7nnYMEhrGh9LeymoE4+Yr0Wn5McHIZMK5cfQCl+NDX08sCZgUc9/6MHni9IWuFLm1Z3HTCXu2z9fN62Q==}
 
-  nanoid@5.1.5:
-    resolution: {integrity: sha512-Ir/+ZpE9fDsNH0hQ3C68uyThDXzYcim2EqcZ8zn8Chtt1iylPT9xXJB0kPCnqzgcEGikO9RxSrh63MsmVCU7Fw==}
-    engines: {node: ^18 || >=20}
+  nanoid@3.3.15:
+    resolution: {integrity: sha512-y7Wygv/7mEOvxTuEQDB8StXdMRBWf1kR/tlhAzBRUFkB2jfcLOAxO/SHmOO2zgz1pVgK29/kyupn059/bCHdjA==}
+    engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
   nanotar@0.1.1:
@@ -13095,7 +13095,7 @@ snapshots:
       '@vueuse/core': 7.5.5(vue@3.5.13(typescript@5.8.3))
       '@xstate/vue': 0.8.1(vue@3.5.13(typescript@5.8.3))(xstate@4.38.3)
       aws-amplify: 5.3.18(react-native@0.75.4(@babel/core@7.26.10)(@babel/preset-env@7.25.8(@babel/core@7.26.10))(react@18.3.1)(typescript@5.8.3))
-      nanoid: 5.1.5
+      nanoid: 3.3.15
       qrcode: 1.5.0
       xstate: 4.38.3
     transitivePeerDependencies:
@@ -21690,7 +21690,7 @@ snapshots:
       '@vue/devtools-kit': 7.6.8
       '@vue/devtools-shared': 7.7.2
       mitt: 3.0.1
-      nanoid: 5.1.5
+      nanoid: 3.3.15
       pathe: 1.1.2
       vite-hot-client: 0.2.4(vite@6.2.5(@types/node@20.17.30)(jiti@2.4.2)(sass@1.86.3)(terser@5.39.0)(tsx@4.21.0)(yaml@2.9.0))
       vue: 3.5.13(typescript@5.8.3)
@@ -26582,7 +26582,7 @@ snapshots:
       object-assign: 4.1.1
       thenify-all: 1.6.0
 
-  nanoid@5.1.5: {}
+  nanoid@3.3.15: {}
 
   nanotar@0.1.1: {}
 
@@ -27704,7 +27704,7 @@ snapshots:
 
   postcss@8.5.16:
     dependencies:
-      nanoid: 5.1.5
+      nanoid: 3.3.15
       picocolors: 1.1.1
       source-map-js: 1.2.1
 

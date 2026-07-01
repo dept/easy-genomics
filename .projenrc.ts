@@ -751,7 +751,8 @@ root.addFields({
       // CVE-2025-27105: stack overflow via deeply nested input
       yaml: '>=2.8.3',
       // CVE-2022-21676: predictable results from non-integer seed
-      nanoid: '>=3.3.8',
+      // Capped at <4.0.0: nanoid v4+ is ESM-only, breaks postcss CJS require()
+      nanoid: '>=3.3.8 <4.0.0',
       // CVE-2023-44270: XSS via unescaped </style> in CSS strings
       postcss: '>=8.5.10',
       // CVE-2024-55566: missing bounds check in v3/v5/v6 with buffer offset
