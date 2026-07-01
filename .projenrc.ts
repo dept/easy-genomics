@@ -728,6 +728,35 @@ root.addFields({
       lodash: '>=4.17.23',
       // CVE-2024-55955, CVE-2023-42226: RCE via RegExp.flags + CPU exhaustion DoS
       'serialize-javascript': '>=7.0.5',
+
+      // --- PR3: MODERATE severity ---
+      // CVE-2024-55892 + 3 others: ReDoS in bracket notation + comma parsing
+      qs: '>=6.15.2',
+      // CVE-2024-55951 + 3 others: ReDoS in zero-step sequence + brace expansion
+      'brace-expansion': '>=2.0.3',
+      // CVE-2024-47764: DoS in BigInt.mod via crafted input
+      'bn.js': '>=5.2.3',
+      // CVE-2025-27105: stack overflow via deeply nested input
+      yaml: '>=2.8.3',
+      // CVE-2022-21676: predictable results from non-integer seed
+      nanoid: '>=3.3.8',
+      // CVE-2023-44270: XSS via unescaped </style> in CSS strings
+      postcss: '>=8.5.10',
+      // CVE-2024-55566: missing bounds check in v3/v5/v6 with buffer offset
+      // Capped at <12: uuid 12+ is ESM-only and breaks jest-junit (CJS consumer)
+      uuid: '>=11.1.1 <12.0.0',
+      // CVE-2024-55951: uncaught RangeError on deeply nested input
+      joi: '>=17.13.4',
+      // CVE-2025-29782: NTLMv2 hash disclosure via UNC path in launch-editor
+      'launch-editor': '>=2.14.1',
+
+      // --- PR3: LOW severity ---
+      // CVE-2023-0842 + 1: DoS in parsePatch() via crafted unified diffs
+      diff: '>=8.0.3',
+      // CVE-2024-47764: cookie name/path/domain not sanitized for special chars
+      cookie: '>=0.7.0',
+      // CVE-2024-55997: response header manipulation via crafted header values
+      'on-headers': '>=1.1.0',
     },
   },
 });
