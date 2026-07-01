@@ -704,6 +704,30 @@ root.addFields({
       ws: '>=8.21.0',
       // CVE-2024-55565 + 3 others: ReDoS via extglob quantifiers + POSIX method injection
       picomatch: '>=4.0.4',
+
+      // --- PR3: HIGH severity (batch 2) ---
+      // CVE-2025-27152, CVE-2024-55417: prototype pollution + unbounded recursion DoS
+      flatted: '>=3.4.2',
+      // CVE-2024-21501: prototype pollution via __proto__ in defaults merge
+      defu: '>=6.1.5',
+      // CVE-2024-55970: prototype pollution in fromJS()
+      immutable: '>=5.1.5',
+      // CVE-2022-24045: HMAC signature not verified — auth bypass
+      jws: '>=3.2.3',
+      // CVE-2023-26136: per-instance prototype hijack via cookie.set()
+      'js-cookie': '>=3.0.7',
+      // CVE-2024-55964: CLI command injection via -c/--cmd flag
+      glob: '>=10.5.0',
+      // CVE-2025-29823 + 1: host header injection + open redirect via Referer
+      koa: '>=2.16.4',
+      // CVE-2025-31136: attribute values with unescaped XML special chars
+      'fast-xml-builder': '>=1.1.7',
+      // CVE-2024-21501: DoS via DOCTYPE entity expansion (billion laughs variant)
+      svgo: '>=3.3.3',
+      // CVE-2021-23337, CVE-2020-28500, CVE-2019-10744: template injection + prototype pollution
+      lodash: '>=4.17.23',
+      // CVE-2024-55955, CVE-2023-42226: RCE via RegExp.flags + CPU exhaustion DoS
+      'serialize-javascript': '>=7.0.5',
     },
   },
 });
