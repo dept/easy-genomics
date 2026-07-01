@@ -657,5 +657,36 @@ root.gitignore.addPatterns(
 // Exception: Include .env example files (used for local dev setup documentation)
 root.gitignore.addPatterns('!packages/back-end/.env.local.example', '!config/.env.nuxt.local.example');
 
+// Security: force minimum patched versions for transitive deps with active Dependabot alerts.
+// These overrides survive future `pnpm exec projen` runs because they live here, not in package.json.
+// @opentelemetry/core (CVE-2026-54285) is excluded: the fix requires a 1.x→2.x major bump that
+// breaks all @opentelemetry/*@0.53.0/1.x peer deps in the lockfile — needs a coordinated suite
+// upgrade tracked separately.
+root.addFields({
+  pnpm: {
+    overrides: {
+      // CVE-2026-12151 (WebSocket DoS), CVE-2026-9679 (header injection),
+      // CVE-2026-11525 (SameSite downgrade), CVE-2026-6733 (queue poisoning)
+      // Capped at <7: undici 7+ requires Node.js 22; Lambda + CI run Node 20
+      undici: '>=6.27.0 <7.0.0',
+      // CVE-2026-12143 (CRLF injection via multipart field names)
+      // Bare key (no @version selector): pnpm matches selectors against the declared specifier,
+      // not the resolved version. @types/node-fetch declares form-data@^3.0.0 but resolves to
+      // 4.0.4, so @3/@4 selectors don't match. Bare key catches all paths.
+      'form-data': '>=4.0.6',
+      // DOMPurify ALLOWED_ATTR permanent pollution + Trusted Types policy bypass
+      dompurify: '>=3.4.11',
+      // CVE-2026-53655 (file smuggling via PAX size override on intermediary headers)
+      tar: '>=7.5.16',
+      // CVE-2026-54269 (schema-derived names can shadow runtime-significant properties)
+      // Capped at <8: protobufjs 8.x has breaking API changes; all consumers pin ~7
+      protobufjs: '>=7.6.3 <8.0.0',
+      // CVE-2026-53550 (quadratic-complexity DoS in merge key handling via repeated aliases)
+      // Also forces any transitive js-yaml 3.x to resolve to the safe 4.x line
+      'js-yaml': '>=4.1.1',
+    },
+  },
+});
+
 // Synthesize the project
 root.synth();
