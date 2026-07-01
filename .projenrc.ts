@@ -683,6 +683,14 @@ root.addFields({
       // CVE-2026-53550 (quadratic-complexity DoS in merge key handling via repeated aliases)
       // Also forces any transitive js-yaml 3.x to resolve to the safe 4.x line
       'js-yaml': '>=4.1.1',
+
+      // --- PR3: CRITICAL severity ---
+      // CVE-2024-55565: newline injection in quoted shell args (RCE in shell pipelines)
+      'shell-quote': '>=1.8.4',
+      // CVE-2022-24433, CVE-2022-25912, CVE-2024-22012: option-parsing RCE + blockUnsafeOperations bypass
+      'simple-git': '>=3.36.0',
+      // CVE-2025-29244 + 3 others + XMLBuilder comment/CDATA injection: entity expansion / encoding bypass DoS and XSS
+      'fast-xml-parser': '>=5.7.0',
     },
   },
 });
