@@ -219,12 +219,12 @@ root.addScripts({
   // CI/CD convenience scripts
   ['cicd-build-deploy-back-end']:
     'export CI_CD=true NX_SKIP_NX_CACHE=true && ' +
-    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --verbose=true --outputStyle=stream && ' +
-    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --verbose=true --outputStyle=stream',
+    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --outputStyle=static && ' +
+    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --outputStyle=static',
   ['cicd-build-deploy-front-end']:
     'export CI_CD=true NX_SKIP_NX_CACHE=true && ' +
-    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --verbose=true --outputStyle=stream && ' +
-    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --verbose=true --outputStyle=stream',
+    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --outputStyle=static && ' +
+    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --outputStyle=static',
   ['prepare']: 'husky || true', // Enable Husky each time projen is synthesized
   ['projen']: 'nx reset; pnpm exec projen', // Clear NX cache each time projen is synthesized to avoid cache disk-space overconsumption
   ['pre-commit']: 'lint-staged',
@@ -423,7 +423,8 @@ backEndApp.addScripts({
   // The preflight guard runs AFTER `cdk bootstrap` (which only touches the
   // CDK toolkit stack, not app resources) and BEFORE any app-stack deploy,
   // so a failing guard aborts without any destructive CloudFormation call.
-  ['deploy']: 'pnpm cdk bootstrap && pnpm run preflight-deletion-protection && pnpm exec projen deploy --all',
+  ['deploy']:
+    'pnpm cdk bootstrap && pnpm run preflight-deletion-protection && pnpm exec projen deploy --all --progress bar --no-color --no-notices',
   ['build-and-deploy']: 'pnpm -w run build-back-end && pnpm run deploy --require-approval any-change', // Run root build-back-end script to inc shared-lib
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
   ['local-server']: 'tsx src/local-server/index.ts',
@@ -578,7 +579,7 @@ frontEndApp.addScripts({
   ['nuxt-preview']: 'nuxt preview',
   ['nuxt-postinstall']: 'nuxt prepare',
   ['test-e2e']:
-    'pnpm run test-e2e:sys-admin || true && pnpm run test-e2e:org-admin || true && pnpm run test-e2e:lab-manager || true && pnpm run test-e2e:lab-technician || true',
+    'pnpm run test-e2e:sys-admin && pnpm run test-e2e:org-admin && pnpm run test-e2e:lab-manager && pnpm run test-e2e:lab-technician',
   ['test-e2e:sys-admin']: 'USER_TYPE=sys-admin npx playwright test --project=sys-admin',
   ['test-e2e:org-admin']: 'USER_TYPE=org-admin npx playwright test --project=org-admin',
   ['test-e2e:lab-manager']: 'USER_TYPE=lab-manager npx playwright test --project=lab-manager',

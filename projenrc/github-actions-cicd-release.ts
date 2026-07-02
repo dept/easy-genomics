@@ -91,23 +91,25 @@ export class GithubActionsCICDRelease extends Component {
           ...this.configureAwsCredentials(),
           this.deriveApiUrlsStep(),
           {
-            name: 'Clear Playwright Cache',
-            run: 'rm -rf /home/runner/.cache/ms-playwright',
+            name: 'Cache Playwright browsers',
+            uses: 'actions/cache@v4',
+            with: {
+              path: '~/.cache/ms-playwright',
+              key: "playwright-${{ hashFiles('**/pnpm-lock.yaml') }}",
+            },
           },
           {
-            name: 'Install Playwright + Chromium Only and Slack Reporter',
-            run: 'pnpm add -Dw @playwright/test && pnpm add -Dw playwright-slack-report && npx playwright install chromium',
+            name: 'Install Playwright Chromium',
+            run: 'npx playwright install chromium',
           },
           {
+            // E2E tests are currently failing on a login selector bug (EGV-197).
+            // continueOnError keeps deploys unblocked while that fix propagates.
+            // Remove continueOnError once E2E tests are confirmed green in quality.
             name: 'Run E2E Tests',
             workingDirectory: 'packages/front-end',
             run: 'pnpm run test-e2e',
             continueOnError: true,
-          },
-          {
-            name: 'Always Succeed Step',
-            if: 'failure()',
-            run: 'echo "E2E tests failed, but we are allowing the pipeline to succeed."',
           },
         ],
       };
