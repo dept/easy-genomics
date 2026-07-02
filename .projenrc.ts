@@ -526,7 +526,7 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@vueuse/nuxt',
     'amazon-cognito-identity-js',
     'aws-amplify@5.3.18',
-    'axios',
+    'axios@^1.18.1',
     'cdk-nag',
     'class-variance-authority',
     'clsx',

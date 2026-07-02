@@ -319,7 +319,7 @@ importers:
         version: 1.2.106
       '@nuxt/ui':
         specifier: 2.18.4
-        version: 2.18.4(axios@1.8.4)(change-case@4.1.2)(jwt-decode@4.0.0)(magicast@0.3.5)(qrcode@1.5.0)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3))(vite@6.2.5(@types/node@20.17.30)(jiti@2.4.2)(sass@1.86.3)(terser@5.39.0)(tsx@4.21.0)(yaml@2.7.1))(vue@3.5.13(typescript@5.8.3))
+        version: 2.18.4(axios@1.18.1)(change-case@4.1.2)(jwt-decode@4.0.0)(magicast@0.3.5)(qrcode@1.5.0)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3))(vite@6.2.5(@types/node@20.17.30)(jiti@2.4.2)(sass@1.86.3)(terser@5.39.0)(tsx@4.21.0)(yaml@2.7.1))(vue@3.5.13(typescript@5.8.3))
       '@pinia/nuxt':
         specifier: ^0.9.0
         version: 0.9.0(magicast@0.3.5)(pinia@2.3.1(typescript@5.8.3)(vue@3.5.13(typescript@5.8.3)))
@@ -337,7 +337,7 @@ importers:
         version: 11.3.0(vue@3.5.13(typescript@5.8.3))
       '@vueuse/integrations':
         specifier: ^10.11.1
-        version: 10.11.1(axios@1.8.4)(change-case@4.1.2)(fuse.js@6.6.2)(jwt-decode@4.0.0)(qrcode@1.5.0)(vue@3.5.13(typescript@5.8.3))
+        version: 10.11.1(axios@1.18.1)(change-case@4.1.2)(fuse.js@6.6.2)(jwt-decode@4.0.0)(qrcode@1.5.0)(vue@3.5.13(typescript@5.8.3))
       '@vueuse/nuxt':
         specifier: ^11.3.0
         version: 11.3.0(magicast@0.3.5)(nuxt@3.15.2(@parcel/watcher@2.5.1)(@types/node@20.17.30)(db0@0.3.1)(eslint@8.57.1)(ioredis@5.6.0)(magicast@0.3.5)(optionator@0.9.4)(rollup@4.39.0)(sass@1.86.3)(terser@5.39.0)(tsx@4.21.0)(typescript@5.8.3)(vite@6.2.5(@types/node@20.17.30)(jiti@2.4.2)(sass@1.86.3)(terser@5.39.0)(tsx@4.21.0)(yaml@2.7.1))(xml2js@0.6.2)(yaml@2.7.1))(vue@3.5.13(typescript@5.8.3))
@@ -351,8 +351,8 @@ importers:
         specifier: ^2.176.0
         version: 2.189.0(constructs@10.4.2)
       axios:
-        specifier: ^1.8.4
-        version: 1.8.4
+        specifier: ^1.18.1
+        version: 1.18.1
       cdk-nag:
         specifier: ^2.35.67
         version: 2.35.67(aws-cdk-lib@2.189.0(constructs@10.4.2))(constructs@10.4.2)
@@ -6208,6 +6208,9 @@ packages:
   axax@0.2.2:
     resolution: {integrity: sha512-xPTMeQzPOENNONCFLFsPLjubtrnjju9FdOr6u/P0dFKDjC3m+/8NydLNvrukNxxto+usR2dKGZ8DVKOz4MBo2g==}
 
+  axios@1.18.1:
+    resolution: {integrity: sha512-3nTvFlvpn9Zu/RkHUqtc7/+al4UpRW5az71ap5zccp6e8RAYEzhMTecX8Dz1wWDYrPpUoB1HAQEGEAEvUr7S9g==}
+
   axios@1.8.4:
     resolution: {integrity: sha512-eBSYY4Y68NNlHbHBMdeDmKNtDgXWhQsJcGqzO3iLUM0GraQFSS9cVgPX5I9b3lbdFKyYoAEGAZF1DwhTaljNAw==}
 
@@ -7976,6 +7979,15 @@ packages:
 
   follow-redirects@1.15.9:
     resolution: {integrity: sha512-gew4GsXizNgdoRyqmyfMHyAmXsZDk6mHkSxZFCzW9gwlbtOW44CDtYavM+y+72qD/Vq2l550kMF52DT8fOLJqQ==}
+    engines: {node: '>=4.0'}
+    peerDependencies:
+      debug: '*'
+    peerDependenciesMeta:
+      debug:
+        optional: true
+
+  follow-redirects@1.16.0:
+    resolution: {integrity: sha512-y5rN/uOsadFT/JfYwhxRS5R7Qce+g3zG97+JrtFZlC9klX/W5hD7iiLzScI4nZqUS7DNUdhPgw4xI8W2LuXlUw==}
     engines: {node: '>=4.0'}
     peerDependencies:
       debug: '*'
@@ -10880,6 +10892,10 @@ packages:
   proxy-from-env@1.1.0:
     resolution: {integrity: sha512-D+zkORCbA9f1tdWRK0RaCR3GPv50cMxcrz4X8k5LTSUD1Dkw47mKJEZQNunItRTkWwgtaUSo1RVFRIG9ZXiFYg==}
 
+  proxy-from-env@2.1.0:
+    resolution: {integrity: sha512-cJ+oHTW1VAEa8cJslgmUZrc+sjRKgAKl3Zyse6+PV38hZe/V6Z14TbCuXcan9F9ghlz4QrFr2c92TNF82UkYHA==}
+    engines: {node: '>=10'}
+
   pump@3.0.4:
     resolution: {integrity: sha512-VS7sjc6KR7e1ukRFhQSY5LM2uBWAUPiOPa/A3mkKmiMwSmRFUITt0xuj+/lesgnCv+dPIEYlkzrcyXgquIHMcA==}
 
@@ -13031,17 +13047,19 @@ snapshots:
       - debug
       - encoding
       - react-native
+      - supports-color
 
   '@aws-amplify/api-rest@3.5.12(react-native@0.75.4(@babel/core@7.26.10)(@babel/preset-env@7.25.8(@babel/core@7.26.10))(react@18.3.1)(typescript@5.8.3))':
     dependencies:
       '@aws-amplify/core': 5.8.12(react-native@0.75.4(@babel/core@7.26.10)(@babel/preset-env@7.25.8(@babel/core@7.26.10))(react@18.3.1)(typescript@5.8.3))
-      axios: 1.8.4
+      axios: 1.18.1
       tslib: 1.14.1
       url: 0.11.0
     transitivePeerDependencies:
       - debug
       - encoding
       - react-native
+      - supports-color
 
   '@aws-amplify/api@5.4.12(react-native@0.75.4(@babel/core@7.26.10)(@babel/preset-env@7.25.8(@babel/core@7.26.10))(react@18.3.1)(typescript@5.8.3))':
     dependencies:
@@ -13052,6 +13070,7 @@ snapshots:
       - debug
       - encoding
       - react-native
+      - supports-color
 
   '@aws-amplify/auth@5.6.12(react-native@0.75.4(@babel/core@7.26.10)(@babel/preset-env@7.25.8(@babel/core@7.26.10))(react@18.3.1)(typescript@5.8.3))':
     dependencies:
@@ -13106,6 +13125,7 @@ snapshots:
       - debug
       - encoding
       - react-native
+      - supports-color
 
   '@aws-amplify/geo@2.3.12(react-native@0.75.4(@babel/core@7.26.10)(@babel/preset-env@7.25.8(@babel/core@7.26.10))(react@18.3.1)(typescript@5.8.3))':
     dependencies:
@@ -18772,7 +18792,7 @@ snapshots:
       '@types/webpack-bundle-analyzer': 3.9.5
       '@types/webpack-hot-middleware': 2.25.5
 
-  '@nuxt/ui@2.18.4(axios@1.8.4)(change-case@4.1.2)(jwt-decode@4.0.0)(magicast@0.3.5)(qrcode@1.5.0)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3))(vite@6.2.5(@types/node@20.17.30)(jiti@2.4.2)(sass@1.86.3)(terser@5.39.0)(tsx@4.21.0)(yaml@2.7.1))(vue@3.5.13(typescript@5.8.3))':
+  '@nuxt/ui@2.18.4(axios@1.18.1)(change-case@4.1.2)(jwt-decode@4.0.0)(magicast@0.3.5)(qrcode@1.5.0)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3))(vite@6.2.5(@types/node@20.17.30)(jiti@2.4.2)(sass@1.86.3)(terser@5.39.0)(tsx@4.21.0)(yaml@2.7.1))(vue@3.5.13(typescript@5.8.3))':
     dependencies:
       '@headlessui/tailwindcss': 0.2.2(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3)))
       '@headlessui/vue': 1.7.23(vue@3.5.13(typescript@5.8.3))
@@ -18787,7 +18807,7 @@ snapshots:
       '@tailwindcss/forms': 0.5.10(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3)))
       '@tailwindcss/typography': 0.5.16(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3)))
       '@vueuse/core': 10.11.1(vue@3.5.13(typescript@5.8.3))
-      '@vueuse/integrations': 10.11.1(axios@1.8.4)(change-case@4.1.2)(fuse.js@6.6.2)(jwt-decode@4.0.0)(qrcode@1.5.0)(vue@3.5.13(typescript@5.8.3))
+      '@vueuse/integrations': 10.11.1(axios@1.18.1)(change-case@4.1.2)(fuse.js@6.6.2)(jwt-decode@4.0.0)(qrcode@1.5.0)(vue@3.5.13(typescript@5.8.3))
       '@vueuse/math': 10.11.1(vue@3.5.13(typescript@5.8.3))
       defu: 6.1.4
       fuse.js: 6.6.2
@@ -19822,7 +19842,7 @@ snapshots:
       '@slack/types': 2.14.0
       '@types/node': 20.17.30
       '@types/retry': 0.12.0
-      axios: 1.8.4
+      axios: 1.18.1
       eventemitter3: 5.0.1
       form-data: 4.0.6
       is-electron: 2.2.2
@@ -19832,14 +19852,16 @@ snapshots:
       retry: 0.13.1
     transitivePeerDependencies:
       - debug
+      - supports-color
 
   '@slack/webhook@7.0.5':
     dependencies:
       '@slack/types': 2.14.0
       '@types/node': 20.17.30
-      axios: 1.8.4
+      axios: 1.18.1
     transitivePeerDependencies:
       - debug
+      - supports-color
 
   '@smithy/abort-controller@4.0.2':
     dependencies:
@@ -21872,13 +21894,13 @@ snapshots:
     optionalDependencies:
       vue: 3.5.13(typescript@5.8.3)
 
-  '@vueuse/integrations@10.11.1(axios@1.8.4)(change-case@4.1.2)(fuse.js@6.6.2)(jwt-decode@4.0.0)(qrcode@1.5.0)(vue@3.5.13(typescript@5.8.3))':
+  '@vueuse/integrations@10.11.1(axios@1.18.1)(change-case@4.1.2)(fuse.js@6.6.2)(jwt-decode@4.0.0)(qrcode@1.5.0)(vue@3.5.13(typescript@5.8.3))':
     dependencies:
       '@vueuse/core': 10.11.1(vue@3.5.13(typescript@5.8.3))
       '@vueuse/shared': 10.11.1(vue@3.5.13(typescript@5.8.3))
       vue-demi: 0.14.10(vue@3.5.13(typescript@5.8.3))
     optionalDependencies:
-      axios: 1.8.4
+      axios: 1.18.1
       change-case: 4.1.2
       fuse.js: 6.6.2
       jwt-decode: 4.0.0
@@ -22284,6 +22306,7 @@ snapshots:
       - debug
       - encoding
       - react-native
+      - supports-color
 
   aws-cdk-lib@2.189.0(constructs@10.4.2):
     dependencies:
@@ -22331,6 +22354,16 @@ snapshots:
       xml2js: 0.6.2
 
   axax@0.2.2: {}
+
+  axios@1.18.1:
+    dependencies:
+      follow-redirects: 1.16.0
+      form-data: 4.0.6
+      https-proxy-agent: 5.0.1
+      proxy-from-env: 2.1.0
+    transitivePeerDependencies:
+      - debug
+      - supports-color
 
   axios@1.8.4:
     dependencies:
@@ -24572,6 +24605,8 @@ snapshots:
   flow-parser@0.266.1: {}
 
   follow-redirects@1.15.9: {}
+
+  follow-redirects@1.16.0: {}
 
   for-each@0.3.5:
     dependencies:
@@ -28049,6 +28084,8 @@ snapshots:
       ipaddr.js: 1.9.1
 
   proxy-from-env@1.1.0: {}
+
+  proxy-from-env@2.1.0: {}
 
   pump@3.0.4:
     dependencies:
