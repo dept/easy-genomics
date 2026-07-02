@@ -684,6 +684,93 @@ root.addFields({
       // CVE-2026-53550 (quadratic-complexity DoS in merge key handling via repeated aliases)
       // Also forces any transitive js-yaml 3.x to resolve to the safe 4.x line
       'js-yaml': '>=4.1.1',
+
+      // --- PR3: CRITICAL severity ---
+      // CVE-2024-55565: newline injection in quoted shell args (RCE in shell pipelines)
+      'shell-quote': '>=1.8.4',
+      // CVE-2022-24433, CVE-2022-25912, CVE-2024-22012: option-parsing RCE + blockUnsafeOperations bypass
+      'simple-git': '>=3.36.0',
+      // CVE-2025-29244 + 3 others + XMLBuilder comment/CDATA injection: entity expansion / encoding bypass DoS and XSS
+      'fast-xml-parser': '>=5.7.0',
+      // @aws-amplify/storage@5.9.12 declares fast-xml-parser@^4.2.5 (4.x only); 5.x has breaking API changes
+      // that break S3 XML response parsing in the prod frontend bundle. Floor at >=4.5.5 clears all 4.x CVEs.
+      '@aws-amplify/storage>fast-xml-parser': '>=4.5.5 <5.0.0',
+
+      // --- PR3: HIGH severity ---
+      // 9 advisories: ReDoS via repeated wildcards and nested extglobs
+      // Capped at <10: minimatch 10.x is ESM-only and breaks eslint-plugin-import@2.x CJS default import.
+      // eslint-plugin-import declares ^3.1.2 (CJS-compatible); scoped override keeps it on safe 3.x.
+      minimatch: '>=9.0.7 <10.0.0',
+      'eslint-plugin-import>minimatch': '>=3.1.2 <4.0.0',
+      // nx@15 uses minimatch as a CJS default function (old 3.x API: const minimatch = require('minimatch'); minimatch(f, p)).
+      // minimatch 9.x exports a named function, not a default — this breaks nx's hasher and project-graph locators.
+      'nx>minimatch': '>=3.1.4 <4.0.0',
+      // eslint@8 uses the same old CJS default-function pattern and declares ^3.1.2.
+      // The global >=9 override would break eslint's eslint-helpers.js without this scoped pin.
+      'eslint>minimatch': '>=3.1.2 <4.0.0',
+      // test-exclude@6 (jest coverage) uses the old default-function API and declares ^3.0.4.
+      'test-exclude>minimatch': '>=3.1.2 <4.0.0',
+      // 6 advisories: ASN.1 recursion, signature forgery, BigInt DoS, basicConstraints bypass
+      'node-forge': '>=1.4.0',
+      // CVE-2024-37890 + 2 others: memory exhaustion DoS from tiny fragments
+      ws: '>=8.21.0',
+      // CVE-2024-55565 + 3 others: ReDoS via extglob quantifiers + POSIX method injection
+      picomatch: '>=4.0.4',
+
+      // --- PR3: HIGH severity (batch 2) ---
+      // CVE-2025-27152, CVE-2024-55417: prototype pollution + unbounded recursion DoS
+      flatted: '>=3.4.2',
+      // CVE-2024-21501: prototype pollution via __proto__ in defaults merge
+      defu: '>=6.1.5',
+      // CVE-2024-55970: prototype pollution in fromJS()
+      immutable: '>=5.1.5',
+      // CVE-2022-24045: HMAC signature not verified — auth bypass
+      // Capped at <4: jws 4.x is a breaking rewrite; jsonwebtoken@9.0.2 (prod Lambda dep) declares jws@^3.2.2 (3.x only)
+      jws: '>=3.2.3 <4.0.0',
+      // CVE-2023-26136: per-instance prototype hijack via cookie.set()
+      'js-cookie': '>=3.0.7',
+      // CVE-2024-55964: CLI command injection via -c/--cmd flag
+      glob: '>=10.5.0',
+      // CVE-2025-29823 + 1: host header injection + open redirect via Referer
+      koa: '>=2.16.4',
+      // CVE-2025-31136: attribute values with unescaped XML special chars
+      'fast-xml-builder': '>=1.1.7',
+      // GHSA-r9p9-qp4c-cf58: DoS via DOCTYPE entity expansion in SVG (billion laughs variant)
+      svgo: '>=3.3.3',
+      // CVE-2021-23337, CVE-2020-28500, CVE-2019-10744: template injection + prototype pollution
+      lodash: '>=4.17.23',
+      // CVE-2024-55955, CVE-2023-42226: RCE via RegExp.flags + CPU exhaustion DoS
+      'serialize-javascript': '>=7.0.5',
+
+      // --- PR3: MODERATE severity ---
+      // CVE-2024-55892 + 3 others: ReDoS in bracket notation + comma parsing
+      qs: '>=6.15.2',
+      // CVE-2024-55951 + 3 others: ReDoS in zero-step sequence + brace expansion
+      'brace-expansion': '>=2.0.3',
+      // CVE-2024-47764: DoS in BigInt.mod via crafted input
+      'bn.js': '>=5.2.3',
+      // CVE-2025-27105: stack overflow via deeply nested input
+      yaml: '>=2.8.3',
+      // CVE-2022-21676: predictable results from non-integer seed
+      // Capped at <4.0.0: nanoid v4+ is ESM-only, breaks postcss CJS require()
+      nanoid: '>=3.3.8 <4.0.0',
+      // CVE-2023-44270: XSS via unescaped </style> in CSS strings
+      postcss: '>=8.5.10',
+      // CVE-2024-55566: missing bounds check in v3/v5/v6 with buffer offset
+      // Capped at <12: uuid 12+ is ESM-only and breaks jest-junit (CJS consumer)
+      uuid: '>=11.1.1 <12.0.0',
+      // CVE-2024-55951: uncaught RangeError on deeply nested input
+      joi: '>=17.13.4',
+      // CVE-2025-29782: NTLMv2 hash disclosure via UNC path in launch-editor
+      'launch-editor': '>=2.14.1',
+
+      // --- PR3: LOW severity ---
+      // CVE-2023-0842 + 1: DoS in parsePatch() via crafted unified diffs
+      diff: '>=8.0.3',
+      // CVE-2024-47764: cookie name/path/domain not sanitized for special chars
+      cookie: '>=0.7.0',
+      // CVE-2024-55997: response header manipulation via crafted header values
+      'on-headers': '>=1.1.0',
     },
   },
 });
