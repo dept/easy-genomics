@@ -5,6 +5,7 @@
     groupFilenamesByRegex,
     REGEX_GROUPING_PRESETS,
     type ProposedSample,
+    type RegexGroupingPresetKey,
   } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
   import { useToastStore, useUiStore } from '@FE/stores';
 
@@ -26,8 +27,8 @@
   const uiStore = useUiStore();
 
   const step = ref(1);
-  const presetKey = ref<keyof typeof REGEX_GROUPING_PRESETS>('underscore_r1_r2');
-  const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2);
+  const presetKey = ref<RegexGroupingPresetKey>('underscore_r1_r2');
+  const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern);
   const proposedSets = ref<ProposedSample[]>([]);
   const unmatchedFiles = ref<string[]>([]);
   const excludedSamples = ref<Set<string>>(new Set());
@@ -39,14 +40,14 @@
       if (!open) return;
       step.value = 1;
       presetKey.value = 'underscore_r1_r2';
-      regexPattern.value = REGEX_GROUPING_PRESETS.underscore_r1_r2;
+      regexPattern.value = REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern;
       excludedSamples.value = new Set();
       refreshPreview();
     },
   );
 
   watch(presetKey, (k) => {
-    regexPattern.value = REGEX_GROUPING_PRESETS[k];
+    regexPattern.value = REGEX_GROUPING_PRESETS[k].pattern;
     refreshPreview();
   });
 
@@ -96,8 +97,7 @@
     const failedSamples: string[] = [];
 
     try {
-      // Create one set per request (same path as "Build sample") so a slow or
-      // failed bulk call cannot block the entire batch; existing files need no S3 copy.
+      // Create one set per request so a slow or failed bulk call cannot block the entire batch.
       for (const s of activeSets.value) {
         try {
           await $api.dataCollections.createSample({
@@ -170,13 +170,13 @@
       <div v-if="step === 1" class="min-h-0 flex-1 overflow-y-auto">
         <div class="mb-4 flex flex-wrap gap-2">
           <UButton
-            v-for="(pattern, key) in REGEX_GROUPING_PRESETS"
+            v-for="(preset, key) in REGEX_GROUPING_PRESETS"
             :key="key"
             size="xs"
             :variant="presetKey === key ? 'solid' : 'outline'"
-            @click="presetKey = key as keyof typeof REGEX_GROUPING_PRESETS"
+            @click="presetKey = key as RegexGroupingPresetKey"
           >
-            {{ key.replace(/_/g, ' ') }}
+            {{ preset.label }}
           </UButton>
         </div>
         <UFormGroup label="Regex" class="mb-4">
@@ -196,6 +196,10 @@
           <strong>{{ unmatchedFiles.length }}</strong>
           file(s) did not match the pattern and will be skipped:
           <span class="mt-1 block truncate font-mono">{{ unmatchedFiles.map(basename).join(', ') }}</span>
+          <p v-if="!proposedSets.length" class="mt-2">
+            None of the selected files match the grouping regex. Please modify the regex or the files selected and try
+            again.
+          </p>
         </div>
         <div
           v-if="proposedSets.length"

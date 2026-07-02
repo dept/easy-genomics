@@ -12,6 +12,7 @@
     groupFilenamesByRegex,
     REGEX_GROUPING_PRESETS,
     type ProposedSample,
+    type RegexGroupingPresetKey,
   } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
   import { useToastStore, useUiStore } from '@FE/stores';
   import { exceedsBatchNameMaxLength } from '@FE/utils/data-collections-name-validation';
@@ -45,10 +46,11 @@
   const step = ref(1);
   const importSource = ref<ImportSourceKind>('s3');
   const sourcePath = ref('');
-  const presetKey = ref<keyof typeof REGEX_GROUPING_PRESETS>('underscore_r1_r2');
-  const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2);
+  const presetKey = ref<RegexGroupingPresetKey>('underscore_r1_r2');
+  const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern);
   const sourceFiles = ref<string[]>([]);
   const proposedSets = ref<ProposedSample[]>([]);
+  const unmatchedFiles = ref<string[]>([]);
   const excludedSamples = ref<Set<string>>(new Set());
   const setTagIds = ref<Record<string, string[]>>({});
   const submitting = ref(false);
@@ -68,6 +70,7 @@
   watch(importSource, (kind) => {
     sourceFiles.value = [];
     proposedSets.value = [];
+    unmatchedFiles.value = [];
     excludedSamples.value = new Set();
     uploadedKeysByName.value = {};
     pendingUploadFiles.value = [];
@@ -76,7 +79,7 @@
   });
 
   watch(presetKey, (k) => {
-    regexPattern.value = REGEX_GROUPING_PRESETS[k];
+    regexPattern.value = REGEX_GROUPING_PRESETS[k].pattern;
     refreshPreview();
   });
 
@@ -145,9 +148,14 @@
     return `${total} files selected`;
   });
 
+  function basename(key: string): string {
+    return key.split('/').pop() || key;
+  }
+
   function refreshPreview(): void {
-    const { sets } = groupFilenamesByRegex(sourceFiles.value, regexPattern.value);
+    const { sets, unmatched } = groupFilenamesByRegex(sourceFiles.value, regexPattern.value);
     proposedSets.value = sets;
+    unmatchedFiles.value = unmatched;
   }
 
   function addFilesFromList(fileList: FileList | File[]): void {
@@ -456,13 +464,13 @@
         <h3 class="mb-2 font-medium">How are files grouped?</h3>
         <div class="mb-4 flex flex-wrap gap-2">
           <UButton
-            v-for="(pattern, key) in REGEX_GROUPING_PRESETS"
+            v-for="(preset, key) in REGEX_GROUPING_PRESETS"
             :key="key"
             size="xs"
             :variant="presetKey === key ? 'solid' : 'outline'"
-            @click="presetKey = key as keyof typeof REGEX_GROUPING_PRESETS"
+            @click="presetKey = key as RegexGroupingPresetKey"
           >
-            {{ key.replace(/_/g, ' ') }}
+            {{ preset.label }}
           </UButton>
         </div>
         <UFormGroup label="Regex">
@@ -472,6 +480,18 @@
           From {{ sourceFiles.length }} files →
           <strong>{{ proposedSets.length }} samples</strong>
         </p>
+        <div
+          v-if="unmatchedFiles.length"
+          class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800"
+        >
+          <strong>{{ unmatchedFiles.length }}</strong>
+          file(s) did not match the pattern and will be skipped:
+          <span class="mt-1 block truncate font-mono">{{ unmatchedFiles.map(basename).join(', ') }}</span>
+          <p v-if="!proposedSets.length" class="mt-2">
+            None of the selected files match the grouping regex. Please modify the regex or the files selected and try
+            again.
+          </p>
+        </div>
       </div>
 
       <!-- Step 3: Build -->
