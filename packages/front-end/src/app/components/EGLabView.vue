@@ -785,46 +785,68 @@
     @update:model-value="handleTabChange"
   />
 
-  <EGPageHeader
+  <div
     v-if="activeTabKey !== 'dashboard'"
-    :title="labName"
-    :description="pageDescription"
-    :back-action="() => (superuser ? $router.push(`/orgs/${orgId || ''}`) : $router.push('/labs'))"
-    :show-back="true"
-    show-org-breadcrumb
-    show-lab-breadcrumb
+    :class="{ 'lab-data-collections-shell flex min-h-0 flex-col': activeTabKey === 'dataCollections' }"
   >
-    <EGButton
-      v-if="!superuser && activeTabKey === 'omicsWorkflows' && canCreateOmicsWorkflows"
-      label="Create Workflow"
-      variant="secondary"
-      @click="$router.push(`/labs/${labId}/create-workflow`)"
-    />
-    <EGButton
-      v-if="!superuser && activeTabKey === 'users'"
-      u-button-type="button"
-      label="Add Lab Users"
-      :disabled="!canAddUsers"
-      :aria-expanded="showAddUserModule"
-      :aria-controls="addUsersPanelId"
-      @click="showAddUserModule = !showAddUserModule"
-    />
-    <div
-      v-if="showAddUserModule && activeTabKey === 'users' && !!orgId"
-      :id="addUsersPanelId"
-      role="region"
-      aria-label="Add users to lab"
-      class="mt-2"
+    <EGPageHeader
+      :class="{ 'shrink-0': activeTabKey === 'dataCollections' }"
+      :title="labName"
+      :description="pageDescription"
+      :back-action="() => (superuser ? $router.push(`/orgs/${orgId || ''}`) : $router.push('/labs'))"
+      :show-back="true"
+      show-org-breadcrumb
+      show-lab-breadcrumb
     >
-      <EGAddLabUsersModule
-        @added-user-to-lab="handleUserAddedToLab()"
-        :org-id="orgId"
+      <EGButton
+        v-if="!superuser && activeTabKey === 'omicsWorkflows' && canCreateOmicsWorkflows"
+        label="Create Workflow"
+        variant="secondary"
+        @click="$router.push(`/labs/${labId}/create-workflow`)"
+      />
+      <EGButton
+        v-if="!superuser && activeTabKey === 'users'"
+        u-button-type="button"
+        label="Add Lab Users"
+        :disabled="!canAddUsers"
+        :aria-expanded="showAddUserModule"
+        :aria-controls="addUsersPanelId"
+        @click="showAddUserModule = !showAddUserModule"
+      />
+      <div
+        v-if="showAddUserModule && activeTabKey === 'users' && !!orgId"
+        :id="addUsersPanelId"
+        role="region"
+        aria-label="Add users to lab"
+        class="mt-2"
+      >
+        <EGAddLabUsersModule
+          @added-user-to-lab="handleUserAddedToLab()"
+          :org-id="orgId"
+          :lab-id="labId"
+          :lab-name="labName"
+          :lab-users="labUsers"
+        />
+      </div>
+    </EGPageHeader>
+
+    <!-- Data Collections -->
+    <div
+      v-if="activeTabKey === 'dataCollections'"
+      role="tabpanel"
+      id="panel-dataCollections"
+      aria-labelledby="tab-dataCollections"
+      tabindex="0"
+      class="mt-4 flex min-h-0 flex-1 flex-col"
+    >
+      <h2 class="sr-only">Sequence collections</h2>
+      <EGDataCollectionsPage
         :lab-id="labId"
-        :lab-name="labName"
-        :lab-users="labUsers"
+        @update:explorer-tab="dataCollectionsExplorerTab = $event"
+        @open-settings="openLabSettingsFromDataCollections"
       />
     </div>
-  </EGPageHeader>
+  </div>
 
   <!-- Dashboard tab: tabindex enables programmatic focus after tab click; outline suppressed intentionally (focus is moved from the tab, not via Tab). -->
   <div
@@ -836,23 +858,6 @@
     class="outline-none focus:outline-none"
   >
     <EGDashboard :lab-id="labId" />
-  </div>
-
-  <!-- Data Collections -->
-  <div
-    v-if="activeTabKey === 'dataCollections'"
-    role="tabpanel"
-    id="panel-dataCollections"
-    aria-labelledby="tab-dataCollections"
-    tabindex="0"
-    class="mt-4"
-  >
-    <h2 class="sr-only">Sequence collections</h2>
-    <EGDataCollectionsPage
-      :lab-id="labId"
-      @update:explorer-tab="dataCollectionsExplorerTab = $event"
-      @open-settings="openLabSettingsFromDataCollections"
-    />
   </div>
 
   <!-- Runs tab -->
@@ -1125,3 +1130,11 @@
     v-model="isMissingPATModalOpen"
   />
 </template>
+
+<style scoped lang="scss">
+  .lab-data-collections-shell {
+    /* main mt-6 + bottom breathing room (matches prior syncRootHeight margin) */
+    height: calc(100vh - var(--header-height) - 1.5rem - 1rem);
+    min-height: 28rem;
+  }
+</style>

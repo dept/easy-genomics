@@ -1,4 +1,6 @@
 <script setup lang="ts">
+  definePageMeta({ fullWidthContent: true });
+
   const $router = useRouter();
 
   const userStore = useUserStore();
