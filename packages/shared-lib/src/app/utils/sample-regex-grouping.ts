@@ -24,17 +24,17 @@ export const REGEX_GROUPING_PRESETS = {
     label: '_R1 and _R2',
     pattern: '(?<sample>.+?)_(?<read>R[12])(?:_001)?\\.fastq\\.gz',
   },
-  dash_1_2: {
-    label: '-1 and -2',
-    pattern: '(?<sample>.+?)-(?<read>[12])(?:_001)?\\.fastq\\.gz',
+  dash_r1_r2: {
+    label: '-R1 and -R2',
+    pattern: '(?<sample>.+?)-(?<read>R[12])(?:_001)?\\.fastq\\.gz',
   },
   underscore_1_2: {
     label: '_1 and _2',
     pattern: '(?<sample>.+?)_(?<read>[12])(?:_001)?\\.fastq\\.gz',
   },
-  dash_r1_r2: {
-    label: '-R1 and -R2',
-    pattern: '(?<sample>.+?)-(?<read>R[12])(?:_001)?\\.fastq\\.gz',
+  dash_1_2: {
+    label: '-1 and -2',
+    pattern: '(?<sample>.+?)-(?<read>[12])(?:_001)?\\.fastq\\.gz',
   },
 } as const satisfies Record<string, RegexGroupingPreset>;
 
