@@ -5,7 +5,7 @@
     "bundle": "pnpm exec projen bundle",
     "compile": "pnpm exec projen compile",
     "default": "pnpm exec projen default",
-    "deploy": "pnpm cdk bootstrap && pnpm run preflight-deletion-protection && pnpm exec projen deploy --all",
+    "deploy": "pnpm cdk bootstrap && pnpm run preflight-deletion-protection && pnpm exec projen deploy --all --progress bar --no-color --no-notices",
     "destroy": "pnpm exec projen destroy",
     "diff": "pnpm exec projen diff",
     "eslint": "pnpm exec projen eslint",
