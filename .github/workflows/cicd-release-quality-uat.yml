@@ -278,14 +278,14 @@ jobs:
           else
             echo "Easy Genomics API output not found in $EASY_STACK_NAME; leaving AWS_EASY_GENOMICS_API_URL unset."
           fi
-      - name: Clear Playwright Cache
-        run: rm -rf /home/runner/.cache/ms-playwright
-      - name: Install Playwright + Chromium Only and Slack Reporter
-        run: pnpm add -Dw @playwright/test && pnpm add -Dw playwright-slack-report && npx playwright install chromium
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
       - name: Run E2E Tests
         run: pnpm run test-e2e
         continue-on-error: true
         working-directory: packages/front-end
-      - name: Always Succeed Step
-        if: failure()
-        run: echo "E2E tests failed, but we are allowing the pipeline to succeed."
