@@ -15,16 +15,6 @@ overrides:
 importers:
 
   .:
-    dependencies:
-      '@oxc-minify/binding-darwin-arm64':
-        specifier: 0.132.0
-        version: 0.132.0
-      '@oxc-parser/binding-darwin-arm64':
-        specifier: 0.132.0
-        version: 0.132.0
-      '@oxc-transform/binding-darwin-arm64':
-        specifier: 0.132.0
-        version: 0.132.0
     devDependencies:
       '@aws-sdk/types':
         specifier: ^3.775.0
@@ -20173,7 +20163,8 @@ snapshots:
   '@oxc-minify/binding-android-arm64@0.132.0':
     optional: true
 
-  '@oxc-minify/binding-darwin-arm64@0.132.0': {}
+  '@oxc-minify/binding-darwin-arm64@0.132.0':
+    optional: true
 
   '@oxc-minify/binding-darwin-x64@0.132.0':
     optional: true
@@ -20236,7 +20227,8 @@ snapshots:
   '@oxc-parser/binding-android-arm64@0.132.0':
     optional: true
 
-  '@oxc-parser/binding-darwin-arm64@0.132.0': {}
+  '@oxc-parser/binding-darwin-arm64@0.132.0':
+    optional: true
 
   '@oxc-parser/binding-darwin-x64@0.132.0':
     optional: true
@@ -20301,7 +20293,8 @@ snapshots:
   '@oxc-transform/binding-android-arm64@0.132.0':
     optional: true
 
-  '@oxc-transform/binding-darwin-arm64@0.132.0': {}
+  '@oxc-transform/binding-darwin-arm64@0.132.0':
+    optional: true
 
   '@oxc-transform/binding-darwin-x64@0.132.0':
     optional: true
