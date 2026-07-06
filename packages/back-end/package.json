@@ -109,6 +109,7 @@
   "version": "0.0.0",
   "jest": {
     "coverageProvider": "v8",
+    "maxWorkers": "50%",
     "moduleNameMapper": {
       "^@BE/(.*)$": "<rootDir>/src/app/$1",
       "^@SharedLib/(.*)$": "<rootDir>/../shared-lib/src/app/$1",
