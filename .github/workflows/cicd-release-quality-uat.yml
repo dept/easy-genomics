@@ -285,6 +285,7 @@ jobs:
           key: playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
       - name: Install Playwright Chromium
         run: npx playwright install chromium
+        working-directory: packages/front-end
       - name: Run E2E Tests
         run: pnpm run test-e2e
         continue-on-error: true

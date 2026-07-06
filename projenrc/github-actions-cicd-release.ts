@@ -100,6 +100,7 @@ export class GithubActionsCICDRelease extends Component {
           },
           {
             name: 'Install Playwright Chromium',
+            workingDirectory: 'packages/front-end',
             run: 'npx playwright install chromium',
           },
           {
