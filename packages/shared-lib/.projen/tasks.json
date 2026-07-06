@@ -100,7 +100,7 @@
           "exec": "mkdir -p dist/js"
         },
         {
-          "exec": "pnpm pack --pack-destination dist/js"
+          "exec": "pnpm pack --pack-destination dist/js 2>&1 | tail -5"
         }
       ]
     },

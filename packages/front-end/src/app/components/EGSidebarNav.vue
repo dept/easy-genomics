@@ -215,7 +215,7 @@
 <style scoped lang="scss">
   .sidebar-nav {
     position: absolute;
-    left: calc(-1 * var(--sidebar-width) - 2rem);
+    left: calc(-1 * var(--sidebar-width) - var(--sidebar-content-gap));
     top: -1.5rem;
     bottom: 0;
     width: var(--sidebar-width);
@@ -229,7 +229,7 @@
       padding 0.2s ease;
 
     &--collapsed {
-      left: calc(-1 * var(--sidebar-width-collapsed) - 2rem);
+      left: calc(-1 * var(--sidebar-width-collapsed) - var(--sidebar-content-gap));
       width: var(--sidebar-width-collapsed);
       padding: 1rem 0.5rem;
     }
