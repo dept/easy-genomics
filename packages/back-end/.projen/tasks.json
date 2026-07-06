@@ -140,7 +140,7 @@
       "description": "Run tests",
       "steps": [
         {
-          "exec": "jest --passWithNoTests --updateSnapshot",
+          "exec": "jest --workerIdleMemoryLimit=2GB --passWithNoTests --updateSnapshot",
           "receiveArgs": true
         },
         {

@@ -324,7 +324,15 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
   eslint: true,
   jest: true,
   jestOptions: {
+    // Recycle a worker once it exceeds this heap so accumulated memory (v8 coverage +
+    // CDK synth) is freed between suites rather than growing for the worker's lifetime.
+    extraCliOptions: ['--workerIdleMemoryLimit=2GB'],
     jestConfig: {
+      // Cap parallelism. The test/infra/** suites each synthesize full CDK stacks and use
+      // ~1.4GB heap apiece; at the default (cpuCount-1) worker count their aggregate RSS,
+      // plus v8 coverage, exceeds the 16GB CI runner and the OS OOM-kills the run (exit 1
+      // with no Jest summary). Limiting workers keeps peak memory well under the runner.
+      maxWorkers: '50%',
       // Ensure Jest can resolve tsconfig path aliases used by lambda handlers/tests.
       moduleNameMapper: {
         '^@BE/(.*)$': '<rootDir>/src/app/$1',
