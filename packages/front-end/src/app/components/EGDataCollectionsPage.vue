@@ -11,6 +11,7 @@
   import EGDialog from '@FE/components/EGDialog.vue';
   import { useLabsStore, useToastStore, useUiStore } from '@FE/stores';
   import { ButtonVariantEnum } from '@FE/types/buttons';
+  import EGBuildSampleModal from '@FE/components/EGBuildSampleModal.vue';
   import EGBuildSamplesFromRegexModal from '@FE/components/EGBuildSamplesFromRegexModal.vue';
   import EGDataCollectionBuilder from '@FE/components/EGDataCollectionBuilder.vue';
   import EGSequenceCollectionsListTab from '@FE/components/EGSequenceCollectionsListTab.vue';
@@ -61,6 +62,7 @@
   const selectedSampleIds = ref<string[]>([]);
   const selectedFileKeys = ref<string[]>([]);
 
+  const showBuildSampleModal = ref(false);
   const showRegexGroupModal = ref(false);
   const showRunModal = ref(false);
   const runCollection = ref<LaboratorySequenceCollection | null>(null);
@@ -426,10 +428,25 @@
           @update:search="fileSearch = $event"
           @rescan="loadUnlinkedFiles"
           @open-settings="openLabSettings"
+          @build-sample="showBuildSampleModal = true"
           @group-with-regex="showRegexGroupModal = true"
         />
       </div>
     </template>
+
+    <EGBuildSampleModal
+      v-model="showBuildSampleModal"
+      :lab-id="labId"
+      :lab="lab"
+      :selected-keys="selectedFileKeys"
+      @created="
+        () => {
+          selectedFileKeys = [];
+          activeTab = 'samples';
+          refreshAll();
+        }
+      "
+    />
 
     <EGBuildSamplesFromRegexModal
       v-model="showRegexGroupModal"

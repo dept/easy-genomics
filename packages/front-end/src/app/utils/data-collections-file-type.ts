@@ -30,7 +30,7 @@ function hiddenBreakdownLabelSortRank(label: string): number {
   return idx >= 0 ? idx : HIDDEN_BREAKDOWN_PRIORITY_LABELS.length;
 }
 
-function basenameFromS3Key(s3Key: string): string {
+export function basenameFromS3Key(s3Key: string): string {
   const parts = s3Key.split('/').filter(Boolean);
   return parts[parts.length - 1] || s3Key;
 }

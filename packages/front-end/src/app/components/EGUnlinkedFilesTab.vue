@@ -33,6 +33,7 @@
     'update:selectedKeys': [keys: string[]];
     'update:search': [value: string];
     rescan: [];
+    'build-sample': [];
     'group-with-regex': [];
     'open-settings': [];
   }>();
@@ -285,7 +286,10 @@
           selected
         </span>
         <div class="flex gap-2">
-          <UButton variant="outline" @click="emit('group-with-regex')">Group with regex</UButton>
+          <UButton variant="outline" :disabled="selectedKeys.length < 2" @click="emit('group-with-regex')">
+            Group with regex
+          </UButton>
+          <UButton @click="emit('build-sample')">Build sample manually</UButton>
         </div>
       </div>
     </template>

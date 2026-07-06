@@ -2,12 +2,11 @@
   import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import type { SampleLayout } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
   import {
-    groupFilenamesByRegex,
     REGEX_GROUPING_PRESETS,
-    type ProposedSample,
     type RegexGroupingPresetKey,
   } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
   import { useToastStore, useUiStore } from '@FE/stores';
+  import { basenameFromS3Key } from '@FE/utils/data-collections-file-type';
 
   const props = defineProps<{
     modelValue: boolean;
@@ -29,8 +28,8 @@
   const step = ref(1);
   const presetKey = ref<RegexGroupingPresetKey>('underscore_r1_r2');
   const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern);
-  const proposedSets = ref<ProposedSample[]>([]);
-  const unmatchedFiles = ref<string[]>([]);
+  const fileKeys = toRef(props, 'fileKeys');
+  const { proposedSets, unmatchedFiles, refreshPreview } = useRegexGroupingPreview(fileKeys, regexPattern);
   const excludedSamples = ref<Set<string>>(new Set());
   const submitting = ref(false);
 
@@ -48,10 +47,7 @@
 
   watch(presetKey, (k) => {
     regexPattern.value = REGEX_GROUPING_PRESETS[k].pattern;
-    refreshPreview();
   });
-
-  watch(regexPattern, () => refreshPreview());
 
   const activeSets = computed(() => proposedSets.value.filter((s) => !excludedSamples.value.has(s.sampleId)));
 
@@ -61,16 +57,6 @@
     const review = activeSets.value.filter((s) => s.status === 'needs_review').length;
     return { paired, single, review, total: activeSets.value.length };
   });
-
-  function basename(key: string): string {
-    return key.split('/').pop() || key;
-  }
-
-  function refreshPreview(): void {
-    const { sets, unmatched } = groupFilenamesByRegex(props.fileKeys, regexPattern.value);
-    proposedSets.value = sets;
-    unmatchedFiles.value = unmatched;
-  }
 
   function toggleExclude(sampleId: string): void {
     const next = new Set(excludedSamples.value);
@@ -189,18 +175,11 @@
           <strong>{{ proposedSets.length }}</strong>
           samples
         </p>
-        <div
-          v-if="unmatchedFiles.length"
-          class="mb-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800"
-        >
-          <strong>{{ unmatchedFiles.length }}</strong>
-          file(s) did not match the pattern and will be skipped:
-          <span class="mt-1 block truncate font-mono">{{ unmatchedFiles.map(basename).join(', ') }}</span>
-          <p v-if="!proposedSets.length" class="mt-2">
-            None of the selected files match the grouping regex. Please modify the regex or the files selected and try
-            again.
-          </p>
-        </div>
+        <EGRegexUnmatchedNotice
+          :unmatched-files="unmatchedFiles"
+          :proposed-set-count="proposedSets.length"
+          notice-class="mb-2"
+        />
         <div
           v-if="proposedSets.length"
           class="max-h-40 overflow-hidden overflow-y-auto rounded-lg border border-gray-200"
@@ -216,7 +195,9 @@
             <tbody>
               <tr v-for="s in proposedSets.slice(0, 8)" :key="s.sampleId" class="border-t">
                 <td class="p-2 font-medium">{{ s.sampleId }}</td>
-                <td class="p-2 font-mono text-gray-500">{{ s.files.map((f) => basename(f.fileName)).join(', ') }}</td>
+                <td class="p-2 font-mono text-gray-500">
+                  {{ s.files.map((f) => basenameFromS3Key(f.fileName)).join(', ') }}
+                </td>
                 <td class="p-2">{{ s.status }}</td>
               </tr>
               <tr v-if="proposedSets.length > 8">
@@ -254,7 +235,7 @@
             >
               <td class="p-2 font-medium">{{ s.sampleId }}</td>
               <td class="p-2 font-mono text-xs text-gray-600">
-                {{ s.files.map((f) => basename(f.fileName)).join(', ') }}
+                {{ s.files.map((f) => basenameFromS3Key(f.fileName)).join(', ') }}
               </td>
               <td class="p-2 text-xs">{{ s.status }}</td>
               <td class="p-2 text-right">
