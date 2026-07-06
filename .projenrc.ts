@@ -21,7 +21,7 @@ import { PnpmWorkspace } from './projenrc/pnpm';
 import { VscodeSettings } from './projenrc/vscode';
 
 const defaultReleaseBranch = 'main';
-const cdkVersion = '2.176.0';
+const cdkVersion = '2.260.0';
 const nodeVersion = '20.15.0';
 const pnpmVersion = '9.15.0';
 const awsSdkClientOmicsVersion = '^3.1014.0';
@@ -541,7 +541,7 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     'esrun',
     'file-saver',
     'jwt-decode',
-    'nuxt',
+    'nuxt@3.21.8',
     'pinia',
     'pinia-plugin-persistedstate',
     'playwright',
