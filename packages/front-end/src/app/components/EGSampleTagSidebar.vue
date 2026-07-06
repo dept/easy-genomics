@@ -4,6 +4,7 @@
   import EGDialog from '@FE/components/EGDialog.vue';
   import { useToastStore, useUiStore } from '@FE/stores';
   import { ButtonVariantEnum } from '@FE/types/buttons';
+  import { filterSamplesBySearch } from '@FE/utils/data-collections-filters';
   import { exceedsTagNameMaxLength } from '@FE/utils/data-collections-name-validation';
 
   const props = defineProps<{
@@ -39,11 +40,7 @@
 
   const standardTags = computed(() => props.tags.filter((t) => (t.Kind ?? 'standard') === 'standard'));
 
-  const setsMatchingSearch = computed(() => {
-    const q = props.search.trim().toLowerCase();
-    if (!q) return props.samples;
-    return props.samples.filter((s) => s.Name.toLowerCase().includes(q));
-  });
+  const setsMatchingSearch = computed(() => filterSamplesBySearch(props.samples, props.tags, props.search));
 
   function standardTagIdsForSet(setId: string): string[] {
     const tagIdSet = new Set(standardTags.value.map((t) => t.TagId));

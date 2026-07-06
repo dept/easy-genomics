@@ -8,6 +8,7 @@
   import EGSampleTagSidebar from '@FE/components/EGSampleTagSidebar.vue';
   import { useToastStore, useUiStore } from '@FE/stores';
   import { SAMPLE_LAYOUT_LABELS } from '@FE/utils/data-collections-selection';
+  import { filterSamplesBySearch } from '@FE/utils/data-collections-filters';
   import { exceedsTagNameMaxLength } from '@FE/utils/data-collections-name-validation';
 
   const props = withDefaults(
@@ -99,12 +100,7 @@
     return (props.sampleIdToTagIds[setId] ?? []).filter((tid) => tagIdSet.has(tid));
   }
 
-  const setsMatchingSearch = computed(() => {
-    let rows = props.samples;
-    const q = props.search.trim().toLowerCase();
-    if (q) rows = rows.filter((s) => s.Name.toLowerCase().includes(q));
-    return rows;
-  });
+  const setsMatchingSearch = computed(() => filterSamplesBySearch(props.samples, props.tags, props.search));
 
   const filtered = computed(() => {
     let list = setsMatchingSearch.value;
@@ -535,11 +531,11 @@
           role="toolbar"
           aria-label="Sample explorer tools"
         >
-          <label class="sr-only" for="sequence-set-search">Search samples</label>
+          <label class="sr-only" for="sequence-set-search">Search samples and batches</label>
           <UInput
             id="sequence-set-search"
             :model-value="search"
-            placeholder="Search by sample ID or tag…"
+            placeholder="Search by sample ID or batch…"
             class="max-w-xs"
             size="sm"
             @update:model-value="emit('update:search', String($event ?? ''))"
