@@ -302,6 +302,11 @@ sharedLib.addTask('generate:api-types', {
 });
 sharedLib.preCompileTask.prependExec('pnpm run generate:api-types');
 
+// Suppress pnpm pack's verbose file listing in CI output
+const sharedLibPackTask = sharedLib.tasks.tryFind('package');
+sharedLibPackTask?.reset('mkdir -p dist/js');
+sharedLibPackTask?.exec('pnpm pack --pack-destination dist/js 2>&1 | tail -5');
+
 if (sharedLib.eslint) {
   sharedLib.eslint.addRules({ ...eslintGlobalRules });
   // Keep ESLint independent from prettier plugin runtime resolution under pnpm.

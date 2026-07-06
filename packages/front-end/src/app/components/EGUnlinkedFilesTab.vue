@@ -289,7 +289,7 @@
           <UButton variant="outline" :disabled="selectedKeys.length < 2" @click="emit('group-with-regex')">
             Group with regex
           </UButton>
-          <UButton @click="emit('build-sample')">Build sample</UButton>
+          <UButton @click="emit('build-sample')">Build sample manually</UButton>
         </div>
       </div>
     </template>
