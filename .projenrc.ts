@@ -664,9 +664,6 @@ root.gitignore.addPatterns('!packages/back-end/.env.local.example', '!config/.en
 
 // Security: force minimum patched versions for transitive deps with active Dependabot alerts.
 // These overrides survive future `pnpm exec projen` runs because they live here, not in package.json.
-// @opentelemetry/core (CVE-2026-54285) is excluded: the fix requires a 1.x→2.x major bump that
-// breaks all @opentelemetry/*@0.53.0/1.x peer deps in the lockfile — needs a coordinated suite
-// upgrade tracked separately.
 root.addFields({
   pnpm: {
     overrides: {
@@ -688,7 +685,7 @@ root.addFields({
       protobufjs: '>=7.6.3 <8.0.0',
       // CVE-2026-53550 (quadratic-complexity DoS in merge key handling via repeated aliases)
       // Also forces any transitive js-yaml 3.x to resolve to the safe 4.x line
-      'js-yaml': '>=4.1.1',
+      'js-yaml': '>=4.2.0',
 
       // --- PR3: CRITICAL severity ---
       // CVE-2024-55565: newline injection in quoted shell args (RCE in shell pipelines)
@@ -776,6 +773,15 @@ root.addFields({
       cookie: '>=0.7.0',
       // CVE-2024-55997: response header manipulation via crafted header values
       'on-headers': '>=1.1.0',
+
+      // --- Dependabot follow-up: transitive copies not covered by direct-dep bumps ---
+      axios: '>=1.18.1', // force nx's transitive axios 1.8.4 up (prototype-pollution + SSRF cluster)
+      'fast-uri': '>=3.1.2', // path traversal + host confusion
+      tmp: '>=0.2.6', // path traversal + symlink write
+      got: '>=11.8.5', // redirect-to-UNIX-socket
+      'follow-redirects': '>=1.16.0', // auth header leak on cross-domain redirect
+      '@opentelemetry/core': '>=2.8.0', // unbounded memory alloc in W3C baggage
+      h3: '>=1.15.9', // request smuggling + path traversal + SSE injection
     },
   },
 });
