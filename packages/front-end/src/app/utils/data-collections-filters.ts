@@ -1,4 +1,8 @@
-import type { LaboratoryRunUsageSummary } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
+import type {
+  LaboratoryDataTag,
+  LaboratoryRunUsageSummary,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
+import type { LaboratorySample } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
 
 /**
  * Pure helpers backing the Data Collections page scope filters. Extracted from the Vue SFC so
@@ -44,4 +48,22 @@ export function isExpiringSoon(opts: {
   if (soonest === undefined) return false;
   const horizonSeconds = opts.thresholdDays * 86400;
   return soonest - opts.nowEpoch <= horizonSeconds;
+}
+
+/** Samples tab search: sample name substring match, or all samples in a batch whose name matches. */
+export function filterSamplesBySearch(
+  samples: LaboratorySample[],
+  tags: LaboratoryDataTag[],
+  query: string,
+): LaboratorySample[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return samples;
+
+  const matchingBatchIds = new Set(
+    tags.filter((t) => t.Kind === 'batch' && t.Name.toLowerCase().includes(q)).map((t) => t.TagId),
+  );
+
+  return samples.filter(
+    (s) => s.Name.toLowerCase().includes(q) || (s.BatchTagId != null && matchingBatchIds.has(s.BatchTagId)),
+  );
 }
