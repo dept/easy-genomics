@@ -18,30 +18,38 @@ export const SAMPLE_SHEET_COLUMN_ROLE_LABELS: Record<SampleSheetColumnRole, stri
   input_bam: 'Input BAM',
   input_cram: 'Input CRAM',
   input_vcf: 'Input VCF',
+  assembly_fasta: 'Assembled genome (FASTA)',
   metadata: 'Metadata (text)',
   custom_uri: 'Custom S3 URI',
 };
 
 export const SAMPLE_SHEET_SCHEMA_PRESETS: Record<string, SampleSheetColumnDef[]> = {
-  nf_core_paired_end: [
+  single: [
+    { columnName: 'sample', role: 'sample_id', required: true },
+    { columnName: 'fastq', role: 'reads', required: true },
+  ],
+  paired: [
     { columnName: 'sample', role: 'sample_id', required: true },
     { columnName: 'fastq_1', role: 'read1', required: true },
     { columnName: 'fastq_2', role: 'read2', required: true },
   ],
-  nf_core_single_end: [
+  hybrid: [
     { columnName: 'sample', role: 'sample_id', required: true },
-    { columnName: 'fastq_1', role: 'read1', required: true },
+    { columnName: 'fastq', role: 'reads', required: true },
+    { columnName: 'fastq_1', role: 'read1', required: false },
+    { columnName: 'fastq_2', role: 'read2', required: false },
   ],
-  long_read: [
+  assembled: [
     { columnName: 'sample', role: 'sample_id', required: true },
-    { columnName: 'reads', role: 'reads', required: true },
+    { columnName: 'fasta', role: 'assembly_fasta', required: true },
   ],
-  paired_end_with_reference: [
-    { columnName: 'sample', role: 'sample_id', required: true },
-    { columnName: 'fastq_1', role: 'read1', required: true },
-    { columnName: 'fastq_2', role: 'read2', required: true },
-    { columnName: 'fasta', role: 'reference_fasta', required: false },
-  ],
+};
+
+export const SAMPLE_SHEET_SCHEMA_PRESET_LABELS: Record<string, string> = {
+  single: 'Single',
+  paired: 'Paired',
+  hybrid: 'Hybrid',
+  assembled: 'Assembled',
 };
 
 function getFileNameWithoutExt(fileName: string): string {
@@ -205,7 +213,11 @@ export function buildSampleSheetRowFromRoleMap(
 ): SampleSheetRowValues {
   const row: SampleSheetRowValues = {};
   for (const col of columns) {
-    row[col.columnName] = roleMap[col.role] ?? '';
+    // A `reads` column (e.g. the `single`/`hybrid` presets' `fastq`) accepts a single-file
+    // read. Fall back to read1 so single-end short-read samples, which only set read1,
+    // still populate it.
+    const value = col.role === 'reads' ? (roleMap.reads ?? roleMap.read1) : roleMap[col.role];
+    row[col.columnName] = value ?? '';
   }
   return row;
 }
