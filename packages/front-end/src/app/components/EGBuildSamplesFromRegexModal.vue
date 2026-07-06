@@ -2,11 +2,11 @@
   import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import type { SampleLayout } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
   import {
-    groupFilenamesByRegex,
     REGEX_GROUPING_PRESETS,
-    type ProposedSample,
+    type RegexGroupingPresetKey,
   } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
   import { useToastStore, useUiStore } from '@FE/stores';
+  import { basenameFromS3Key } from '@FE/utils/data-collections-file-type';
 
   const props = defineProps<{
     modelValue: boolean;
@@ -26,10 +26,10 @@
   const uiStore = useUiStore();
 
   const step = ref(1);
-  const presetKey = ref<keyof typeof REGEX_GROUPING_PRESETS>('underscore_r1_r2');
-  const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2);
-  const proposedSets = ref<ProposedSample[]>([]);
-  const unmatchedFiles = ref<string[]>([]);
+  const presetKey = ref<RegexGroupingPresetKey>('underscore_r1_r2');
+  const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern);
+  const fileKeys = toRef(props, 'fileKeys');
+  const { proposedSets, unmatchedFiles, refreshPreview } = useRegexGroupingPreview(fileKeys, regexPattern);
   const excludedSamples = ref<Set<string>>(new Set());
   const submitting = ref(false);
 
@@ -39,18 +39,15 @@
       if (!open) return;
       step.value = 1;
       presetKey.value = 'underscore_r1_r2';
-      regexPattern.value = REGEX_GROUPING_PRESETS.underscore_r1_r2;
+      regexPattern.value = REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern;
       excludedSamples.value = new Set();
       refreshPreview();
     },
   );
 
   watch(presetKey, (k) => {
-    regexPattern.value = REGEX_GROUPING_PRESETS[k];
-    refreshPreview();
+    regexPattern.value = REGEX_GROUPING_PRESETS[k].pattern;
   });
-
-  watch(regexPattern, () => refreshPreview());
 
   const activeSets = computed(() => proposedSets.value.filter((s) => !excludedSamples.value.has(s.sampleId)));
 
@@ -60,16 +57,6 @@
     const review = activeSets.value.filter((s) => s.status === 'needs_review').length;
     return { paired, single, review, total: activeSets.value.length };
   });
-
-  function basename(key: string): string {
-    return key.split('/').pop() || key;
-  }
-
-  function refreshPreview(): void {
-    const { sets, unmatched } = groupFilenamesByRegex(props.fileKeys, regexPattern.value);
-    proposedSets.value = sets;
-    unmatchedFiles.value = unmatched;
-  }
 
   function toggleExclude(sampleId: string): void {
     const next = new Set(excludedSamples.value);
@@ -96,8 +83,7 @@
     const failedSamples: string[] = [];
 
     try {
-      // Create one set per request (same path as "Build sample") so a slow or
-      // failed bulk call cannot block the entire batch; existing files need no S3 copy.
+      // Create one set per request so a slow or failed bulk call cannot block the entire batch.
       for (const s of activeSets.value) {
         try {
           await $api.dataCollections.createSample({
@@ -170,13 +156,13 @@
       <div v-if="step === 1" class="min-h-0 flex-1 overflow-y-auto">
         <div class="mb-4 flex flex-wrap gap-2">
           <UButton
-            v-for="(pattern, key) in REGEX_GROUPING_PRESETS"
+            v-for="(preset, key) in REGEX_GROUPING_PRESETS"
             :key="key"
             size="xs"
             :variant="presetKey === key ? 'solid' : 'outline'"
-            @click="presetKey = key as keyof typeof REGEX_GROUPING_PRESETS"
+            @click="presetKey = key as RegexGroupingPresetKey"
           >
-            {{ key.replace(/_/g, ' ') }}
+            {{ preset.label }}
           </UButton>
         </div>
         <UFormGroup label="Regex" class="mb-4">
@@ -189,14 +175,11 @@
           <strong>{{ proposedSets.length }}</strong>
           samples
         </p>
-        <div
-          v-if="unmatchedFiles.length"
-          class="mb-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800"
-        >
-          <strong>{{ unmatchedFiles.length }}</strong>
-          file(s) did not match the pattern and will be skipped:
-          <span class="mt-1 block truncate font-mono">{{ unmatchedFiles.map(basename).join(', ') }}</span>
-        </div>
+        <EGRegexUnmatchedNotice
+          :unmatched-files="unmatchedFiles"
+          :proposed-set-count="proposedSets.length"
+          notice-class="mb-2"
+        />
         <div
           v-if="proposedSets.length"
           class="max-h-40 overflow-hidden overflow-y-auto rounded-lg border border-gray-200"
@@ -212,7 +195,9 @@
             <tbody>
               <tr v-for="s in proposedSets.slice(0, 8)" :key="s.sampleId" class="border-t">
                 <td class="p-2 font-medium">{{ s.sampleId }}</td>
-                <td class="p-2 font-mono text-gray-500">{{ s.files.map((f) => basename(f.fileName)).join(', ') }}</td>
+                <td class="p-2 font-mono text-gray-500">
+                  {{ s.files.map((f) => basenameFromS3Key(f.fileName)).join(', ') }}
+                </td>
                 <td class="p-2">{{ s.status }}</td>
               </tr>
               <tr v-if="proposedSets.length > 8">
@@ -250,7 +235,7 @@
             >
               <td class="p-2 font-medium">{{ s.sampleId }}</td>
               <td class="p-2 font-mono text-xs text-gray-600">
-                {{ s.files.map((f) => basename(f.fileName)).join(', ') }}
+                {{ s.files.map((f) => basenameFromS3Key(f.fileName)).join(', ') }}
               </td>
               <td class="p-2 text-xs">{{ s.status }}</td>
               <td class="p-2 text-right">

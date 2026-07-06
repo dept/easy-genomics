@@ -9,11 +9,11 @@
     FileUploadRequest,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
   import {
-    groupFilenamesByRegex,
     REGEX_GROUPING_PRESETS,
-    type ProposedSample,
+    type RegexGroupingPresetKey,
   } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
   import { useToastStore, useUiStore } from '@FE/stores';
+  import { basenameFromS3Key } from '@FE/utils/data-collections-file-type';
   import { exceedsBatchNameMaxLength } from '@FE/utils/data-collections-name-validation';
 
   type ImportSourceKind = 's3' | 'upload';
@@ -45,10 +45,13 @@
   const step = ref(1);
   const importSource = ref<ImportSourceKind>('s3');
   const sourcePath = ref('');
-  const presetKey = ref<keyof typeof REGEX_GROUPING_PRESETS>('underscore_r1_r2');
-  const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2);
+  const presetKey = ref<RegexGroupingPresetKey>('underscore_r1_r2');
+  const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern);
   const sourceFiles = ref<string[]>([]);
-  const proposedSets = ref<ProposedSample[]>([]);
+  const { proposedSets, unmatchedFiles, refreshPreview, resetPreview } = useRegexGroupingPreview(
+    sourceFiles,
+    regexPattern,
+  );
   const excludedSamples = ref<Set<string>>(new Set());
   const setTagIds = ref<Record<string, string[]>>({});
   const submitting = ref(false);
@@ -67,7 +70,7 @@
 
   watch(importSource, (kind) => {
     sourceFiles.value = [];
-    proposedSets.value = [];
+    resetPreview();
     excludedSamples.value = new Set();
     uploadedKeysByName.value = {};
     pendingUploadFiles.value = [];
@@ -76,11 +79,8 @@
   });
 
   watch(presetKey, (k) => {
-    regexPattern.value = REGEX_GROUPING_PRESETS[k];
-    refreshPreview();
+    regexPattern.value = REGEX_GROUPING_PRESETS[k].pattern;
   });
-
-  watch(regexPattern, () => refreshPreview());
 
   watch(step, (n) => {
     if (n === 4 && !newBatchName.value.trim()) {
@@ -144,11 +144,6 @@
     if (done === total) return `${total} files uploaded`;
     return `${total} files selected`;
   });
-
-  function refreshPreview(): void {
-    const { sets } = groupFilenamesByRegex(sourceFiles.value, regexPattern.value);
-    proposedSets.value = sets;
-  }
 
   function addFilesFromList(fileList: FileList | File[]): void {
     const incoming = Array.from(fileList);
@@ -274,7 +269,7 @@
   }
 
   function resolveDestKeyForFile(fileName: string, destPrefix: string): string {
-    const base = fileName.split('/').pop() || fileName;
+    const base = basenameFromS3Key(fileName);
     if (importSource.value === 'upload') {
       const key = uploadedKeysByName.value[base];
       if (!key) throw new Error(`Missing uploaded key for ${base}`);
@@ -303,7 +298,7 @@
         importSource.value === 's3'
           ? activeSets.value.flatMap((s) =>
               s.files.map((f) => {
-                const base = f.fileName.split('/').pop() || f.fileName;
+                const base = basenameFromS3Key(f.fileName);
                 const match = sourcePath.value.match(/^s3:\/\/([^/]+)\/(.*)$/);
                 const srcBucket = match?.[1] || props.lab!.S3Bucket!;
                 const srcPrefix = match?.[2] || '';
@@ -456,13 +451,13 @@
         <h3 class="mb-2 font-medium">How are files grouped?</h3>
         <div class="mb-4 flex flex-wrap gap-2">
           <UButton
-            v-for="(pattern, key) in REGEX_GROUPING_PRESETS"
+            v-for="(preset, key) in REGEX_GROUPING_PRESETS"
             :key="key"
             size="xs"
             :variant="presetKey === key ? 'solid' : 'outline'"
-            @click="presetKey = key as keyof typeof REGEX_GROUPING_PRESETS"
+            @click="presetKey = key as RegexGroupingPresetKey"
           >
-            {{ key.replace(/_/g, ' ') }}
+            {{ preset.label }}
           </UButton>
         </div>
         <UFormGroup label="Regex">
@@ -472,6 +467,11 @@
           From {{ sourceFiles.length }} files →
           <strong>{{ proposedSets.length }} samples</strong>
         </p>
+        <EGRegexUnmatchedNotice
+          :unmatched-files="unmatchedFiles"
+          :proposed-set-count="proposedSets.length"
+          notice-class="mt-4"
+        />
       </div>
 
       <!-- Step 3: Build -->
@@ -501,7 +501,9 @@
                 :class="{ 'opacity-40': excludedSamples.has(s.sampleId) }"
               >
                 <td class="p-3 font-medium">{{ s.sampleId }}</td>
-                <td class="p-3 font-mono text-xs">{{ s.files.map((f) => f.fileName.split('/').pop()).join(', ') }}</td>
+                <td class="p-3 font-mono text-xs">
+                  {{ s.files.map((f) => basenameFromS3Key(f.fileName)).join(', ') }}
+                </td>
                 <td class="p-3 text-xs">{{ s.status }}</td>
                 <td class="p-3 text-right">
                   <button type="button" class="text-xs text-red-600" @click="toggleExclude(s.sampleId)">
