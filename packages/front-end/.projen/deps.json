@@ -186,6 +186,7 @@
     },
     {
       "name": "axios",
+      "version": "^1.18.1",
       "type": "runtime"
     },
     {
