@@ -556,7 +556,10 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     'esrun',
     'file-saver',
     'jwt-decode',
-    'nuxt@3.21.8',
+    // Pinned to 3.21.6: 3.21.7+ backported a vite-builder regression that crashes
+    // `nuxt dev` for ssr:false apps ("No entry found in rollupOptions.input",
+    // nuxt/nuxt#35033). Re-bump once a fixed release ships.
+    'nuxt@3.21.6',
     'pinia',
     'pinia-plugin-persistedstate',
     'playwright',
