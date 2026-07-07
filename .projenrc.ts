@@ -694,7 +694,9 @@ root.addFields({
       protobufjs: '>=7.6.3 <8.0.0',
       // CVE-2026-53550 (quadratic-complexity DoS in merge key handling via repeated aliases)
       // Also forces any transitive js-yaml 3.x to resolve to the safe 4.x line
-      'js-yaml': '>=4.2.0',
+      // Capped at <5: js-yaml 5.x ESM build drops the default export, which breaks
+      // openapi-typescript@6 (`import yaml from 'js-yaml'`) in shared-lib generate:api-types
+      'js-yaml': '>=4.2.0 <5.0.0',
 
       // --- PR3: CRITICAL severity ---
       // CVE-2024-55565: newline injection in quoted shell args (RCE in shell pipelines)
