@@ -219,14 +219,17 @@ root.addScripts({
     'pnpm dlx projen upgrade && ' +
     'pnpm nx run-many --targets=upgrade --projects=@easy-genomics/shared-lib,@easy-genomics/back-end,@easy-genomics/front-end',
   // CI/CD convenience scripts
+  // outputStyle=stream (not static): static buffers the whole target output and dumps it
+  // at once on failure; the GitHub runner closes the pipe when the process exits, so the
+  // tail of large dumps — including the Jest summary and the actual failure — gets lost.
   ['cicd-build-deploy-back-end']:
     'export CI_CD=true NX_SKIP_NX_CACHE=true && ' +
-    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --outputStyle=static && ' +
-    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --outputStyle=static',
+    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --outputStyle=stream && ' +
+    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --outputStyle=stream',
   ['cicd-build-deploy-front-end']:
     'export CI_CD=true NX_SKIP_NX_CACHE=true && ' +
-    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --outputStyle=static && ' +
-    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --outputStyle=static',
+    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --outputStyle=stream && ' +
+    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --outputStyle=stream',
   ['prepare']: 'husky || true', // Enable Husky each time projen is synthesized
   ['projen']: 'nx reset; pnpm exec projen', // Clear NX cache each time projen is synthesized to avoid cache disk-space overconsumption
   ['pre-commit']: 'lint-staged',

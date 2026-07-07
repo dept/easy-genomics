@@ -20,8 +20,8 @@
     "build-front-end": "nx reset && pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --verbose=true",
     "build-and-deploy": "pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --verbose=true --outputStyle=stream && pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --verbose=true --outputStyle=stream && pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --verbose=true --outputStyle=stream && pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --verbose=true --outputStyle=stream",
     "prettier": "prettier --write '{**/*,*}.{js,ts,vue,scss,json,md,html,mdx}'",
-    "cicd-build-deploy-back-end": "export CI_CD=true NX_SKIP_NX_CACHE=true && pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --outputStyle=static && pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --outputStyle=static",
-    "cicd-build-deploy-front-end": "export CI_CD=true NX_SKIP_NX_CACHE=true && pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --outputStyle=static && pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --outputStyle=static",
+    "cicd-build-deploy-back-end": "export CI_CD=true NX_SKIP_NX_CACHE=true && pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --outputStyle=stream && pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --outputStyle=stream",
+    "cicd-build-deploy-front-end": "export CI_CD=true NX_SKIP_NX_CACHE=true && pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --outputStyle=stream && pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --outputStyle=stream",
     "prepare": "husky || true",
     "pre-commit": "lint-staged"
   },
