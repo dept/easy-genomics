@@ -118,7 +118,7 @@
     "zod": "^3.24.2"
   },
   "engines": {
-    "node": ">= 20.15.0"
+    "node": ">= 20.20.2"
   },
   "license": "Apache-2.0",
   "version": "0.0.0",

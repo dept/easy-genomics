@@ -556,8 +556,8 @@ importers:
         specifier: ^2.1007.0
         version: 2.1007.0
       aws-cdk-lib:
-        specifier: ^2.189.0
-        version: 2.189.0(constructs@10.4.2)
+        specifier: ^2.260.0
+        version: 2.261.0(constructs@10.4.2)
       aws-lambda:
         specifier: ^1.0.7
         version: 1.0.7
@@ -732,24 +732,11 @@ packages:
       xstate:
         optional: true
 
-  '@aws-cdk/asset-awscli-v1@2.2.231':
-    resolution: {integrity: sha512-vPqD/K2pK/ALhU5r5Nafdc2nLB+LJKxNyxUmQnLsazU6AWDJfkqjHQx8m3J4Cjl2C3chQkIRMdzSDuXIlo43GA==}
-
   '@aws-cdk/asset-awscli-v1@2.2.282':
     resolution: {integrity: sha512-7hKMi5tTxDcKGIMIOq14PnY0GBcugW33Uh/2YHDZiEwSxLeFOCYBwhR+BFXONb/EJeVI3RETFgailNZbkcKF6g==}
 
-  '@aws-cdk/asset-node-proxy-agent-v6@2.1.0':
-    resolution: {integrity: sha512-7bY3J8GCVxLupn/kNmpPc5VJz8grx+4RKfnnJiO1LG+uxkZfANZG3RMHhE+qQxxwkyQ9/MfPtTpf748UhR425A==}
-
   '@aws-cdk/asset-node-proxy-agent-v6@2.1.2':
     resolution: {integrity: sha512-pDiuqH+qY3zM9lhhLjbKJ1tnKOHzQ2V4Wr/3qsxyKeKAkuPMI/BVGvZG1PbrikUw949cGVTfVEt4ETKKYnrj0Q==}
-
-  '@aws-cdk/cloud-assembly-schema@41.2.0':
-    resolution: {integrity: sha512-JaulVS6z9y5+u4jNmoWbHZRs9uGOnmn/ktXygNWKNu1k6lF3ad4so3s18eRu15XCbUIomxN9WPYT6Ehh7hzONw==}
-    engines: {node: '>= 14.15.0'}
-    bundledDependencies:
-      - jsonschema
-      - semver
 
   '@aws-cdk/cloud-assembly-schema@54.8.0':
     resolution: {integrity: sha512-f891G+Uv4x0/PWTYkA7psEoxHj4//uXEYklB853uFZVHq2zwoH5Eko+uL07wUXZsUiXpZZl8c72KJVnEidR+zg==}
@@ -6735,24 +6722,6 @@ packages:
 
   aws-amplify@5.3.18:
     resolution: {integrity: sha512-PL1LcA749R+4z29GeK+BmBgQdFHjJ1kQ7Yu6+NPN4uY+Dsfysrau2n4m2q4EQVLUvB0tK4QQ0yGgAfO2zllzpg==}
-
-  aws-cdk-lib@2.189.0:
-    resolution: {integrity: sha512-B5Uha7uRntOAyuKfU0eFtxij3ZVTzGAbetw5qaXlURa68wsWpKlU72/OyKugB6JYkhjCZkSTVVBxd1pVTosxEw==}
-    engines: {node: '>= 14.15.0'}
-    peerDependencies:
-      constructs: ^10.0.0
-    bundledDependencies:
-      - '@balena/dockerignore'
-      - case
-      - fs-extra
-      - ignore
-      - jsonschema
-      - minimatch
-      - punycode
-      - semver
-      - table
-      - yaml
-      - mime-types
 
   aws-cdk-lib@2.261.0:
     resolution: {integrity: sha512-e52e3Abjg0HkuRWlWwtSv5+ZiMW1rhCDdL9ff7lzWXInU8xdfLJpuoimfa0IJwjiNGyphppgg52Azx9M80OA0g==}
@@ -13842,15 +13811,9 @@ snapshots:
     optionalDependencies:
       xstate: 4.38.3
 
-  '@aws-cdk/asset-awscli-v1@2.2.231': {}
-
   '@aws-cdk/asset-awscli-v1@2.2.282': {}
 
-  '@aws-cdk/asset-node-proxy-agent-v6@2.1.0': {}
-
   '@aws-cdk/asset-node-proxy-agent-v6@2.1.2': {}
-
-  '@aws-cdk/cloud-assembly-schema@41.2.0': {}
 
   '@aws-cdk/cloud-assembly-schema@54.8.0': {}
 
@@ -23466,13 +23429,6 @@ snapshots:
       - encoding
       - react-native
       - supports-color
-
-  aws-cdk-lib@2.189.0(constructs@10.4.2):
-    dependencies:
-      '@aws-cdk/asset-awscli-v1': 2.2.231
-      '@aws-cdk/asset-node-proxy-agent-v6': 2.1.0
-      '@aws-cdk/cloud-assembly-schema': 41.2.0
-      constructs: 10.4.2
 
   aws-cdk-lib@2.261.0(constructs@10.4.2):
     dependencies:

@@ -22,7 +22,9 @@ import { VscodeSettings } from './projenrc/vscode';
 
 const defaultReleaseBranch = 'main';
 const cdkVersion = '2.260.0';
-const nodeVersion = '20.15.0';
+// nuxt 3.21.8's oxc-parser requires node ^20.19.0 || >=22.12.0; pnpm silently skips its
+// platform-native bindings on older Node at install time, breaking every nuxt CLI command.
+const nodeVersion = '20.20.2';
 const pnpmVersion = '9.15.0';
 const awsSdkClientOmicsVersion = '^3.1014.0';
 const authorName = 'DEPT Agency';
@@ -261,7 +263,9 @@ const sharedLib = new typescript.TypeScriptProject({
     '@aws-sdk/client-s3',
     '@aws-sdk/client-secrets-manager@^3.782.0',
     'aws-cdk',
-    'aws-cdk-lib',
+    // Pin to the same CDK line as back-end/front-end: an unpinned spec froze at ^2.189.0,
+    // leaving a second aws-cdk-lib instance in the lockfile whose types clash with 2.26x.
+    `aws-cdk-lib@^${cdkVersion}`,
     'aws-lambda',
     'js-yaml',
     'strnum',
@@ -273,7 +277,7 @@ const sharedLib = new typescript.TypeScriptProject({
     '@types/js-yaml',
     '@types/uuid',
     '@redocly/cli@~1.34.15',
-    'aws-cdk-lib',
+    `aws-cdk-lib@^${cdkVersion}`,
     'openapi-typescript',
     'tsx',
     'typescript-json-schema',
