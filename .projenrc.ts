@@ -262,7 +262,9 @@ const sharedLib = new typescript.TypeScriptProject({
     `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-s3',
     '@aws-sdk/client-secrets-manager@^3.782.0',
-    'aws-cdk',
+    // aws-cdk-lib 2.26x emits cloud-assembly schema v54, which requires CDK CLI >=2.1129.0;
+    // older frozen resolutions (2.1007.0) satisfy ^2.260.0 semver-wise but fail `cdk synth`.
+    'aws-cdk@^2.1129.0',
     // Pin to the same CDK line as back-end/front-end: an unpinned spec froze at ^2.189.0,
     // leaving a second aws-cdk-lib instance in the lockfile whose types clash with 2.26x.
     `aws-cdk-lib@^${cdkVersion}`,
