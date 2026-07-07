@@ -70,7 +70,7 @@
       "dompurify": ">=3.4.11",
       "tar": ">=7.5.16",
       "protobufjs": ">=7.6.3 <8.0.0",
-      "js-yaml": ">=4.1.1",
+      "js-yaml": ">=4.2.0 <5.0.0",
       "shell-quote": ">=1.8.4",
       "simple-git": ">=3.36.0",
       "fast-xml-parser": ">=5.7.0",
@@ -105,11 +105,18 @@
       "launch-editor": ">=2.14.1",
       "diff": ">=8.0.3",
       "cookie": ">=0.7.0",
-      "on-headers": ">=1.1.0"
+      "on-headers": ">=1.1.0",
+      "axios": ">=1.18.1",
+      "fast-uri": ">=3.1.2",
+      "tmp": ">=0.2.6",
+      "got": ">=11.8.5",
+      "follow-redirects": ">=1.16.0",
+      "@opentelemetry/core": ">=2.8.0",
+      "h3": ">=1.15.9"
     }
   },
   "engines": {
-    "node": ">= 20.15.0"
+    "node": ">= 20.20.2"
   },
   "main": "lib/index.js",
   "license": "Apache-2.0",

@@ -22,7 +22,9 @@ import { VscodeSettings } from './projenrc/vscode';
 
 const defaultReleaseBranch = 'main';
 const cdkVersion = '2.260.0';
-const nodeVersion = '20.15.0';
+// nuxt 3.21.8's oxc-parser requires node ^20.19.0 || >=22.12.0; pnpm silently skips its
+// platform-native bindings on older Node at install time, breaking every nuxt CLI command.
+const nodeVersion = '20.20.2';
 const pnpmVersion = '9.15.0';
 const awsSdkClientOmicsVersion = '^3.1014.0';
 const authorName = 'DEPT Agency';
@@ -260,8 +262,12 @@ const sharedLib = new typescript.TypeScriptProject({
     `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-s3',
     '@aws-sdk/client-secrets-manager@^3.782.0',
-    'aws-cdk',
-    'aws-cdk-lib',
+    // aws-cdk-lib 2.26x emits cloud-assembly schema v54, which requires CDK CLI >=2.1129.0;
+    // older frozen resolutions (2.1007.0) satisfy ^2.260.0 semver-wise but fail `cdk synth`.
+    'aws-cdk@^2.1129.0',
+    // Pin to the same CDK line as back-end/front-end: an unpinned spec froze at ^2.189.0,
+    // leaving a second aws-cdk-lib instance in the lockfile whose types clash with 2.26x.
+    `aws-cdk-lib@^${cdkVersion}`,
     'aws-lambda',
     'js-yaml',
     'strnum',
@@ -273,7 +279,7 @@ const sharedLib = new typescript.TypeScriptProject({
     '@types/js-yaml',
     '@types/uuid',
     '@redocly/cli@~1.34.15',
-    'aws-cdk-lib',
+    `aws-cdk-lib@^${cdkVersion}`,
     'openapi-typescript',
     'tsx',
     'typescript-json-schema',
@@ -324,15 +330,16 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
   eslint: true,
   jest: true,
   jestOptions: {
-    // Recycle a worker once it exceeds this heap so accumulated memory (v8 coverage +
-    // CDK synth) is freed between suites rather than growing for the worker's lifetime.
+    // Recycle a worker past this heap as a safety net so no single worker accumulates
+    // unbounded memory across suites.
     extraCliOptions: ['--workerIdleMemoryLimit=2GB'],
     jestConfig: {
-      // Cap parallelism. The test/infra/** suites each synthesize full CDK stacks and use
-      // ~1.4GB heap apiece; at the default (cpuCount-1) worker count their aggregate RSS,
-      // plus v8 coverage, exceeds the 16GB CI runner and the OS OOM-kills the run (exit 1
-      // with no Jest summary). Limiting workers keeps peak memory well under the runner.
-      maxWorkers: '50%',
+      // Disable v8 coverage on the build/deploy path. The test/infra/** suites synthesize
+      // full CDK stacks (~1.4GB heap each); collecting coverage over them multiplied worker
+      // memory enough to exceed the 16GB CI runner and OOM-kill the run (exit 1, no Jest
+      // summary). Coverage is not gated or uploaded anywhere, so it is dropped from CI; run
+      // `jest --coverage` locally on demand when a report is needed.
+      collectCoverage: false,
       // Ensure Jest can resolve tsconfig path aliases used by lambda handlers/tests.
       moduleNameMapper: {
         '^@BE/(.*)$': '<rootDir>/src/app/$1',
@@ -549,7 +556,13 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     'esrun',
     'file-saver',
     'jwt-decode',
-    'nuxt@3.21.8',
+    // Pinned to 3.21.2 — the last release where `nuxt dev` works for ssr:false apps.
+    // 3.21.3+ broke the dev-server Vite Node IPC socket for ssr:false (every page
+    // request 500s with "Vite Node IPC socket path not configured"); the 4.x-only fix
+    // (nuxt/nuxt#34959) was never backported to 3.x (nuxt/nuxt#35114, closed as won't-fix).
+    // 3.21.7+ separately crashes `nuxt dev` outright for ssr:false ("No entry found in
+    // rollupOptions.input", nuxt/nuxt#35033) — so no 3.21.x patch above .2 works here.
+    'nuxt@3.21.2',
     'pinia',
     'pinia-plugin-persistedstate',
     'playwright',
@@ -672,9 +685,6 @@ root.gitignore.addPatterns('!packages/back-end/.env.local.example', '!config/.en
 
 // Security: force minimum patched versions for transitive deps with active Dependabot alerts.
 // These overrides survive future `pnpm exec projen` runs because they live here, not in package.json.
-// @opentelemetry/core (CVE-2026-54285) is excluded: the fix requires a 1.x→2.x major bump that
-// breaks all @opentelemetry/*@0.53.0/1.x peer deps in the lockfile — needs a coordinated suite
-// upgrade tracked separately.
 root.addFields({
   pnpm: {
     overrides: {
@@ -696,7 +706,9 @@ root.addFields({
       protobufjs: '>=7.6.3 <8.0.0',
       // CVE-2026-53550 (quadratic-complexity DoS in merge key handling via repeated aliases)
       // Also forces any transitive js-yaml 3.x to resolve to the safe 4.x line
-      'js-yaml': '>=4.1.1',
+      // Capped at <5: js-yaml 5.x ESM build drops the default export, which breaks
+      // openapi-typescript@6 (`import yaml from 'js-yaml'`) in shared-lib generate:api-types
+      'js-yaml': '>=4.2.0 <5.0.0',
 
       // --- PR3: CRITICAL severity ---
       // CVE-2024-55565: newline injection in quoted shell args (RCE in shell pipelines)
@@ -784,6 +796,15 @@ root.addFields({
       cookie: '>=0.7.0',
       // CVE-2024-55997: response header manipulation via crafted header values
       'on-headers': '>=1.1.0',
+
+      // --- Dependabot follow-up: transitive copies not covered by direct-dep bumps ---
+      axios: '>=1.18.1', // force nx's transitive axios 1.8.4 up (prototype-pollution + SSRF cluster)
+      'fast-uri': '>=3.1.2', // path traversal + host confusion
+      tmp: '>=0.2.6', // path traversal + symlink write
+      got: '>=11.8.5', // redirect-to-UNIX-socket
+      'follow-redirects': '>=1.16.0', // auth header leak on cross-domain redirect
+      '@opentelemetry/core': '>=2.8.0', // unbounded memory alloc in W3C baggage
+      h3: '>=1.15.9', // request smuggling + path traversal + SSE injection
     },
   },
 });

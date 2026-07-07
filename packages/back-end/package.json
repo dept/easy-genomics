@@ -103,13 +103,13 @@
     "uuid": "^8.3.2"
   },
   "engines": {
-    "node": ">= 20.15.0"
+    "node": ">= 20.20.2"
   },
   "license": "Apache-2.0",
   "version": "0.0.0",
   "jest": {
     "coverageProvider": "v8",
-    "maxWorkers": "50%",
+    "collectCoverage": false,
     "moduleNameMapper": {
       "^@BE/(.*)$": "<rootDir>/src/app/$1",
       "^@SharedLib/(.*)$": "<rootDir>/../shared-lib/src/app/$1",
@@ -121,7 +121,6 @@
       "<rootDir>/@(src|test)/**/__tests__/**/*.ts?(x)"
     ],
     "clearMocks": true,
-    "collectCoverage": true,
     "coverageReporters": [
       "json",
       "lcov",
