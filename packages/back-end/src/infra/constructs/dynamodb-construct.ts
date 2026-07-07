@@ -124,6 +124,10 @@ export class DynamoConstruct extends Construct {
     if (settings.gsi) {
       // NOTE: Global Secondary Indexes can be added / removed from the table as desired
       settings.gsi.forEach((value: SchemaOptions) => {
+        // aws-cdk-lib >=2.26x marks SchemaOptions.partitionKey as optional; a GSI without one is invalid here
+        if (!value.partitionKey) {
+          throw new Error(`DynamoDB table '${envTableName}' has a GSI definition without a partitionKey`);
+        }
         table.addGlobalSecondaryIndex({
           indexName: `${value.partitionKey.name}_Index`,
           partitionKey: value.partitionKey,
