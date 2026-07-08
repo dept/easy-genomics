@@ -650,7 +650,9 @@ new GithubActionsCICDRelease(root, {
   environment: 'quality',
   pnpmVersion: pnpmVersion,
   onPushBranch: 'development',
-  e2e: true,
+  // E2E runs on the UAT pipeline (staging) as the pre-release gate; running the full
+  // Playwright suite on every development merge added ~22 min per push.
+  e2e: false,
 });
 new GithubActionsCICDRelease(root, {
   environment: 'quality-uat',
