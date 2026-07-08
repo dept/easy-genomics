@@ -1,11 +1,11 @@
 {
   "name": "@easy-genomics/front-end",
   "scripts": {
-    "build": "pnpm run nuxt-reset && pnpm run nuxt-prepare && pnpm exec projen test && pnpm exec projen build && pnpm run nuxt-load-settings && pnpm run nuxt-generate",
+    "build": "pnpm run nuxt-reset && pnpm run nuxt-prepare && pnpm exec projen build && pnpm run nuxt-load-settings && pnpm run nuxt-generate",
     "bundle": "pnpm exec projen bundle",
     "compile": "pnpm exec projen compile",
     "default": "pnpm exec projen default",
-    "deploy": "pnpm cdk bootstrap && pnpm exec projen deploy",
+    "deploy": "pnpm cdk bootstrap --app cdk.out && pnpm exec projen deploy --app cdk.out",
     "destroy": "pnpm exec projen destroy",
     "diff": "pnpm exec projen diff",
     "eslint": "pnpm exec projen eslint",
@@ -21,7 +21,7 @@
     "watch": "pnpm exec projen watch",
     "projen": "pnpm exec projen",
     "cdk-audit": "export CDK_AUDIT=true && pnpm exec projen build",
-    "build-and-deploy": "pnpm -w run build-front-end && pnpm cdk bootstrap && pnpm exec projen deploy --require-approval any-change",
+    "build-and-deploy": "pnpm -w run build-front-end && pnpm cdk bootstrap --app cdk.out && pnpm exec projen deploy --app cdk.out --require-approval any-change",
     "nuxt-dev": "pnpm -w run build-front-end && pnpm kill-port 3000 && nuxt dev",
     "nuxt-load-settings": "npx esrun nuxt-load-configuration-settings.ts",
     "nuxt-generate": "nuxt generate",
