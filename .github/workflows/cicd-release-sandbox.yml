@@ -2,9 +2,7 @@
 
 name: cicd-release-sandbox
 on:
-  push:
-    branches:
-      - infra/*
+  workflow_dispatch: {}
 jobs:
   build-deploy-back-end:
     name: Build & Deploy Back-End

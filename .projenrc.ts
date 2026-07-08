@@ -660,11 +660,20 @@ new GithubActionsCICDRelease(root, {
   onPushBranch: 'staging',
   e2e: true,
 });
+// Sandbox release pipeline — intended as an isolated dress-rehearsal environment for
+// infrastructure changes before they reach development. Kept manual-dispatch-only because
+// the sandbox AWS environment is NOT provisioned yet; with the previous `infra/*` push
+// trigger every matching branch push produced a guaranteed-failing run (OIDC role assumption
+// fails). To activate: (1) provision a sandbox AWS account, (2) create the
+// GitHub_to_AWS_via_FederatedOIDC role there with a trust policy allowing the GitHub OIDC
+// subject `repo:dept/easy-genomics:environment:sandbox`, (3) set AWS_ACCOUNT_ID/AWS_REGION
+// (+ deploy secrets) on the GitHub `sandbox` environment, then (4) restore
+// `onPushBranch: 'infra/*'` and drop `manualDispatchOnly`.
 new GithubActionsCICDRelease(root, {
   environment: 'sandbox',
   pnpmVersion: pnpmVersion,
-  onPushBranch: 'infra/*',
   e2e: false,
+  manualDispatchOnly: true,
 });
 new GithubActionsApiDiffCheck(root, { pnpmVersion });
 new ApacheLicense(root, licenseOptions);
