@@ -602,13 +602,23 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     'vue-eslint-parser',
   ],
 });
+// Front-end synth must run AFTER `nuxt-generate`: WwwHostingConstruct only includes the
+// site BucketDeployment when `dist/` exists at synth time. The default projen build embeds
+// synth in post-compile — i.e. BEFORE the site is generated — so we remove it from the
+// build task and run it explicitly at the end of the `build` script below. This is what
+// makes `deploy --app cdk.out` safe for the front-end.
+frontEndApp.postCompileTask.reset();
 frontEndApp.addScripts({
-  ['cdk-audit']: 'export CDK_AUDIT=true && pnpm exec projen build',
+  // Synth is no longer part of `projen build` (see postCompileTask.reset above), so the
+  // cdk-nag audit invokes it directly.
+  ['cdk-audit']: 'export CDK_AUDIT=true && pnpm exec projen synth:silent',
   // `projen build` already runs the jest suite internally; the explicit `projen test`
-  // step before it ran the full front-end suite twice per build.
+  // step before it ran the full front-end suite twice per build. Synth runs LAST so the
+  // assembly includes the generated site (see postCompileTask.reset above).
   ['build']:
-    'pnpm run nuxt-reset && pnpm run nuxt-prepare && pnpm exec projen build && pnpm run nuxt-load-settings && pnpm run nuxt-generate',
-  // `--app cdk.out` reuses the assembly from the build's synth step (see back-end deploy note).
+    'pnpm run nuxt-reset && pnpm run nuxt-prepare && pnpm exec projen build && pnpm run nuxt-load-settings && pnpm run nuxt-generate && pnpm exec projen synth:silent',
+  // `--app cdk.out` reuses the assembly synthesized at the END of the build script above,
+  // which includes the BucketDeployment because `dist/` exists by then.
   ['deploy']: 'pnpm cdk bootstrap --app cdk.out && pnpm exec projen deploy --app cdk.out',
   ['build-and-deploy']:
     'pnpm -w run build-front-end && pnpm cdk bootstrap --app cdk.out && pnpm exec projen deploy --app cdk.out --require-approval any-change', // Run root build-front-end script to inc shared-lib
