@@ -12,6 +12,7 @@ export const SampleSheetColumnRoleSchema = z.enum([
   'input_bam',
   'input_cram',
   'input_vcf',
+  'assembly_fasta',
   'metadata',
   'custom_uri',
 ]);
