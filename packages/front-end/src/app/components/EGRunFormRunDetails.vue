@@ -120,11 +120,13 @@
     return selectValue;
   }
 
-  // when the wipRun is loaded and has a runName value, fill it into the box
+  // Restore form from WIP run on mount / store changes; skip when already in sync.
   watch(
     wipRun,
     (val) => {
-      if (val.runName) formState.runName = val.runName;
+      if (val.runName != null && val.runName !== formState.runName) {
+        formState.runName = val.runName;
+      }
       selectedWorkflowVersion.value = workflowVersionToSelectValue(val.workflowVersionName);
       validate(formState);
     },
@@ -184,14 +186,12 @@
       .replace(/^[^a-zA-Z]+/, '');
   }
 
-  function onRunNameInput(_event: InputEvent) {
-    if (!isAwsHealthOmics.value) {
-      // sanitize Seqera names in-place according to Seqera restrictions
-      formState.runName = getSupportedRunName(formState.runName);
-    }
-
-    // write to wipRun
-    wipRunUpdateFunction.value(props.wipRunTempId, { runName: formState.runName });
+  // Use the emitted value — native @input can run before v-model and persist a truncated name.
+  function onRunNameUpdate(value: string | number) {
+    const rawValue = String(value ?? '');
+    const nextRunName = isAwsHealthOmics.value ? rawValue : getSupportedRunName(rawValue);
+    formState.runName = nextRunName;
+    wipRunUpdateFunction.value(props.wipRunTempId, { runName: nextRunName });
   }
 
   function onSubmit() {
@@ -240,10 +240,10 @@
 
       <EGFormGroup label="Run Name" :hint="runNameHint" name="runName" eager-validation required>
         <EGInput
-          v-model="formState.runName"
+          :model-value="formState.runName"
           placeholder="Enter a name to identify this pipeline run"
-          @input="onRunNameInput"
           autofocus
+          @update:model-value="onRunNameUpdate"
         />
         <EGCharacterCounter :value="runNameCharCount" :max="maxRunNameLength" />
       </EGFormGroup>

@@ -8,6 +8,7 @@
   import {
     SAMPLE_SHEET_COLUMN_ROLE_LABELS,
     SAMPLE_SHEET_SCHEMA_PRESETS,
+    SAMPLE_SHEET_SCHEMA_PRESET_LABELS,
     validateSampleSheetSchema,
   } from '@easy-genomics/shared-lib/src/app/utils/data-collection-sample-sheet';
   import { useToastStore, useUiStore } from '@FE/stores';
@@ -46,20 +47,18 @@
 
   const initialColumns: SampleSheetColumnDef[] = props.editingCollection?.Columns?.length
     ? props.editingCollection.Columns.map((col) => ({ ...col }))
-    : SAMPLE_SHEET_SCHEMA_PRESETS.nf_core_paired_end.map((c) => ({ ...c }));
+    : SAMPLE_SHEET_SCHEMA_PRESETS.paired.map((c) => ({ ...c }));
 
   const name = ref(props.initialName || props.editingCollection?.Name || '');
   const selectedSetIds = ref<Set<string>>(new Set(props.initialSetIds));
   const columns = ref<SampleSheetColumnDef[]>(initialColumns);
-  const presetKey = ref(
-    props.editingCollection?.Columns?.length ? detectMatchingPresetKey(initialColumns) : 'nf_core_paired_end',
-  );
+  const presetKey = ref(props.editingCollection?.Columns?.length ? detectMatchingPresetKey(initialColumns) : 'paired');
   const setSearch = ref('');
   const saving = ref(false);
 
   const presetOptions = computed(() => {
     const options = Object.keys(SAMPLE_SHEET_SCHEMA_PRESETS).map((k) => ({
-      label: k.replace(/_/g, ' '),
+      label: SAMPLE_SHEET_SCHEMA_PRESET_LABELS[k] ?? k,
       value: k,
     }));
     if (presetKey.value === 'custom') {

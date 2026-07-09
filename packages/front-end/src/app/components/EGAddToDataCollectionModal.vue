@@ -10,6 +10,7 @@
   import {
     SAMPLE_SHEET_COLUMN_ROLE_LABELS,
     SAMPLE_SHEET_SCHEMA_PRESETS,
+    SAMPLE_SHEET_SCHEMA_PRESET_LABELS,
     validateSampleSheetSchema,
   } from '@easy-genomics/shared-lib/src/app/utils/data-collection-sample-sheet';
   import { useToastStore, useUiStore } from '@FE/stores';
@@ -36,8 +37,8 @@
   const mode = ref<Mode>('create');
   const name = ref('');
   const existingCollectionId = ref<string | undefined>(undefined);
-  const presetKey = ref<string>('nf_core_paired_end');
-  const columns = ref<SampleSheetColumnDef[]>([...SAMPLE_SHEET_SCHEMA_PRESETS.nf_core_paired_end]);
+  const presetKey = ref<string>('paired');
+  const columns = ref<SampleSheetColumnDef[]>([...SAMPLE_SHEET_SCHEMA_PRESETS.paired]);
   const submitting = ref(false);
   const generateAfterSave = ref(false);
 
@@ -53,7 +54,7 @@
   const presetOptions = computed(() =>
     Object.keys(SAMPLE_SHEET_SCHEMA_PRESETS).map((key) => ({
       value: key,
-      label: key.replace(/_/g, ' '),
+      label: SAMPLE_SHEET_SCHEMA_PRESET_LABELS[key] ?? key,
     })),
   );
 
@@ -84,8 +85,8 @@
       mode.value = 'create';
       name.value = '';
       existingCollectionId.value = undefined;
-      presetKey.value = 'nf_core_paired_end';
-      columns.value = [...SAMPLE_SHEET_SCHEMA_PRESETS.nf_core_paired_end];
+      presetKey.value = 'paired';
+      columns.value = [...SAMPLE_SHEET_SCHEMA_PRESETS.paired];
       generateAfterSave.value = false;
     },
   );

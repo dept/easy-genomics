@@ -1,4 +1,6 @@
 import {
+  SAMPLE_SHEET_SCHEMA_PRESETS,
+  SAMPLE_SHEET_SCHEMA_PRESET_LABELS,
   buildSampleSheetCsv,
   buildSampleSheetFromSamples,
   buildSampleSheetRowFromRoleMap,
@@ -124,15 +126,41 @@ describe('isFilenameRegexSafe', () => {
   });
 });
 
+describe('SAMPLE_SHEET_SCHEMA_PRESETS', () => {
+  it('exposes exactly the four default presets with a friendly label each', () => {
+    expect(Object.keys(SAMPLE_SHEET_SCHEMA_PRESETS)).toEqual(['single', 'paired', 'hybrid', 'assembled']);
+    for (const key of Object.keys(SAMPLE_SHEET_SCHEMA_PRESETS)) {
+      expect(SAMPLE_SHEET_SCHEMA_PRESET_LABELS[key]).toBeTruthy();
+    }
+  });
+
+  it('defines the expected columns and roles', () => {
+    expect(SAMPLE_SHEET_SCHEMA_PRESETS.single).toEqual([
+      { columnName: 'sample', role: 'sample_id', required: true },
+      { columnName: 'fastq', role: 'reads', required: true },
+    ]);
+    expect(SAMPLE_SHEET_SCHEMA_PRESETS.paired).toEqual([
+      { columnName: 'sample', role: 'sample_id', required: true },
+      { columnName: 'fastq_1', role: 'read1', required: true },
+      { columnName: 'fastq_2', role: 'read2', required: true },
+    ]);
+    expect(SAMPLE_SHEET_SCHEMA_PRESETS.hybrid).toEqual([
+      { columnName: 'sample', role: 'sample_id', required: true },
+      { columnName: 'fastq', role: 'reads', required: true },
+      { columnName: 'fastq_1', role: 'read1', required: false },
+      { columnName: 'fastq_2', role: 'read2', required: false },
+    ]);
+    expect(SAMPLE_SHEET_SCHEMA_PRESETS.assembled).toEqual([
+      { columnName: 'sample', role: 'sample_id', required: true },
+      { columnName: 'fasta', role: 'assembly_fasta', required: true },
+    ]);
+  });
+});
+
 describe('buildSampleSheetFromSamples', () => {
-  it('builds nf-core paired-end CSV', () => {
-    const columns = [
-      { columnName: 'sample', role: 'sample_id' as const, required: true },
-      { columnName: 'fastq_1', role: 'read1' as const, required: true },
-      { columnName: 'fastq_2', role: 'read2' as const, required: true },
-    ];
+  it('builds a paired CSV', () => {
     const result = buildSampleSheetFromSamples(
-      columns,
+      SAMPLE_SHEET_SCHEMA_PRESETS.paired,
       [
         {
           SampleId: '1',
@@ -148,6 +176,26 @@ describe('buildSampleSheetFromSamples', () => {
       expect(result.csv).toContain('sample,fastq_1,fastq_2');
       expect(result.csv).toContain('s3://bucket/org/lab/a_R1.fastq.gz');
       expect(result.inputFileKeys).toHaveLength(2);
+    }
+  });
+
+  it('fills the single preset reads column from a single-end sample (read1 fallback)', () => {
+    const result = buildSampleSheetFromSamples(
+      SAMPLE_SHEET_SCHEMA_PRESETS.single,
+      [
+        {
+          SampleId: '1',
+          Name: 'SampleA',
+          Layout: 'single_end',
+          FileKeys: ['org/lab/a.fastq.gz'],
+        },
+      ],
+      'bucket',
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.csv).toContain('sample,fastq');
+      expect(result.rows[0].fastq).toBe('s3://bucket/org/lab/a.fastq.gz');
     }
   });
 });
