@@ -3,4 +3,7 @@
 pnpm exec validate-branch-name -r '^(main|release){1}$|^(feat|fix|hotfix|infra|release|refactor|chore|docs)/.+$'
 pnpm pre-commit
 pnpm exec projen
+pnpm --filter @easy-genomics/shared-lib run generate:openapi
+pnpm --filter @easy-genomics/shared-lib run generate:api-types
+git add packages/shared-lib/src/app/openapi/easy-genomics-api.yaml packages/shared-lib/src/app/types/easy-genomics/generated.d.ts
 pnpm --filter @easy-genomics/back-end test -- --silent
