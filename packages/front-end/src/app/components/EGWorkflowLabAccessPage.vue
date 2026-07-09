@@ -239,10 +239,16 @@
     });
   }
 
+  function orgNameFor(organizationId: string): string | undefined {
+    return useOrgsStore().orgs[organizationId]?.Name;
+  }
+
   function labAriaLabel(lab: Laboratory): string {
     const { assigned, total } = countForLab(lab.LaboratoryId);
+    const orgName = orgNameFor(lab.OrganizationId);
+    const org = orgName ? `, ${orgName}` : '';
     const dirty = isLabDirty(lab.LaboratoryId) ? ', unsaved changes' : '';
-    return `Select laboratory ${lab.Name}, ${assigned} of ${total} workflows assigned${dirty}`;
+    return `Select laboratory ${lab.Name}${org}, ${assigned} of ${total} workflows assigned${dirty}`;
   }
 
   function onLabKeydown(event: KeyboardEvent, index: number) {
@@ -391,13 +397,13 @@
                 :id="labButtonId(lab.LaboratoryId)"
                 type="button"
                 role="radio"
-                class="focus-visible:outline-primary-500 box-border flex w-full min-w-0 max-w-full items-center gap-2 rounded-xl border px-3 py-2 text-left font-serif text-sm transition-colors focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                class="focus-visible:outline-primary-500 box-border flex w-full min-w-0 max-w-full items-center gap-2 rounded-xl px-3 py-2 text-left font-serif text-sm transition-colors focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                 :aria-checked="selectedLabId === lab.LaboratoryId"
                 :aria-label="labAriaLabel(lab)"
                 :class="
                   selectedLabId === lab.LaboratoryId
-                    ? 'bg-primary-muted text-primary-dark border-transparent'
-                    : 'border-background-dark-grey text-body hover:bg-background-light-grey'
+                    ? 'bg-primary-muted text-primary-dark'
+                    : 'text-body hover:bg-background-light-grey'
                 "
                 @click="selectLab(lab.LaboratoryId)"
                 @keydown="onLabKeydown($event, index)"
@@ -407,7 +413,12 @@
                   :class="selectedLabId === lab.LaboratoryId ? 'bg-primary-dark' : 'bg-body'"
                   aria-hidden="true"
                 />
-                <span class="min-w-0 flex-1 truncate font-medium">{{ lab.Name }}</span>
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate font-medium">{{ lab.Name }}</span>
+                  <span v-if="orgNameFor(lab.OrganizationId)" class="text-muted block truncate text-xs font-normal">
+                    {{ orgNameFor(lab.OrganizationId) }}
+                  </span>
+                </span>
                 <span
                   v-if="isLabDirty(lab.LaboratoryId)"
                   class="bg-alert-caution h-1.5 w-1.5 shrink-0 rounded-full"
