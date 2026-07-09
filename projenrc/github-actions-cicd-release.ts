@@ -15,6 +15,12 @@ export class GithubActionsCICDRelease extends Component {
       pnpmVersion: string;
       onPushBranch?: string;
       e2e: boolean;
+      /**
+       * When true, the workflow gets no push trigger and can only be started manually from
+       * the Actions tab (workflow_dispatch). Used for release targets whose AWS environment
+       * is not provisioned yet, so branch pushes never generate guaranteed-failing runs.
+       */
+      manualDispatchOnly?: boolean;
     },
   ) {
     super(<IConstruct>rootProject);
@@ -25,7 +31,9 @@ export class GithubActionsCICDRelease extends Component {
 
     const wf = new github.GithubWorkflow(rootProject.github!, `cicd-release-${this.environment}`);
     const runsOn = ['ubuntu-latest'];
-    if (this.onPushBranch) {
+    if (options.manualDispatchOnly) {
+      wf.on({ workflowDispatch: {} });
+    } else if (this.onPushBranch) {
       wf.on({ push: { branches: [this.onPushBranch] } });
     } else {
       wf.on({ push: { branches: ['main'] } });

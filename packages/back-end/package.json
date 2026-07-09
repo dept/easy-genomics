@@ -1,11 +1,11 @@
 {
   "name": "@easy-genomics/back-end",
   "scripts": {
-    "build": "pnpm exec projen compile && pnpm exec projen test && pnpm exec projen build",
+    "build": "pnpm exec projen build",
     "bundle": "pnpm exec projen bundle",
     "compile": "pnpm exec projen compile",
     "default": "pnpm exec projen default",
-    "deploy": "pnpm cdk bootstrap && pnpm run preflight-deletion-protection && pnpm exec projen deploy --all --progress bar --no-color --no-notices",
+    "deploy": "pnpm cdk bootstrap --app cdk.out && pnpm run preflight-deletion-protection && pnpm exec projen deploy --app cdk.out --all --progress bar --no-color --no-notices",
     "destroy": "pnpm exec projen destroy",
     "diff": "pnpm exec projen diff",
     "eslint": "pnpm exec projen eslint",
