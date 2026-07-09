@@ -222,13 +222,14 @@ root.addScripts({
   // outputStyle=stream (not static): static buffers the whole target output and dumps it
   // at once on failure; the GitHub runner closes the pipe when the process exits, so the
   // tail of large dumps — including the Jest summary and the actual failure — gets lost.
+  // Single nx invocation: the deploy target's dependsOn already builds shared-lib and the
+  // app once. A separate build invocation with NX_SKIP_NX_CACHE=true re-ran the ENTIRE
+  // build (jest + cdk synth) a second time inside the deploy invocation (~7.5 min wasted).
   ['cicd-build-deploy-back-end']:
     'export CI_CD=true NX_SKIP_NX_CACHE=true && ' +
-    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --outputStyle=stream && ' +
     'pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --outputStyle=stream',
   ['cicd-build-deploy-front-end']:
     'export CI_CD=true NX_SKIP_NX_CACHE=true && ' +
-    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --outputStyle=stream && ' +
     'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --outputStyle=stream',
   ['prepare']: 'husky || true', // Enable Husky each time projen is synthesized
   ['projen']: 'nx reset; pnpm exec projen', // Clear NX cache each time projen is synthesized to avoid cache disk-space overconsumption
@@ -427,7 +428,10 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
 });
 backEndApp.addScripts({
   ['cdk-audit']: 'export CDK_AUDIT=true && pnpm exec projen build',
-  ['build']: 'pnpm exec projen compile && pnpm exec projen test && pnpm exec projen build',
+  // `projen build` already runs compile + test + synth + package internally; the previous
+  // `projen compile && projen test && projen build` chain executed compile and the full
+  // jest suite twice per build.
+  ['build']: 'pnpm exec projen build',
   // Pre-deploy safety check. Runs before every `cdk deploy` and, on the
   // first run against an un-armed environment, automatically takes an
   // on-demand backup, enables `DeletionProtectionEnabled`, and enables
@@ -446,8 +450,12 @@ backEndApp.addScripts({
   // The preflight guard runs AFTER `cdk bootstrap` (which only touches the
   // CDK toolkit stack, not app resources) and BEFORE any app-stack deploy,
   // so a failing guard aborts without any destructive CloudFormation call.
+  // `--app cdk.out` reuses the cloud assembly produced by the build's synth step instead
+  // of synthesizing again (~5 min per synth for this app). Deploy therefore requires a
+  // prior `build` — every flow already guarantees that (nx deploy dependsOn build; the
+  // build-and-deploy scripts chain build first).
   ['deploy']:
-    'pnpm cdk bootstrap && pnpm run preflight-deletion-protection && pnpm exec projen deploy --all --progress bar --no-color --no-notices',
+    'pnpm cdk bootstrap --app cdk.out && pnpm run preflight-deletion-protection && pnpm exec projen deploy --app cdk.out --all --progress bar --no-color --no-notices',
   ['build-and-deploy']: 'pnpm -w run build-back-end && pnpm run deploy --require-approval any-change', // Run root build-back-end script to inc shared-lib
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
   ['local-server']: 'tsx src/local-server/index.ts',
@@ -594,13 +602,26 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     'vue-eslint-parser',
   ],
 });
+// Front-end synth must run AFTER `nuxt-generate`: WwwHostingConstruct only includes the
+// site BucketDeployment when `dist/` exists at synth time. The default projen build embeds
+// synth in post-compile — i.e. BEFORE the site is generated — so we remove it from the
+// build task and run it explicitly at the end of the `build` script below. This is what
+// makes `deploy --app cdk.out` safe for the front-end.
+frontEndApp.postCompileTask.reset();
 frontEndApp.addScripts({
-  ['cdk-audit']: 'export CDK_AUDIT=true && pnpm exec projen build',
+  // Synth is no longer part of `projen build` (see postCompileTask.reset above), so the
+  // cdk-nag audit invokes it directly.
+  ['cdk-audit']: 'export CDK_AUDIT=true && pnpm exec projen synth:silent',
+  // `projen build` already runs the jest suite internally; the explicit `projen test`
+  // step before it ran the full front-end suite twice per build. Synth runs LAST so the
+  // assembly includes the generated site (see postCompileTask.reset above).
   ['build']:
-    'pnpm run nuxt-reset && pnpm run nuxt-prepare && pnpm exec projen test && pnpm exec projen build && pnpm run nuxt-load-settings && pnpm run nuxt-generate',
-  ['deploy']: 'pnpm cdk bootstrap && pnpm exec projen deploy',
+    'pnpm run nuxt-reset && pnpm run nuxt-prepare && pnpm exec projen build && pnpm run nuxt-load-settings && pnpm run nuxt-generate && pnpm exec projen synth:silent',
+  // `--app cdk.out` reuses the assembly synthesized at the END of the build script above,
+  // which includes the BucketDeployment because `dist/` exists by then.
+  ['deploy']: 'pnpm cdk bootstrap --app cdk.out && pnpm exec projen deploy --app cdk.out',
   ['build-and-deploy']:
-    'pnpm -w run build-front-end && pnpm cdk bootstrap && pnpm exec projen deploy --require-approval any-change', // Run root build-front-end script to inc shared-lib
+    'pnpm -w run build-front-end && pnpm cdk bootstrap --app cdk.out && pnpm exec projen deploy --app cdk.out --require-approval any-change', // Run root build-front-end script to inc shared-lib
   ['nuxt-dev']: 'pnpm -w run build-front-end && pnpm kill-port 3000 && nuxt dev',
   ['nuxt-load-settings']: 'npx esrun nuxt-load-configuration-settings.ts',
   ['nuxt-generate']: 'nuxt generate',
@@ -639,7 +660,9 @@ new GithubActionsCICDRelease(root, {
   environment: 'quality',
   pnpmVersion: pnpmVersion,
   onPushBranch: 'development',
-  e2e: true,
+  // E2E runs on the UAT pipeline (staging) as the pre-release gate; running the full
+  // Playwright suite on every development merge added ~22 min per push.
+  e2e: false,
 });
 new GithubActionsCICDRelease(root, {
   environment: 'quality-uat',
@@ -647,11 +670,20 @@ new GithubActionsCICDRelease(root, {
   onPushBranch: 'staging',
   e2e: true,
 });
+// Sandbox release pipeline — intended as an isolated dress-rehearsal environment for
+// infrastructure changes before they reach development. Kept manual-dispatch-only because
+// the sandbox AWS environment is NOT provisioned yet; with the previous `infra/*` push
+// trigger every matching branch push produced a guaranteed-failing run (OIDC role assumption
+// fails). To activate: (1) provision a sandbox AWS account, (2) create the
+// GitHub_to_AWS_via_FederatedOIDC role there with a trust policy allowing the GitHub OIDC
+// subject `repo:dept/easy-genomics:environment:sandbox`, (3) set AWS_ACCOUNT_ID/AWS_REGION
+// (+ deploy secrets) on the GitHub `sandbox` environment, then (4) restore
+// `onPushBranch: 'infra/*'` and drop `manualDispatchOnly`.
 new GithubActionsCICDRelease(root, {
   environment: 'sandbox',
   pnpmVersion: pnpmVersion,
-  onPushBranch: 'infra/*',
   e2e: false,
+  manualDispatchOnly: true,
 });
 new GithubActionsApiDiffCheck(root, { pnpmVersion });
 new ApacheLicense(root, licenseOptions);
