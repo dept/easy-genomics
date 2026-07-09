@@ -2,7 +2,6 @@
   import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
   import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import { useLabsStore, useRunStore, useUiStore } from '@FE/stores';
-  import { ensureLabInActiveOrg } from '@FE/utils/ensure-lab-in-active-org';
 
   const $route = useRoute();
   const $router = useRouter();
@@ -71,9 +70,6 @@
   }
 
   onBeforeMount(async () => {
-    if (await ensureLabInActiveOrg({ labId })) {
-      return;
-    }
     await fetchLabRuns();
   });
 
