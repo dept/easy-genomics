@@ -43,12 +43,19 @@ describe('migrateWorkflowAccessOnDefaultModeChange', () => {
     expect(mockListByLaboratoryId).not.toHaveBeenCalled();
   });
 
-  it('false → true: DENY catalog workflows without ALLOW; removes prior ALLOW rows', async () => {
+  it('false → true: never writes DENY rows; clears stale strict-mode rows so workflows are allowed by default', async () => {
+    // A lab that had one ALLOW row plus a stale/spurious DENY row while strict.
     mockListByLaboratoryId.mockResolvedValue([
       {
         LaboratoryId: laboratoryId,
         OrganizationId: organizationId,
         WorkflowKey: 'HEALTH_OMICS#omics-a',
+      },
+      {
+        LaboratoryId: laboratoryId,
+        OrganizationId: organizationId,
+        WorkflowKey: 'SEQERA#pipe-b',
+        Effect: 'DENY',
       },
     ]);
 
@@ -59,16 +66,13 @@ describe('migrateWorkflowAccessOnDefaultModeChange', () => {
       nextDefaultOn: true,
     });
 
-    expect(mockUpsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        LaboratoryId: laboratoryId,
-        WorkflowKey: 'SEQERA#pipe-b',
-        Effect: 'DENY',
-        OrganizationId: organizationId,
-        WorkflowName: 'Pipe B',
-      }),
-    );
+    // Turning "enable new workflows by default" on must NOT deny the catalog.
+    expect(mockUpsert).not.toHaveBeenCalled();
+    // Both the redundant ALLOW row and the stale DENY row are removed, leaving a
+    // clean "allowed unless explicitly denied" state.
     expect(mockRemove).toHaveBeenCalledWith(laboratoryId, 'HEALTH_OMICS', 'omics-a');
+    expect(mockRemove).toHaveBeenCalledWith(laboratoryId, 'SEQERA', 'pipe-b');
+    expect(mockRemove).toHaveBeenCalledTimes(2);
   });
 
   it('true → false: ALLOW catalog workflows without DENY; removes prior DENY rows', async () => {
