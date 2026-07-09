@@ -24,6 +24,31 @@ const omicsService = new OmicsService();
 const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
 
 /**
+ * Retrieves every PRIVATE workflow across all pages so the workflow-access filter
+ * is applied to the complete set. Fetching only a single page would hide any
+ * granted workflow that happens to fall beyond the first page from every user,
+ * even though it appears in the (fully paginated) admin workflow catalog.
+ */
+async function listAllPrivateWorkflows(name?: string) {
+  const items: NonNullable<Awaited<ReturnType<OmicsService['listWorkflows']>>['items']> = [];
+  let nextToken: string | undefined;
+  do {
+    const page = await omicsService.listWorkflows(<ListWorkflowsCommandInput>{
+      type: 'PRIVATE',
+      maxResults: 100,
+      startingToken: nextToken,
+      status: undefined, // Explicitly exclude status filter for Workflows
+      ...(name ? { name } : {}),
+    });
+    if (page.items?.length) {
+      items.push(...page.items);
+    }
+    nextToken = page.nextToken;
+  } while (nextToken);
+  return items;
+}
+
+/**
  * This GET /aws-healthomics/workflow/list-private-workflows?laboratoryId={LaboratoryId}
  * API queries the same region's AWS HealthOmics service to retrieve a list of
  * Private Workflows, and it expects:
@@ -68,18 +93,14 @@ export const handler: Handler = async (
     }
 
     const queryParameters: AwsHealthOmicsQueryParameters = getAwsHealthOmicsApiQueryParameters(event);
-    const response = await omicsService.listWorkflows(<ListWorkflowsCommandInput>{
-      type: 'PRIVATE',
-      ...queryParameters,
-      status: undefined, // Explicitly exclude status filter for Workflows
-    });
+    const allItems = await listAllPrivateWorkflows(queryParameters.name);
 
     const accessRows = await laboratoryWorkflowAccessService.listByLaboratoryId(laboratoryId);
-    const items = (response.items ?? []).filter(
+    const items = allItems.filter(
       (w) => w.id != null && isWorkflowAccessAllowed(laboratory, accessRows, 'HEALTH_OMICS', w.id),
     );
 
-    return buildResponse(200, JSON.stringify({ ...response, items }), event);
+    return buildResponse(200, JSON.stringify({ items }), event);
   } catch (err: any) {
     console.error(err);
     return buildErrorResponse(err, event);
