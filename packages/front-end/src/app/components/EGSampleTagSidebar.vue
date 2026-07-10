@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import type { LaboratoryDataTag } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
   import type { LaboratorySample } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
+  import { TAG_PRESET_COLORS, DEFAULT_TAG_COLOR } from '@easy-genomics/shared-lib/src/app/constants/data-collections';
   import EGDialog from '@FE/components/EGDialog.vue';
   import { useToastStore, useUiStore } from '@FE/stores';
   import { ButtonVariantEnum } from '@FE/types/buttons';
@@ -32,11 +33,11 @@
   const tagsSectionExpanded = ref(true);
   const showLeftRailCreateTag = ref(false);
   const leftRailNewTagName = ref('');
-  const leftRailNewTagColor = ref('#5B4FD4');
+  const leftRailNewTagColor = ref(DEFAULT_TAG_COLOR);
   const tagToDelete = ref<LaboratoryDataTag | null>(null);
   const isDeleteTagDialogOpen = ref(false);
 
-  const presetColors = ['#5B4FD4', '#85B7EB', '#F09595', '#97C459', '#ED93B1', '#EF9F27', '#B4B2A9'];
+  const presetColors = TAG_PRESET_COLORS;
 
   const standardTags = computed(() => props.tags.filter((t) => (t.Kind ?? 'standard') === 'standard'));
 
@@ -131,7 +132,7 @@
   function cancelLeftRailCreateTag(): void {
     showLeftRailCreateTag.value = false;
     leftRailNewTagName.value = '';
-    leftRailNewTagColor.value = '#5B4FD4';
+    leftRailNewTagColor.value = DEFAULT_TAG_COLOR;
   }
 
   function openDeleteTagDialog(tag: LaboratoryDataTag): void {

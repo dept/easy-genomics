@@ -4,6 +4,7 @@
     LaboratoryRunUsageSummary,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
   import type { LaboratorySample } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
+  import { TAG_PRESET_COLORS, DEFAULT_TAG_COLOR } from '@easy-genomics/shared-lib/src/app/constants/data-collections';
   import EGFileAnalysisHistoryTooltip from '@FE/components/EGFileAnalysisHistoryTooltip.vue';
   import EGSampleTagSidebar from '@FE/components/EGSampleTagSidebar.vue';
   import { useToastStore, useUiStore } from '@FE/stores';
@@ -53,7 +54,7 @@
   const bulkRemoveTagIds = ref<string[]>([]);
   const showInlineCreateTag = ref(false);
   const inlineNewTagName = ref('');
-  const inlineNewTagColor = ref('#5B4FD4');
+  const inlineNewTagColor = ref(DEFAULT_TAG_COLOR);
   const bulkPanelContentEl = ref<HTMLElement | null>(null);
 
   /** Cards grid vs tabular layout (matches file explorer). */
@@ -77,7 +78,7 @@
   const BATCH_HEADER_DOT_NOT_ANALYZED = '#EF9F27';
   const BATCH_HEADER_DOT_ANALYZED = '#2DB48F';
 
-  const presetColors = ['#5B4FD4', '#85B7EB', '#F09595', '#97C459', '#ED93B1', '#EF9F27', '#B4B2A9'];
+  const presetColors = TAG_PRESET_COLORS;
 
   const standardTags = computed(() => props.tags.filter((t) => (t.Kind ?? 'standard') === 'standard'));
   const batchTags = computed(() => props.tags.filter((t) => t.Kind === 'batch'));
@@ -401,7 +402,7 @@
     bulkRemoveTagIds.value = [];
     showInlineCreateTag.value = false;
     inlineNewTagName.value = '';
-    inlineNewTagColor.value = '#5B4FD4';
+    inlineNewTagColor.value = DEFAULT_TAG_COLOR;
   }
 
   function closeBulkPanel(): void {
@@ -470,7 +471,7 @@
       bulkAddTagIds.value = [...new Set([...bulkAddTagIds.value, created.TagId])];
       showInlineCreateTag.value = false;
       inlineNewTagName.value = '';
-      inlineNewTagColor.value = '#5B4FD4';
+      inlineNewTagColor.value = DEFAULT_TAG_COLOR;
       toast.success('Tag created');
       emit('tag-created');
     } catch (e: unknown) {
