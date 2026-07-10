@@ -37,7 +37,7 @@
         <EGBack v-if="showBack" :label="backButtonLabel" :back-action="backAction" />
 
         <nav v-if="showOrgBreadcrumb || showLabBreadcrumb || breadcrumbs.length" aria-label="Breadcrumb">
-          <ol class="font-schibsted text-muted flex list-none flex-row flex-wrap items-center gap-4 p-0 text-sm">
+          <ol class="font-schibsted text-body flex list-none flex-row flex-wrap items-center gap-4 p-0 text-sm">
             <li v-if="showOrgBreadcrumb">
               <EGBreadcrumbOrgs />
             </li>

@@ -643,7 +643,7 @@
         </div>
       </div>
 
-      <dl class="mt-4 grid grid-cols-4 gap-4">
+      <div class="mt-4 grid grid-cols-4 gap-4">
         <div
           v-for="stat in overviewStats"
           :key="stat.key"
@@ -656,12 +656,12 @@
           >
             <UIcon :name="stat.icon" class="h-6 w-6" :class="stat.iconColor" />
           </div>
-          <div>
+          <dl class="m-0 min-w-0">
             <dt class="text-muted text-sm">{{ stat.label }}</dt>
             <dd class="text-heading m-0 font-serif text-3xl font-semibold">{{ stat.value }}</dd>
-          </div>
+          </dl>
         </div>
-      </dl>
+      </div>
     </section>
 
     <!-- Recent Runs -->

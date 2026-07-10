@@ -56,18 +56,13 @@
 <template>
   <div>
     <UDropdown v-model:open="isOpen" :items="items" :popper="{ placement: 'bottom-start' }">
-      <div class="font-schibsted">
-        <UButton
-          variant="ghost"
-          :trailing-icon="items.length > 0 ? 'i-heroicons-chevron-up-down' : undefined"
-          color="black"
-          :aria-label="items.length > 0 ? `Lab: ${currentLab?.Name}. Switch lab` : `Lab: ${currentLab?.Name}`"
-          :aria-expanded="items.length > 0 ? isOpen : undefined"
-          :aria-haspopup="items.length > 0 ? 'menu' : undefined"
-        >
-          {{ currentLab?.Name }}
-        </UButton>
-      </div>
+      <span
+        class="font-schibsted text-body inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm"
+        :aria-label="items.length > 0 ? `Lab: ${currentLab?.Name}. Switch lab` : `Lab: ${currentLab?.Name}`"
+      >
+        {{ currentLab?.Name }}
+        <UIcon v-if="items.length > 0" name="i-heroicons-chevron-up-down" class="h-4 w-4 shrink-0" aria-hidden="true" />
+      </span>
       <template #item="{ item }">
         <span class="w-full text-left">{{ item.Name }}</span>
       </template>

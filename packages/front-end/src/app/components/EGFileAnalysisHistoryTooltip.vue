@@ -115,10 +115,9 @@
     @update:open="emit('update:open', $event)"
   >
     <!-- Card: circle (+ count when N>1) + trailing chevron; chevron hints hover reveals analysis history (parent is absolute left-0 top-0 on card). -->
-    <button
+    <span
       v-if="isCard"
-      type="button"
-      class="focus-visible:ring-primary-500 inline-flex cursor-default items-center gap-1 rounded-tl-xl pb-1.5 pl-2 pr-1.5 pt-2 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+      class="focus-visible:ring-primary-500 inline-flex cursor-default items-center gap-1 rounded-tl-xl pb-1.5 pl-2 pr-1.5 pt-2 transition-colors hover:bg-gray-100"
       :aria-label="triggerAriaLabel"
       @mousedown.stop
       @click.stop
@@ -139,13 +138,12 @@
         {{ runCount }}
       </span>
       <UIcon name="i-heroicons-chevron-down" class="text-muted h-3 w-3 shrink-0" aria-hidden="true" />
-    </button>
+    </span>
 
     <!-- Table: dot + status text, no chip outline -->
-    <button
+    <span
       v-else
-      type="button"
-      class="focus-visible:ring-primary-500 inline-flex max-w-full cursor-default items-center gap-1.5 text-[11px] font-medium leading-none focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+      class="focus-visible:ring-primary-500 inline-flex max-w-full cursor-default items-center gap-1.5 text-[11px] font-medium leading-none"
       :aria-label="triggerAriaLabel"
       @mousedown.stop
       @click.stop
@@ -156,7 +154,7 @@
         aria-hidden="true"
       />
       <span :style="{ color: statusDescriptor.color }">{{ statusDescriptor.label }}</span>
-    </button>
+    </span>
 
     <template #panel="{ close }">
       <div class="flex flex-col" @mousedown.stop @click.stop>

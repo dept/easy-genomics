@@ -31,15 +31,13 @@
 
 <template>
   <UPopover v-model:open="popoverOpen" :popper="{ placement: 'bottom-start' }">
-    <button
-      type="button"
+    <span
       class="text-muted inline-flex max-w-full items-center gap-1 rounded-full border border-gray-200 bg-white py-0.5 pl-2 pr-2.5 text-xs font-medium hover:bg-gray-100"
-      :aria-expanded="popoverOpen"
-      aria-haspopup="dialog"
+      :aria-label="chipLabel"
     >
       <UIcon name="i-heroicons-eye" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       <span class="truncate">{{ chipLabel }}</span>
-    </button>
+    </span>
 
     <template #panel>
       <div class="w-[min(17.5rem,calc(100vw-2rem))]">
