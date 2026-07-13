@@ -55,7 +55,7 @@
       <template #header>
         <div class="flex flex-col">
           <div class="flex items-start gap-2">
-            <EGText :id="titleId" tag="h2" class="mb-6 min-w-0 flex-1 break-all">{{ primaryMessage }}</EGText>
+            <EGText :id="titleId" tag="h2" class="mb-6 min-w-0 flex-1 break-words">{{ primaryMessage }}</EGText>
             <div class="shrink-0">
               <UButton
                 @click="handleCancel"
