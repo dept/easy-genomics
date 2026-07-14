@@ -1,5 +1,5 @@
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
-import apiSpecYaml from '@easy-genomics/shared-lib/src/app/openapi/easy-genomics-api.yaml';
+import apiSpec from '@easy-genomics/shared-lib/src/app/openapi/easy-genomics-api.json';
 import { renderSwaggerHtml } from '@easy-genomics/shared-lib/src/app/openapi/swagger-ui';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 
@@ -18,8 +18,17 @@ export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
 ): Promise<APIGatewayProxyResult> => {
   try {
-    const baseUrl: string = `https://${event.requestContext.domainName}/${event.requestContext.stage}`;
-    const response: APIGatewayProxyResult = buildResponse(200, renderSwaggerHtml(apiSpecYaml, baseUrl), event);
+    // Deployed: API Gateway sets domainName + stage. Local dev server omits domainName,
+    // so fall back to the Host header (e.g. http://localhost:3001) for "Try it out".
+    const { domainName, stage } = event.requestContext;
+    const baseUrl: string = domainName
+      ? `https://${domainName}/${stage}`
+      : `http://${event.headers?.Host ?? event.headers?.host}`;
+    const response: APIGatewayProxyResult = buildResponse(
+      200,
+      renderSwaggerHtml(apiSpec as Record<string, unknown>, baseUrl),
+      event,
+    );
     response.headers = { ...response.headers, 'Content-Type': 'text/html; charset=utf-8' };
     return response;
   } catch (err: any) {
