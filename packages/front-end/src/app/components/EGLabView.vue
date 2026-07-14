@@ -65,13 +65,6 @@
 
   const usersHeadingId = 'lab-users-heading';
 
-  usePageTitle(() => {
-    const base = labName.value ? labName.value : 'Lab';
-    const tab = tabItems.value[tabIndex.value];
-    if (!tab || tab.key === 'dashboard') return base;
-    return `${tab.label} — ${base}`;
-  });
-
   /** Prevents duplicate redirects when multiple watchers or lifecycle hooks fire. */
   const hasRedirectedForOrgMismatch = ref(false);
 
@@ -167,6 +160,13 @@
     items.push(detailsTab);
 
     return items;
+  });
+
+  usePageTitle(() => {
+    const base = labName.value ? labName.value : 'Lab';
+    const tab = tabItems.value[tabIndex.value];
+    if (!tab || tab.key === 'dashboard') return base;
+    return `${tab.label} — ${base}`;
   });
 
   const activeTabKey = computed(() => tabItems.value[tabIndex.value]?.key || '');
@@ -752,10 +752,6 @@
     }
 
     if (!props.superuser && uiStore.isRequestPending('loadLabData')) {
-      return;
-    }
-
-    if (await redirectIfLabOrgMismatch()) {
       return;
     }
 
