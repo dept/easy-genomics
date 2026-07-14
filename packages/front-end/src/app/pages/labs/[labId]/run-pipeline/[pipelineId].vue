@@ -40,8 +40,6 @@
 
   const labName = computed<string>(() => labsStore.labs[labId].Name);
 
-  usePageTitle(() => (pipeline.value?.name ? `Run pipeline — ${pipeline.value.name}` : 'Run pipeline'));
-
   const seqeraRunTempId = computed<string>(() => $route.query.seqeraRunTempId as string);
 
   const wipSeqeraRun = computed<WipRun | undefined>(() => runStore.wipSeqeraRuns[seqeraRunTempId.value]);
@@ -50,6 +48,8 @@
   const activeStepKey = computed(() => steps.value[selectedStepIndex.value]?.key);
 
   const pipeline = computed<SeqeraPipeline | null>(() => seqeraPipelinesStore.pipelines[pipelineId] || null);
+
+  usePageTitle(() => (pipeline.value?.name ? `Run pipeline — ${pipeline.value.name}` : 'Run pipeline'));
 
   const hasLaunched = ref<boolean>(false);
   const exitConfirmed = ref<boolean>(false);
@@ -208,13 +208,13 @@
 
     runStore.updateWipSeqeraRunParams(seqeraRunTempId.value, paramsToApply);
 
-    applySequenceCollectionsPrepopulation();
+    await applySequenceCollectionsPrepopulation();
 
     uiStore.setRequestComplete('loadSeqeraPipeline');
   }
 
   /** When opened from Data Collections with a pre-built sample sheet, skip to parameter configuration. */
-  function applySequenceCollectionsPrepopulation(): void {
+  async function applySequenceCollectionsPrepopulation(): Promise<void> {
     if ($route.query.from !== 'data-collections') return;
 
     const wip = runStore.wipSeqeraRuns[seqeraRunTempId.value];
@@ -222,6 +222,7 @@
 
     setStepEnabled('upload', true);
     setStepEnabled('parameters', true);
+    await nextTick();
     const parametersIndex = steps.value.findIndex((step) => step.key === 'parameters');
     if (parametersIndex >= 0) {
       selectedStepIndex.value = parametersIndex;
@@ -282,9 +283,13 @@
     }
   }
 
-  function nextStep(val: string) {
+  async function nextStep(val: string) {
     const completedStep = steps.value[selectedStepIndex.value]?.key || '';
     setStepEnabled(val, true);
+    // Wait for the enabled tab's `disabled` attribute to reach the DOM before moving the
+    // selected index — HeadlessUI's TabGroup resolves the target tab from the live DOM state,
+    // and moving the index in the same tick makes it fall back to the nearest still-enabled tab.
+    await nextTick();
     selectedStepIndex.value = clampIndex(selectedStepIndex.value + 1);
 
     // Analytics: run wizard step completed.
