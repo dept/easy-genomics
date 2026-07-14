@@ -1,18 +1,18 @@
 /**
  * Renders a self-contained Swagger UI page for the Easy Genomics OpenAPI spec.
  *
- * The handler imports the generated spec as a JSON module and passes it here. We
- * rewrite the placeholder `servers` entry to the live API base URL (so "Try it out"
- * targets the real backend) and embed the spec directly in the page. Swagger UI's
- * CSS/JS are loaded from a pinned jsDelivr CDN copy of `swagger-ui-dist` rather than
- * bundled into the Lambda.
+ * The handler passes in the parsed spec plus the Swagger UI CSS/JS read from the
+ * bundled `swagger-ui-dist` package. Everything is inlined into a single HTML
+ * document — no external CDN — so the page works on locked-down networks and
+ * carries no third-party runtime/supply-chain dependency. The paired
+ * Content-Security-Policy (set by the handler) forbids any external source.
  */
 
-/** Pinned so the served UI is reproducible; bump deliberately. */
-export const SWAGGER_UI_DIST_VERSION = '5.17.14';
-
-const SWAGGER_UI_CSS = `https://cdn.jsdelivr.net/npm/swagger-ui-dist@${SWAGGER_UI_DIST_VERSION}/swagger-ui.css`;
-const SWAGGER_UI_BUNDLE = `https://cdn.jsdelivr.net/npm/swagger-ui-dist@${SWAGGER_UI_DIST_VERSION}/swagger-ui-bundle.js`;
+/** Swagger UI assets read from the bundled `swagger-ui-dist` package. */
+export interface SwaggerUiAssets {
+  css: string;
+  js: string;
+}
 
 /**
  * Returns a copy of the spec with `servers` overridden so requests issued from the
@@ -23,25 +23,43 @@ export function getApiSpec(spec: Record<string, unknown>, baseUrl: string): Reco
   return { ...spec, servers: [{ url: baseUrl, description: 'Live API Gateway' }] };
 }
 
-/** Builds the full Swagger UI HTML document with the spec embedded inline. */
-export function renderSwaggerHtml(spec: Record<string, unknown>, baseUrl: string): string {
-  const embeddedSpec = JSON.stringify(getApiSpec(spec, baseUrl));
+/** Escapes a string so it can't break out of the <script>/<style> element it is embedded in. */
+function forInlineElement(value: string): string {
+  return value.replace(/<\/(script|style)/gi, '<\\/$1');
+}
+
+/** Escapes JSON for safe embedding inside a <script> element. */
+function forInlineJson(value: string): string {
+  return value.replace(/</g, '\\u003c');
+}
+
+/**
+ * Builds the full Swagger UI HTML document with the spec and assets embedded inline.
+ * "Try it out" is restricted to read-only methods so the docs page cannot trigger
+ * mutating calls against the live backend.
+ */
+export function renderSwaggerHtml(spec: Record<string, unknown>, baseUrl: string, assets: SwaggerUiAssets): string {
+  const embeddedSpec = forInlineJson(JSON.stringify(getApiSpec(spec, baseUrl)));
+  const css = forInlineElement(assets.css);
+  const js = forInlineElement(assets.js);
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Easy Genomics API</title>
-    <link rel="stylesheet" href="${SWAGGER_UI_CSS}" />
+    <style>${css}</style>
   </head>
   <body>
     <div id="swagger-ui"></div>
-    <script src="${SWAGGER_UI_BUNDLE}" crossorigin></script>
+    <script>${js}</script>
     <script>
       window.onload = function () {
         window.ui = SwaggerUIBundle({
           spec: ${embeddedSpec},
           dom_id: '#swagger-ui',
+          supportedSubmitMethods: ['get', 'head'],
+          validatorUrl: null,
         });
       };
     </script>

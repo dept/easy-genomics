@@ -408,6 +408,7 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
     'cdk-nag',
     'dotenv',
     'jsonwebtoken',
+    'swagger-ui-dist@^5.17.14',
     'uuid',
   ],
   devDeps: [
@@ -417,6 +418,7 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@types/jsonwebtoken',
     '@types/node',
     '@types/archiver',
+    '@types/swagger-ui-dist',
     '@types/uuid',
     'aws-jwt-verify',
     'aws-sdk-client-mock',

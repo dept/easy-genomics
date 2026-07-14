@@ -39,6 +39,10 @@ interface LambdaFunctionsResources {
   };
   timeoutSeconds?: number;
   memorySizeMb?: number;
+  // esbuild `nodeModules`: packages to install into the Lambda instead of bundling
+  // (e.g. ones that ship non-JS assets read at runtime). Scoped per-endpoint so only
+  // the handler that needs them pays the bundle-size cost.
+  nodeModules?: string[];
 }
 
 // List of allowed "CRUD" Lambda Function operations with respective REST API command mapping
@@ -90,6 +94,7 @@ export class LambdaConstruct extends Construct {
     const lambdaProcessEnv = this.props.lambdaFunctionsResources[lambdaApiEndpoint]?.environment || undefined;
     const lambdaTimeoutSeconds = this.props.lambdaFunctionsResources[lambdaApiEndpoint]?.timeoutSeconds || 30;
     const lambdaMemorySizeMb = this.props.lambdaFunctionsResources[lambdaApiEndpoint]?.memorySizeMb || 1024;
+    const lambdaNodeModules = this.props.lambdaFunctionsResources[lambdaApiEndpoint]?.nodeModules;
 
     const lambdaHandler: IFunction = new aws_lambda_nodejs.NodejsFunction(this, `${lambdaId}`, {
       runtime: Runtime.NODEJS_20_X,
@@ -102,6 +107,7 @@ export class LambdaConstruct extends Construct {
       bundling: {
         loader: { '.hbs': 'text' },
         externalModules: ['@aws-sdk/*'],
+        nodeModules: lambdaNodeModules,
       },
       logRetention: RetentionDays.ONE_DAY,
       logRetentionRetryOptions: {
