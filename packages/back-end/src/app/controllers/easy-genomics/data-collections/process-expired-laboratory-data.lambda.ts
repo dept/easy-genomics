@@ -157,7 +157,7 @@ async function sweepLaboratory(
     }
 
     try {
-      dataTaggingService.assertBucketMatchesLab(laboratory, bucket);
+      await dataTaggingService.assertLaboratoryHasS3BucketAccess(laboratory, bucket);
       dataTaggingService.assertKeyUnderLabPrefix(laboratory, key);
     } catch (guardErr) {
       console.warn(

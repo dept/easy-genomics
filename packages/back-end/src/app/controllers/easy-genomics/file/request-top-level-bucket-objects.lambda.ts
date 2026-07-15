@@ -6,6 +6,7 @@ import { RequestTopLevelBucketObjects } from '@easy-genomics/shared-lib/src/app/
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
+import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { S3Service } from '@BE/services/s3-service';
 import {
@@ -14,10 +15,12 @@ import {
   validateOrganizationAdminAccess,
   validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
+import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
 
 const laboratoryService = new LaboratoryService();
 const laboratoryRunService = new LaboratoryRunService();
 const s3Service = new S3Service();
+const s3AccessService = new LaboratoryS3AccessService();
 
 const parseS3Uri = (value: string): { bucket: string; prefix: string } | null => {
   if (!value.startsWith('s3://')) return null;
@@ -133,9 +136,7 @@ export const handler: Handler = async (
         throw new UnauthorizedAccessError();
       }
     } else {
-      if (laboratory.S3Bucket && s3Bucket !== laboratory.S3Bucket) {
-        throw new UnauthorizedAccessError();
-      }
+      await assertLaboratoryHasS3BucketAccess(laboratory, s3Bucket, s3AccessService);
 
       const laboratoryOwnedPrefix = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
       if (!normalizedPrefix.startsWith(laboratoryOwnedPrefix)) {

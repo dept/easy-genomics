@@ -36,7 +36,7 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
-    taggingService.assertBucketMatchesLab(laboratory, body.S3Bucket);
+    await taggingService.assertLaboratoryHasS3BucketAccess(laboratory, body.S3Bucket);
     for (const key of body.Keys) {
       taggingService.assertKeyUnderLabPrefix(laboratory, key);
     }

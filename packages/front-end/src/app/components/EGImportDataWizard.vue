@@ -47,7 +47,9 @@
 
   const step = ref(1);
   const importSource = ref<ImportSourceKind>('s3');
-  const sourcePath = ref('');
+  const sourceBucket = ref('');
+  const sourcePrefix = ref('');
+  const grantedBuckets = ref<string[]>([]);
   const presetKey = ref<RegexGroupingPresetKey>('underscore_r1_r2');
   const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern);
   const sourceFiles = ref<string[]>([]);
@@ -140,18 +142,26 @@
     if (importSource.value === 'upload') {
       return `upload-${new Date().toISOString().slice(0, 10)}`;
     }
-    return sourcePath.value.split('/').filter(Boolean).pop() || 'import';
+    const prefix = sourcePrefix.value.split('/').filter(Boolean).pop();
+    return prefix || sourceBucket.value || 'import';
   });
 
   const confirmSourceLabel = computed(() => {
     if (importSource.value === 'upload') {
       return `Upload from computer (${pendingUploadFiles.value.length} files)`;
     }
-    return sourcePath.value;
+    const prefix = sourcePrefix.value.replace(/^\/*/, '').replace(/\/?$/, '/');
+    return `s3://${sourceBucket.value}/${prefix}`;
   });
 
   const canContinueStep1 = computed(() => {
-    if (importSource.value === 's3') return sourcePath.value.trim().length > 0;
+    if (importSource.value === 's3') {
+      return (
+        sourceBucket.value.trim().length > 0 &&
+        grantedBuckets.value.includes(sourceBucket.value) &&
+        sourcePrefix.value.trim().length > 0
+      );
+    }
     return pendingUploadFiles.value.length > 0 && !uploading.value;
   });
 
@@ -254,6 +264,22 @@
     }
   }
 
+  onMounted(async () => {
+    if (props.lab?.S3Bucket) {
+      sourceBucket.value = props.lab.S3Bucket;
+    }
+    try {
+      const res = await $api.s3Access.listGrantedBuckets(props.labId);
+      grantedBuckets.value = res.buckets;
+      if (!sourceBucket.value && res.buckets.length) {
+        sourceBucket.value = res.buckets[0];
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to load granted S3 buckets');
+    }
+  });
+
   async function loadSourceFiles(): Promise<void> {
     if (importSource.value === 'upload') {
       const ok = await uploadPendingFiles();
@@ -262,14 +288,17 @@
     }
 
     if (!props.lab?.S3Bucket) return;
+    if (!grantedBuckets.value.includes(sourceBucket.value)) {
+      toast.error('Selected source bucket is not authorized for this laboratory');
+      return;
+    }
     uiStore.setRequestPending('dataCollectionsList');
     try {
-      const match = sourcePath.value.match(/^s3:\/\/([^/]+)\/(.*)$/);
-      const bucket = match?.[1] || props.lab.S3Bucket;
-      const prefix = match?.[2] || sourcePath.value.replace(/^\/*/, '');
+      const prefix = sourcePrefix.value.replace(/^\/*/, '');
       const res = await $api.dataCollections.requestLaboratoryBucketObjects({
         LaboratoryId: props.labId,
-        RelativePrefix: bucket === props.lab.S3Bucket ? prefix : undefined,
+        S3Bucket: sourceBucket.value,
+        RelativePrefix: prefix || undefined,
         MaxTotalKeys: 5000,
       });
       sourceFiles.value = (res.Contents || []).map((o) => o.Key!);
@@ -370,12 +399,10 @@
           ? activeSets.value.flatMap((s) =>
               s.files.map((f) => {
                 const base = basenameFromS3Key(f.fileName);
-                const match = sourcePath.value.match(/^s3:\/\/([^/]+)\/(.*)$/);
-                const srcBucket = match?.[1] || props.lab!.S3Bucket!;
-                const srcPrefix = match?.[2] || '';
-                const srcKey = srcPrefix ? `${srcPrefix.replace(/\/?$/, '/')}${base}` : f.fileName;
+                const srcPrefix = sourcePrefix.value.replace(/^\/*/, '').replace(/\/?$/, '/');
+                const srcKey = `${srcPrefix}${base}`;
                 return {
-                  SourceBucket: srcBucket,
+                  SourceBucket: sourceBucket.value,
                   SourceKey: srcKey,
                   DestKey: `${destPrefix}${base}`,
                 };
@@ -460,9 +487,19 @@
         </div>
 
         <div v-if="importSource === 's3'">
-          <UFormGroup label="S3 path" hint="bucket + prefix">
-            <UInput v-model="sourcePath" placeholder="s3://bucket/prefix/" class="font-mono" />
+          <UFormGroup label="Source bucket" class="mb-4">
+            <USelect
+              v-model="sourceBucket"
+              :options="grantedBuckets.map((b) => ({ label: b, value: b }))"
+              placeholder="Select a bucket"
+            />
           </UFormGroup>
+          <UFormGroup label="Prefix" hint="path within the lab folder">
+            <UInput v-model="sourcePrefix" placeholder="imports/partner-drop/" class="font-mono" />
+          </UFormGroup>
+          <p v-if="!grantedBuckets.length" class="text-text-muted mt-2 text-xs" role="status">
+            No authorized S3 buckets for this lab. Ask an organization admin to grant bucket access.
+          </p>
         </div>
 
         <div v-else>

@@ -8,6 +8,9 @@ jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../src/app/services/ssm-service');
 jest.mock('../../../../../src/app/utils/auth-utils');
 jest.mock('../../../../../src/app/utils/rest-api-utils');
+jest.mock('../../../../../src/app/utils/laboratory-s3-access-utils', () => ({
+  assertLaboratoryHasS3BucketAccess: jest.fn().mockResolvedValue(undefined),
+}));
 
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
 import { SsmService } from '../../../../../src/app/services/ssm-service';

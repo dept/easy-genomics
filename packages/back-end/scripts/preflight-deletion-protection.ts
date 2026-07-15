@@ -112,6 +112,7 @@ const EG_TABLE_SUFFIXES = [
   'laboratory-run-table',
   'unique-reference-table',
   'laboratory-workflow-access-table',
+  'laboratory-s3-access-table',
   'laboratory-data-tagging-table',
 ] as const;
 

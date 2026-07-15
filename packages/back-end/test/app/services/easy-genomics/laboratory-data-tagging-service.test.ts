@@ -1,5 +1,13 @@
 process.env.NAME_PREFIX = 'unit-test';
 
+const mockListByLaboratoryId = jest.fn();
+
+jest.mock('../../../../src/app/services/easy-genomics/laboratory-s3-access-service', () => ({
+  LaboratoryS3AccessService: jest.fn().mockImplementation(() => ({
+    listByLaboratoryId: mockListByLaboratoryId,
+  })),
+}));
+
 import { ConditionalCheckFailedException, type AttributeValue } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
@@ -38,12 +46,20 @@ describe('LaboratoryDataTaggingService helpers', () => {
     );
   });
 
-  it('assertBucketMatchesLab rejects mismatched bucket', () => {
+  it('assertLaboratoryHasS3BucketAccess rejects ungranted bucket', async () => {
+    mockListByLaboratoryId.mockResolvedValue([]);
     const svc = new LaboratoryDataTaggingService();
     const lab = labFixture();
-    expect(() => svc.assertBucketMatchesLab(lab, 'wrong-bucket')).toThrow(
-      'S3 bucket does not match laboratory configuration',
-    );
+    await expect(svc.assertLaboratoryHasS3BucketAccess(lab, 'wrong-bucket')).rejects.toThrow('S3 bucket access denied');
+  });
+
+  it('assertLaboratoryHasS3BucketAccess allows granted bucket', async () => {
+    mockListByLaboratoryId.mockResolvedValue([
+      { LaboratoryId: 'lab-1', BucketName: 'my-bucket', OrganizationId: 'org-1' },
+    ]);
+    const svc = new LaboratoryDataTaggingService();
+    const lab = labFixture();
+    await expect(svc.assertLaboratoryHasS3BucketAccess(lab, 'my-bucket')).resolves.toBeUndefined();
   });
 });
 

@@ -370,6 +370,21 @@ export class EasyGenomicsApiStack extends Stack {
     });
     this.dynamoDBTables.set(laboratoryWorkflowAccessTableName, laboratoryWorkflowAccessTable);
 
+    // Laboratory S3 bucket access allowlist
+    const laboratoryS3AccessTableName = `${this.props.namePrefix}-laboratory-s3-access-table`;
+    const laboratoryS3AccessTable = this.dynamoDB.createTable(laboratoryS3AccessTableName, {
+      partitionKey: {
+        name: 'LaboratoryId',
+        type: AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'BucketName',
+        type: AttributeType.STRING,
+      },
+      lsi: baseLSIAttributes,
+    });
+    this.dynamoDBTables.set(laboratoryS3AccessTableName, laboratoryS3AccessTable);
+
     // Laboratory data tagging (user-defined tags on S3 objects within the lab prefix)
     const laboratoryDataTaggingTableName = `${this.props.namePrefix}-laboratory-data-tagging-table`;
     const laboratoryDataTaggingTable = this.dynamoDB.createTable(laboratoryDataTaggingTableName, {

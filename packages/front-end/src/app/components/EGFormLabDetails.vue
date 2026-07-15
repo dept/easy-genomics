@@ -235,7 +235,12 @@
   async function getS3Buckets() {
     try {
       isLoadingBuckets.value = true;
-      s3Directories.value = await $api.infra.s3Buckets().then((res) => res.map((bucket) => bucket.Name));
+      if (formMode.value !== LabDetailsFormModeEnum.enum.Create && labId) {
+        const granted = await $api.s3Access.listGrantedBuckets(labId);
+        s3Directories.value = granted.buckets;
+      } else {
+        s3Directories.value = await $api.infra.s3Buckets().then((res) => res.map((bucket) => bucket.Name));
+      }
     } catch (error) {
       useToastStore().error('Failed to retrieve S3 buckets');
     } finally {

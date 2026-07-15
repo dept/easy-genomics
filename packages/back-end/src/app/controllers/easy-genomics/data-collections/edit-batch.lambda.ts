@@ -37,7 +37,7 @@ export const handler: Handler = async (
     }
 
     const userId: string = event.requestContext.authorizer.claims['cognito:username'];
-    taggingService.assertBucketMatchesLab(laboratory, body.S3Bucket);
+    await taggingService.assertLaboratoryHasS3BucketAccess(laboratory, body.S3Bucket);
     for (const key of body.Keys) {
       taggingService.assertKeyUnderLabPrefix(laboratory, key);
     }

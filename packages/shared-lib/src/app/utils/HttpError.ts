@@ -429,6 +429,15 @@ export class S3BucketMismatchError extends HttpError {
 }
 
 /**
+ * Laboratory is not permitted to use this S3 bucket (allowlist).
+ */
+export class S3BucketAccessDeniedError extends HttpError {
+  constructor(messageOpt?: string) {
+    super('S3 bucket access denied', 403, 'EG-333', messageOpt);
+  }
+}
+
+/**
  * S3 key is outside the laboratory prefix
  */
 export class S3KeyOutOfPrefixError extends HttpError {

@@ -238,6 +238,10 @@ export interface paths {
     /** Update Laboratory Run */
     put: operations["updateLaboratoryRun"];
   };
+  "/easy-genomics/laboratory/s3-access/list-granted-buckets": {
+    /** List Granted Buckets */
+    get: operations["listGrantedBuckets"];
+  };
   "/easy-genomics/laboratory/update-laboratory/{id}": {
     /** Update Laboratory */
     put: operations["updateLaboratory"];
@@ -293,6 +297,18 @@ export interface paths {
   "/easy-genomics/organization/read-organization/{id}": {
     /** Read Organization */
     get: operations["readOrganization"];
+  };
+  "/easy-genomics/organization/s3-access/edit-s3-access-batch": {
+    /** Edit S3 Access Batch */
+    post: operations["editS3AccessBatch"];
+  };
+  "/easy-genomics/organization/s3-access/list-s3-access-assignments": {
+    /** List S3 Access Assignments */
+    get: operations["listS3AccessAssignments"];
+  };
+  "/easy-genomics/organization/s3-access/list-s3-bucket-catalog": {
+    /** List S3 Bucket Catalog */
+    get: operations["listS3BucketCatalog"];
   };
   "/easy-genomics/organization/update-organization/{id}": {
     /** Update Organization */
@@ -787,6 +803,7 @@ export interface components {
     };
     RequestLaboratoryBucketObjectsRequest: {
       LaboratoryId: string;
+      S3Bucket?: string;
       RelativePrefix?: string;
       MaxTotalKeys?: number;
       MaxTransactionFolders?: number;
@@ -979,6 +996,7 @@ export interface components {
       NextFlowTowerWorkspaceId?: string;
       RunRetentionMonths?: number;
       EnableNewWorkflowsByDefault?: boolean;
+      EnableNewBucketsByDefault?: boolean;
       /** @enum {string} */
       HealthOmicsLlmProvider?: "bedrock" | "openai" | "anthropic";
       HealthOmicsLlmModelId?: string;
@@ -1009,6 +1027,11 @@ export interface components {
        * When false/omitted, only explicit ALLOW rows grant access.
        */
       EnableNewWorkflowsByDefault?: boolean;
+      /**
+       * @description When true, data buckets without a DENY row are allowed for this lab.
+       * When false/omitted, only explicit ALLOW rows grant bucket access.
+       */
+      EnableNewBucketsByDefault?: boolean;
       /**
        * @description Laboratory-wide run retention policy, in months, applied after a run reaches a terminal state.
        * - 0 means "never delete run records" (no TTL expiration).
@@ -1065,6 +1088,7 @@ export interface components {
       NextFlowTowerWorkspaceId?: string;
       RunRetentionMonths?: number;
       EnableNewWorkflowsByDefault?: boolean;
+      EnableNewBucketsByDefault?: boolean;
       /** @enum {string} */
       HealthOmicsLlmProvider?: "anthropic" | "bedrock" | "openai";
       HealthOmicsLlmModelId?: string;
@@ -1240,6 +1264,9 @@ export interface components {
         [key: string]: unknown;
       };
     };
+    ListGrantedLaboratoryBucketsResponse: {
+      buckets: string[];
+    };
     UpdateLaboratoryRequest: {
       Name: string;
       Description?: string;
@@ -1254,6 +1281,7 @@ export interface components {
       NextFlowTowerWorkspaceId?: string;
       RunRetentionMonths?: number;
       EnableNewWorkflowsByDefault?: boolean;
+      EnableNewBucketsByDefault?: boolean;
       /** @enum {string} */
       HealthOmicsLlmProvider?: "bedrock" | "openai" | "anthropic";
       HealthOmicsLlmModelId?: string;
@@ -1350,6 +1378,35 @@ export interface components {
       CreatedBy?: string;
       ModifiedAt?: string;
       ModifiedBy?: string;
+    };
+    EditS3AccessBatchRequest: {
+      assignments: {
+          laboratoryId: string;
+          bucketName: string;
+          granted: boolean;
+        }[];
+    };
+    LaboratoryS3Access: {
+      LaboratoryId: string;
+      BucketName: string;
+      OrganizationId: string;
+      /**
+       * @description ALLOW or DENY; omitted/undefined on legacy rows means ALLOW.
+       * @enum {string}
+       */
+      Effect?: "ALLOW" | "DENY";
+      CreatedAt?: string;
+      ModifiedAt?: string;
+    };
+    ListLaboratoryS3AccessAssignmentsResponse: {
+      assignments: components["schemas"]["LaboratoryS3Access"][];
+    };
+    /** @description API / UI catalog row (data-tagged S3 buckets). */
+    S3BucketCatalogEntry: {
+      name: string;
+    };
+    ListS3BucketCatalogResponse: {
+      buckets: components["schemas"]["S3BucketCatalogEntry"][];
     };
     UpdateOrganizationRequest: {
       Name: string;
@@ -4581,6 +4638,28 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
+  /** List Granted Buckets */
+  listGrantedBuckets: {
+    parameters: {
+      query?: {
+        /** @description Laboratory ID */
+        laboratoryId?: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["ListGrantedLaboratoryBucketsResponse"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
   /** Update Laboratory */
   updateLaboratory: {
     parameters: {
@@ -4862,6 +4941,71 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["Organization"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Edit S3 Access Batch */
+  editS3AccessBatch: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EditS3AccessBatchRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** List S3 Access Assignments */
+  listS3AccessAssignments: {
+    parameters: {
+      query?: {
+        /** @description Filter by organization */
+        organizationId?: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["ListLaboratoryS3AccessAssignmentsResponse"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** List S3 Bucket Catalog */
+  listS3BucketCatalog: {
+    parameters: {
+      query?: {
+        /** @description Filter by organization */
+        organizationId?: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["ListS3BucketCatalogResponse"];
         };
       };
       400: components["responses"]["BadRequest"];

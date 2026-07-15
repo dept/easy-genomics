@@ -17,7 +17,7 @@ export const handler: Handler = async (
     if (!parsed.success) throw new InvalidRequestError();
 
     const { userId, laboratory } = await assertSequenceCollectionsAccess(event, parsed.data.LaboratoryId);
-    sampleService.assertBucketMatchesLab(laboratory, parsed.data.S3Bucket);
+    await sampleService.assertLaboratoryHasS3BucketAccess(laboratory, parsed.data.S3Bucket);
 
     const res = await sampleService.bulkCreateSamples(laboratory, userId, parsed.data.S3Bucket, {
       importLabel: parsed.data.ImportLabel,

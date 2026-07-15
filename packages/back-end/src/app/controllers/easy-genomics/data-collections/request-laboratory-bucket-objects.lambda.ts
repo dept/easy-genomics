@@ -4,6 +4,7 @@ import { RequestLaboratoryBucketObjectsSchema } from '@easy-genomics/shared-lib/
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { DataCollectionService } from '@BE/services/easy-genomics/data-collection-service';
+import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import {
   validateLaboratoryManagerAccess,
@@ -11,9 +12,11 @@ import {
   validateOrganizationAdminAccess,
   validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
+import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
 
 const laboratoryService = new LaboratoryService();
 const dataCollectionService = new DataCollectionService();
+const s3AccessService = new LaboratoryS3AccessService();
 
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -37,10 +40,12 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
-    const s3Bucket = laboratory.S3Bucket || '';
+    const s3Bucket = body.S3Bucket || laboratory.S3Bucket || '';
     if (!s3Bucket) {
       throw new InvalidRequestError('Laboratory has no S3 bucket configured');
     }
+
+    await assertLaboratoryHasS3BucketAccess(laboratory, s3Bucket, s3AccessService);
 
     const labRoot = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
     const relative = (body.RelativePrefix || '').replace(/^\/*/, '');
