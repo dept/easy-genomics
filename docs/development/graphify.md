@@ -1,7 +1,7 @@
 # Graphify in Easy Genomics
 
 This document explains what [Graphify](https://graphifylabs.ai/) is, how it works, how it is set up in this repository,
-and how teammates can use it locally — including with Cursor.
+and how teammates can use it locally — including with **Cursor** and **Claude Code**.
 
 Graphify is **developer tooling**, not a product feature. End users of Easy Genomics never interact with it. It exists
 to help engineers and AI assistants navigate a large monorepo faster and with less guesswork.
@@ -20,13 +20,14 @@ to help engineers and AI assistants navigate a large monorepo faster and with le
 4. [Teammate setup (local machine)](#teammate-setup-local-machine)
 5. [Usage examples](#usage-examples)
 6. [Using Graphify with Cursor](#using-graphify-with-cursor)
-7. [Using Cursor without Graphify (opt-out)](#using-cursor-without-graphify-opt-out)
-8. [Team workflow and sharing](#team-workflow-and-sharing)
-9. [What is indexed (and what is not)](#what-is-indexed-and-what-is-not)
-10. [Troubleshooting](#troubleshooting)
-11. [Evaluating Graphify (pilot test)](#evaluating-graphify-pilot-test)
-12. [Possible improvements](#possible-improvements)
-13. [References](#references)
+7. [Using Graphify with Claude Code](#using-graphify-with-claude-code)
+8. [Using Cursor without Graphify (opt-out)](#using-cursor-without-graphify-opt-out)
+9. [Team workflow and sharing](#team-workflow-and-sharing)
+10. [What is indexed (and what is not)](#what-is-indexed-and-what-is-not)
+11. [Troubleshooting](#troubleshooting)
+12. [Evaluating Graphify (pilot test)](#evaluating-graphify-pilot-test)
+13. [Possible improvements](#possible-improvements)
+14. [References](#references)
 
 ---
 
@@ -131,26 +132,28 @@ repo trigger **code-only** incremental rebuilds in the background after you comm
 
 ### Repository files
 
-| Path                                                                       | Role                                             |
-| -------------------------------------------------------------------------- | ------------------------------------------------ |
-| [`.graphifyignore`](../../.graphifyignore)                                 | Default corpus: `packages/**` source only        |
-| [`.graphifyignore.with-docs`](../../.graphifyignore.with-docs)             | Alternate corpus for `pnpm graphify:docs`        |
-| [`graphify-out/`](../../graphify-out/)                                     | **Committed** graph artifacts shared by the team |
-| [`scripts/graphify-setup.sh`](../../scripts/graphify-setup.sh)             | One-time local setup                             |
-| [`scripts/graphify-build.sh`](../../scripts/graphify-build.sh)             | Rebuild code-only graph                          |
-| [`scripts/graphify-docs.sh`](../../scripts/graphify-docs.sh)               | Rebuild with `docs/` + OpenAPI (needs API key)   |
-| [`.cursor/rules/graphify.mdc`](../../.cursor/rules/graphify.mdc)           | Cursor rule: query graph before wide search      |
-| [`.cursor/rules/easy-genomics.mdc`](../../.cursor/rules/easy-genomics.mdc) | Domain context (pairs with Graphify)             |
-| [`.cursor/mcp.json`](../../.cursor/mcp.json)                               | MCP server config for Cursor Agent               |
-| [`.husky/post-commit`](../../.husky/post-commit)                           | Background graph rebuild after commits           |
-| [`.husky/post-checkout`](../../.husky/post-checkout)                       | Rebuild when switching branches                  |
-| [`.gitattributes`](../../.gitattributes)                                   | `graphify-out/graph.json merge=graphify`         |
-| [`CLAUDE.md`](../../CLAUDE.md)                                             | Semantic AI guide (auth, domains, patterns)      |
+| Path                                                                       | Role                                                   |
+| -------------------------------------------------------------------------- | ------------------------------------------------------ |
+| [`.graphifyignore`](../../.graphifyignore)                                 | Default corpus: `packages/**` source only              |
+| [`.graphifyignore.with-docs`](../../.graphifyignore.with-docs)             | Alternate corpus for `pnpm graphify:docs`              |
+| [`graphify-out/`](../../graphify-out/)                                     | **Committed** graph artifacts shared by the team       |
+| [`scripts/graphify-setup.sh`](../../scripts/graphify-setup.sh)             | One-time local setup                                   |
+| [`scripts/graphify-build.sh`](../../scripts/graphify-build.sh)             | Rebuild code-only graph                                |
+| [`scripts/graphify-docs.sh`](../../scripts/graphify-docs.sh)               | Rebuild with `docs/` + OpenAPI (needs API key)         |
+| [`.cursor/rules/graphify.mdc`](../../.cursor/rules/graphify.mdc)           | Cursor rule: query graph before wide search            |
+| [`.cursor/rules/easy-genomics.mdc`](../../.cursor/rules/easy-genomics.mdc) | Domain context (pairs with Graphify)                   |
+| [`.cursor/mcp.json`](../../.cursor/mcp.json)                               | MCP server config for Cursor Agent                     |
+| [`.mcp.json`](../../.mcp.json)                                             | MCP server config for Claude Code                      |
+| [`.claude/`](../../.claude/)                                               | Claude Code skill, CLAUDE.md pointer, PreToolUse hooks |
+| [`.husky/post-commit`](../../.husky/post-commit)                           | Background graph rebuild after commits                 |
+| [`.husky/post-checkout`](../../.husky/post-checkout)                       | Rebuild when switching branches                        |
+| [`.gitattributes`](../../.gitattributes)                                   | `graphify-out/graph.json merge=graphify`               |
+| [`CLAUDE.md`](../../CLAUDE.md)                                             | Semantic AI guide + Graphify always-on rules           |
 
 ### npm scripts (monorepo root)
 
 ```bash
-pnpm graphify:setup   # Install CLI, hooks, merge driver, Cursor rules
+pnpm graphify:setup   # Install CLI, hooks, merge driver, Cursor + Claude Code
 pnpm graphify:build   # Rebuild code-only graph (no API key)
 pnpm graphify:docs    # Rebuild with docs/ (requires LLM API key)
 ```
@@ -186,7 +189,7 @@ Each developer needs a **one-time** setup. The graph itself comes from git; the 
 - **macOS / Linux / WSL** (primary targets; Windows may need extra PATH setup)
 - **Python 3.10+** (usually already present)
 - **Git** and **pnpm** (standard for this repo)
-- **Cursor** (optional but recommended for MCP + rules)
+- **Cursor** and/or **Claude Code** (optional; each gets MCP + always-on Graphify prompts)
 
 ### Step 1 — Clone and install Node deps
 
@@ -207,8 +210,9 @@ This script:
 1. Installs [uv](https://docs.astral.sh/uv/) if missing
 2. Installs `graphifyy` via `uv tool install graphifyy`
 3. Refreshes Cursor project rules (`graphify install --project --platform cursor`)
-4. Installs Husky `post-commit` / `post-checkout` hooks
-5. Configures the local git merge driver for `graph.json`
+4. Installs Claude Code skill + PreToolUse hooks (`graphify install --project --platform claude`)
+5. Installs Husky `post-commit` / `post-checkout` hooks
+6. Configures the local git merge driver for `graph.json`
 
 ### Step 3 — PATH
 
@@ -226,7 +230,14 @@ graphify --version
 2. Open **Settings → MCP** and confirm the **`graphify`** server is enabled
 3. Use **Agent mode** for questions that benefit from graph queries (Ask mode does not run MCP or terminal)
 
-### Step 5 — Verify
+### Step 5 — Claude Code (optional)
+
+1. Confirm `.claude/settings.json`, `.claude/skills/graphify/`, and `.mcp.json` are present (committed on this branch)
+2. **Restart Claude Code** (or start a new session) in the repo root
+3. Ensure `graphify` and `graphify-mcp` are on `PATH` inside that session
+4. Optionally run `/graphify` once if you need a rebuild; for day-to-day navigation use `graphify query` (or MCP tools)
+
+### Step 6 — Verify
 
 ```bash
 graphify query "where is create-laboratory-run handled?" --budget 800
@@ -235,10 +246,10 @@ open graphify-out/graph.html   # macOS; use xdg-open on Linux
 
 You do **not** need to run `pnpm graphify:build` on first clone if `graphify-out/` is already committed on your branch.
 
-### Setup without Cursor
+### Setup without an IDE assistant
 
-Graphify still works from the terminal and integrates with Claude Code, Codex, and other tools. See
-[upstream install docs](https://github.com/safishamsi/graphify/).
+Graphify still works from the terminal (`graphify query`, `path`, `explain`) without Cursor or Claude Code. See
+[upstream install docs](https://github.com/safishamsi/graphify/) for other platforms (Codex, etc.).
 
 ---
 
@@ -355,6 +366,41 @@ Check CLAUDE.md domain map and graphify for wiring.
 | ---------------------------- | ----------------------------------------------------------------------------------------------------- |
 | Graphify                     | Structure: calls, imports, files, communities                                                         |
 | [CLAUDE.md](../../CLAUDE.md) | Semantics: `easy-genomics` vs `aws-healthomics` vs `nf-tower`, auth, error handling, handler patterns |
+
+---
+
+## Using Graphify with Claude Code
+
+### What Claude Code loads automatically
+
+| Mechanism                         | When it applies                                      | Effect                                                               |
+| --------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------- |
+| `CLAUDE.md` `## graphify` section | Every Claude Code session in this repo               | Instructs Claude to run `graphify query` / `path` / `explain` first  |
+| `.claude/skills/graphify/`        | When you invoke `/graphify`                          | Full Graphify skill (build, update, query helpers)                   |
+| `.claude/settings.json` hooks     | Before Bash grep/`rg`/`find` and before Read/Glob of | Injects a reminder to query the graph when `graphify-out/graph.json` |
+|                                   | source-like paths                                    | exists                                                               |
+| `.mcp.json`                       | When MCP is enabled for the project                  | Same `graphify-mcp` tools as Cursor                                  |
+| `graphify-out/` on disk           | When Claude or MCP queries it                        | Structural answers without full-repo grep                            |
+
+Claude Code does **not** use `.cursor/rules/*.mdc`. Domain conventions still come from root
+[`CLAUDE.md`](../../CLAUDE.md).
+
+### Recommended prompts
+
+```
+Trace how a lab workflow run is created from the Nuxt UI through to
+DynamoDB. Run graphify query before grepping or reading files broadly.
+
+What's the blast radius of LaboratoryRunService? Use graphify affected.
+```
+
+### Opt-out for Claude Code
+
+| Approach                  | How                                                                                                             |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Skip hooks for this clone | Edit or remove PreToolUse entries in `.claude/settings.json` (do not commit that change unless the team agrees) |
+| Disable MCP               | Remove or disable the `graphify` server in Claude Code MCP settings / omit using `.mcp.json`                    |
+| Per-chat                  | Tell Claude: “Ignore Graphify for this chat; use Read/Grep only.”                                               |
 
 ---
 
@@ -477,7 +523,8 @@ sequenceDiagram
 | ----------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | `graphify-out/graph.json`, `GRAPH_REPORT.md`, `manifest.json`, `cache/` | `graphify-out/cost.json`                                                |
 | `.graphifyignore`, scripts, `.cursor/rules/`, `.cursor/mcp.json`        | Local API keys                                                          |
-| `.husky/post-commit`, `post-checkout` (if present)                      | Machine-specific git config (merge driver is local per clone via setup) |
+| `.mcp.json`, `.claude/` (skill, settings hooks, CLAUDE.md pointer)      | Machine-specific git config (merge driver is local per clone via setup) |
+| `.husky/post-commit`, `post-checkout` (if present)                      |                                                                         |
 
 ---
 
@@ -504,18 +551,20 @@ or informal content can mislead AI assistants.
 
 ## Troubleshooting
 
-| Issue                                   | Fix                                                                                    |
-| --------------------------------------- | -------------------------------------------------------------------------------------- |
-| `graphify: command not found`           | `pnpm graphify:setup` or `uv tool install graphifyy`; add `~/.local/bin` to PATH       |
-| `no LLM API key found` during build     | Use `pnpm graphify:build` (code-only), not `graphify:docs`                             |
-| Stale graph / wrong structure           | Compare `GRAPH_REPORT.md` commit hash vs `git rev-parse HEAD`; run `graphify update .` |
-| MCP server not in Cursor                | Restart Cursor; check Settings → MCP; verify `which graphify-mcp`                      |
-| Hook rebuild fails silently             | Read `~/.cache/graphify-rebuild.log`                                                   |
-| `graph.json` merge conflicts            | `pnpm graphify:setup` (merge driver); then `pnpm graphify:build` if needed             |
-| Reinstalled / upgraded Graphify         | Re-run `graphify hook install` and `pnpm graphify:setup`                               |
-| Agent ignores Graphify                  | Use Agent mode; prompt explicitly: “use graphify query first”                          |
-| Want to use Cursor **without** Graphify | See [Using Cursor without Graphify (opt-out)](#using-cursor-without-graphify-opt-out)  |
-| Communities named `Community N`         | Normal without LLM for labeling; run `graphify:docs` or `graphify label` with API key  |
+| Issue                                   | Fix                                                                                        |
+| --------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `graphify: command not found`           | `pnpm graphify:setup` or `uv tool install graphifyy`; add `~/.local/bin` to PATH           |
+| `no LLM API key found` during build     | Use `pnpm graphify:build` (code-only), not `graphify:docs`                                 |
+| Stale graph / wrong structure           | Compare `GRAPH_REPORT.md` commit hash vs `git rev-parse HEAD`; run `graphify update .`     |
+| MCP server not in Cursor                | Restart Cursor; check Settings → MCP; verify `which graphify-mcp`                          |
+| MCP server not in Claude Code           | Confirm `.mcp.json` exists; restart Claude Code; verify `which graphify-mcp`               |
+| Claude Code ignores Graphify            | Confirm `.claude/settings.json` hooks; restart session; prompt: “use graphify query first” |
+| Hook rebuild fails silently             | Read `~/.cache/graphify-rebuild.log`                                                       |
+| `graph.json` merge conflicts            | `pnpm graphify:setup` (merge driver); then `pnpm graphify:build` if needed                 |
+| Reinstalled / upgraded Graphify         | Re-run `graphify hook install` and `pnpm graphify:setup`                                   |
+| Agent ignores Graphify                  | Use Agent mode; prompt explicitly: “use graphify query first”                              |
+| Want to use Cursor **without** Graphify | See [Using Cursor without Graphify (opt-out)](#using-cursor-without-graphify-opt-out)      |
+| Communities named `Community N`         | Normal without LLM for labeling; run `graphify:docs` or `graphify label` with API key      |
 
 ---
 

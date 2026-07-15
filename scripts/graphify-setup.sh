@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Graphify CLI, Cursor rules, git hooks, and merge driver for this repo.
+# Install Graphify CLI, Cursor + Claude Code integration, git hooks, and merge driver.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -28,6 +28,9 @@ ensure_graphify
 echo "Installing project-scoped Cursor rules..."
 graphify install --project --platform cursor
 
+echo "Installing project-scoped Claude Code skill + PreToolUse hooks..."
+graphify install --project --platform claude
+
 echo "Installing post-commit / post-checkout hooks (via Husky)..."
 graphify hook install
 
@@ -41,4 +44,5 @@ echo "  - Build / refresh code graph:  pnpm graphify:build"
 echo "  - Include docs (needs API key): pnpm graphify:docs"
 echo "  - Query: graphify query \"<question>\""
 echo "  - Cursor: restart IDE to load .cursor/mcp.json (graphify MCP server)"
+echo "  - Claude Code: restart session to load .claude/ + .mcp.json"
 echo "  - Context: read CLAUDE.md and .cursor/rules/ for domain conventions"
