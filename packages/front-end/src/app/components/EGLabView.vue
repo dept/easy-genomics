@@ -68,13 +68,14 @@
   /** Prevents duplicate redirects when multiple watchers or lifecycle hooks fire. */
   const hasRedirectedForOrgMismatch = ref(false);
 
-  async function redirectIfLabOrgMismatch(): Promise<boolean> {
+  async function redirectIfLabOrgMismatch(forceReload = false): Promise<boolean> {
     if (hasRedirectedForOrgMismatch.value) {
       return true;
     }
     const redirected = await ensureLabInActiveOrg({
       labId: props.labId,
       superuser: props.superuser,
+      forceReload,
     });
     if (redirected) {
       hasRedirectedForOrgMismatch.value = true;
@@ -742,7 +743,8 @@
       if (props.superuser || uiStore.isRequestPending('loadLabData')) {
         return;
       }
-      await redirectIfLabOrgMismatch();
+      // Force reload on org switch so we don't trust a stale persisted lab org id.
+      await redirectIfLabOrgMismatch(true);
     },
   );
 
@@ -759,6 +761,20 @@
     if (lastProcessedLabRef.value === newLab) {
       return;
     }
+
+    // Org check without reloading: ensureLabInActiveOrg(load) would assign a new lab object and re-trigger this watch.
+    if (
+      !props.superuser &&
+      !hasRedirectedForOrgMismatch.value &&
+      userStore.currentOrgId &&
+      newLab.OrganizationId &&
+      userStore.currentOrgId !== newLab.OrganizationId
+    ) {
+      hasRedirectedForOrgMismatch.value = true;
+      await navigateTo('/labs');
+      return;
+    }
+
     lastProcessedLabRef.value = newLab;
 
     const promises = [getLabUsers()];

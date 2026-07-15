@@ -11,11 +11,17 @@ jest.mock('aws-cdk-lib/aws-lambda-event-sources', () => ({
 }));
 
 jest.mock('../../../src/infra/constructs/iam-construct', () => ({
-  IamConstruct: jest.fn().mockImplementation(() => ({
-    policyStatements: new Map<string, unknown[]>(),
-    addPolicyStatements: jest.fn(),
-    getPolicyStatements: jest.fn().mockReturnValue([]),
-  })),
+  IamConstruct: jest.fn().mockImplementation(() => {
+    const policyStatements = new Map<string, unknown[]>();
+    return {
+      policyStatements,
+      // Mirror production Map.set semantics so callers that merge via .get() + set are testable.
+      addPolicyStatements: jest.fn((name: string, statements: unknown[]) => {
+        policyStatements.set(name, statements);
+      }),
+      getPolicyStatements: jest.fn((name: string) => policyStatements.get(name) ?? []),
+    };
+  }),
 }));
 
 jest.mock('../../../src/infra/constructs/lambda-construct', () => ({
@@ -192,6 +198,33 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
         }),
         expect.objectContaining({
           actions: expect.arrayContaining(['s3:ListBucket']),
+        }),
+      ]),
+    );
+  });
+
+  it('appends laboratory-s3-access IAM without replacing update-laboratory base policies', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+    const updateLaboratoryPolicies = iamInstance.policyStatements.get('/easy-genomics/laboratory/update-laboratory');
+
+    expect(updateLaboratoryPolicies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['dynamodb:Query', 'dynamodb:PutItem']),
+        }),
+        expect.objectContaining({
+          actions: expect.arrayContaining(['ssm:GetParameter', 'ssm:PutParameter']),
+        }),
+        expect.objectContaining({
+          actions: expect.arrayContaining(['dynamodb:PutItem', 'dynamodb:DeleteItem', 'dynamodb:Query']),
+        }),
+        expect.objectContaining({
+          actions: expect.arrayContaining(['s3:ListAllMyBuckets', 's3:GetBucketTagging']),
         }),
       ]),
     );

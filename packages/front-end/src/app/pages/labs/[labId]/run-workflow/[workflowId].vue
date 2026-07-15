@@ -26,7 +26,7 @@
   }
 
   onBeforeMount(async () => {
-    if (await ensureLabInActiveOrg({ labId })) {
+    if (await ensureLabInActiveOrg({ labId, forceReload: true })) {
       return;
     }
   });

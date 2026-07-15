@@ -1884,7 +1884,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
         ],
-        actions: ['dynamodb:GetItem'],
+        actions: ['dynamodb:Query'],
       }),
       new PolicyStatement({
         resources: [laboratoryS3AccessTableArn, laboratoryS3AccessTableAnyIndex],
@@ -2125,8 +2125,9 @@ export class EasyGenomicsNestedStack extends NestedStack {
       actions: ['dynamodb:Query'],
     });
 
+    // Append (do not replace): addPolicyStatements uses Map.set and would drop the
+    // route's earlier DynamoDB/S3/SSM statements if we passed only the new policy.
     const laboratoryS3AccessEnforcementRoutes = [
-      '/easy-genomics/laboratory/update-laboratory',
       '/easy-genomics/file/request-list-bucket-objects',
       '/easy-genomics/file/request-top-level-bucket-objects',
       '/easy-genomics/file/request-search-bucket-objects',
@@ -2152,14 +2153,19 @@ export class EasyGenomicsNestedStack extends NestedStack {
     ];
 
     for (const route of laboratoryS3AccessEnforcementRoutes) {
-      this.iam.addPolicyStatements(route, [laboratoryS3AccessReadPolicy]);
+      const existing = this.iam.policyStatements.get(route) ?? [];
+      this.iam.addPolicyStatements(route, [...existing, laboratoryS3AccessReadPolicy]);
     }
 
+    // update-laboratory also migrates access rows (needs catalog list + table writes).
+    const updateLaboratoryExisting = this.iam.policyStatements.get('/easy-genomics/laboratory/update-laboratory') ?? [];
     this.iam.addPolicyStatements('/easy-genomics/laboratory/update-laboratory', [
+      ...updateLaboratoryExisting,
       new PolicyStatement({
         resources: [laboratoryS3AccessTableArn, laboratoryS3AccessTableAnyIndex],
         actions: ['dynamodb:PutItem', 'dynamodb:DeleteItem', 'dynamodb:Query'],
       }),
+      ...s3BucketCatalogIam,
     ]);
   };
 }
