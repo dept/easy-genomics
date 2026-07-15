@@ -5,7 +5,7 @@
     "semantic_hash": "f627d2a9c620789f9ab888a58cbce407"
   },
   "packages/back-end/.projen/deps.json": {
-    "mtime": 1784114241.859299,
+    "mtime": 1784114967.6288567,
     "ast_hash": "2fe88e827b3b235e0bff5ba379ea7289",
     "semantic_hash": ""
   },
@@ -15,7 +15,7 @@
     "semantic_hash": "a9314165ab2e1dc23de4b323b2b64cb4"
   },
   "packages/back-end/.projen/tasks.json": {
-    "mtime": 1784114241.8598623,
+    "mtime": 1784114967.628198,
     "ast_hash": "bedacdb0c00b0642ea337be5abd780a1",
     "semantic_hash": ""
   },
@@ -1185,7 +1185,7 @@
     "semantic_hash": "87901cf3d17931d9869a2a8edfba21d4"
   },
   "packages/front-end/.projen/deps.json": {
-    "mtime": 1784114241.8867798,
+    "mtime": 1784114967.6328907,
     "ast_hash": "84f62d002f5ee06f683bccb4994a664e",
     "semantic_hash": ""
   },
@@ -1195,7 +1195,7 @@
     "semantic_hash": "a9314165ab2e1dc23de4b323b2b64cb4"
   },
   "packages/front-end/.projen/tasks.json": {
-    "mtime": 1784114241.8872294,
+    "mtime": 1784114967.6323106,
     "ast_hash": "7b6468b5f267d404bbf7fb4418d667c3",
     "semantic_hash": ""
   },
@@ -2140,7 +2140,7 @@
     "semantic_hash": "164590d700d5f58fce5ca1a20590cf14"
   },
   "packages/shared-lib/.projen/deps.json": {
-    "mtime": 1784114241.915689,
+    "mtime": 1784114967.6233633,
     "ast_hash": "df7d94b6bcfee6078d009104e386c7c7",
     "semantic_hash": ""
   },
@@ -2150,7 +2150,7 @@
     "semantic_hash": "9e5a83d08a95f7fcbfcd357b4f0d6e1b"
   },
   "packages/shared-lib/.projen/tasks.json": {
-    "mtime": 1784114241.9159153,
+    "mtime": 1784114967.6224594,
     "ast_hash": "7f19e1d234026bef2709ea27c0e01dd9",
     "semantic_hash": ""
   },
@@ -2968,5 +2968,440 @@
     "mtime": 1783696293.5162954,
     "ast_hash": "320394a5a94815d8cc98ef3dc44abe5c",
     "semantic_hash": "320394a5a94815d8cc98ef3dc44abe5c"
+  },
+  "packages/back-end/scripts/lib/migrate-samples-and-sequence-collections-lib.ts": {
+    "mtime": 1784114241.8625743,
+    "ast_hash": "d3339808c62b52923f4e1b26cdc6a7a8",
+    "semantic_hash": ""
+  },
+  "packages/back-end/scripts/migrate-file-tags-to-samples.ts": {
+    "mtime": 1784114241.8628173,
+    "ast_hash": "78a0766ee1d7582aa4e1ebdfe6c7fdef",
+    "semantic_hash": ""
+  },
+  "packages/back-end/scripts/migrate-samples-and-sequence-collections.ts": {
+    "mtime": 1784114241.8630095,
+    "ast_hash": "dcd35843f6cd65939b6bd9abcb6cabcb",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/add-files-to-sample.lambda.ts": {
+    "mtime": 1784114241.8648365,
+    "ast_hash": "a631382c6989cbdf97c5f0f323bbe4b7",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/add-samples-to-sequence-collection.lambda.ts": {
+    "mtime": 1784114241.8649771,
+    "ast_hash": "ca297bab85340edf2f8ac1c28ae7e410",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/add-tags-to-samples.lambda.ts": {
+    "mtime": 1784114241.865084,
+    "ast_hash": "32dffb05478e14c82de0138bba48876c",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/create-bulk-samples.lambda.ts": {
+    "mtime": 1784114241.8651974,
+    "ast_hash": "0574f8036df1773d72fffbe0265a881c",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/create-sample.lambda.ts": {
+    "mtime": 1784114241.865387,
+    "ast_hash": "8864c7c6b2c2e2408f894cf18ba99182",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/create-sequence-collection.lambda.ts": {
+    "mtime": 1784114241.8655016,
+    "ast_hash": "4ffd4f1a590d3f5648dd8954b5092175",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/delete-sequence-collection.lambda.ts": {
+    "mtime": 1784114241.8657634,
+    "ast_hash": "7527e113964977027d5257c0b6912d12",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/edit-sample-batch.lambda.ts": {
+    "mtime": 1784114241.8658578,
+    "ast_hash": "d1a8455ce140ccd0eb02cb2433f23435",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/edit-sequence-collection.lambda.ts": {
+    "mtime": 1784114241.8661795,
+    "ast_hash": "0266ef9cf6f592384fb9fb7b36f21247",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/list-sample-files.lambda.ts": {
+    "mtime": 1784114241.8664665,
+    "ast_hash": "73725aeac56cae6ac138967b0d236775",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/list-samples-by-tag.lambda.ts": {
+    "mtime": 1784114241.8667598,
+    "ast_hash": "63545d1e088ec6e1b2c54fe214442e38",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/list-samples.lambda.ts": {
+    "mtime": 1784114241.8670456,
+    "ast_hash": "04391f2e1004448b457fff685ac10e1c",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/list-sequence-collection-samples.lambda.ts": {
+    "mtime": 1784114241.8672965,
+    "ast_hash": "5e6a61f9bc4ef38dc9a7e86a9baa310c",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/list-sequence-collections.lambda.ts": {
+    "mtime": 1784114241.867543,
+    "ast_hash": "1c4acf6d39dea6306d9dd3aaf9e86e6d",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/remove-files-from-sample.lambda.ts": {
+    "mtime": 1784114241.8678107,
+    "ast_hash": "9339b880f5209ef97bdb47c6afa4fafa",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/request-list-sample-tags.lambda.ts": {
+    "mtime": 1784114241.868044,
+    "ast_hash": "f1fb85a456be3748b1e00aadd649725e",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/request-sequence-collection-sample-sheet.lambda.ts": {
+    "mtime": 1784114241.8682652,
+    "ast_hash": "eb1dee29a5ca04049e44727e3cfb982a",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/data-collections/update-sequence-collection-schema.lambda.ts": {
+    "mtime": 1784114241.868943,
+    "ast_hash": "e987897fa575d60883be723158b0c3d4",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/controllers/easy-genomics/laboratory/run/process-classify-laboratory-run-failure.lambda.ts": {
+    "mtime": 1784114241.8711066,
+    "ast_hash": "5b91279fa3823686929c2f56d49f4460",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/services/cloudwatch-logs-service.ts": {
+    "mtime": 1784114241.8731112,
+    "ast_hash": "6e7e154d173c4360c4a18e7fc626050a",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/services/easy-genomics/laboratory-sample-service.ts": {
+    "mtime": 1784114241.8744137,
+    "ast_hash": "84e787d83302594b812ed626850e60ac",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/services/llm-classification/anthropic-classification-provider.ts": {
+    "mtime": 1784114241.8749769,
+    "ast_hash": "8c9a28feebd33f7619888f0b3c59f3fe",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/services/llm-classification/bedrock-classification-provider.ts": {
+    "mtime": 1784114241.8752494,
+    "ast_hash": "8f9a9b6f8b2deeca8e467a158a7c6404",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/services/llm-classification/llm-classification-provider.ts": {
+    "mtime": 1784114241.875497,
+    "ast_hash": "e7d66fad17bacecd54a348e51d570509",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/services/llm-classification/llm-classification-service.ts": {
+    "mtime": 1784114241.8757844,
+    "ast_hash": "2e6b34a9ccb01206e5b02a62f1ce6763",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/services/llm-classification/openai-classification-provider.ts": {
+    "mtime": 1784114241.8760862,
+    "ast_hash": "0b4a14ef06fd173ca78c2c9781a16f16",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/services/llm-classification/parse-classification-response.ts": {
+    "mtime": 1784114241.876325,
+    "ast_hash": "00ac947562d54c615129e96f0e06d0ff",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/services/llm-classification/prompts/classification-prompt.ts": {
+    "mtime": 1784114241.8766828,
+    "ast_hash": "7a6262a85927148298260d49c418fe43",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/app/services/llm-classification/run-log-fetcher.ts": {
+    "mtime": 1784114241.8769193,
+    "ast_hash": "2dc610bcf02afab0e54d1e067e06b8a2",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/infra/constructs/analytics/analytics-construct.ts": {
+    "mtime": 1784114241.8777041,
+    "ast_hash": "697193e99c36c012d9b3bdcf832d3576",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/infra/constructs/spec-rest-api-construct.ts": {
+    "mtime": 1784114241.8785431,
+    "ast_hash": "66d4235a9efa75d28130448dc671c5d6",
+    "semantic_hash": ""
+  },
+  "packages/back-end/src/infra/utils/openapi-spec-enrichment.ts": {
+    "mtime": 1784114241.8808334,
+    "ast_hash": "2dccbe95f04f55516ff8ef9fa3b8d94e",
+    "semantic_hash": ""
+  },
+  "packages/back-end/test/app/controllers/easy-genomics/laboratory/run/process-classify-laboratory-run-failure.lambda.test.ts": {
+    "mtime": 1784114241.8813453,
+    "ast_hash": "10857fc6d2b427a1cefe462493c94406",
+    "semantic_hash": ""
+  },
+  "packages/back-end/test/app/services/cloudwatch-logs-service.test.ts": {
+    "mtime": 1784114241.8823686,
+    "ast_hash": "470f39070e4aa4a448130855aa9d7b64",
+    "semantic_hash": ""
+  },
+  "packages/back-end/test/app/services/easy-genomics/laboratory-sample-service.test.ts": {
+    "mtime": 1784114241.8835917,
+    "ast_hash": "ea754b68464284d49a36ffd4aa27f715",
+    "semantic_hash": ""
+  },
+  "packages/back-end/test/app/services/llm-classification/anthropic-classification-provider.test.ts": {
+    "mtime": 1784114241.8838372,
+    "ast_hash": "b7183005d9a25e403d5ebc1b9977c9b5",
+    "semantic_hash": ""
+  },
+  "packages/back-end/test/app/services/llm-classification/bedrock-classification-provider.test.ts": {
+    "mtime": 1784114241.8839388,
+    "ast_hash": "ea8d1470eea3a3db4e84749b951435a6",
+    "semantic_hash": ""
+  },
+  "packages/back-end/test/app/services/llm-classification/llm-classification-service.test.ts": {
+    "mtime": 1784114241.8843932,
+    "ast_hash": "92d2590d42284532674c440cde791de0",
+    "semantic_hash": ""
+  },
+  "packages/back-end/test/app/services/llm-classification/openai-classification-provider.test.ts": {
+    "mtime": 1784114241.8845053,
+    "ast_hash": "a2da06add6e2e22338f0bf6edfe502c9",
+    "semantic_hash": ""
+  },
+  "packages/back-end/test/app/services/llm-classification/run-log-fetcher.test.ts": {
+    "mtime": 1784114241.884874,
+    "ast_hash": "f387492bd813378528c5a3740249aaba",
+    "semantic_hash": ""
+  },
+  "packages/back-end/test/infra/constructs/spec-rest-api-construct.test.ts": {
+    "mtime": 1784114241.885555,
+    "ast_hash": "a04ad2b00fb0de75c38cbbd4acccdbdb",
+    "semantic_hash": ""
+  },
+  "packages/back-end/test/infra/utils/openapi-spec-enrichment.test.ts": {
+    "mtime": 1784114241.8864229,
+    "ast_hash": "a2785abf6ca8a28f84afdfddc1230765",
+    "semantic_hash": ""
+  },
+  "packages/back-end/test/scripts/migrate-samples-and-sequence-collections.test.ts": {
+    "mtime": 1784114241.8865304,
+    "ast_hash": "02c101701b3247748cb4713a08dd119c",
+    "semantic_hash": ""
+  },
+  "packages/front-end/src/app/components/EGAddToSampleModal.vue": {
+    "mtime": 1784114241.8900921,
+    "ast_hash": "09800b6577ae5430ed3f80f1a5d25d35",
+    "semantic_hash": ""
+  },
+  "packages/front-end/src/app/components/EGBuildSampleModal.vue": {
+    "mtime": 1784114241.8903902,
+    "ast_hash": "d355faa8c566b6de1008a90e09d38e18",
+    "semantic_hash": ""
+  },
+  "packages/front-end/src/app/components/EGBuildSamplesFromRegexModal.vue": {
+    "mtime": 1784114241.890792,
+    "ast_hash": "628ef13ab68f37853610d6a837816dcb",
+    "semantic_hash": ""
+  },
+  "packages/front-end/src/app/components/EGConsentBanner.vue": {
+    "mtime": 1784114241.8913336,
+    "ast_hash": "f4187a181b611433070aaa0b187cea12",
+    "semantic_hash": ""
+  },
+  "packages/front-end/src/app/components/EGRegexUnmatchedNotice.vue": {
+    "mtime": 1784114241.8946397,
+    "ast_hash": "dd2659db740b248d07ee3d9a967c8eff",
+    "semantic_hash": ""
+  },
+  "packages/front-end/src/app/components/EGSampleTagSidebar.vue": {
+    "mtime": 1784114241.8973658,
+    "ast_hash": "2f00206d043e676ada262486c05a8af6",
+    "semantic_hash": ""
+  },
+  "packages/front-end/src/app/components/EGSamplesTab.vue": {
+    "mtime": 1784114241.897691,
+    "ast_hash": "93cdb38503421d558f48c01acd33b1a5",
+    "semantic_hash": ""
+  },
+  "packages/front-end/src/app/components/EGSequenceCollectionsListTab.vue": {
+    "mtime": 1784114241.89782,
+    "ast_hash": "3e6497b662b77b7b55ed3ddceb4b142a",
+    "semantic_hash": ""
+  },
+  "packages/front-end/src/app/composables/useAnalytics.ts": {
+    "mtime": 1784114241.900037,
+    "ast_hash": "ba1a945211edbd97d9136694fb7d474c",
+    "semantic_hash": ""
+  },
+  "packages/front-end/src/app/composables/useRegexGroupingPreview.ts": {
+    "mtime": 1784114241.9008462,
+    "ast_hash": "4a9d1757cfa005499cb36f13cb6866c2",
+    "semantic_hash": ""
+  },
+  "packages/front-end/src/app/composables/useSwitchOrganization.ts": {
+    "mtime": 1784114241.9011657,
+    "ast_hash": "e78f01b346e1a0dcc28250b8f8bdf1e9",
+    "semantic_hash": ""
+  },
+  "packages/front-end/src/app/plugins/analytics.client.ts": {
+    "mtime": 1784114241.9073746,
+    "ast_hash": "719561f513bf11ccb8173e5f7e64dc47",
+    "semantic_hash": ""
+  },
+  "packages/front-end/src/app/stores/analytics.ts": {
+    "mtime": 1784114241.9088018,
+    "ast_hash": "40b620972f6b96a2526111a1f7bc2a0a",
+    "semantic_hash": ""
+  },
+  "packages/front-end/src/app/utils/ensure-lab-in-active-org.ts": {
+    "mtime": 1784114241.9115167,
+    "ast_hash": "47d9e047570bead607bac8882a4708d3",
+    "semantic_hash": ""
+  },
+  "packages/front-end/src/app/utils/laboratory-s3.ts": {
+    "mtime": 1784114241.9120278,
+    "ast_hash": "22ae4d80a8fa8d44261bc64ef7d4d1ae",
+    "semantic_hash": ""
+  },
+  "packages/front-end/test/app/utils/laboratory-s3.test.ts": {
+    "mtime": 1784114241.9146154,
+    "ast_hash": "8bb7b3eb98f410f22cdc47ac8042f85e",
+    "semantic_hash": ""
+  },
+  "packages/front-end/tests/e2e/lab-manager/Data_Collections_Samples_Lasso.spec.e2e.ts": {
+    "mtime": 1784114241.9154754,
+    "ast_hash": "e6d58b0844c9f717286b22a214796ced",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/openapi/load-spec.ts": {
+    "mtime": 1784114241.9175205,
+    "ast_hash": "fce71cc09101c36f37ceda02b5e21ee0",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/schema/easy-genomics/data-collections/add-tags-to-samples.ts": {
+    "mtime": 1784114241.9192424,
+    "ast_hash": "c2fd40f086c1a2292631daf89d433de0",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/schema/easy-genomics/data-collections/assign-sample-batch.test.ts": {
+    "mtime": 1784114241.9193652,
+    "ast_hash": "2abfc75376bd8cd7a0fba8e5724fe7c8",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/schema/easy-genomics/data-collections/assign-sample-batch.ts": {
+    "mtime": 1784114241.919471,
+    "ast_hash": "92385591bba658018191c5bd14401804",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/schema/easy-genomics/data-collections/bulk-create-samples.test.ts": {
+    "mtime": 1784114241.9195702,
+    "ast_hash": "8f2f1e2ab7a7776c3a7e312a8ec82e3a",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/schema/easy-genomics/data-collections/bulk-create-samples.ts": {
+    "mtime": 1784114241.9196696,
+    "ast_hash": "1e23b9eb5cc64ade73ee0c1f7974c1b8",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/schema/easy-genomics/data-collections/create-sample.test.ts": {
+    "mtime": 1784114241.919761,
+    "ast_hash": "d5aabd067d2fe34542b94899f8d691cd",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/schema/easy-genomics/data-collections/create-sample.ts": {
+    "mtime": 1784114241.9198437,
+    "ast_hash": "acd74669b54c933e82918a7f02bba1d0",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/schema/easy-genomics/data-collections/create-sequence-collection.ts": {
+    "mtime": 1784114241.9199328,
+    "ast_hash": "505b2c04554ba30acb2e0dc9da43c7be",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/types/analytics.ts": {
+    "mtime": 1784114241.9213498,
+    "ast_hash": "8f2c9cc081532d2a2d67436146a67755",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/types/easy-genomics/samples.ts": {
+    "mtime": 1784114241.9228675,
+    "ast_hash": "eb4782ec27d4cbf7df38cfc61f9685bb",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/utils/analytics-buckets.test.ts": {
+    "mtime": 1784114241.9236262,
+    "ast_hash": "274a94dfafb3416e5c5e42ff8d7e54d8",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/utils/analytics-buckets.ts": {
+    "mtime": 1784114241.9238434,
+    "ast_hash": "3c65122ab12eef3d549113d74a5d4f6b",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/utils/analytics-utils.test.ts": {
+    "mtime": 1784114241.924255,
+    "ast_hash": "bb58fc0ce67600132690758ae715ded9",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/utils/analytics-utils.ts": {
+    "mtime": 1784114241.9246073,
+    "ast_hash": "54035fa3bf7125bedcb193f9e0fa9a51",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/utils/configuration.test.ts": {
+    "mtime": 1784114241.9247298,
+    "ast_hash": "4578a325f5f205ff7d421901bbe8773f",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/utils/failure-classifier.test.ts": {
+    "mtime": 1784114241.9262924,
+    "ast_hash": "3f0dc08db07077a8b799f259c1ef3a4d",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/utils/failure-classifier.ts": {
+    "mtime": 1784114241.9264514,
+    "ast_hash": "7cb45eee3177b45db43ad08cfab487f6",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/utils/log-extraction.test.ts": {
+    "mtime": 1784114241.926536,
+    "ast_hash": "9ef6f957075025634405aa4f9ffe1b60",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/utils/log-extraction.ts": {
+    "mtime": 1784114241.92662,
+    "ast_hash": "b79b5cce304aa66aee362491db89a968",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/utils/log-redaction.test.ts": {
+    "mtime": 1784114241.926708,
+    "ast_hash": "48a4224dea1086275177c82c507c5b9a",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/utils/log-redaction.ts": {
+    "mtime": 1784114241.9267912,
+    "ast_hash": "da3beaeb7f3647f95213864ead1e3e8a",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/utils/sample-regex-grouping.test.ts": {
+    "mtime": 1784114241.9268763,
+    "ast_hash": "52b2e5b14af0d1632d76029927037b97",
+    "semantic_hash": ""
+  },
+  "packages/shared-lib/src/app/utils/sample-regex-grouping.ts": {
+    "mtime": 1784114241.9270194,
+    "ast_hash": "a96f5d45a5f1babf5f80b52283db4df6",
+    "semantic_hash": ""
   }
 }
