@@ -7,6 +7,7 @@
   } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
   import { RunTask, GetRunResponse } from '@aws-sdk/client-omics';
   import { useLabsStore, useRunStore, useUiStore } from '@FE/stores';
+  import { ensureLabInActiveOrg } from '@FE/utils/ensure-lab-in-active-org';
 
   const $route = useRoute();
   const $router = useRouter();
@@ -84,6 +85,9 @@
   const omicsRunDetail = ref<GetRunResponse | null>(null);
 
   onBeforeMount(async () => {
+    if (await ensureLabInActiveOrg({ labId })) {
+      return;
+    }
     await fetchLabRuns();
   });
 

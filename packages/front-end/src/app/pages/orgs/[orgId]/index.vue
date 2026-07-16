@@ -4,11 +4,13 @@
 
   const userStore = useUserStore();
 
-  const orgId = $route.params.orgId as string;
+  const orgId = computed(() => $route.params.orgId as string);
 
-  if (!userStore.canManageOrg(orgId)) {
-    $router.push({ path: '/' });
-  }
+  onMounted(() => {
+    if (!userStore.canManageOrg(orgId.value)) {
+      $router.push({ path: '/' });
+    }
+  });
 </script>
 
 <template>
