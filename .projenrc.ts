@@ -234,9 +234,6 @@ root.addScripts({
   ['prepare']: 'husky || true', // Enable Husky each time projen is synthesized
   ['projen']: 'nx reset; pnpm exec projen', // Clear NX cache each time projen is synthesized to avoid cache disk-space overconsumption
   ['pre-commit']: 'lint-staged',
-  ['graphify:setup']: 'bash scripts/graphify-setup.sh',
-  ['graphify:build']: 'bash scripts/graphify-build.sh',
-  ['graphify:docs']: 'bash scripts/graphify-docs.sh',
 });
 
 root.addFields({
@@ -719,7 +716,18 @@ root.gitignore.addPatterns(
   'packages/front-end/tests/e2e/.auth/*.json',
   'packages/front-end/playwright-report',
   '.pnpm-store',
-  'graphify-out/cost.json',
+  // Graphify — opt-in via amer-easy-genomics-dev-ai-tools (local graph never committed)
+  'graphify-out/',
+  '.graphifyignore',
+  '.graphifyignore.with-docs',
+  // AI definitions — live in amer-easy-genomics-dev-ai-tools; local symlinks via that repo's setup.sh
+  'CLAUDE.md',
+  'AGENTS.md',
+  '.cursorrules',
+  '.mcp.json',
+  '.cursor/mcp.json',
+  '.cursor/rules/',
+  '.claude/',
 );
 // Exception: Include .env example files (used for local dev setup documentation)
 root.gitignore.addPatterns('!packages/back-end/.env.local.example', '!config/.env.nuxt.local.example');
@@ -849,8 +857,6 @@ root.addFields({
     },
   },
 });
-
-root.gitattributes.addAttributes('graphify-out/graph.json', 'merge=graphify');
 
 // Synthesize the project
 root.synth();
