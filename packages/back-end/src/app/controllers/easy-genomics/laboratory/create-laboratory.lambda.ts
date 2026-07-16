@@ -16,6 +16,7 @@ import {
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
 import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { OrganizationService } from '@BE/services/easy-genomics/organization-service';
 import { SsmService } from '@BE/services/ssm-service';
@@ -24,6 +25,7 @@ import { httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
 const organizationService = new OrganizationService();
 const laboratoryService = new LaboratoryService();
+const s3AccessService = new LaboratoryS3AccessService();
 const ssmService = new SsmService();
 
 export const handler: Handler = async (
@@ -93,6 +95,17 @@ export const handler: Handler = async (
           throw error;
         }
       });
+
+    // Seed ALLOW for the lab's configured default bucket (strict mode otherwise blocks S3 APIs).
+    const s3Bucket = request.S3Bucket?.trim();
+    if (s3Bucket) {
+      await s3AccessService.upsert({
+        LaboratoryId: laboratoryId,
+        BucketName: s3Bucket,
+        OrganizationId: organization.OrganizationId,
+        Effect: 'ALLOW',
+      });
+    }
 
     // Store NextFlow AccessToken in SSM if value supplied
     if (request.NextFlowTowerAccessToken) {

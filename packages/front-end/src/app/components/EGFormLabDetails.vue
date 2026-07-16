@@ -205,8 +205,9 @@
   });
 
   /**
-   * Submit requires a usable S3 directory for org admins. The bucket must appear in the infra list,
-   * OR in edit mode we allow the existing persisted bucket when the list does not include it (stale API, rename, permissions).
+   * Submit requires a usable S3 directory for org admins: the bucket must be one the lab is
+   * currently granted access to (present in the loaded list). A previously persisted bucket that
+   * is no longer granted (e.g. access revoked) is not accepted, so the admin must pick a valid one.
    */
   const isS3BucketValidForSubmit = computed(() => {
     if (!useUserStore().isOrgAdmin()) {
@@ -221,15 +222,22 @@
       return false;
     }
 
-    if (s3Directories.value.some((dir) => dir === bucket)) {
-      return true;
-    }
+    return s3Directories.value.some((dir) => dir === bucket);
+  });
 
-    return (
-      formMode.value !== LabDetailsFormModeEnum.enum.Create &&
-      uneditedLabDetails.value != null &&
-      uneditedLabDetails.value.S3Bucket === bucket
-    );
+  /**
+   * True when the lab has a persisted default bucket that is no longer in the granted list
+   * (e.g. an admin revoked access). Used to explain why the select is empty and submit is blocked.
+   */
+  const persistedBucketNoLongerGranted = computed(() => {
+    if (isLoadingBuckets.value || !useUserStore().isOrgAdmin()) {
+      return false;
+    }
+    const bucket = uneditedLabDetails.value?.S3Bucket;
+    if (!bucket) {
+      return false;
+    }
+    return !s3Directories.value.some((dir) => dir === bucket);
   });
 
   async function getS3Buckets() {
@@ -720,6 +728,10 @@
           placeholder="Please select an S3 bucket from the list below"
           searchable-placeholder="Search existing S3 buckets..."
         />
+        <p v-if="isEditing && persistedBucketNoLongerGranted" class="text-alert-danger-dark mt-1 text-xs">
+          This lab’s previous default bucket ({{ uneditedLabDetails?.S3Bucket }}) is no longer accessible, likely
+          because access was revoked. Select a currently available S3 bucket to continue.
+        </p>
       </EGFormGroup>
 
       <hr class="mb-6" role="presentation" />

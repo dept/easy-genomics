@@ -229,4 +229,23 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
       ]),
     );
   });
+
+  it('grants create-laboratory PutItem on laboratory-s3-access-table', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/laboratory/create-laboratory',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['dynamodb:PutItem']),
+          resources: expect.arrayContaining([expect.stringContaining('laboratory-s3-access-table')]),
+        }),
+      ]),
+    );
+  });
 });

@@ -45,3 +45,15 @@ export interface BatchLaboratoryS3AccessAssignment {
 export interface BatchUpdateLaboratoryS3AccessRequest {
   assignments: BatchLaboratoryS3AccessAssignment[];
 }
+
+/** A lab whose default S3 bucket was cleared because access to it was revoked. */
+export interface ClearedLaboratoryDefaultBucket {
+  laboratoryId: string;
+  bucketName: string;
+}
+
+export interface BatchUpdateLaboratoryS3AccessResponse {
+  ok: boolean;
+  /** Labs whose default S3 bucket was cleared as a side effect of a revoke. */
+  clearedDefaults: ClearedLaboratoryDefaultBucket[];
+}

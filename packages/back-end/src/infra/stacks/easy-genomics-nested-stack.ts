@@ -647,6 +647,14 @@ export class EasyGenomicsNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
+        // Seed ALLOW row for the lab's configured S3Bucket on create.
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-s3-access-table`,
+        ],
+        actions: ['dynamodb:PutItem'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
         resources: [
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/nf-access-token`,
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/github-access-token`,

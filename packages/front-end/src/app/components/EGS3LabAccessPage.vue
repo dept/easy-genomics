@@ -3,9 +3,11 @@
   import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import {
     type BatchLaboratoryS3AccessAssignment,
+    type ClearedLaboratoryDefaultBucket,
     type LaboratoryS3Access,
     type S3BucketCatalogEntry,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-s3-access';
+  import { ButtonVariantEnum } from '@FE/types/buttons';
 
   const props = withDefaults(
     defineProps<{
@@ -40,6 +42,9 @@
 
   const baselineEnableNewByDefault = ref<Record<string, boolean>>({});
   const pendingEnableNewByDefault = ref<Record<string, boolean>>({});
+
+  const isConfirmClearDialogOpen = ref(false);
+  const pendingClearDefaults = ref<{ labName: string; bucketName: string }[]>([]);
 
   function rowIsDeny(a: LaboratoryS3Access): boolean {
     return a.Effect === 'DENY';
@@ -296,7 +301,77 @@
     pendingEnableNewByDefault.value = { ...baselineEnableNewByDefault.value };
   }
 
-  async function saveAll() {
+  function buildAssignments(): BatchLaboratoryS3AccessAssignment[] {
+    const prev = baselineKeys.value;
+    const next = pendingKeys.value;
+    const assignments: BatchLaboratoryS3AccessAssignment[] = [];
+
+    const allKeys = new Set([...prev, ...next]);
+    for (const key of allKeys) {
+      const sep = key.indexOf('::');
+      const laboratoryId = key.slice(0, sep);
+      const bucketName = key.slice(sep + 2);
+      if (!laboratoryId || !bucketName) {
+        continue;
+      }
+      const inPrev = prev.has(key);
+      const inNext = next.has(key);
+      if (inPrev === inNext) {
+        continue;
+      }
+      assignments.push({
+        laboratoryId,
+        bucketName,
+        granted: inNext,
+      });
+    }
+    return assignments;
+  }
+
+  /** Revokes that target a lab's configured default S3 bucket, which the server will clear. */
+  function defaultBucketRevokes(
+    assignments: BatchLaboratoryS3AccessAssignment[],
+  ): { labName: string; bucketName: string }[] {
+    const out: { labName: string; bucketName: string }[] = [];
+    for (const a of assignments) {
+      if (a.granted) {
+        continue;
+      }
+      const lab = laboratories.value.find((l) => l.LaboratoryId === a.laboratoryId);
+      if (lab?.S3Bucket && lab.S3Bucket === a.bucketName) {
+        out.push({ labName: lab.Name, bucketName: a.bucketName });
+      }
+    }
+    return out;
+  }
+
+  const clearDefaultsPrimaryMessage = computed(() =>
+    pendingClearDefaults.value.length === 1
+      ? 'Revoke access to a default S3 bucket?'
+      : 'Revoke access to default S3 buckets?',
+  );
+
+  const clearDefaultsSecondaryMessage = computed(() => {
+    const lines = pendingClearDefaults.value.map((c) => `• ${c.labName}: ${c.bucketName}`);
+    return `Revoking access will clear the default S3 bucket for the following lab(s), and they will need a new default set in lab settings before importing data:\n\n${lines.join('\n')}`;
+  });
+
+  function requestSave() {
+    const revokes = defaultBucketRevokes(buildAssignments());
+    if (revokes.length) {
+      pendingClearDefaults.value = revokes;
+      isConfirmClearDialogOpen.value = true;
+      return;
+    }
+    performSave();
+  }
+
+  function confirmClearAndSave() {
+    isConfirmClearDialogOpen.value = false;
+    performSave();
+  }
+
+  async function performSave() {
     isSaving.value = true;
     try {
       for (const lab of laboratories.value) {
@@ -306,36 +381,25 @@
         }
       }
 
-      const prev = baselineKeys.value;
-      const next = pendingKeys.value;
-      const assignments: BatchLaboratoryS3AccessAssignment[] = [];
+      const assignments = buildAssignments();
 
-      const allKeys = new Set([...prev, ...next]);
-      for (const key of allKeys) {
-        const sep = key.indexOf('::');
-        const laboratoryId = key.slice(0, sep);
-        const bucketName = key.slice(sep + 2);
-        if (!laboratoryId || !bucketName) {
-          continue;
-        }
-        const inPrev = prev.has(key);
-        const inNext = next.has(key);
-        if (inPrev === inNext) {
-          continue;
-        }
-        assignments.push({
-          laboratoryId,
-          bucketName,
-          granted: inNext,
-        });
-      }
-
+      let clearedDefaults: ClearedLaboratoryDefaultBucket[] = [];
       if (assignments.length) {
-        await $api.s3Access.batchUpdate(props.orgId, { assignments });
+        const res = await $api.s3Access.batchUpdate(props.orgId, { assignments });
+        clearedDefaults = res.clearedDefaults;
       }
+
+      // Capture names before reload, since load() refreshes the labs list.
+      const labNameById = new Map(laboratories.value.map((l) => [l.LaboratoryId, l.Name]));
 
       await load();
-      useToastStore().success('S3 access saved');
+
+      if (clearedDefaults.length) {
+        const names = clearedDefaults.map((c) => labNameById.get(c.laboratoryId) ?? c.laboratoryId).join(', ');
+        useToastStore().success(`S3 access saved. Default bucket cleared for: ${names}`);
+      } else {
+        useToastStore().success('S3 access saved');
+      }
     } catch (e) {
       console.error(e);
       useToastStore().error('Failed to save S3 access');
@@ -495,10 +559,24 @@
             :disabled="!isDirty || isSaving"
             :loading="isSaving"
             :aria-describedby="saveStatusId"
-            @click="saveAll"
+            @click="requestSave"
           />
         </div>
       </div>
     </div>
+
+    <EGDialog
+      v-model="isConfirmClearDialogOpen"
+      action-label="Revoke and clear default"
+      :action-variant="ButtonVariantEnum.enum.destructive"
+      cancel-label="Cancel"
+      :cancel-variant="ButtonVariantEnum.enum.secondary"
+      :primary-message="clearDefaultsPrimaryMessage"
+      :secondary-message="clearDefaultsSecondaryMessage"
+      :loading="isSaving"
+      :buttons-disabled="isSaving"
+      @action-triggered="confirmClearAndSave"
+      @update:model-value="(open: boolean) => !open && (isConfirmClearDialogOpen = false)"
+    />
   </div>
 </template>

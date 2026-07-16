@@ -1,5 +1,6 @@
 import {
   BatchUpdateLaboratoryS3AccessRequest,
+  BatchUpdateLaboratoryS3AccessResponse,
   ListGrantedLaboratoryBucketsResponse,
   ListLaboratoryS3AccessAssignmentsResponse,
   ListS3BucketCatalogResponse,
@@ -29,8 +30,11 @@ class S3AccessModule extends HttpFactory {
     return res;
   }
 
-  async batchUpdate(organizationId: string, body: BatchUpdateLaboratoryS3AccessRequest): Promise<void> {
-    const res = await this.call<{ ok?: boolean }>(
+  async batchUpdate(
+    organizationId: string,
+    body: BatchUpdateLaboratoryS3AccessRequest,
+  ): Promise<BatchUpdateLaboratoryS3AccessResponse> {
+    const res = await this.call<BatchUpdateLaboratoryS3AccessResponse>(
       'POST',
       `/organization/s3-access/edit-s3-access-batch?organizationId=${encodeURIComponent(organizationId)}`,
       body,
@@ -38,6 +42,7 @@ class S3AccessModule extends HttpFactory {
     if (!res?.ok) {
       throw new Error('Failed to save S3 access');
     }
+    return { ok: res.ok, clearedDefaults: res.clearedDefaults ?? [] };
   }
 
   async listGrantedBuckets(laboratoryId: string): Promise<ListGrantedLaboratoryBucketsResponse> {
