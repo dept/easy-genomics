@@ -18,6 +18,7 @@
   import EGDataCollectionsPage from '@FE/components/EGDataCollectionsPage.vue';
   import type { DataCollectionsTab } from '@FE/components/EGDataCollectionsTabBar.vue';
   import { TableSort } from './EGTable.vue';
+  import { ensureLabInActiveOrg } from '@FE/utils/ensure-lab-in-active-org';
 
   const props = defineProps<{
     superuser?: boolean;
@@ -65,12 +66,22 @@
   const addUsersPanelId = 'lab-add-users-panel';
   const usersHeadingId = 'lab-users-heading';
 
-  usePageTitle(() => {
-    const base = labName.value ? labName.value : 'Lab';
-    const tab = tabItems.value[tabIndex.value];
-    if (!tab || tab.key === 'dashboard') return base;
-    return `${tab.label} — ${base}`;
-  });
+  /** Prevents duplicate redirects when multiple watchers or lifecycle hooks fire. */
+  const hasRedirectedForOrgMismatch = ref(false);
+
+  async function redirectIfLabOrgMismatch(): Promise<boolean> {
+    if (hasRedirectedForOrgMismatch.value) {
+      return true;
+    }
+    const redirected = await ensureLabInActiveOrg({
+      labId: props.labId,
+      superuser: props.superuser,
+    });
+    if (redirected) {
+      hasRedirectedForOrgMismatch.value = true;
+    }
+    return redirected;
+  }
 
   /** Pipeline Runs table footer; only when Settings → Run retention (months) is greater than zero. */
   const runRecordsRetentionNotice = computed((): string | undefined => {
@@ -85,6 +96,11 @@
    */
   onBeforeMount(async () => {
     await loadLabData();
+
+    if (await redirectIfLabOrgMismatch()) {
+      return;
+    }
+
     await pollFetchLaboratoryRuns();
   });
 
@@ -145,6 +161,13 @@
     items.push(detailsTab);
 
     return items;
+  });
+
+  usePageTitle(() => {
+    const base = labName.value ? labName.value : 'Lab';
+    const tab = tabItems.value[tabIndex.value];
+    if (!tab || tab.key === 'dashboard') return base;
+    return `${tab.label} — ${base}`;
   });
 
   const activeTabKey = computed(() => tabItems.value[tabIndex.value]?.key || '');
@@ -720,13 +743,28 @@
     () => props.labId,
     () => {
       hasRefreshedLabForNullToken.value = false;
+      hasRedirectedForOrgMismatch.value = false;
       lastProcessedLabRef.value = null;
       void loadLabData();
     },
   );
 
+  watch(
+    () => userStore.currentOrgId,
+    async () => {
+      if (props.superuser || uiStore.isRequestPending('loadLabData')) {
+        return;
+      }
+      await redirectIfLabOrgMismatch();
+    },
+  );
+
   watch(lab, async (newLab) => {
     if (newLab === null) {
+      return;
+    }
+
+    if (!props.superuser && uiStore.isRequestPending('loadLabData')) {
       return;
     }
 

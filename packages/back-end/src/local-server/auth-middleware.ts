@@ -10,6 +10,7 @@ import type { Response } from 'express';
 
 /** Paths that do not require a valid JWT (same as CDK NagSuppressions). */
 export const UNAUTHENTICATED_PATHS = new Set<string>([
+  'GET /easy-genomics/list-api-docs',
   'POST /easy-genomics/user/confirm-user-invitation-request',
   'POST /easy-genomics/user/create-user-forgot-password-request',
   'POST /easy-genomics/user/confirm-user-forgot-password-request',

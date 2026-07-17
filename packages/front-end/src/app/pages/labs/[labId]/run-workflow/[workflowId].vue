@@ -5,6 +5,7 @@
   import { ButtonVariantEnum } from '@FE/types/buttons';
   import { WorkflowParameter } from '@aws-sdk/client-omics';
   import { v4 as uuidv4 } from 'uuid';
+  import { ensureLabInActiveOrg } from '@FE/utils/ensure-lab-in-active-org';
 
   const { $api } = useNuxtApp();
   const $router = useRouter();
@@ -23,6 +24,12 @@
   if (!userStore.canViewLab(labId)) {
     $router.push('/labs');
   }
+
+  onBeforeMount(async () => {
+    if (await ensureLabInActiveOrg({ labId })) {
+      return;
+    }
+  });
 
   // set a new omicsRunTempId if not provided
   if (!$route.query.omicsRunTempId) {
@@ -43,8 +50,6 @@
 
   const labName = computed<string>(() => labsStore.labs[labId].Name);
 
-  usePageTitle(() => (workflow.value?.name ? `Run workflow — ${workflow.value.name}` : 'Run workflow'));
-
   /** Must match EGRunFormRunDetails default sentinel for Omics workflow version */
   const OMICS_DEFAULT_WORKFLOW_VERSION = '__omics_default_version__';
 
@@ -61,6 +66,8 @@
   const activeStepKey = computed(() => steps.value[selectedStepIndex.value]?.key);
 
   const workflow = computed<ReadWorkflow | null>(() => omicsWorkflowsStore.workflows[workflowId] || null);
+
+  usePageTitle(() => (workflow.value?.name ? `Run workflow — ${workflow.value.name}` : 'Run workflow'));
 
   const schema = computed<Record<string, WorkflowParameter> | null>(() => workflow.value?.parameterTemplate ?? null);
 
@@ -205,13 +212,13 @@
     }
     runStore.updateWipOmicsRunParams(omicsRunTempId.value, paramsToApply);
 
-    applySequenceCollectionsPrepopulation();
+    await applySequenceCollectionsPrepopulation();
 
     uiStore.setRequestComplete('loadOmicsWorkflow');
   }
 
   /** When opened from Data Collections with a pre-built sample sheet, skip to parameter configuration. */
-  function applySequenceCollectionsPrepopulation(): void {
+  async function applySequenceCollectionsPrepopulation(): Promise<void> {
     if ($route.query.from !== 'data-collections') return;
 
     const wip = runStore.wipOmicsRuns[omicsRunTempId.value];
@@ -219,6 +226,7 @@
 
     setStepEnabled('upload', true);
     setStepEnabled('parameters', true);
+    await nextTick();
     const parametersIndex = steps.value.findIndex((step) => step.key === 'parameters');
     if (parametersIndex >= 0) {
       selectedStepIndex.value = parametersIndex;
@@ -271,9 +279,13 @@
     }
   }
 
-  function nextStep(val: string) {
+  async function nextStep(val: string) {
     const completedStep = steps.value[selectedStepIndex.value]?.key || '';
     setStepEnabled(val, true);
+    // Wait for the enabled tab's `disabled` attribute to reach the DOM before moving the
+    // selected index — HeadlessUI's TabGroup resolves the target tab from the live DOM state,
+    // and moving the index in the same tick makes it fall back to the nearest still-enabled tab.
+    await nextTick();
     selectedStepIndex.value = clampIndex(selectedStepIndex.value + 1);
 
     // Analytics: run wizard step completed.
