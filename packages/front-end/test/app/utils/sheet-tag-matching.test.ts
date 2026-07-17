@@ -111,6 +111,23 @@ describe('matchSheetToSamples', () => {
     expect(result.tagsToCreate).toEqual([]);
   });
 
+  it('rejects a new tag name over the 40-character limit instead of offering to create it', () => {
+    const overlongName = 'a'.repeat(41);
+    const result = matchSheetToSamples({
+      rows: [
+        ['sample_id', 'organism'],
+        ['EG-0417', overlongName],
+      ],
+      nameColumnIndex: 0,
+      tagColumnIndex: 1,
+      sampleNames: ['EG-0417'],
+      existingTags: [],
+    });
+    expect(result.tagsToCreate).toEqual([]);
+    expect(result.rejected).toEqual([{ name: overlongName, reason: 'Tag name exceeds 40 characters' }]);
+    expect(result.perSample).toEqual({});
+  });
+
   it('warns when a new tag is one edit from an existing tag', () => {
     const result = matchSheetToSamples({
       rows: [

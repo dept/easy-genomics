@@ -1,4 +1,8 @@
 import type { LaboratoryDataTag } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
+import {
+  exceedsTagNameMaxLength,
+  DATA_COLLECTION_TAG_NAME_MAX_LENGTH,
+} from '@FE/utils/data-collections-name-validation';
 import { levenshtein } from '@FE/utils/levenshtein';
 
 export interface SheetTagMatchInput {
@@ -129,6 +133,11 @@ export function matchSheetToSamples(input: SheetTagMatchInput): SheetTagMatchRes
       } else {
         existingTagHits.push({ name: existing.Name, sampleCount: count });
       }
+      continue;
+    }
+    if (exceedsTagNameMaxLength(name)) {
+      rejected.push({ name, reason: `Tag name exceeds ${DATA_COLLECTION_TAG_NAME_MAX_LENGTH} characters` });
+      rejectedKeys.add(key);
       continue;
     }
     tagsToCreate.push({ name, sampleCount: count });
