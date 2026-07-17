@@ -427,6 +427,6 @@ test('09 - Add a Lab Technician to a Lab Successfully', async ({ page, baseURL }
     await page.keyboard.type(envConfig.labTechnicianEmail);
     await page.getByRole('option', { name: labTechnicianName }).click();
     await page.getByRole('button', { name: 'Add', exact: true }).click();
-    await expect(page.getByText('Successfully added 1 user to ' + labNameUpdated)).toBeVisible();
+    await expect(page.getByText(/Added 1, Skipped 0, Failed 0/)).toBeVisible();
   }
 });
