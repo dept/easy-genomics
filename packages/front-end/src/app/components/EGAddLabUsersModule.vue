@@ -28,6 +28,7 @@
   const roleOptions = [LaboratoryRolesEnumSchema.enum.LabTechnician, LaboratoryRolesEnumSchema.enum.LabManager];
   const selectedRole = ref<string>(LaboratoryRolesEnumSchema.enum.LabTechnician);
   const bulkResult = ref<LaboratoryUserBulkResult[] | null>(null);
+  const selectedUsersSnapshot = ref<Map<string, string>>(new Map());
 
   const bulkResultSummary = computed(() => {
     if (!bulkResult.value) return null;
@@ -43,7 +44,7 @@
       .filter((r) => r.Outcome !== 'Added')
       .map((r) => ({
         ...r,
-        displayName: otherOrgUsers.value.find((u) => u.UserId === r.UserId)?.displayName || r.UserId,
+        displayName: selectedUsersSnapshot.value.get(r.UserId) || r.UserId,
       })),
   );
 
@@ -70,6 +71,12 @@
   async function handleAddSelectedUserToLab() {
     uiStore.setRequestPending('addUsersToLab');
     bulkResult.value = null;
+    selectedUsersSnapshot.value = new Map(
+      inviteSelectedUserIds.value.map((userId) => {
+        const user = otherOrgUsers.value.find((u) => u.UserId === userId);
+        return [userId, user?.displayName || userId];
+      }),
+    );
 
     try {
       const isLabManager = selectedRole.value === LaboratoryRolesEnumSchema.enum.LabManager;
