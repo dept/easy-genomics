@@ -24,6 +24,7 @@
   const buttonRequestPending = ref<Record<number, boolean>>({});
   const orgUsersDetailsData = ref<OrgUser[]>([]);
   const showInviteModule = ref(false);
+  const openUserId = computed<string | null>(() => (route.query.openUser as string) || null);
 
   const resetFormKey = ref(0);
 
@@ -120,7 +121,12 @@
   ];
 
   function editUser(userId: string) {
-    router.push({ path: `/orgs/${props.orgId}/edit-user/${userId}` });
+    router.push({ query: { ...route.query, openUser: userId } });
+  }
+
+  function closeUserAccessDrawer() {
+    const { openUser: _openUser, ...remainingQuery } = route.query;
+    router.push({ query: remainingQuery });
   }
 
   function onRowClicked(row: OrgUser) {
@@ -490,6 +496,17 @@
           @action-triggered="handleRemoveOrgUser"
           :primary-message="removeUserModalPrimaryMessage"
           v-model="isRemoveUserModalOpen"
+        />
+
+        <EGUserAccessDrawer
+          :model-value="!!openUserId"
+          :org-id="props.orgId"
+          :user-id="openUserId || ''"
+          @update:model-value="
+            (open) => {
+              if (!open) closeUserAccessDrawer();
+            }
+          "
         />
 
         <EGTable
