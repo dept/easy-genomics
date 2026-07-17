@@ -271,7 +271,7 @@
       v-else
       class="border-stroke-light flex min-h-[82px] items-center justify-between gap-3 rounded border border-solid bg-white p-4"
     >
-      <div class="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
+      <div class="user-summary flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
         <EGUserDisplay
           :initials="getSelectedUserInitials"
           :name="getSelectedUserDisplayName"
@@ -365,3 +365,21 @@
     v-model="isRemoveUserDialogOpen"
   />
 </template>
+
+<style scoped lang="scss">
+  // EGUserDisplay's own text column has no width constraint or truncation,
+  // which is fine at full page width but clips abruptly in this drawer's
+  // narrower card. Pierce into it to constrain + ellipsis-truncate instead.
+  .user-summary {
+    :deep(.flex.grow) {
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    :deep(.flex.grow > div) {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+  }
+</style>
