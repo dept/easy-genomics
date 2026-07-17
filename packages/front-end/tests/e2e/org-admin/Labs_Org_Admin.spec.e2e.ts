@@ -343,7 +343,8 @@ test('07 - Add a Lab Manager to a Laboratory Successfully', async ({ page, baseU
     await page.keyboard.type(labManagerEmail);
     await page.getByRole('option', { name: labManagerName }).click();
     await page.getByRole('button', { name: 'Add', exact: true }).click();
-    await expect(page.getByText('Successfully added 1 user to ' + labNameUpdated)).toBeVisible();
+    await expect(page.getByText(/Added 1, Skipped 0, Failed 0/)).toBeVisible();
+    await page.getByRole('button', { name: 'Done' }).click();
 
     // Update Lab Access to 'Lab Manager'
     await page.getByRole('row', { name: labManagerName }).locator('button').click();
