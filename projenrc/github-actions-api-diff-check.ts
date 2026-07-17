@@ -41,6 +41,21 @@ export class GithubActionsApiDiffCheck extends Component {
           },
           { name: 'Install dependencies', run: 'pnpm install --frozen-lockfile' },
           {
+            name: 'Verify OpenAPI spec is up to date',
+            run: [
+              'set -euo pipefail',
+              '# Regenerate the spec + types from the Zod schemas and fail if the committed copy is stale',
+              '# (e.g. a schema change was committed with --no-verify, bypassing the pre-commit hook).',
+              'pnpm --filter @easy-genomics/shared-lib run generate:openapi',
+              'pnpm --filter @easy-genomics/shared-lib run generate:api-types',
+              'if ! git diff --quiet -- packages/shared-lib/src/app/openapi/easy-genomics-api.yaml packages/shared-lib/src/app/types/easy-genomics/generated.d.ts; then',
+              '  echo "::error::OpenAPI spec/types are out of date. Run \'pnpm --filter @easy-genomics/shared-lib run generate:openapi && pnpm --filter @easy-genomics/shared-lib run generate:api-types\' and commit the result."',
+              '  git --no-pager diff -- packages/shared-lib/src/app/openapi/easy-genomics-api.yaml packages/shared-lib/src/app/types/easy-genomics/generated.d.ts',
+              '  exit 1',
+              'fi',
+            ].join('\n'),
+          },
+          {
             id: 'diff',
             name: 'Run optic diff',
             run: [
