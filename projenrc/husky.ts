@@ -32,6 +32,13 @@ export class Husky extends Component {
       );
       preCommit.addLine('pnpm pre-commit');
       preCommit.addLine('pnpm exec projen');
+      // Keep the OpenAPI spec + generated API types in sync with the Zod schemas.
+      // Regenerate and stage them so a schema change can never be committed with a stale spec.
+      preCommit.addLine('pnpm --filter @easy-genomics/shared-lib run generate:openapi');
+      preCommit.addLine('pnpm --filter @easy-genomics/shared-lib run generate:api-types');
+      preCommit.addLine(
+        'git add packages/shared-lib/src/app/openapi/easy-genomics-api.yaml packages/shared-lib/src/app/types/easy-genomics/generated.d.ts',
+      );
       preCommit.addLine('pnpm --filter @easy-genomics/back-end test -- --silent');
       preCommit.addLine('');
     }
