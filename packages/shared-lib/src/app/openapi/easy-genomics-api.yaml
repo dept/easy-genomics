@@ -491,6 +491,7 @@ components:
                   - input_bam
                   - input_cram
                   - input_vcf
+                  - assembly_fasta
                   - metadata
                   - custom_uri
               required:
@@ -517,6 +518,7 @@ components:
       additionalProperties: false
     SampleSheetColumnRole:
       enum:
+        - assembly_fasta
         - custom_uri
         - input_bam
         - input_cram
@@ -729,6 +731,7 @@ components:
                   - input_bam
                   - input_cram
                   - input_vcf
+                  - assembly_fasta
                   - metadata
                   - custom_uri
               required:
@@ -1359,6 +1362,7 @@ components:
                   - input_bam
                   - input_cram
                   - input_vcf
+                  - assembly_fasta
                   - metadata
                   - custom_uri
               required:
@@ -1518,6 +1522,28 @@ components:
           minimum: 0
         EnableNewWorkflowsByDefault:
           type: boolean
+        HealthOmicsLlmProvider:
+          type: string
+          enum:
+            - bedrock
+            - openai
+            - anthropic
+        HealthOmicsLlmModelId:
+          type: string
+        SeqeraLlmProvider:
+          type: string
+          enum:
+            - bedrock
+            - openai
+            - anthropic
+        SeqeraLlmModelId:
+          type: string
+        HealthOmicsLogEnrichmentEnabled:
+          type: boolean
+        HealthOmicsLlmApiKey:
+          type: string
+        SeqeraLlmApiKey:
+          type: string
       required:
         - OrganizationId
         - Name
@@ -1565,6 +1591,45 @@ components:
             Laboratory-wide run retention policy, in months, applied after a run reaches a terminal state.
             - 0 means "never delete run records" (no TTL expiration).
           type: number
+        HealthOmicsLlmProvider:
+          description: |-
+            BYOK LLM provider selection per integration. Each lab can pick a different
+            provider/model/key for HealthOmics vs Seqera. Setting a provider IS the
+            enable signal — when set, ambiguous HealthOmics failures and free-text
+            Seqera errors are routed to the configured LLM. The deterministic
+            HealthOmics lookup table runs regardless. Bedrock uses the platform Lambda
+            IAM; OpenAI / Anthropic read the lab's own API key from SSM at classify
+            time.
+
+            SSM paths for the API keys:
+              `/easy-genomics/organization/{OrganizationId}/laboratory/{LaboratoryId}/llm-api-key-healthomics`
+              `/easy-genomics/organization/{OrganizationId}/laboratory/{LaboratoryId}/llm-api-key-seqera`
+          enum:
+            - anthropic
+            - bedrock
+            - openai
+          type: string
+        HealthOmicsLlmModelId:
+          type: string
+        SeqeraLlmProvider:
+          enum:
+            - anthropic
+            - bedrock
+            - openai
+          type: string
+        SeqeraLlmModelId:
+          type: string
+        HealthOmicsLogEnrichmentEnabled:
+          description: |-
+            When true, the failure classifier fetches the failed HealthOmics run's
+            CloudWatch engine log, redacts PII + secrets, and sends a bounded excerpt to
+            the configured LLM for deeper diagnosis. Requires a HealthOmics LLM provider.
+          type: boolean
+        HasHealthOmicsLlmApiKey:
+          description: Boolean indicators returned by read-laboratory; the actual keys never leave SSM.
+          type: boolean
+        HasSeqeraLlmApiKey:
+          type: boolean
         CreatedAt:
           type: string
         CreatedBy:
@@ -1616,9 +1681,32 @@ components:
           type: number
         EnableNewWorkflowsByDefault:
           type: boolean
+        HealthOmicsLlmProvider:
+          enum:
+            - anthropic
+            - bedrock
+            - openai
+          type: string
+        HealthOmicsLlmModelId:
+          type: string
+        SeqeraLlmProvider:
+          enum:
+            - anthropic
+            - bedrock
+            - openai
+          type: string
+        SeqeraLlmModelId:
+          type: string
+        HealthOmicsLogEnrichmentEnabled:
+          type: boolean
         HasNextFlowTowerAccessToken:
           type: boolean
         HasGitHubAccessToken:
+          type: boolean
+        HasHealthOmicsLlmApiKey:
+          description: Boolean indicators. The actual keys live in SSM and are never returned.
+          type: boolean
+        HasSeqeraLlmApiKey:
           type: boolean
       required:
         - LaboratoryId
@@ -1768,6 +1856,49 @@ components:
             Populated by the status-check processor from Seqera `workflow.duration`
             or AWS HealthOmics `stopTime - startTime`.
           type: number
+        FailureReason:
+          description: |-
+            Top-level failure reason reported by the platform when a run reaches FAILED state.
+            Sourced from HealthOmics `failureReason` or Seqera `workflow.errorMessage`.
+            Absent on runs that failed before this field was introduced.
+          type: string
+        FailureStatusMessage:
+          description: |-
+            HealthOmics human-readable `statusMessage` (often carries the failing task name
+            and a CloudWatch log link). Kept separate from the machine-code `FailureReason`
+            so the classifier receives both signals.
+          type: string
+        FailureErrorReport:
+          description: |-
+            Seqera `workflow.errorReport` — the richer Nextflow stack-trace / error detail,
+            distinct from the one-line `workflow.errorMessage` stored in `FailureReason`.
+          type: string
+        FailureOwner:
+          description: |-
+            Party responsible for resolving a failure: Lab user (input/data), Bioinformatician
+            (workflow definition), AWS (transient, retry), or Ambiguous (needs investigation).
+            Populated asynchronously by the classification pipeline after a FAILED transition.
+          enum:
+            - AWS
+            - Ambiguous
+            - Bioinformatician
+            - Lab
+          type: string
+        FailureSummary:
+          description: One-line human summary of the failure suitable for inline display.
+          type: string
+        FailureAction:
+          description: Suggested next step, imperative voice (e.g. "Increase memory allocation").
+          type: string
+        FailureClassifiedBy:
+          description: |-
+            Provenance of the classification: `lookup` = deterministic table hit,
+            `llm` = produced by the configured LLM provider. Used to render an
+            AI-assisted disclaimer in the UI and for ops debugging.
+          enum:
+            - llm
+            - lookup
+          type: string
       required:
         - LaboratoryId
         - OrganizationId
@@ -1837,6 +1968,28 @@ components:
           type: number
         RunDurationSeconds:
           type: number
+        FailureReason:
+          type: string
+        FailureStatusMessage:
+          type: string
+        FailureErrorReport:
+          type: string
+        FailureOwner:
+          enum:
+            - AWS
+            - Ambiguous
+            - Bioinformatician
+            - Lab
+          type: string
+        FailureSummary:
+          type: string
+        FailureAction:
+          type: string
+        FailureClassifiedBy:
+          enum:
+            - llm
+            - lookup
+          type: string
       required:
         - LaboratoryId
         - OrganizationId
@@ -1896,6 +2049,28 @@ components:
           minimum: 0
         EnableNewWorkflowsByDefault:
           type: boolean
+        HealthOmicsLlmProvider:
+          type: string
+          enum:
+            - bedrock
+            - openai
+            - anthropic
+        HealthOmicsLlmModelId:
+          type: string
+        SeqeraLlmProvider:
+          type: string
+          enum:
+            - bedrock
+            - openai
+            - anthropic
+        SeqeraLlmModelId:
+          type: string
+        HealthOmicsLogEnrichmentEnabled:
+          type: boolean
+        HealthOmicsLlmApiKey:
+          type: string
+        SeqeraLlmApiKey:
+          type: string
       required:
         - Name
         - Status
@@ -2553,6 +2728,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FavouriteWorkflow'
+        AnalyticsConsent:
+          enum:
+            - denied
+            - granted
+            - unset
+          type: string
         CreatedAt:
           type: string
         CreatedBy:
@@ -2613,6 +2794,12 @@ components:
               - Platform
               - LaboratoryId
             additionalProperties: false
+        AnalyticsConsent:
+          type: string
+          enum:
+            - unset
+            - granted
+            - denied
       additionalProperties: false
     ListComputeEnvsResponse:
       type: object

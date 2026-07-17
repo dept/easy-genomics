@@ -587,7 +587,7 @@ export interface components {
       Columns: ({
           columnName: string;
           /** @enum {string} */
-          role: "sample_id" | "read1" | "read2" | "reads" | "reference_fasta" | "reference_gtf" | "reference_gff" | "reference_bed" | "input_bam" | "input_cram" | "input_vcf" | "metadata" | "custom_uri";
+          role: "sample_id" | "read1" | "read2" | "reads" | "reference_fasta" | "reference_gtf" | "reference_gff" | "reference_bed" | "input_bam" | "input_cram" | "input_vcf" | "assembly_fasta" | "metadata" | "custom_uri";
           required: boolean;
         })[];
       SampleIds?: string[];
@@ -595,7 +595,7 @@ export interface components {
       ExistingSequenceCollectionId?: string;
     };
     /** @enum {string} */
-    SampleSheetColumnRole: "custom_uri" | "input_bam" | "input_cram" | "input_vcf" | "metadata" | "read1" | "read2" | "reads" | "reference_bed" | "reference_fasta" | "reference_gff" | "reference_gtf" | "sample_id";
+    SampleSheetColumnRole: "assembly_fasta" | "custom_uri" | "input_bam" | "input_cram" | "input_vcf" | "metadata" | "read1" | "read2" | "reads" | "reference_bed" | "reference_fasta" | "reference_gff" | "reference_gtf" | "sample_id";
     LaboratorySequenceCollection: {
       SequenceCollectionId: string;
       Name: string;
@@ -665,7 +665,7 @@ export interface components {
       Columns: ({
           columnName: string;
           /** @enum {string} */
-          role: "sample_id" | "read1" | "read2" | "reads" | "reference_fasta" | "reference_gtf" | "reference_gff" | "reference_bed" | "input_bam" | "input_cram" | "input_vcf" | "metadata" | "custom_uri";
+          role: "sample_id" | "read1" | "read2" | "reads" | "reference_fasta" | "reference_gtf" | "reference_gff" | "reference_bed" | "input_bam" | "input_cram" | "input_vcf" | "assembly_fasta" | "metadata" | "custom_uri";
           required: boolean;
         })[];
       SampleIds: string[];
@@ -913,7 +913,7 @@ export interface components {
       Columns: ({
           columnName: string;
           /** @enum {string} */
-          role: "sample_id" | "read1" | "read2" | "reads" | "reference_fasta" | "reference_gtf" | "reference_gff" | "reference_bed" | "input_bam" | "input_cram" | "input_vcf" | "metadata" | "custom_uri";
+          role: "sample_id" | "read1" | "read2" | "reads" | "reference_fasta" | "reference_gtf" | "reference_gff" | "reference_bed" | "input_bam" | "input_cram" | "input_vcf" | "assembly_fasta" | "metadata" | "custom_uri";
           required: boolean;
         })[];
     };
@@ -975,6 +975,15 @@ export interface components {
       NextFlowTowerWorkspaceId?: string;
       RunRetentionMonths?: number;
       EnableNewWorkflowsByDefault?: boolean;
+      /** @enum {string} */
+      HealthOmicsLlmProvider?: "bedrock" | "openai" | "anthropic";
+      HealthOmicsLlmModelId?: string;
+      /** @enum {string} */
+      SeqeraLlmProvider?: "bedrock" | "openai" | "anthropic";
+      SeqeraLlmModelId?: string;
+      HealthOmicsLogEnrichmentEnabled?: boolean;
+      HealthOmicsLlmApiKey?: string;
+      SeqeraLlmApiKey?: string;
     };
     /** @enum {string} */
     Status: "Active" | "Inactive";
@@ -1001,6 +1010,34 @@ export interface components {
        * - 0 means "never delete run records" (no TTL expiration).
        */
       RunRetentionMonths?: number;
+      /**
+       * @description BYOK LLM provider selection per integration. Each lab can pick a different
+       * provider/model/key for HealthOmics vs Seqera. Setting a provider IS the
+       * enable signal — when set, ambiguous HealthOmics failures and free-text
+       * Seqera errors are routed to the configured LLM. The deterministic
+       * HealthOmics lookup table runs regardless. Bedrock uses the platform Lambda
+       * IAM; OpenAI / Anthropic read the lab's own API key from SSM at classify
+       * time.
+       *
+       * SSM paths for the API keys:
+       *   `/easy-genomics/organization/{OrganizationId}/laboratory/{LaboratoryId}/llm-api-key-healthomics`
+       *   `/easy-genomics/organization/{OrganizationId}/laboratory/{LaboratoryId}/llm-api-key-seqera`
+       * @enum {string}
+       */
+      HealthOmicsLlmProvider?: "anthropic" | "bedrock" | "openai";
+      HealthOmicsLlmModelId?: string;
+      /** @enum {string} */
+      SeqeraLlmProvider?: "anthropic" | "bedrock" | "openai";
+      SeqeraLlmModelId?: string;
+      /**
+       * @description When true, the failure classifier fetches the failed HealthOmics run's
+       * CloudWatch engine log, redacts PII + secrets, and sends a bounded excerpt to
+       * the configured LLM for deeper diagnosis. Requires a HealthOmics LLM provider.
+       */
+      HealthOmicsLogEnrichmentEnabled?: boolean;
+      /** @description Boolean indicators returned by read-laboratory; the actual keys never leave SSM. */
+      HasHealthOmicsLlmApiKey?: boolean;
+      HasSeqeraLlmApiKey?: boolean;
       CreatedAt?: string;
       CreatedBy?: string;
       ModifiedAt?: string;
@@ -1024,8 +1061,18 @@ export interface components {
       NextFlowTowerWorkspaceId?: string;
       RunRetentionMonths?: number;
       EnableNewWorkflowsByDefault?: boolean;
+      /** @enum {string} */
+      HealthOmicsLlmProvider?: "anthropic" | "bedrock" | "openai";
+      HealthOmicsLlmModelId?: string;
+      /** @enum {string} */
+      SeqeraLlmProvider?: "anthropic" | "bedrock" | "openai";
+      SeqeraLlmModelId?: string;
+      HealthOmicsLogEnrichmentEnabled?: boolean;
       HasNextFlowTowerAccessToken?: boolean;
       HasGitHubAccessToken?: boolean;
+      /** @description Boolean indicators. The actual keys live in SSM and are never returned. */
+      HasHealthOmicsLlmApiKey?: boolean;
+      HasSeqeraLlmApiKey?: boolean;
     };
     RequestLaboratoryRequest: {
       /** Format: uuid */
@@ -1107,6 +1154,41 @@ export interface components {
        * or AWS HealthOmics `stopTime - startTime`.
        */
       RunDurationSeconds?: number;
+      /**
+       * @description Top-level failure reason reported by the platform when a run reaches FAILED state.
+       * Sourced from HealthOmics `failureReason` or Seqera `workflow.errorMessage`.
+       * Absent on runs that failed before this field was introduced.
+       */
+      FailureReason?: string;
+      /**
+       * @description HealthOmics human-readable `statusMessage` (often carries the failing task name
+       * and a CloudWatch log link). Kept separate from the machine-code `FailureReason`
+       * so the classifier receives both signals.
+       */
+      FailureStatusMessage?: string;
+      /**
+       * @description Seqera `workflow.errorReport` — the richer Nextflow stack-trace / error detail,
+       * distinct from the one-line `workflow.errorMessage` stored in `FailureReason`.
+       */
+      FailureErrorReport?: string;
+      /**
+       * @description Party responsible for resolving a failure: Lab user (input/data), Bioinformatician
+       * (workflow definition), AWS (transient, retry), or Ambiguous (needs investigation).
+       * Populated asynchronously by the classification pipeline after a FAILED transition.
+       * @enum {string}
+       */
+      FailureOwner?: "AWS" | "Ambiguous" | "Bioinformatician" | "Lab";
+      /** @description One-line human summary of the failure suitable for inline display. */
+      FailureSummary?: string;
+      /** @description Suggested next step, imperative voice (e.g. "Increase memory allocation"). */
+      FailureAction?: string;
+      /**
+       * @description Provenance of the classification: `lookup` = deterministic table hit,
+       * `llm` = produced by the configured LLM provider. Used to render an
+       * AI-assisted disclaimer in the UI and for ops debugging.
+       * @enum {string}
+       */
+      FailureClassifiedBy?: "llm" | "lookup";
     };
     ReadLaboratoryRun: {
       LaboratoryId: string;
@@ -1135,6 +1217,15 @@ export interface components {
       TerminalAt?: string;
       ExpiresAt?: number;
       RunDurationSeconds?: number;
+      FailureReason?: string;
+      FailureStatusMessage?: string;
+      FailureErrorReport?: string;
+      /** @enum {string} */
+      FailureOwner?: "AWS" | "Ambiguous" | "Bioinformatician" | "Lab";
+      FailureSummary?: string;
+      FailureAction?: string;
+      /** @enum {string} */
+      FailureClassifiedBy?: "llm" | "lookup";
     };
     UpdateLaboratoryRunRequest: {
       Status: string;
@@ -1159,6 +1250,15 @@ export interface components {
       NextFlowTowerWorkspaceId?: string;
       RunRetentionMonths?: number;
       EnableNewWorkflowsByDefault?: boolean;
+      /** @enum {string} */
+      HealthOmicsLlmProvider?: "bedrock" | "openai" | "anthropic";
+      HealthOmicsLlmModelId?: string;
+      /** @enum {string} */
+      SeqeraLlmProvider?: "bedrock" | "openai" | "anthropic";
+      SeqeraLlmModelId?: string;
+      HealthOmicsLogEnrichmentEnabled?: boolean;
+      HealthOmicsLlmApiKey?: string;
+      SeqeraLlmApiKey?: string;
     };
     AddLaboratoryUserRequest: {
       /** Format: uuid */
@@ -1420,6 +1520,8 @@ export interface components {
       SampleIdSplitPattern?: string;
       OmicsWorkflowDefaultParams?: Record<string, never>;
       FavouriteWorkflows?: components["schemas"]["FavouriteWorkflow"][];
+      /** @enum {string} */
+      AnalyticsConsent?: "denied" | "granted" | "unset";
       CreatedAt?: string;
       CreatedBy?: string;
       ModifiedAt?: string;
@@ -1447,6 +1549,8 @@ export interface components {
           Platform: "Seqera Cloud" | "AWS HealthOmics";
           LaboratoryId: string;
         })[];
+      /** @enum {string} */
+      AnalyticsConsent?: "unset" | "granted" | "denied";
     };
     ListComputeEnvsResponse: {
       computeEnvs?: ({
