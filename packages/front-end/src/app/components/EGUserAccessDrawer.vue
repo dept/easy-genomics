@@ -15,7 +15,12 @@
 </script>
 
 <template>
-  <USlideover :model-value="modelValue" side="right" @update:model-value="emit('update:modelValue', $event)">
+  <USlideover
+    :model-value="modelValue"
+    side="right"
+    :ui="{ width: 'w-screen max-w-xl' }"
+    @update:model-value="emit('update:modelValue', $event)"
+  >
     <UCard
       class="flex h-full flex-col"
       :ui="{
