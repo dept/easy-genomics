@@ -1,3 +1,8 @@
+/** Picks '\t' for a .tsv filename (case-insensitive), ',' otherwise. */
+export function delimiterForFilename(filename: string): string {
+  return filename.toLowerCase().endsWith('.tsv') ? '\t' : ',';
+}
+
 /**
  * Minimal RFC-4180-style parser for delimited text (CSV/TSV). Handles quoted
  * fields containing the delimiter or newlines, escaped quotes ("" -> "),

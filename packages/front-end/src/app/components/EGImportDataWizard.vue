@@ -12,7 +12,7 @@
     REGEX_GROUPING_PRESETS,
     type RegexGroupingPresetKey,
   } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
-  import { parseDelimitedText } from '@easy-genomics/shared-lib/src/app/utils/delimited-text';
+  import { delimiterForFilename, parseDelimitedText } from '@easy-genomics/shared-lib/src/app/utils/delimited-text';
   import { TAG_PRESET_COLORS } from '@easy-genomics/shared-lib/src/app/constants/data-collections';
   import { useToastStore, useUiStore } from '@FE/stores';
   import { basenameFromS3Key } from '@FE/utils/data-collections-file-type';
@@ -307,7 +307,7 @@
     tagColumnIndex.value = -1;
     if (!file) return;
     try {
-      const rows = parseDelimitedText(await file.text());
+      const rows = parseDelimitedText(await file.text(), delimiterForFilename(file.name));
       if (rows.length < 2 || (rows[0] ?? []).length === 0) {
         tagSheetRows.value = [];
         tagSheetError.value = 'The sheet needs a header row and at least one data row.';
@@ -317,7 +317,7 @@
       tagSheetError.value = '';
     } catch {
       tagSheetRows.value = [];
-      tagSheetError.value = 'Could not read that file. Please upload a CSV.';
+      tagSheetError.value = 'Could not read that file. Please upload a CSV or TSV.';
     }
   }
 

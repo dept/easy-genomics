@@ -1,4 +1,4 @@
-import { parseDelimitedText } from './delimited-text';
+import { delimiterForFilename, parseDelimitedText } from './delimited-text';
 
 describe('parseDelimitedText', () => {
   it('returns an empty array for empty input', () => {
@@ -46,5 +46,24 @@ describe('parseDelimitedText', () => {
       ['a', 'b'],
       ['c', 'd'],
     ]);
+  });
+});
+
+describe('delimiterForFilename', () => {
+  it('returns a tab for .tsv files', () => {
+    expect(delimiterForFilename('samples.tsv')).toBe('\t');
+  });
+
+  it('is case-insensitive for the .tsv extension', () => {
+    expect(delimiterForFilename('SAMPLES.TSV')).toBe('\t');
+  });
+
+  it('returns a comma for .csv files', () => {
+    expect(delimiterForFilename('samples.csv')).toBe(',');
+  });
+
+  it('returns a comma for .txt and unrecognized extensions', () => {
+    expect(delimiterForFilename('samples.txt')).toBe(',');
+    expect(delimiterForFilename('samples')).toBe(',');
   });
 });
