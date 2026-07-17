@@ -242,6 +242,10 @@ export interface paths {
     /** Update Laboratory */
     put: operations["updateLaboratory"];
   };
+  "/easy-genomics/laboratory/user/add-bulk-laboratory-users": {
+    /** Add Bulk Laboratory Users */
+    post: operations["addBulkLaboratoryUsers"];
+  };
   "/easy-genomics/laboratory/user/add-laboratory-user": {
     /** Add Laboratory User */
     post: operations["addLaboratoryUser"];
@@ -1259,6 +1263,16 @@ export interface components {
       HealthOmicsLogEnrichmentEnabled?: boolean;
       HealthOmicsLlmApiKey?: string;
       SeqeraLlmApiKey?: string;
+    };
+    AddBulkLaboratoryUsersRequest: {
+      /** Format: uuid */
+      LaboratoryId: string;
+      Users: {
+          /** Format: uuid */
+          UserId: string;
+          LabManager: boolean;
+          LabTechnician: boolean;
+        }[];
     };
     AddLaboratoryUserRequest: {
       /** Format: uuid */
@@ -4584,6 +4598,27 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["Laboratory"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Add Bulk Laboratory Users */
+  addBulkLaboratoryUsers: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AddBulkLaboratoryUsersRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
         };
       };
       400: components["responses"]["BadRequest"];
