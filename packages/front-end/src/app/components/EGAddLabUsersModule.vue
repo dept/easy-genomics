@@ -2,6 +2,8 @@
   import { LabUser, OrgUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-unified';
   import { OrganizationUserDetails } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization-user-details';
   import { UserStatusSchema } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/status';
+  import { LaboratoryRolesEnumSchema } from '@FE/types/roles';
+  import { LaboratoryUserBulkResult } from '@FE/types/api';
 
   const props = defineProps<{
     orgId: string;
@@ -20,7 +22,30 @@
   const otherOrgUsers = ref<OrgUser[]>([]);
   const inviteSelectedUserIds = ref<string[]>([]);
   const selectId = useId();
+  const roleSelectId = useId();
   const addUsersStatusId = 'add-lab-users-status';
+
+  const roleOptions = [LaboratoryRolesEnumSchema.enum.LabTechnician, LaboratoryRolesEnumSchema.enum.LabManager];
+  const selectedRole = ref<string>(LaboratoryRolesEnumSchema.enum.LabTechnician);
+  const bulkResult = ref<LaboratoryUserBulkResult[] | null>(null);
+
+  const bulkResultSummary = computed(() => {
+    if (!bulkResult.value) return null;
+    return {
+      added: bulkResult.value.filter((r) => r.Outcome === 'Added').length,
+      skipped: bulkResult.value.filter((r) => r.Outcome === 'Skipped').length,
+      failed: bulkResult.value.filter((r) => r.Outcome === 'Failed').length,
+    };
+  });
+
+  const bulkResultDetails = computed(() =>
+    (bulkResult.value || [])
+      .filter((r) => r.Outcome !== 'Added')
+      .map((r) => ({
+        ...r,
+        displayName: otherOrgUsers.value.find((u) => u.UserId === r.UserId)?.displayName || r.UserId,
+      })),
+  );
 
   const addUsersStatusMessage = computed(() => {
     if (uiStore.isRequestPending('getLabUsers')) return 'Loading organization users…';
@@ -44,18 +69,21 @@
 
   async function handleAddSelectedUserToLab() {
     uiStore.setRequestPending('addUsersToLab');
+    bulkResult.value = null;
 
     try {
-      await Promise.all(inviteSelectedUserIds.value!.map((userId) => $api.labs.addLabUser(props.labId, userId)));
+      const isLabManager = selectedRole.value === LaboratoryRolesEnumSchema.enum.LabManager;
+      const results = await $api.labs.addBulkLabUsers(props.labId, inviteSelectedUserIds.value, isLabManager);
+      bulkResult.value = results;
 
-      const users = `${inviteSelectedUserIds.value.length} user${inviteSelectedUserIds.value.length === 1 ? '' : 's'}`;
-      useToastStore().success(`Successfully added ${users} to ${props.labName}`);
-
+      const addedCount = results.filter((r) => r.Outcome === 'Added').length;
+      if (addedCount > 0) {
+        emit('added-user-to-lab');
+      }
       inviteSelectedUserIds.value = [];
-      emit('added-user-to-lab');
       await getOrgUsersWithoutLabAccess();
     } catch (e) {
-      toastStore.error('An error occurred while adding users to the lab. Some users may not have been added.');
+      toastStore.error('An error occurred while adding users to the lab. No users were added.');
       throw e;
     } finally {
       uiStore.setRequestComplete('addUsersToLab');
@@ -146,6 +174,18 @@
             </template>
           </USelectMenu>
         </div>
+        <div>
+          <label :for="roleSelectId" class="sr-only">Role for added users</label>
+          <USelectMenu
+            :id="roleSelectId"
+            v-model="selectedRole"
+            :options="roleOptions"
+            class="w-44"
+            size="xl"
+            :disabled="uiStore.anyRequestPending(['getLabUsers', 'addUsersToLab'])"
+            aria-label="Role for added users"
+          />
+        </div>
         <EGButton
           u-button-type="button"
           label="Add"
@@ -155,6 +195,18 @@
           :aria-describedby="addUsersStatusId"
           @click="handleAddSelectedUserToLab"
         />
+      </div>
+
+      <div v-if="bulkResultSummary" class="border-stroke-light mt-4 rounded border border-solid p-3" role="status">
+        <p class="text-sm font-medium">
+          Added {{ bulkResultSummary.added }}, Skipped {{ bulkResultSummary.skipped }}, Failed
+          {{ bulkResultSummary.failed }}
+        </p>
+        <ul v-if="bulkResultDetails.length" class="mt-2 space-y-1 text-sm">
+          <li v-for="item in bulkResultDetails" :key="item.UserId" class="text-alert-caution">
+            {{ item.displayName }} — {{ item.Outcome }}{{ item.Reason ? `: ${item.Reason}` : '' }}
+          </li>
+        </ul>
       </div>
     </EGCard>
   </div>
