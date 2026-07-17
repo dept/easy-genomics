@@ -159,6 +159,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
       lambdaFunctionsNamespace: `${this.props.constructNamespace}`,
       lambdaFunctionsResources: {
         // Used for setting specific resources for a given Lambda function (e.g. environment settings, trigger events)
+        '/easy-genomics/list-api-docs': {
+          // Ship swagger-ui-dist in this Lambda so its CSS/JS are served from our own
+          // origin (no external CDN). Scoped here so only the docs handler carries it.
+          nodeModules: ['swagger-ui-dist'],
+        },
         '/easy-genomics/user/create-user-invitation-request': {
           environment: {
             COGNITO_USER_POOL_CLIENT_ID: this.props.userPoolClient?.userPoolClientId!,

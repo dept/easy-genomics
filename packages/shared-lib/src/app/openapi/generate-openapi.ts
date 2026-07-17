@@ -28,6 +28,7 @@ const CONTROLLERS_DIR = path.resolve(SHARED_LIB_ROOT, '../back-end/src/app/contr
 const TYPES_DIR = path.resolve(SHARED_LIB_ROOT, 'src/app/types');
 const SCHEMA_DIR = path.resolve(SHARED_LIB_ROOT, 'src/app/schema');
 const OUTPUT_PATH = path.resolve(SHARED_LIB_ROOT, 'src/app/openapi/easy-genomics-api.yaml');
+const JSON_OUTPUT_PATH = path.resolve(SHARED_LIB_ROOT, 'src/app/openapi/easy-genomics-api.json');
 
 if (!fs.existsSync(CONTROLLERS_DIR)) {
   throw new Error(
@@ -592,6 +593,12 @@ function main(): void {
 
   fs.writeFileSync(OUTPUT_PATH, output, 'utf-8');
   console.log(`Written: ${OUTPUT_PATH}`);
+
+  // Also emit JSON: the Swagger UI handler imports this natively (works under both esbuild
+  // bundling and the tsx-based local dev server, unlike a .yaml text import). Minified — it's
+  // machine-only (the yaml is the human-readable copy), so it stays a one-line diff.
+  fs.writeFileSync(JSON_OUTPUT_PATH, JSON.stringify(doc), 'utf-8');
+  console.log(`Written: ${JSON_OUTPUT_PATH}`);
 }
 
 main();
