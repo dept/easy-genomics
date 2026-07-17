@@ -133,8 +133,8 @@
   <div :aria-busy="uiStore.anyRequestPending(['getLabUsers', 'addUsersToLab'])">
     <EGCard :padding="4">
       <p :id="addUsersStatusId" class="sr-only" aria-live="polite" aria-atomic="true">{{ addUsersStatusMessage }}</p>
-      <div class="flex space-x-4">
-        <div class="grow">
+      <div class="flex flex-col gap-3">
+        <div class="w-full">
           <label :for="selectId" class="sr-only">Select users to add to {{ labName }}</label>
           <USelectMenu
             :id="selectId"
@@ -153,8 +153,9 @@
             class="w-full"
             size="xl"
             :ui="{
-              base: 'h-[52px] min-w-96',
+              base: 'h-[52px]',
             }"
+            :popper="{ strategy: 'fixed' }"
             :aria-label="`Select users to add to ${labName}`"
           >
             <template #option="{ option: user }">
@@ -181,27 +182,30 @@
             </template>
           </USelectMenu>
         </div>
-        <div>
-          <label :for="roleSelectId" class="sr-only">Role for added users</label>
-          <USelectMenu
-            :id="roleSelectId"
-            v-model="selectedRole"
-            :options="roleOptions"
-            class="w-44"
-            size="xl"
-            :disabled="uiStore.anyRequestPending(['getLabUsers', 'addUsersToLab'])"
-            aria-label="Role for added users"
+        <div class="flex items-center gap-3">
+          <div>
+            <label :for="roleSelectId" class="sr-only">Role for added users</label>
+            <USelectMenu
+              :id="roleSelectId"
+              v-model="selectedRole"
+              :options="roleOptions"
+              class="w-44"
+              size="xl"
+              :disabled="uiStore.anyRequestPending(['getLabUsers', 'addUsersToLab'])"
+              :popper="{ strategy: 'fixed' }"
+              aria-label="Role for added users"
+            />
+          </div>
+          <EGButton
+            u-button-type="button"
+            label="Add"
+            :disabled="inviteSelectedUserIds.length < 1 || uiStore.anyRequestPending(['getLabUsers', 'addUsersToLab'])"
+            :loading="uiStore.isRequestPending('addUsersToLab')"
+            icon="i-heroicons-plus"
+            :aria-describedby="addUsersStatusId"
+            @click="handleAddSelectedUserToLab"
           />
         </div>
-        <EGButton
-          u-button-type="button"
-          label="Add"
-          :disabled="inviteSelectedUserIds.length < 1 || uiStore.anyRequestPending(['getLabUsers', 'addUsersToLab'])"
-          :loading="uiStore.isRequestPending('addUsersToLab')"
-          icon="i-heroicons-plus"
-          :aria-describedby="addUsersStatusId"
-          @click="handleAddSelectedUserToLab"
-        />
       </div>
 
       <div v-if="bulkResultSummary" class="border-stroke-light mt-4 rounded border border-solid p-3" role="status">
