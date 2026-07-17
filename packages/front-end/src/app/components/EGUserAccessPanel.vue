@@ -269,9 +269,9 @@
     <!-- toggle -->
     <div
       v-else
-      class="border-stroke-light flex h-[82px] items-center justify-between gap-3 rounded border border-solid bg-white p-4"
+      class="border-stroke-light flex min-h-[82px] items-center justify-between gap-3 rounded border border-solid bg-white p-4"
     >
-      <div class="flex items-center gap-3">
+      <div class="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
         <EGUserDisplay
           :initials="getSelectedUserInitials"
           :name="getSelectedUserDisplayName"
@@ -279,7 +279,7 @@
           :inactive="selectedUser.OrganizationUserStatus !== 'Active'"
         />
       </div>
-      <div class="flex items-center">
+      <div class="flex shrink-0 items-center whitespace-nowrap">
         <label :id="orgAdminToggleId" class="text-xs" :for="`${orgAdminToggleId}-input`">Organization Admin</label>
         <UToggle
           :id="`${orgAdminToggleId}-input`"
