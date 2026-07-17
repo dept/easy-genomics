@@ -146,11 +146,11 @@ test('05 - Remove Invited user from an Org Successfully', async ({ page, baseURL
   if (userExists) {
     // Remove the user from the organization
     await page.getByRole('row', { name: envConfig.testInviteEmail }).locator('button').nth(1).click();
-    await page.getByRole('menuitem', { name: 'Remove From Org' }).click();
-    await page.getByRole('button', { name: 'Remove User' }).nth(1).click();
+    await page.getByRole('menuitem', { name: 'Revoke invite' }).click();
+    await page.getByRole('button', { name: 'Revoke Invite' }).nth(1).click();
 
-    // Confirm deletion
-    await expect(page.getByText(`${envConfig.testInviteEmail} has been removed from ${orgName}`).nth(0)).toBeVisible();
+    // Confirm revocation
+    await expect(page.getByText(`Invitation for ${envConfig.testInviteEmail} has been revoked`).nth(0)).toBeVisible();
     const cell = page.getByRole('cell', {
       name: envConfig.testInviteEmail,
       exact: true,
