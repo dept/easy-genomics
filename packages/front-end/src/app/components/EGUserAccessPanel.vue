@@ -28,12 +28,6 @@
 
   const orgAdminToggleId = useId();
 
-  usePageTitle(() =>
-    getSelectedUserDisplayName.value && getSelectedUserDisplayName.value !== '???'
-      ? `Edit access — ${getSelectedUserDisplayName.value}`
-      : 'Edit user access',
-  );
-
   const selectedUserOrgAdmin = computed<boolean | null>(
     () => selectedUser.value?.OrganizationAccess?.[props.orgId]?.OrganizationAdmin ?? null,
   );
@@ -259,14 +253,6 @@
 </script>
 
 <template>
-  <EGPageHeader
-    title="Edit User Access"
-    :show-back="true"
-    :back-action="() => $router.push(`/orgs/${props.orgId}`)"
-    show-org-breadcrumb
-    :breadcrumbs="[getSelectedUserDisplayName !== '???' ? getSelectedUserDisplayName : null]"
-  />
-
   <!-- org admin toggle -->
   <div class="mb-4">
     <!-- loading skeleton -->
