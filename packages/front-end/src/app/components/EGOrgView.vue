@@ -218,7 +218,6 @@
   });
 
   async function handleRemoveOrgUser() {
-    isRemoveUserModalOpen.value = false;
     isRemovingUser.value = true;
 
     const userToRemove = orgUsersDetailsData.value.find((user) => user.UserId === userToRemoveId.value);
@@ -495,6 +494,7 @@
           :cancel-variant="ButtonVariantEnum.enum.secondary"
           @action-triggered="handleRemoveOrgUser"
           :primary-message="removeUserModalPrimaryMessage"
+          :loading="isRemovingUser"
           v-model="isRemoveUserModalOpen"
         />
 
