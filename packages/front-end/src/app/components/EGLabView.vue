@@ -18,6 +18,7 @@
   import EGDataCollectionsPage from '@FE/components/EGDataCollectionsPage.vue';
   import type { DataCollectionsTab } from '@FE/components/EGDataCollectionsTabBar.vue';
   import { TableSort } from './EGTable.vue';
+  import { ensureLabInActiveOrg } from '@FE/utils/ensure-lab-in-active-org';
 
   const props = defineProps<{
     superuser?: boolean;
@@ -72,6 +73,23 @@
     return `${tab.label} — ${base}`;
   });
 
+  /** Prevents duplicate redirects when multiple watchers or lifecycle hooks fire. */
+  const hasRedirectedForOrgMismatch = ref(false);
+
+  async function redirectIfLabOrgMismatch(): Promise<boolean> {
+    if (hasRedirectedForOrgMismatch.value) {
+      return true;
+    }
+    const redirected = await ensureLabInActiveOrg({
+      labId: props.labId,
+      superuser: props.superuser,
+    });
+    if (redirected) {
+      hasRedirectedForOrgMismatch.value = true;
+    }
+    return redirected;
+  }
+
   /** Pipeline Runs table footer; only when Settings → Run retention (months) is greater than zero. */
   const runRecordsRetentionNotice = computed((): string | undefined => {
     // ?? applies default-for-missing only; explicit 0 must stay 0 (footnote hidden).
@@ -85,6 +103,11 @@
    */
   onBeforeMount(async () => {
     await loadLabData();
+
+    if (await redirectIfLabOrgMismatch()) {
+      return;
+    }
+
     await pollFetchLaboratoryRuns();
   });
 
@@ -720,13 +743,32 @@
     () => props.labId,
     () => {
       hasRefreshedLabForNullToken.value = false;
+      hasRedirectedForOrgMismatch.value = false;
       lastProcessedLabRef.value = null;
       void loadLabData();
     },
   );
 
+  watch(
+    () => userStore.currentOrgId,
+    async () => {
+      if (props.superuser || uiStore.isRequestPending('loadLabData')) {
+        return;
+      }
+      await redirectIfLabOrgMismatch();
+    },
+  );
+
   watch(lab, async (newLab) => {
     if (newLab === null) {
+      return;
+    }
+
+    if (!props.superuser && uiStore.isRequestPending('loadLabData')) {
+      return;
+    }
+
+    if (await redirectIfLabOrgMismatch()) {
       return;
     }
 
