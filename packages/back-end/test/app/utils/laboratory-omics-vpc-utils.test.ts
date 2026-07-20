@@ -1,6 +1,6 @@
 import { ResourceNotFoundException } from '@aws-sdk/client-omics';
-import { assertHealthOmicsVpcConfigurationIsActive } from '../../../src/app/utils/laboratory-omics-vpc-utils';
 import { OmicsService } from '../../../src/app/services/omics-service';
+import { assertHealthOmicsVpcConfigurationIsActive } from '../../../src/app/utils/laboratory-omics-vpc-utils';
 
 jest.mock('../../../src/app/services/omics-service');
 
