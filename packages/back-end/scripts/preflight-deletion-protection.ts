@@ -98,6 +98,7 @@ import {
 } from '@aws-sdk/client-dynamodb';
 import { ConfigurationSettings } from '@easy-genomics/shared-lib/src/app/types/configuration';
 import { loadConfigurations } from '@easy-genomics/shared-lib/src/app/utils/configuration';
+import { isEasyGenomicsDomainNestedStack } from './lib/is-easy-genomics-domain-nested-stack';
 
 const EG_TABLE_SUFFIXES = [
   'organization-table',
@@ -294,12 +295,13 @@ async function armTable(
 }
 
 async function checkMigrationState(client: CloudFormationClient, oldStackName: string): Promise<MigrationState> {
-  // Paginate through the old stack's resources looking for a child stack
-  // whose identity screams "easy-genomics". CDK's nested-stack construct
-  // names mangle to camelCase + a hash in the LogicalResourceId (e.g.
-  // `easygenomicsnestedstack9A1B2C3D`), and the PhysicalResourceId is the
-  // child stack's ARN (which contains the full nested-stack name). Both
-  // are reliable matches, so we accept a hit on either.
+  // Paginate through the old stack's resources looking for the easy-genomics
+  // *domain* nested stack. CDK mangles construct ids to camelCase + a hash in
+  // the LogicalResourceId (e.g. `easygenomicsnestedstack9A1B2C3D`), and the
+  // PhysicalResourceId is the child stack ARN. Matching is delegated to
+  // isEasyGenomicsDomainNestedStack so Auth / HealthOmics / NF-Tower siblings
+  // (which also contain "easygenomics" when envName is that string) are not
+  // treated as migration-pending.
   const collected: StackResourceSummary[] = [];
   let nextToken: string | undefined;
   try {
@@ -321,17 +323,15 @@ async function checkMigrationState(client: CloudFormationClient, oldStackName: s
     return { kind: 'unknown', reason: message };
   }
 
+  // Only the easy-genomics *domain* nested stack (DynamoDB / EG API) must be
+  // gone. Auth / HealthOmics / NF-Tower nested stacks stay on this parent —
+  // and when envName is `easygenomics` their ids also contain that string, so
+  // a bare /easy[-]?genomics/ match false-positives forever. See
+  // isEasyGenomicsDomainNestedStack for the precise matcher.
   const nestedStacks = collected.filter(
     (r) =>
       r.ResourceType === 'AWS::CloudFormation::Stack' &&
-      // Match the logical id (camelCased construct path) or the physical id
-      // (the resolved nested stack ARN/name). Both contain the literal
-      // "easygenomics" / "easy-genomics" when this is the easy-genomics
-      // nested stack. Case-insensitive to be safe against CDK naming
-      // changes.
-      [r.LogicalResourceId, r.PhysicalResourceId].some(
-        (candidate) => candidate !== undefined && /easy[-]?genomics/i.test(candidate),
-      ),
+      isEasyGenomicsDomainNestedStack(r.LogicalResourceId, r.PhysicalResourceId),
   );
 
   if (nestedStacks.length === 0) {
