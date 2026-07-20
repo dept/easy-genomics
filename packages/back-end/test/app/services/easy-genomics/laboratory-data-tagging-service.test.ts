@@ -1197,6 +1197,17 @@ describe('LaboratoryDataTaggingService.applyTagsToSamples', () => {
       'Workflow tags are auto-managed',
     );
   });
+
+  it('rejects system-managed permanent tags', async () => {
+    (svc as unknown as { getTagRow: jest.Mock }).getTagRow = jest.fn().mockResolvedValue({
+      TagId: 'perm-1',
+      Kind: 'permanent',
+      Name: 'Permanent',
+    });
+    await expect(svc.applyTagsToSamples(labFixture(), 'user-1', ['set-1'], ['perm-1'], [])).rejects.toThrow(
+      'Permanent tags are system-managed',
+    );
+  });
 });
 
 describe('LaboratoryDataTaggingService.listSamplesByTag', () => {

@@ -1779,11 +1779,13 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       if (!t) throw new Error(`Unknown tag: ${tagId}`);
       if (t.Kind === 'workflow') throw new Error('Workflow tags are auto-managed');
       if (t.Kind === 'batch') throw new Error('Batch tags are not supported on samples');
+      if (t.Kind === 'permanent') throw new Error('Permanent tags are system-managed');
     }
     for (const tagId of remove) {
       const t = await this.getTagRow(laboratoryId, tagId);
       if (!t) throw new Error(`Unknown tag: ${tagId}`);
       if (t.Kind === 'workflow') throw new Error('Workflow tags are auto-managed');
+      if (t.Kind === 'permanent') throw new Error('Permanent tags are system-managed');
     }
 
     for (const setId of sequenceSetIds) {

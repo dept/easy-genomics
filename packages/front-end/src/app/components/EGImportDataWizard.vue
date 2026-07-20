@@ -12,9 +12,12 @@
     REGEX_GROUPING_PRESETS,
     type RegexGroupingPresetKey,
   } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
+  import { delimiterForFilename, parseDelimitedText } from '@easy-genomics/shared-lib/src/app/utils/delimited-text';
+  import { TAG_PRESET_COLORS } from '@easy-genomics/shared-lib/src/app/constants/data-collections';
   import { useToastStore, useUiStore } from '@FE/stores';
   import { basenameFromS3Key } from '@FE/utils/data-collections-file-type';
   import { exceedsBatchNameMaxLength } from '@FE/utils/data-collections-name-validation';
+  import { matchSheetToSamples, type SheetTagMatchResult } from '@FE/utils/sheet-tag-matching';
 
   type ImportSourceKind = 's3' | 'upload';
   type BatchMode = 'new' | 'existing';
@@ -40,7 +43,7 @@
   const toast = useToastStore();
   const uiStore = useUiStore();
 
-  const IMPORT_STEPS = ['Source', 'Group files', 'Review samples', 'Confirm'] as const;
+  const IMPORT_STEPS = ['Source', 'Group files', 'Tags', 'Review samples', 'Confirm'] as const;
 
   const step = ref(1);
   const importSource = ref<ImportSourceKind>('s3');
@@ -53,7 +56,10 @@
     regexPattern,
   );
   const excludedSamples = ref<Set<string>>(new Set());
-  const setTagIds = ref<Record<string, string[]>>({});
+  const tagSheetRows = ref<string[][]>([]);
+  const tagSheetError = ref<string>('');
+  const nameColumnIndex = ref<number>(-1);
+  const tagColumnIndex = ref<number>(-1);
   const submitting = ref(false);
   const batchMode = ref<BatchMode>('new');
   const newBatchName = ref('');
@@ -83,7 +89,7 @@
   });
 
   watch(step, (n) => {
-    if (n === 4 && !newBatchName.value.trim()) {
+    if (n === 5 && !newBatchName.value.trim()) {
       newBatchName.value = importLabel.value;
     }
   });
@@ -113,6 +119,21 @@
     const single = activeSets.value.filter((s) => s.status === 'single_end').length;
     const review = activeSets.value.filter((s) => s.status === 'needs_review').length;
     return { paired, single, review, total: activeSets.value.length };
+  });
+
+  const sheetHeaders = computed<string[]>(() => tagSheetRows.value[0] ?? []);
+  const columnOptions = computed(() =>
+    sheetHeaders.value.map((header, index) => ({ label: header || `Column ${index + 1}`, value: index })),
+  );
+  const tagMatch = computed<SheetTagMatchResult | null>(() => {
+    if (!tagSheetRows.value.length || nameColumnIndex.value < 0 || tagColumnIndex.value < 0) return null;
+    return matchSheetToSamples({
+      rows: tagSheetRows.value,
+      nameColumnIndex: nameColumnIndex.value,
+      tagColumnIndex: tagColumnIndex.value,
+      sampleNames: proposedSets.value.map((s) => s.sampleId),
+      existingTags: props.tags,
+    });
   });
 
   const importLabel = computed(() => {
@@ -278,6 +299,54 @@
     return `${destPrefix}${base}`;
   }
 
+  async function handleTagSheetFile(event: Event): Promise<void> {
+    const inputEl = event.target as HTMLInputElement;
+    const file = inputEl.files?.[0];
+    inputEl.value = '';
+    nameColumnIndex.value = -1;
+    tagColumnIndex.value = -1;
+    if (!file) return;
+    try {
+      const rows = parseDelimitedText(await file.text(), delimiterForFilename(file.name));
+      if (rows.length < 2 || (rows[0] ?? []).length === 0) {
+        tagSheetRows.value = [];
+        tagSheetError.value = 'The sheet needs a header row and at least one data row.';
+        return;
+      }
+      tagSheetRows.value = rows;
+      tagSheetError.value = '';
+    } catch {
+      tagSheetRows.value = [];
+      tagSheetError.value = 'Could not read that file. Please upload a CSV or TSV.';
+    }
+  }
+
+  /** Create any missing tags, then resolve each sample's tag names to tag IDs. */
+  async function resolveSampleTagIds(): Promise<Record<string, string[]>> {
+    const match = tagMatch.value;
+    if (!match) return {};
+    const idByName = new Map<string, string>();
+    for (const t of props.tags) idByName.set(t.Name.trim().toLowerCase(), t.TagId);
+
+    for (let i = 0; i < match.tagsToCreate.length; i += 1) {
+      const created = await $api.dataCollections.createTag({
+        LaboratoryId: props.labId,
+        Name: match.tagsToCreate[i].name,
+        ColorHex: TAG_PRESET_COLORS[i % TAG_PRESET_COLORS.length],
+      });
+      idByName.set(created.Name.trim().toLowerCase(), created.TagId);
+    }
+
+    const resolved: Record<string, string[]> = {};
+    for (const [sampleName, tagNames] of Object.entries(match.perSample)) {
+      const ids = tagNames
+        .map((name) => idByName.get(name.trim().toLowerCase()))
+        .filter((id): id is string => Boolean(id));
+      if (ids.length) resolved[sampleName] = ids;
+    }
+    return resolved;
+  }
+
   async function confirmImport(): Promise<void> {
     if (!props.lab?.S3Bucket) return;
     submitting.value = true;
@@ -286,11 +355,13 @@
       const labRoot = `${props.lab.OrganizationId}/${props.lab.LaboratoryId}/`;
       const destPrefix = `${labRoot}imports/${importLabel.value}/`;
 
+      const resolvedTagIds = await resolveSampleTagIds();
+
       const sequenceSets = activeSets.value.map((s) => ({
         Name: s.sampleId,
         Layout: s.layout as SampleLayout,
         Keys: s.files.map((f) => resolveDestKeyForFile(f.fileName, destPrefix)),
-        TagIds: setTagIds.value[s.sampleId],
+        TagIds: resolvedTagIds[s.sampleId],
         FilenameRegex: regexPattern.value,
       }));
 
@@ -474,8 +545,53 @@
         />
       </div>
 
-      <!-- Step 3: Build -->
-      <div v-else-if="step === 3" class="flex min-h-0 flex-1 flex-col">
+      <!-- Step 3: Tags (optional) -->
+      <div v-else-if="step === 3" class="flex-1 overflow-y-auto p-6">
+        <h3 class="mb-2 font-medium">Tag samples from a sheet (optional)</h3>
+        <p class="mb-4 text-sm text-gray-500">
+          Upload a sheet listing your samples and a tag column. Rows are matched to the
+          {{ proposedSets.length }} samples above by name; missing tags are created on import.
+        </p>
+
+        <input type="file" accept=".csv,.tsv,.txt" class="mb-2 block text-sm" @change="handleTagSheetFile" />
+        <p v-if="tagSheetError" class="mb-4 text-sm text-red-600">{{ tagSheetError }}</p>
+
+        <div v-if="tagSheetRows.length" class="mt-4 grid grid-cols-2 gap-4">
+          <UFormGroup label="Sample-name column">
+            <USelect v-model="nameColumnIndex" :options="columnOptions" placeholder="Select column" />
+          </UFormGroup>
+          <UFormGroup label="Tag column">
+            <USelect v-model="tagColumnIndex" :options="columnOptions" placeholder="Select column" />
+          </UFormGroup>
+        </div>
+
+        <div v-if="tagMatch" class="mt-6 space-y-2 text-sm">
+          <p v-if="tagMatch.existingTagHits.length">
+            <strong>Existing tags applied:</strong>
+            {{ tagMatch.existingTagHits.map((t) => `${t.name} (${t.sampleCount})`).join(', ') }}
+          </p>
+          <p v-if="tagMatch.tagsToCreate.length" class="text-primary-600">
+            <strong>Tags to create:</strong>
+            {{ tagMatch.tagsToCreate.map((t) => `${t.name} (${t.sampleCount})`).join(', ') }}
+          </p>
+          <p v-for="w in tagMatch.typoWarnings" :key="w.name" class="text-amber-600">
+            ⚠ "{{ w.name }}" is {{ w.distance }} edit(s) from existing tag "{{ w.nearest }}" — possible typo?
+          </p>
+          <p v-if="tagMatch.rejected.length" class="text-red-600">
+            <strong>Skipped:</strong>
+            {{ tagMatch.rejected.map((r) => `${r.name} — ${r.reason}`).join('; ') }}
+          </p>
+          <p v-if="tagMatch.unmatchedRows.length" class="text-gray-500">
+            {{ tagMatch.unmatchedRows.length }} sheet row(s) matched no sample and were ignored.
+          </p>
+          <p v-if="tagMatch.unmatchedSampleNames.length" class="text-gray-500">
+            {{ tagMatch.unmatchedSampleNames.length }} sample(s) had no sheet row and stay untagged.
+          </p>
+        </div>
+      </div>
+
+      <!-- Step 4: Build -->
+      <div v-else-if="step === 4" class="flex min-h-0 flex-1 flex-col">
         <div class="flex gap-2 border-b p-4 text-xs">
           <span class="rounded-full bg-green-100 px-2 py-1 text-green-800">{{ stats.paired }} paired</span>
           <span class="rounded-full bg-blue-100 px-2 py-1 text-blue-800">{{ stats.single }} single-end</span>
@@ -516,7 +632,7 @@
         </div>
       </div>
 
-      <!-- Step 4: Confirm -->
+      <!-- Step 5: Confirm -->
       <div v-else class="flex-1 overflow-y-auto p-6">
         <h3 class="mb-4 font-medium">Confirm &amp; create</h3>
         <dl class="mb-6 max-w-md space-y-2 text-sm">
@@ -582,8 +698,9 @@
         <UButton v-if="step === 1" :disabled="!canContinueStep1" :loading="uploading" @click="loadSourceFiles">
           {{ importSource === 'upload' ? 'Upload & continue to pattern' : 'Continue to pattern' }}
         </UButton>
-        <UButton v-else-if="step === 2" @click="step = 3">Continue to build</UButton>
-        <UButton v-else-if="step === 3" @click="step = 4">Continue to confirm</UButton>
+        <UButton v-else-if="step === 2" @click="step = 3">Continue to tags</UButton>
+        <UButton v-else-if="step === 3" @click="step = 4">Continue to review</UButton>
+        <UButton v-else-if="step === 4" @click="step = 5">Continue to confirm</UButton>
         <UButton v-else :loading="submitting" :disabled="!canConfirmImport" @click="confirmImport">
           {{ importSource === 's3' ? `Copy & create ${stats.total} samples` : `Create ${stats.total} samples` }}
         </UButton>
