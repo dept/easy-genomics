@@ -1061,19 +1061,19 @@
         </div>
       </template>
 
-      <hr class="mb-6" role="presentation" />
+      <template v-if="state.AwsHealthOmicsEnabled">
+        <hr class="mb-6" role="presentation" />
 
-      <section aria-labelledby="lab-settings-healthomics-vpc-networking-heading">
-        <h3 id="lab-settings-healthomics-vpc-networking-heading" class="mb-1 text-sm font-medium text-black">
-          HealthOmics VPC Networking
-        </h3>
-        <p class="text-muted mb-4 text-xs">
-          Route this lab's HealthOmics runs through a saved VPC configuration so they can reach resources outside the
-          default restricted network, for example internet reference datasets, license servers, or private VPC and
-          on-prem data. Restricted runs can only reach S3 and ECR in-region.
-        </p>
+        <section aria-labelledby="lab-settings-healthomics-vpc-networking-heading">
+          <h3 id="lab-settings-healthomics-vpc-networking-heading" class="mb-1 text-sm font-medium text-black">
+            HealthOmics VPC Networking
+          </h3>
+          <p class="text-muted mb-4 text-xs">
+            Route this lab's HealthOmics runs through a saved VPC configuration so they can reach resources outside the
+            default restricted network, for example internet reference datasets, license servers, or private VPC and
+            on-prem data. Restricted runs can only reach S3 and ECR in-region.
+          </p>
 
-        <template v-if="state.AwsHealthOmicsEnabled">
           <EGFormGroup
             label="Networking mode"
             name="AwsHealthOmicsNetworkingMode"
@@ -1104,8 +1104,8 @@
               :disabled="!isEditing || isSubmittingFormData"
             />
           </EGFormGroup>
-        </template>
-      </section>
+        </section>
+      </template>
     </EGCard>
 
     <!-- Form Buttons: Create Mode -->
