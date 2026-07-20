@@ -1034,6 +1034,8 @@
           "NextFlowTowerAccessToken": { "type": "string" },
           "GitHubAccessToken": { "type": "string" },
           "NextFlowTowerWorkspaceId": { "type": "string" },
+          "AwsHealthOmicsNetworkingMode": { "type": "string", "enum": ["RESTRICTED", "VPC"] },
+          "AwsHealthOmicsVpcConfigurationName": { "type": "string", "maxLength": 50 },
           "RunRetentionMonths": { "type": "integer", "minimum": 0 },
           "EnableNewWorkflowsByDefault": { "type": "boolean" },
           "HealthOmicsLlmProvider": { "type": "string", "enum": ["bedrock", "openai", "anthropic"] },
@@ -1061,6 +1063,15 @@
           "NextFlowTowerEnabled": { "type": "boolean" },
           "NextFlowTowerApiBaseUrl": { "type": "string" },
           "NextFlowTowerWorkspaceId": { "type": "string" },
+          "AwsHealthOmicsNetworkingMode": {
+            "description": "VPC networking mode for this lab's HealthOmics runs. Omitted ⇒ RESTRICTED\n(S3 + ECR, same Region only). VPC routes runs through the referenced,\nops-created HealthOmics Configuration named by AwsHealthOmicsVpcConfigurationName.\nIndependent of AwsHealthOmicsEnabled — a lab may hold a dormant VPC config\nwhile HealthOmics is disabled.",
+            "enum": ["RESTRICTED", "VPC"],
+            "type": "string"
+          },
+          "AwsHealthOmicsVpcConfigurationName": {
+            "description": "Name of an existing, ACTIVE HealthOmics Configuration resource, created out-of-band by ops.",
+            "type": "string"
+          },
           "HasNextFlowTowerAccessToken": { "type": "boolean" },
           "HasGitHubAccessToken": { "type": "boolean" },
           "EnableNewWorkflowsByDefault": {
@@ -1112,6 +1123,8 @@
           "ModifiedBy": { "type": "string" },
           "S3Bucket": { "type": "string" },
           "NextFlowTowerWorkspaceId": { "type": "string" },
+          "AwsHealthOmicsNetworkingMode": { "enum": ["RESTRICTED", "VPC"], "type": "string" },
+          "AwsHealthOmicsVpcConfigurationName": { "type": "string" },
           "RunRetentionMonths": { "type": "number" },
           "EnableNewWorkflowsByDefault": { "type": "boolean" },
           "HealthOmicsLlmProvider": { "enum": ["anthropic", "bedrock", "openai"], "type": "string" },
@@ -1300,6 +1313,8 @@
           "NextFlowTowerAccessToken": { "type": "string" },
           "GitHubAccessToken": { "type": "string" },
           "NextFlowTowerWorkspaceId": { "type": "string" },
+          "AwsHealthOmicsNetworkingMode": { "type": "string", "enum": ["RESTRICTED", "VPC"] },
+          "AwsHealthOmicsVpcConfigurationName": { "type": "string", "maxLength": 50 },
           "RunRetentionMonths": { "type": "integer", "minimum": 0 },
           "EnableNewWorkflowsByDefault": { "type": "boolean" },
           "HealthOmicsLlmProvider": { "type": "string", "enum": ["bedrock", "openai", "anthropic"] },
