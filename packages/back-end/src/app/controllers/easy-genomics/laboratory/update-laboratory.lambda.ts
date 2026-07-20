@@ -65,6 +65,10 @@ export const handler: Handler = async (
       throw new LaboratorySeqeraCredentialsIncorrectError();
     }
 
+    // Re-validated on every save while mode stays VPC, even for edits unrelated to networking
+    // (e.g. renaming a disabled lab). If ops deletes the referenced Configuration, such a lab
+    // becomes un-editable until an admin switches mode back to RESTRICTED — an accepted tradeoff
+    // of always validating against the live AWS state rather than trusting the last-known status.
     if (request.AwsHealthOmicsNetworkingMode === 'VPC') {
       await assertHealthOmicsVpcConfigurationIsActive(request.AwsHealthOmicsVpcConfigurationName!, omicsService);
     }
