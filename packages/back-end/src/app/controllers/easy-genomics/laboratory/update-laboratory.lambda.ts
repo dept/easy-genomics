@@ -18,12 +18,15 @@ import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomic
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { migrateWorkflowAccessOnDefaultModeChange } from '@BE/services/easy-genomics/laboratory-workflow-access-default-migration';
+import { OmicsService } from '@BE/services/omics-service';
 import { SsmService } from '@BE/services/ssm-service';
 import { validateOrganizationAdminAccess } from '@BE/utils/auth-utils';
+import { assertHealthOmicsVpcConfigurationIsActive } from '@BE/utils/laboratory-omics-vpc-utils';
 import { httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
 const ssmService = new SsmService();
+const omicsService = new OmicsService();
 
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -62,6 +65,10 @@ export const handler: Handler = async (
       throw new LaboratorySeqeraCredentialsIncorrectError();
     }
 
+    if (request.AwsHealthOmicsNetworkingMode === 'VPC') {
+      await assertHealthOmicsVpcConfigurationIsActive(request.AwsHealthOmicsVpcConfigurationName!, omicsService);
+    }
+
     const response = await laboratoryService
       .update(
         {
@@ -71,6 +78,8 @@ export const handler: Handler = async (
           Status: 'Active',
           S3Bucket: request.S3Bucket, // S3 Bucket Full Name
           AwsHealthOmicsEnabled: request.AwsHealthOmicsEnabled,
+          AwsHealthOmicsNetworkingMode: request.AwsHealthOmicsNetworkingMode,
+          AwsHealthOmicsVpcConfigurationName: request.AwsHealthOmicsVpcConfigurationName,
           NextFlowTowerEnabled: request.NextFlowTowerEnabled,
           NextFlowTowerApiBaseUrl: request.NextFlowTowerApiBaseUrl,
           NextFlowTowerWorkspaceId: request.NextFlowTowerWorkspaceId,
