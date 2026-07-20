@@ -42,6 +42,16 @@ export interface Laboratory extends BaseAttributes {
   NextFlowTowerEnabled?: boolean;
   NextFlowTowerApiBaseUrl?: string;
   NextFlowTowerWorkspaceId?: string;
+  /**
+   * VPC networking mode for this lab's HealthOmics runs. Omitted ⇒ RESTRICTED
+   * (S3 + ECR, same Region only). VPC routes runs through the referenced,
+   * ops-created HealthOmics Configuration named by AwsHealthOmicsVpcConfigurationName.
+   * Independent of AwsHealthOmicsEnabled — a lab may hold a dormant VPC config
+   * while HealthOmics is disabled.
+   */
+  AwsHealthOmicsNetworkingMode?: 'RESTRICTED' | 'VPC';
+  /** Name of an existing, ACTIVE HealthOmics Configuration resource, created out-of-band by ops. */
+  AwsHealthOmicsVpcConfigurationName?: string;
   HasNextFlowTowerAccessToken?: boolean;
   HasGitHubAccessToken?: boolean;
 

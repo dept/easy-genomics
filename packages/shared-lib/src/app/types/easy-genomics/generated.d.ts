@@ -973,6 +973,9 @@ export interface components {
       NextFlowTowerAccessToken?: string;
       GitHubAccessToken?: string;
       NextFlowTowerWorkspaceId?: string;
+      /** @enum {string} */
+      AwsHealthOmicsNetworkingMode?: "RESTRICTED" | "VPC";
+      AwsHealthOmicsVpcConfigurationName?: string;
       RunRetentionMonths?: number;
       EnableNewWorkflowsByDefault?: boolean;
       /** @enum {string} */
@@ -998,6 +1001,17 @@ export interface components {
       NextFlowTowerEnabled?: boolean;
       NextFlowTowerApiBaseUrl?: string;
       NextFlowTowerWorkspaceId?: string;
+      /**
+       * @description VPC networking mode for this lab's HealthOmics runs. Omitted ⇒ RESTRICTED
+       * (S3 + ECR, same Region only). VPC routes runs through the referenced,
+       * ops-created HealthOmics Configuration named by AwsHealthOmicsVpcConfigurationName.
+       * Independent of AwsHealthOmicsEnabled — a lab may hold a dormant VPC config
+       * while HealthOmics is disabled.
+       * @enum {string}
+       */
+      AwsHealthOmicsNetworkingMode?: "RESTRICTED" | "VPC";
+      /** @description Name of an existing, ACTIVE HealthOmics Configuration resource, created out-of-band by ops. */
+      AwsHealthOmicsVpcConfigurationName?: string;
       HasNextFlowTowerAccessToken?: boolean;
       HasGitHubAccessToken?: boolean;
       /**
@@ -1059,6 +1073,9 @@ export interface components {
       ModifiedBy?: string;
       S3Bucket?: string;
       NextFlowTowerWorkspaceId?: string;
+      /** @enum {string} */
+      AwsHealthOmicsNetworkingMode?: "RESTRICTED" | "VPC";
+      AwsHealthOmicsVpcConfigurationName?: string;
       RunRetentionMonths?: number;
       EnableNewWorkflowsByDefault?: boolean;
       /** @enum {string} */
@@ -1248,6 +1265,9 @@ export interface components {
       NextFlowTowerAccessToken?: string;
       GitHubAccessToken?: string;
       NextFlowTowerWorkspaceId?: string;
+      /** @enum {string} */
+      AwsHealthOmicsNetworkingMode?: "RESTRICTED" | "VPC";
+      AwsHealthOmicsVpcConfigurationName?: string;
       RunRetentionMonths?: number;
       EnableNewWorkflowsByDefault?: boolean;
       /** @enum {string} */

@@ -1517,6 +1517,14 @@ components:
           type: string
         NextFlowTowerWorkspaceId:
           type: string
+        AwsHealthOmicsNetworkingMode:
+          type: string
+          enum:
+            - RESTRICTED
+            - VPC
+        AwsHealthOmicsVpcConfigurationName:
+          type: string
+          maxLength: 50
         RunRetentionMonths:
           type: integer
           minimum: 0
@@ -1576,6 +1584,20 @@ components:
         NextFlowTowerApiBaseUrl:
           type: string
         NextFlowTowerWorkspaceId:
+          type: string
+        AwsHealthOmicsNetworkingMode:
+          description: |-
+            VPC networking mode for this lab's HealthOmics runs. Omitted ⇒ RESTRICTED
+            (S3 + ECR, same Region only). VPC routes runs through the referenced,
+            ops-created HealthOmics Configuration named by AwsHealthOmicsVpcConfigurationName.
+            Independent of AwsHealthOmicsEnabled — a lab may hold a dormant VPC config
+            while HealthOmics is disabled.
+          enum:
+            - RESTRICTED
+            - VPC
+          type: string
+        AwsHealthOmicsVpcConfigurationName:
+          description: Name of an existing, ACTIVE HealthOmics Configuration resource, created out-of-band by ops.
           type: string
         HasNextFlowTowerAccessToken:
           type: boolean
@@ -1676,6 +1698,13 @@ components:
         S3Bucket:
           type: string
         NextFlowTowerWorkspaceId:
+          type: string
+        AwsHealthOmicsNetworkingMode:
+          enum:
+            - RESTRICTED
+            - VPC
+          type: string
+        AwsHealthOmicsVpcConfigurationName:
           type: string
         RunRetentionMonths:
           type: number
@@ -2044,6 +2073,14 @@ components:
           type: string
         NextFlowTowerWorkspaceId:
           type: string
+        AwsHealthOmicsNetworkingMode:
+          type: string
+          enum:
+            - RESTRICTED
+            - VPC
+        AwsHealthOmicsVpcConfigurationName:
+          type: string
+          maxLength: 50
         RunRetentionMonths:
           type: integer
           minimum: 0
