@@ -8,6 +8,8 @@
     GitHubAccessTokenSchema,
     NextFlowTowerWorkspaceIdSchema,
     RunRetentionMonthsSchema,
+    NetworkingModeSchema,
+    VpcConfigurationNameSchema,
     LabDetailsFormModeEnum,
     LabDetailsFormMode,
   } from '@FE/types/labs';
@@ -74,6 +76,8 @@
     NextFlowTowerWorkspaceId: '',
     NextFlowTowerApiBaseUrl: orgsStore.orgs[userStore.currentOrgId || '']?.NextFlowTowerApiBaseUrl || '',
     AwsHealthOmicsEnabled: false,
+    AwsHealthOmicsNetworkingMode: 'RESTRICTED',
+    AwsHealthOmicsVpcConfigurationName: '',
     HealthOmicsLlmProvider: undefined,
     HealthOmicsLlmModelId: '',
     HealthOmicsLlmApiKey: '',
@@ -115,6 +119,10 @@
     { value: 'bedrock', label: 'Amazon Bedrock (uses platform IAM, no key required)' },
     { value: 'openai', label: 'OpenAI' },
     { value: 'anthropic', label: 'Anthropic' },
+  ];
+  const networkingModeOptions = [
+    { value: 'RESTRICTED', label: 'Restricted (default)' },
+    { value: 'VPC', label: 'VPC' },
   ];
   function modelIdPlaceholderFor(provider: string | undefined): string {
     switch (provider) {
@@ -551,6 +559,15 @@
       maybeAddFieldValidationErrors(errors, GitHubAccessTokenSchema, 'GitHubAccessToken', state.GitHubAccessToken);
     }
 
+    if (state.AwsHealthOmicsEnabled && state.AwsHealthOmicsNetworkingMode === 'VPC') {
+      maybeAddFieldValidationErrors(
+        errors,
+        VpcConfigurationNameSchema,
+        'AwsHealthOmicsVpcConfigurationName',
+        state.AwsHealthOmicsVpcConfigurationName,
+      );
+    }
+
     checkCanSubmitFormData(errors.length);
 
     return errors;
@@ -591,6 +608,8 @@
     'SeqeraLlmModelId',
     'SeqeraLlmApiKey',
     'HealthOmicsLogEnrichmentEnabled',
+    'AwsHealthOmicsNetworkingMode',
+    'AwsHealthOmicsVpcConfigurationName',
   ] as const;
 
   type LabEditCompareKey = (typeof LAB_DETAILS_EDIT_COMPARE_KEYS)[number];
@@ -611,7 +630,8 @@
       key === 'HealthOmicsLlmApiKey' ||
       key === 'SeqeraLlmApiKey' ||
       key === 'HealthOmicsLlmModelId' ||
-      key === 'SeqeraLlmModelId'
+      key === 'SeqeraLlmModelId' ||
+      key === 'AwsHealthOmicsVpcConfigurationName'
     ) {
       const norm = (v: unknown) => (v === undefined || v === null || v === '' ? '' : v);
       return norm(a) !== norm(b);
@@ -619,6 +639,13 @@
     if (key === 'HealthOmicsLlmProvider' || key === 'SeqeraLlmProvider') {
       // Empty / undefined means "no provider selected"; treat them equivalently.
       const norm = (v: unknown) => (v === undefined || v === null || v === '' ? '_unset_' : v);
+      return norm(a) !== norm(b);
+    }
+    if (key === 'AwsHealthOmicsNetworkingMode') {
+      // A server response omitting the field means RESTRICTED (today's default);
+      // treat that the same as an explicit 'RESTRICTED' so loading an unconfigured
+      // lab into Edit mode doesn't show a false dirty state.
+      const norm = (v: unknown) => (v === undefined || v === null || v === '' ? 'RESTRICTED' : v);
       return norm(a) !== norm(b);
     }
     return a !== b;
@@ -1033,6 +1060,52 @@
           </EGFormGroup>
         </div>
       </template>
+
+      <hr class="mb-6" role="presentation" />
+
+      <section aria-labelledby="lab-settings-healthomics-vpc-networking-heading">
+        <h3 id="lab-settings-healthomics-vpc-networking-heading" class="mb-1 text-sm font-medium text-black">
+          HealthOmics VPC Networking
+        </h3>
+        <p class="text-muted mb-4 text-xs">
+          Route this lab's HealthOmics runs through a saved VPC configuration so they can reach resources outside the
+          default restricted network, for example internet reference datasets, license servers, or private VPC and
+          on-prem data. Restricted runs can only reach S3 and ECR in-region.
+        </p>
+
+        <template v-if="state.AwsHealthOmicsEnabled">
+          <EGFormGroup
+            label="Networking mode"
+            name="AwsHealthOmicsNetworkingMode"
+            eager-validation
+            hint="Restricted (default) reaches only S3 and ECR in-region. VPC routes this lab's runs through a saved configuration. Only available when HealthOmics is enabled."
+          >
+            <USelect
+              v-model="state.AwsHealthOmicsNetworkingMode"
+              :options="networkingModeOptions"
+              value-attribute="value"
+              option-attribute="label"
+              :disabled="!isEditing || isSubmittingFormData"
+            />
+          </EGFormGroup>
+
+          <EGFormGroup
+            v-if="state.AwsHealthOmicsNetworkingMode === 'VPC'"
+            label="VPC configuration name"
+            name="AwsHealthOmicsVpcConfigurationName"
+            eager-validation
+            required
+            hint="Name of an ACTIVE HealthOmics configuration set up by ops."
+          >
+            <EGInput
+              v-model="state.AwsHealthOmicsVpcConfigurationName"
+              maxlength="50"
+              placeholder="wslh-prod-vpc"
+              :disabled="!isEditing || isSubmittingFormData"
+            />
+          </EGFormGroup>
+        </template>
+      </section>
     </EGCard>
 
     <!-- Form Buttons: Create Mode -->
