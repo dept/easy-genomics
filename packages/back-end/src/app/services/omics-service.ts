@@ -5,6 +5,12 @@ import {
   CancelRunCommand,
   CancelRunCommandInput,
   CancelRunCommandOutput,
+  CreateRunCacheCommand,
+  CreateRunCacheCommandInput,
+  CreateRunCacheCommandOutput,
+  GetRunCacheCommand,
+  GetRunCacheCommandInput,
+  GetRunCacheCommandOutput,
   GetRunCommand,
   GetRunCommandInput,
   GetRunCommandOutput,
@@ -37,6 +43,8 @@ import type { AwsCredentialIdentity } from '@aws-sdk/types';
 export enum OmicsCommand {
   CREATE_WORKFLOW = 'create-workflow',
   CANCEL_RUN = 'cancel-run',
+  CREATE_RUN_CACHE = 'create-run-cache',
+  GET_RUN_CACHE = 'get-run-cache',
   GET_RUN = 'get-run',
   GET_WORKFLOW = 'get-workflow',
   LIST_RUNS = 'list-runs',
@@ -72,6 +80,22 @@ export class OmicsService {
     return this.omicsRequest<CreateWorkflowCommandInput, CreateWorkflowCommandOutput>(
       OmicsCommand.CREATE_WORKFLOW,
       createWorkflowCommandInput,
+    );
+  };
+
+  public createRunCache = async (
+    createRunCacheCommandInput: CreateRunCacheCommandInput,
+  ): Promise<CreateRunCacheCommandOutput> => {
+    return this.omicsRequest<CreateRunCacheCommandInput, CreateRunCacheCommandOutput>(
+      OmicsCommand.CREATE_RUN_CACHE,
+      createRunCacheCommandInput,
+    );
+  };
+
+  public getRunCache = async (getRunCacheCommandInput: GetRunCacheCommandInput): Promise<GetRunCacheCommandOutput> => {
+    return this.omicsRequest<GetRunCacheCommandInput, GetRunCacheCommandOutput>(
+      OmicsCommand.GET_RUN_CACHE,
+      getRunCacheCommandInput,
     );
   };
 
@@ -150,6 +174,10 @@ export class OmicsService {
         return new CreateWorkflowCommand(data as CreateWorkflowCommandInput);
       case OmicsCommand.CANCEL_RUN:
         return new CancelRunCommand(data as CancelRunCommandInput);
+      case OmicsCommand.CREATE_RUN_CACHE:
+        return new CreateRunCacheCommand(data as CreateRunCacheCommandInput);
+      case OmicsCommand.GET_RUN_CACHE:
+        return new GetRunCacheCommand(data as GetRunCacheCommandInput);
       case OmicsCommand.GET_RUN:
         return new GetRunCommand(data as GetRunCommandInput);
       case OmicsCommand.GET_WORKFLOW:

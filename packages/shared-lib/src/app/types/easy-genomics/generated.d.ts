@@ -1038,6 +1038,12 @@ export interface components {
       /** @description Boolean indicators returned by read-laboratory; the actual keys never leave SSM. */
       HasHealthOmicsLlmApiKey?: boolean;
       HasSeqeraLlmApiKey?: boolean;
+      /**
+       * @description AWS HealthOmics run cache id used for call caching ("resume"). Lazily provisioned on the
+       * first HealthOmics run and reused for all subsequent runs, so a failed run can be retried and
+       * resume from its last completed task instead of recomputing everything. Managed internally.
+       */
+      HealthOmicsRunCacheId?: string;
       CreatedAt?: string;
       CreatedBy?: string;
       ModifiedAt?: string;
@@ -1073,6 +1079,7 @@ export interface components {
       /** @description Boolean indicators. The actual keys live in SSM and are never returned. */
       HasHealthOmicsLlmApiKey?: boolean;
       HasSeqeraLlmApiKey?: boolean;
+      HealthOmicsRunCacheId?: string;
     };
     RequestLaboratoryRequest: {
       /** Format: uuid */

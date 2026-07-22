@@ -13,6 +13,7 @@ import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handl
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
 import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
+import { OmicsService } from '@BE/services/omics-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
@@ -22,6 +23,81 @@ import { assertLaboratoryHasWorkflowAccess } from '@BE/utils/laboratory-workflow
 
 const laboratoryService = new LaboratoryService();
 const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
+
+/**
+ * Derives the S3 bucket to host the laboratory's HealthOmics run cache. Prefers the Laboratory's
+ * configured `S3Bucket`, falling back to the bucket component of the run's output location.
+ */
+function resolveCacheBucket(laboratory: Laboratory, outdir?: string): string | undefined {
+  if (laboratory.S3Bucket) return laboratory.S3Bucket;
+  const match = outdir?.match(/^s3:\/\/([^/]+)\//);
+  return match ? match[1] : undefined;
+}
+
+/**
+ * Ensures the laboratory has an AWS HealthOmics run cache and returns its id.
+ *
+ * The cache is what makes retry/resume possible: when a run started with this cache fails, its
+ * completed task outputs are saved (cacheBehavior CACHE_ON_FAILURE). A later run started with the
+ * same cache resumes from the last completed task whenever the task fingerprint (inputs, params,
+ * script, container) is unchanged, and recomputes only what actually changed. This means:
+ *  - retrying with the same sample data (with or without parameter tweaks) reuses completed work;
+ *  - changing the sample data invalidates the affected tasks, so it effectively runs fresh;
+ *  - runs launched before caching existed have nothing cached, so they run fresh.
+ *
+ * One cache is provisioned per laboratory (lazily, on first run) and its id is persisted on the
+ * Laboratory so all subsequent runs share it. This is best-effort: any failure here is logged and
+ * results in `undefined`, so the run still launches normally (just without resume support).
+ */
+async function ensureLaboratoryRunCache(
+  laboratory: Laboratory,
+  omicsService: OmicsService,
+  outdir: string | undefined,
+  modifiedBy: string,
+): Promise<string | undefined> {
+  try {
+    if (laboratory.HealthOmicsRunCacheId) return laboratory.HealthOmicsRunCacheId;
+
+    const bucket = resolveCacheBucket(laboratory, outdir);
+    if (!bucket) {
+      console.warn(
+        `[create-run-execution] No S3 bucket resolvable for LaboratoryId=${laboratory.LaboratoryId}; skipping run cache provisioning.`,
+      );
+      return undefined;
+    }
+
+    const created = await omicsService.createRunCache({
+      cacheS3Location: `s3://${bucket}/run-cache/`,
+      cacheBehavior: 'CACHE_ON_FAILURE',
+      name: `${process.env.NAME_PREFIX}-${laboratory.LaboratoryId}-run-cache`,
+      description: `Easy Genomics run cache for Laboratory ${laboratory.LaboratoryId}`,
+      // Stable idempotency token keeps concurrent first-runs from creating duplicate caches.
+      requestId: `${laboratory.LaboratoryId}-run-cache`,
+      tags: {
+        LaboratoryId: laboratory.LaboratoryId,
+        OrganizationId: laboratory.OrganizationId,
+        Application: 'easy-genomics',
+      },
+    });
+
+    const cacheId: string | undefined = created.id;
+    if (!cacheId) return undefined;
+
+    // Persist on the Laboratory so every subsequent run reuses the same cache.
+    await laboratoryService.update(
+      { ...laboratory, HealthOmicsRunCacheId: cacheId, ModifiedAt: new Date().toISOString(), ModifiedBy: modifiedBy },
+      laboratory,
+    );
+
+    return cacheId;
+  } catch (error) {
+    console.error(
+      `[create-run-execution] Failed to provision run cache for LaboratoryId=${laboratory.LaboratoryId}:`,
+      error,
+    );
+    return undefined; // Best-effort: never block a run because caching could not be set up.
+  }
+}
 
 /**
  * This POST /aws-healthomics/run/create-run-execution?laboratoryId={LaboratoryId}
@@ -93,10 +169,22 @@ export const handler: Handler = async (
     );
 
     const parameters = JSON.parse(request.parameters!.toString());
+
+    // Ensure the lab has a run cache so failed runs can be resumed on retry (best-effort).
+    const cacheId: string | undefined = await ensureLaboratoryRunCache(
+      laboratory,
+      omicsService,
+      parameters.outdir,
+      omicsUserId,
+    );
+
     const { workflowVersionName, ...startRunRequestWithoutVersion } = request;
     const response = await omicsService.startRun(<StartRunCommandInput>{
       ...startRunRequestWithoutVersion,
       ...(workflowVersionName ? { workflowVersionName } : {}),
+      // Attaching the cache makes runs resume-capable: completed tasks from a prior failed run with
+      // the same fingerprint are reused, and only changed/failed tasks (and their dependents) re-run.
+      ...(cacheId ? { cacheId, cacheBehavior: 'CACHE_ON_FAILURE' } : {}),
       parameters: {
         ...parameters,
         outdir: '/mnt/workflow/pubdir', // AWS HealthOmics requires explicitly setting 'outdir' = '/mnt/workflow/pubdir' for internal output

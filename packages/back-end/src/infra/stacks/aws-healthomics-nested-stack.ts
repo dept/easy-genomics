@@ -360,6 +360,13 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         actions: ['s3:GetObject'],
         effect: Effect.ALLOW,
       }),
+      // Allow provisioning and reading run caches (call caching / resume support). Run caches are
+      // provisioned per-laboratory and reused across runs so failed runs can be resumed on retry.
+      new PolicyStatement({
+        resources: ['*'],
+        actions: ['omics:CreateRunCache', 'omics:GetRunCache', 'omics:ListRunCaches'],
+        effect: Effect.ALLOW,
+      }),
       // Allow passing the workflow run role to HealthOmics when starting a run
       new PolicyStatement({
         resources: [
@@ -795,7 +802,8 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
         ],
-        actions: ['dynamodb:Query'],
+        // PutItem: persist the lazily-provisioned HealthOmics run cache id on the Laboratory.
+        actions: ['dynamodb:Query', 'dynamodb:PutItem'],
       }),
       new PolicyStatement({
         resources: [

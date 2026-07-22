@@ -8,6 +8,7 @@
   import { RunTask, GetRunResponse } from '@aws-sdk/client-omics';
   import { useLabsStore, useRunStore, useUiStore } from '@FE/stores';
   import { ensureLabInActiveOrg } from '@FE/utils/ensure-lab-in-active-org';
+  import { v4 as uuidv4 } from 'uuid';
 
   const $route = useRoute();
   const $router = useRouter();
@@ -163,6 +164,24 @@
     }
   });
 
+  const isHealthOmics = computed<boolean>(() => labRun.value?.Platform === 'AWS HealthOmics');
+  const isFailed = computed<boolean>(() => labRun.value?.Status?.toUpperCase() === 'FAILED');
+
+  // Retry is HealthOmics-only and relaunches the wizard pre-filled from this run. The workflow id
+  // comes from the GetRun response loaded for failed runs (it isn't stored on the LaboratoryRun).
+  const retryWorkflowId = computed<string | null>(() => omicsRunDetail.value?.workflowId ?? null);
+  const canRetry = computed<boolean>(() => isHealthOmics.value && isFailed.value && !!retryWorkflowId.value);
+
+  function retryRun() {
+    const workflowId = retryWorkflowId.value;
+    if (!workflowId) return;
+
+    $router.push({
+      path: `/labs/${labId}/run-workflow/${workflowId}`,
+      query: { omicsRunTempId: uuidv4(), retryFromRunId: labRunId },
+    });
+  }
+
   const tabItems = computed(() => [
     { key: 'runDetails', label: 'Run Details' },
     { key: 'fileManager', label: 'File Manager' },
@@ -236,6 +255,22 @@
     <template #default="{ item }">
       <!-- Run Details -->
       <div v-if="item.key === 'runDetails'" class="space-y-3">
+        <!-- Retry action for failed HealthOmics runs. Relaunches the wizard pre-filled from this
+             run; unchanged completed tasks are reused via the run cache on retry. -->
+        <section
+          v-if="canRetry"
+          class="stroke-light flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-solid bg-white p-6 max-md:px-5"
+        >
+          <div class="flex flex-col gap-1">
+            <h3 class="text-sm font-medium text-black">Retry this run</h3>
+            <p class="text-muted text-sm">
+              Relaunch pre-filled from this run. Completed steps are reused where the sample data and their inputs are
+              unchanged; changing the sample data re-runs from the start.
+            </p>
+          </div>
+          <EGButton icon="i-heroicons-arrow-path" label="Retry Run" size="sm" @click="retryRun" />
+        </section>
+
         <section
           v-if="labRun"
           class="stroke-light flex flex-col rounded-none rounded-b-2xl border border-solid bg-white p-6 pt-0 max-md:px-5"

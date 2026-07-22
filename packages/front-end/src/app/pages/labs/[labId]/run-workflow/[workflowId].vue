@@ -55,6 +55,14 @@
 
   const omicsRunTempId = computed<string>(() => $route.query.omicsRunTempId as string);
 
+  /**
+   * When present, this run is being launched as a retry of a previously failed run.
+   * The wizard pre-fills its parameters, inputs, name and workflow version from that
+   * run so the user can re-launch "as is" or after editing any step.
+   */
+  const retryFromRunId = computed<string | undefined>(() => ($route.query.retryFromRunId as string) || undefined);
+  const retrySourceRunName = ref<string | null>(null);
+
   const workflowVersionOptions = ref<{ value: string; label: string }[] | undefined>(undefined);
 
   /** True when the user record still has OmicsWorkflowDefaultParams for this workflow (drives the save-defaults checkbox). */
@@ -196,23 +204,28 @@
     hasOmicsWorkflowSavedParameterDefaults.value =
       typeof rawSavedDefaults === 'object' && Object.keys(rawSavedDefaults).length > 0;
 
-    // initialize wip run in store
-    runStore.updateWipOmicsRun(omicsRunTempId.value, {
-      transactionId: omicsRunTempId.value,
-      paramsRequired: paramsRequired,
-    });
+    if (retryFromRunId.value) {
+      // Retry: seed the wip run from the failed run instead of the user's saved defaults.
+      await prefillFromFailedRun(paramsRequired);
+    } else {
+      // initialize wip run in store
+      runStore.updateWipOmicsRun(omicsRunTempId.value, {
+        transactionId: omicsRunTempId.value,
+        paramsRequired: paramsRequired,
+      });
 
-    const existingWip = runStore.wipOmicsRuns[omicsRunTempId.value];
-    const paramsToApply = { ...workflowDefaultParams };
-    if (existingWip?.params?.input) {
-      paramsToApply.input = existingWip.params.input;
-    }
-    if (existingWip?.params?.outdir) {
-      paramsToApply.outdir = existingWip.params.outdir;
-    }
-    runStore.updateWipOmicsRunParams(omicsRunTempId.value, paramsToApply);
+      const existingWip = runStore.wipOmicsRuns[omicsRunTempId.value];
+      const paramsToApply = { ...workflowDefaultParams };
+      if (existingWip?.params?.input) {
+        paramsToApply.input = existingWip.params.input;
+      }
+      if (existingWip?.params?.outdir) {
+        paramsToApply.outdir = existingWip.params.outdir;
+      }
+      runStore.updateWipOmicsRunParams(omicsRunTempId.value, paramsToApply);
 
-    await applySequenceCollectionsPrepopulation();
+      await applySequenceCollectionsPrepopulation();
+    }
 
     uiStore.setRequestComplete('loadOmicsWorkflow');
   }
@@ -231,6 +244,71 @@
     if (parametersIndex >= 0) {
       selectedStepIndex.value = parametersIndex;
     }
+  }
+
+  /**
+   * Parses an `s3://bucket/key/file.ext` URL into its bucket and containing folder.
+   */
+  function parseS3Location(url?: string): { bucket?: string; path?: string } {
+    const match = url?.match(/^s3:\/\/([^/]+)\/(.+)$/);
+    if (!match) return {};
+    const bucket = match[1];
+    const key = match[2];
+    const lastSlash = key.lastIndexOf('/');
+    return { bucket, path: lastSlash > -1 ? key.substring(0, lastSlash) : '' };
+  }
+
+  /**
+   * Seeds the wip run for a retry from a previously failed LaboratoryRun. The failed run
+   * already stores the full parameter set (`Settings`), sample sheet location and workflow
+   * version, so the input data does not need to be re-uploaded. All steps are enabled so the
+   * user can jump straight to Review ("run as is") or step back to edit parameters/inputs.
+   */
+  async function prefillFromFailedRun(paramsRequired: string[]) {
+    const retryId = retryFromRunId.value!;
+
+    let source = runStore.labRuns[retryId];
+    if (!source) {
+      await runStore.loadLabRunsForLab(labId);
+      source = runStore.labRuns[retryId];
+    }
+    if (!source) {
+      useToastStore().error('Could not load the run to retry.');
+      return;
+    }
+
+    retrySourceRunName.value = source.RunName;
+
+    // `Settings` is stored as a JSON string but the list endpoint returns it already parsed
+    // (ReadLaboratoryRun), so handle both shapes.
+    const rawSettings: unknown = source.Settings;
+    let params: Record<string, unknown> = {};
+    if (typeof rawSettings === 'string' && rawSettings) {
+      try {
+        params = JSON.parse(rawSettings);
+      } catch {
+        params = {};
+      }
+    } else if (rawSettings && typeof rawSettings === 'object') {
+      params = rawSettings as Record<string, unknown>;
+    }
+
+    const { bucket, path } = parseS3Location(source.SampleSheetS3Url);
+
+    runStore.updateWipOmicsRun(omicsRunTempId.value, {
+      transactionId: omicsRunTempId.value,
+      paramsRequired,
+      runName: source.RunName,
+      workflowVersionName: source.WorkflowVersionName,
+      sampleSheetS3Url: source.SampleSheetS3Url,
+      ...(bucket ? { s3Bucket: bucket } : {}),
+      ...(path !== undefined ? { s3Path: path } : {}),
+      params,
+    });
+
+    enableAllSteps();
+    const reviewIndex = steps.value.findIndex((step) => step.key === 'review');
+    selectedStepIndex.value = params.input && reviewIndex !== -1 ? reviewIndex : 0;
   }
 
   function resetParams() {
@@ -352,6 +430,23 @@
   </template>
 
   <template v-else>
+    <div
+      v-if="retryFromRunId && !hasLaunched"
+      class="mb-6 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm"
+    >
+      <UIcon name="i-heroicons-arrow-path" class="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-700" />
+      <div>
+        <p class="font-medium text-amber-900">
+          Retrying failed run{{ retrySourceRunName ? `: ${retrySourceRunName}` : '' }}
+        </p>
+        <p class="text-amber-800">
+          Parameters and input data have been pre-filled from the previous run. Launch as is, or edit any step before
+          launching. Completed steps from the failed run are reused automatically where the sample data and their inputs
+          are unchanged &mdash; changing the sample data re-runs the workflow from the start.
+        </p>
+      </div>
+    </div>
+
     <EGWizardStepTabs
       v-model="selectedStepIndex"
       :items="steps"
