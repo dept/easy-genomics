@@ -153,6 +153,9 @@ export class GithubActionsCICDRelease extends Component {
       'TEST_S3_URL': '${{ secrets.TEST_S3_URL }}',
       'TEST_WORKSPACE_ID': '${{ secrets.TEST_WORKSPACE_ID }}',
       'TEST_INVITE_EMAIL': '${{ vars.TEST_INVITE_EMAIL }}',
+      // Privacy-safe upstream analytics (institution opt-in). When unset/false, analytics stays off.
+      'ANALYTICS_ENABLED': '${{ vars.ANALYTICS_ENABLED }}',
+      'ANALYTICS_ALLOW_DEV': '${{ vars.ANALYTICS_ALLOW_DEV }}',
       // Front-End specific settings
       'SLACK_E2E_TEST_WEBHOOK_URL': '${{ vars.SLACK_E2E_TEST_WEBHOOK_URL }}',
     };
