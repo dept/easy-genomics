@@ -113,6 +113,8 @@ export const handler: Handler = async (
         OrganizationId: laboratory.OrganizationId,
         WorkflowId: request.workflowId,
         RunName: request.name,
+        // EG RunId (transaction / requestId) enables Cost Explorer per-run attribution.
+        ...(request.requestId && { RunId: request.requestId }),
         ...(userId && { UserId: userId }),
         ...(userEmail && { UserEmail: userEmail }),
         Application: 'easy-genomics',

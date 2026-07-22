@@ -29,6 +29,8 @@ class OmicsRunsModule extends HttpFactory {
     name: string,
     params: object,
     workflowVersionName?: string,
+    /** Easy Genomics LaboratoryRun.RunId — tagged on StartRun for Cost Explorer attribution. */
+    requestId?: string,
   ): Promise<StartRunCommandOutput> {
     const payload: Record<string, string> = {
       workflowId,
@@ -37,6 +39,9 @@ class OmicsRunsModule extends HttpFactory {
     };
     if (workflowVersionName) {
       payload.workflowVersionName = workflowVersionName;
+    }
+    if (requestId) {
+      payload.requestId = requestId;
     }
     const res = await this.callOmics<StartRunCommandOutput>(
       'POST',

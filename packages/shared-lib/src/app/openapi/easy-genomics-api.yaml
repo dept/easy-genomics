@@ -1928,6 +1928,92 @@ components:
             - llm
             - lookup
           type: string
+        RunInputProfile:
+          type: object
+          properties:
+            SampleCount:
+              type: number
+            InputFileCount:
+              type: number
+            InputBytesTotal:
+              type: number
+            ParameterHash:
+              type: string
+            InputBytesByExtension:
+              type: object
+          required:
+            - InputBytesTotal
+            - InputFileCount
+            - ParameterHash
+            - SampleCount
+          description: Pre-run input features for historical cost similarity matching.
+        PreRunCostEstimate:
+          type: object
+          properties:
+            LowUsd:
+              type: number
+            HighUsd:
+              type: number
+            MedianUsd:
+              type: number
+            Confidence:
+              enum:
+                - HIGH
+                - LOW
+                - MEDIUM
+                - NONE
+              type: string
+            ComparableRunCount:
+              type: number
+            EstimatedAt:
+              type: string
+            Exclusions:
+              type: array
+              items:
+                type: string
+          required:
+            - ComparableRunCount
+            - Confidence
+            - EstimatedAt
+            - Exclusions
+            - HighUsd
+            - LowUsd
+            - MedianUsd
+          description: Snapshot of the pre-run estimate band shown at Review & Launch.
+        RunCostOutcome:
+          type: object
+          properties:
+            CostSource:
+              enum:
+                - HEALTHOMICS_TASKS
+                - SEQERA_PROGRESS
+              type: string
+            CostCapturedAt:
+              type: string
+            ActualComputeCostUsd:
+              type: number
+            ActualStorageCostUsd:
+              type: number
+          required:
+            - CostCapturedAt
+            - CostSource
+          description: Platform compute/storage estimate captured at terminal state.
+        BilledCost:
+          type: object
+          properties:
+            TotalUsd:
+              type: number
+            AsOfDate:
+              type: string
+            SyncedAt:
+              type: string
+            ByService:
+              type: object
+          required:
+            - AsOfDate
+            - SyncedAt
+            - TotalUsd
+          description: AWS Cost Explorer billed cost synced ~24–48h after completion.
       required:
         - LaboratoryId
         - OrganizationId
@@ -2019,6 +2105,92 @@ components:
             - llm
             - lookup
           type: string
+        RunInputProfile:
+          type: object
+          properties:
+            SampleCount:
+              type: number
+            InputFileCount:
+              type: number
+            InputBytesTotal:
+              type: number
+            ParameterHash:
+              type: string
+            InputBytesByExtension:
+              type: object
+          required:
+            - InputBytesTotal
+            - InputFileCount
+            - ParameterHash
+            - SampleCount
+          description: Pre-run input features for historical cost similarity matching.
+        PreRunCostEstimate:
+          type: object
+          properties:
+            LowUsd:
+              type: number
+            HighUsd:
+              type: number
+            MedianUsd:
+              type: number
+            Confidence:
+              enum:
+                - HIGH
+                - LOW
+                - MEDIUM
+                - NONE
+              type: string
+            ComparableRunCount:
+              type: number
+            EstimatedAt:
+              type: string
+            Exclusions:
+              type: array
+              items:
+                type: string
+          required:
+            - ComparableRunCount
+            - Confidence
+            - EstimatedAt
+            - Exclusions
+            - HighUsd
+            - LowUsd
+            - MedianUsd
+          description: Snapshot of the pre-run estimate band shown at Review & Launch.
+        RunCostOutcome:
+          type: object
+          properties:
+            CostSource:
+              enum:
+                - HEALTHOMICS_TASKS
+                - SEQERA_PROGRESS
+              type: string
+            CostCapturedAt:
+              type: string
+            ActualComputeCostUsd:
+              type: number
+            ActualStorageCostUsd:
+              type: number
+          required:
+            - CostCapturedAt
+            - CostSource
+          description: Platform compute/storage estimate captured at terminal state.
+        BilledCost:
+          type: object
+          properties:
+            TotalUsd:
+              type: number
+            AsOfDate:
+              type: string
+            SyncedAt:
+              type: string
+            ByService:
+              type: object
+          required:
+            - AsOfDate
+            - SyncedAt
+            - TotalUsd
+          description: AWS Cost Explorer billed cost synced ~24–48h after completion.
       required:
         - LaboratoryId
         - OrganizationId
@@ -2028,6 +2200,86 @@ components:
         - RunName
         - Status
         - UserId
+    RequestEstimateRunCostRequest:
+      type: object
+      properties:
+        platform:
+          type: string
+          enum:
+            - AWS HealthOmics
+            - Seqera Cloud
+        workflowExternalId:
+          type: string
+          minLength: 1
+        workflowVersionName:
+          type: string
+        inputFileKeys:
+          type: array
+          items:
+            type: string
+        sampleSheetS3Url:
+          type: string
+        settings:
+          anyOf:
+            - type: string
+            - type: object
+              additionalProperties: {}
+        sampleCount:
+          type: number
+          minimum: 0
+        inputBytesTotal:
+          type: number
+          minimum: 0
+      required:
+        - platform
+        - workflowExternalId
+      additionalProperties: false
+    EstimateRunCostResponse:
+      type: object
+      properties:
+        currency:
+          type: string
+          const: USD
+        label:
+          type: string
+        estimateAvailable:
+          type: boolean
+        confidence:
+          enum:
+            - HIGH
+            - LOW
+            - MEDIUM
+            - NONE
+          type: string
+        comparableRunCount:
+          type: number
+        disclaimer:
+          type: string
+        exclusions:
+          type: array
+          items:
+            type: string
+        computeCostUsd:
+          type: object
+          properties:
+            high:
+              type: number
+            low:
+              type: number
+            median:
+              type: number
+          required:
+            - high
+            - low
+            - median
+      required:
+        - comparableRunCount
+        - confidence
+        - currency
+        - disclaimer
+        - estimateAvailable
+        - exclusions
+        - label
     UpdateLaboratoryRunRequest:
       type: object
       properties:
@@ -8266,6 +8518,40 @@ paths:
           content:
             application/json:
               schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/run/request-estimate-run-cost:
+    post:
+      operationId: requestEstimateRunCost
+      summary: Request Estimate Run Cost
+      parameters:
+        - name: laboratoryId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Laboratory UUID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestEstimateRunCostRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstimateRunCostResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

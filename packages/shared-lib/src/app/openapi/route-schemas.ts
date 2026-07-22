@@ -37,6 +37,7 @@ import {
   RequestLaboratorySchema,
 } from '../schema/easy-genomics/laboratory';
 import { AddLaboratoryRunSchema, EditLaboratoryRunSchema } from '../schema/easy-genomics/laboratory-run';
+import { EstimateRunCostRequestSchema } from '../schema/easy-genomics/laboratory-run-cost';
 import {
   AddBulkLaboratoryUsersSchema,
   AddLaboratoryUserSchema,
@@ -221,6 +222,11 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
     query: [
       { name: 'LaboratoryId', required: true, description: 'Filter by laboratory (PascalCase matches the handler)' },
     ],
+  },
+  'POST /easy-genomics/laboratory/run/request-estimate-run-cost': {
+    request: EstimateRunCostRequestSchema,
+    response: 'EstimateRunCostResponse',
+    query: [{ name: 'laboratoryId', required: true, description: 'Laboratory UUID' }],
   },
   'POST /easy-genomics/laboratory/run/request-apply-run-retention-policy': {},
   'POST /easy-genomics/laboratory/run/request-laboratory-run-status-check': {},

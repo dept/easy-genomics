@@ -26,6 +26,9 @@ import {
   ListSharesCommand,
   ListSharesCommandInput,
   ListSharesCommandOutput,
+  ListRunTasksCommand,
+  ListRunTasksCommandInput,
+  ListRunTasksCommandOutput,
   OmicsClient,
   OmicsServiceException,
   StartRunCommand,
@@ -44,6 +47,7 @@ export enum OmicsCommand {
   GET_RUN = 'get-run',
   GET_WORKFLOW = 'get-workflow',
   LIST_RUNS = 'list-runs',
+  LIST_RUN_TASKS = 'list-run-tasks',
   LIST_WORKFLOWS = 'list-workflows',
   LIST_WORKFLOW_VERSIONS = 'list-workflow-versions',
   LIST_SHARED_WORKFLOWS = 'list-shared-workflows',
@@ -101,6 +105,29 @@ export class OmicsService {
 
   public listRuns = async (listRunsCommandInput: ListRunsCommandInput): Promise<ListRunsCommandOutput> => {
     return this.omicsRequest<ListRunsCommandInput, ListRunsCommandOutput>(OmicsCommand.LIST_RUNS, listRunsCommandInput);
+  };
+
+  public listRunTasks = async (
+    listRunTasksCommandInput: ListRunTasksCommandInput,
+  ): Promise<ListRunTasksCommandOutput> => {
+    return this.omicsRequest<ListRunTasksCommandInput, ListRunTasksCommandOutput>(
+      OmicsCommand.LIST_RUN_TASKS,
+      listRunTasksCommandInput,
+    );
+  };
+
+  /**
+   * Paginate ListRunTasks until exhausted. Used for post-run cost estimation.
+   */
+  public listAllRunTasks = async (runId: string): Promise<NonNullable<ListRunTasksCommandOutput['items']>> => {
+    const items: NonNullable<ListRunTasksCommandOutput['items']> = [];
+    let nextToken: string | undefined;
+    do {
+      const page = await this.listRunTasks({ id: runId, maxResults: 100, startingToken: nextToken });
+      if (page.items?.length) items.push(...page.items);
+      nextToken = page.nextToken;
+    } while (nextToken);
+    return items;
   };
 
   public listWorkflows = async (
@@ -171,6 +198,8 @@ export class OmicsService {
         return new GetWorkflowCommand(data as GetWorkflowCommandInput);
       case OmicsCommand.LIST_RUNS:
         return new ListRunsCommand(data as ListRunsCommandInput);
+      case OmicsCommand.LIST_RUN_TASKS:
+        return new ListRunTasksCommand(data as ListRunTasksCommandInput);
       case OmicsCommand.LIST_WORKFLOWS:
         return new ListWorkflowsCommand(data as ListWorkflowsCommandInput);
       case OmicsCommand.LIST_WORKFLOW_VERSIONS:

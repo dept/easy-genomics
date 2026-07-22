@@ -275,6 +275,26 @@
     return `${hours.toFixed(1)}h`;
   });
 
+  /** Sum of Cost Explorer billed totals in the selected window (DynamoDB only). */
+  const totalBilledSpend = computed(() => {
+    const withBilled = filteredRunsForOverview.value.filter(
+      (r) => typeof r.BilledCost?.TotalUsd === 'number' && Number.isFinite(r.BilledCost.TotalUsd),
+    );
+    if (withBilled.length === 0) {
+      // Fall back to platform compute estimates when CE has not synced yet.
+      const withEstimate = filteredRunsForOverview.value.filter(
+        (r) =>
+          typeof r.RunCostOutcome?.ActualComputeCostUsd === 'number' &&
+          Number.isFinite(r.RunCostOutcome.ActualComputeCostUsd),
+      );
+      if (withEstimate.length === 0) return '—';
+      const sum = withEstimate.reduce((s, r) => s + (r.RunCostOutcome?.ActualComputeCostUsd ?? 0), 0);
+      return `≈ US$${sum.toFixed(2)}`;
+    }
+    const sum = withBilled.reduce((s, r) => s + (r.BilledCost?.TotalUsd ?? 0), 0);
+    return `US$${sum.toFixed(2)}`;
+  });
+
   const recentRuns = computed(() => {
     return [...allRuns.value]
       .sort((a, b) => {
@@ -529,6 +549,14 @@
       bgColor: 'bg-background-light-grey',
       iconColor: 'text-muted',
     },
+    {
+      key: 'run-spend',
+      icon: 'i-heroicons-currency-dollar',
+      value: totalBilledSpend.value,
+      label: 'Run spend',
+      bgColor: 'bg-primary-muted',
+      iconColor: 'text-primary',
+    },
   ]);
 </script>
 
@@ -643,7 +671,7 @@
         </div>
       </div>
 
-      <dl class="mt-4 grid grid-cols-4 gap-4">
+      <dl class="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-5">
         <div
           v-for="stat in overviewStats"
           :key="stat.key"

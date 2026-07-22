@@ -230,6 +230,10 @@ export interface paths {
     /** Request Apply Run Retention Policy */
     post: operations["requestApplyRunRetentionPolicy"];
   };
+  "/easy-genomics/laboratory/run/request-estimate-run-cost": {
+    /** Request Estimate Run Cost */
+    post: operations["requestEstimateRunCost"];
+  };
   "/easy-genomics/laboratory/run/request-laboratory-run-status-check": {
     /** Request Laboratory Run Status Check */
     post: operations["requestLaboratoryRunStatusCheck"];
@@ -1210,6 +1214,40 @@ export interface components {
        * @enum {string}
        */
       FailureClassifiedBy?: "llm" | "lookup";
+      /** @description Pre-run input features for historical cost similarity matching. */
+      RunInputProfile?: {
+        SampleCount: number;
+        InputFileCount: number;
+        InputBytesTotal: number;
+        ParameterHash: string;
+        InputBytesByExtension?: Record<string, never>;
+      };
+      /** @description Snapshot of the pre-run estimate band shown at Review & Launch. */
+      PreRunCostEstimate?: {
+        LowUsd: number;
+        HighUsd: number;
+        MedianUsd: number;
+        /** @enum {string} */
+        Confidence: "HIGH" | "LOW" | "MEDIUM" | "NONE";
+        ComparableRunCount: number;
+        EstimatedAt: string;
+        Exclusions: string[];
+      };
+      /** @description Platform compute/storage estimate captured at terminal state. */
+      RunCostOutcome?: {
+        /** @enum {string} */
+        CostSource: "HEALTHOMICS_TASKS" | "SEQERA_PROGRESS";
+        CostCapturedAt: string;
+        ActualComputeCostUsd?: number;
+        ActualStorageCostUsd?: number;
+      };
+      /** @description AWS Cost Explorer billed cost synced ~24–48h after completion. */
+      BilledCost?: {
+        TotalUsd: number;
+        AsOfDate: string;
+        SyncedAt: string;
+        ByService?: Record<string, never>;
+      };
     };
     ReadLaboratoryRun: {
       LaboratoryId: string;
@@ -1247,6 +1285,69 @@ export interface components {
       FailureAction?: string;
       /** @enum {string} */
       FailureClassifiedBy?: "llm" | "lookup";
+      /** @description Pre-run input features for historical cost similarity matching. */
+      RunInputProfile?: {
+        SampleCount: number;
+        InputFileCount: number;
+        InputBytesTotal: number;
+        ParameterHash: string;
+        InputBytesByExtension?: Record<string, never>;
+      };
+      /** @description Snapshot of the pre-run estimate band shown at Review & Launch. */
+      PreRunCostEstimate?: {
+        LowUsd: number;
+        HighUsd: number;
+        MedianUsd: number;
+        /** @enum {string} */
+        Confidence: "HIGH" | "LOW" | "MEDIUM" | "NONE";
+        ComparableRunCount: number;
+        EstimatedAt: string;
+        Exclusions: string[];
+      };
+      /** @description Platform compute/storage estimate captured at terminal state. */
+      RunCostOutcome?: {
+        /** @enum {string} */
+        CostSource: "HEALTHOMICS_TASKS" | "SEQERA_PROGRESS";
+        CostCapturedAt: string;
+        ActualComputeCostUsd?: number;
+        ActualStorageCostUsd?: number;
+      };
+      /** @description AWS Cost Explorer billed cost synced ~24–48h after completion. */
+      BilledCost?: {
+        TotalUsd: number;
+        AsOfDate: string;
+        SyncedAt: string;
+        ByService?: Record<string, never>;
+      };
+    };
+    RequestEstimateRunCostRequest: {
+      /** @enum {string} */
+      platform: "AWS HealthOmics" | "Seqera Cloud";
+      workflowExternalId: string;
+      workflowVersionName?: string;
+      inputFileKeys?: string[];
+      sampleSheetS3Url?: string;
+      settings?: string | {
+        [key: string]: unknown;
+      };
+      sampleCount?: number;
+      inputBytesTotal?: number;
+    };
+    EstimateRunCostResponse: {
+      /** @constant */
+      currency: "USD";
+      label: string;
+      estimateAvailable: boolean;
+      /** @enum {string} */
+      confidence: "HIGH" | "LOW" | "MEDIUM" | "NONE";
+      comparableRunCount: number;
+      disclaimer: string;
+      exclusions: string[];
+      computeCostUsd?: {
+        high: number;
+        low: number;
+        median: number;
+      };
     };
     UpdateLaboratoryRunRequest: {
       Status: string;
@@ -4550,6 +4651,33 @@ export interface operations {
       200: {
         content: {
           "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Request Estimate Run Cost */
+  requestEstimateRunCost: {
+    parameters: {
+      query: {
+        /** @description Laboratory UUID */
+        laboratoryId: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RequestEstimateRunCostRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["EstimateRunCostResponse"];
         };
       };
       400: components["responses"]["BadRequest"];

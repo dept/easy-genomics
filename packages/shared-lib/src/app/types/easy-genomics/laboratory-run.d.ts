@@ -126,4 +126,40 @@ export interface LaboratoryRun extends BaseAttributes {
    * `llm` = produced by the configured LLM provider (display "AI-assisted" disclaimer).
    */
   FailureClassifiedBy?: 'lookup' | 'llm';
+
+  /** Pre-run input features for historical cost similarity matching. */
+  RunInputProfile?: {
+    SampleCount: number;
+    InputFileCount: number;
+    InputBytesTotal: number;
+    ParameterHash: string;
+    InputBytesByExtension?: Record<string, number>;
+  };
+
+  /** Snapshot of the pre-run estimate band shown at Review & Launch. */
+  PreRunCostEstimate?: {
+    LowUsd: number;
+    HighUsd: number;
+    MedianUsd: number;
+    Confidence: 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE';
+    ComparableRunCount: number;
+    EstimatedAt: string;
+    Exclusions: string[];
+  };
+
+  /** Platform compute/storage estimate captured at terminal state. */
+  RunCostOutcome?: {
+    ActualComputeCostUsd?: number;
+    ActualStorageCostUsd?: number;
+    CostSource: 'HEALTHOMICS_TASKS' | 'SEQERA_PROGRESS';
+    CostCapturedAt: string;
+  };
+
+  /** AWS Cost Explorer billed cost synced ~24–48h after completion. */
+  BilledCost?: {
+    TotalUsd: number;
+    AsOfDate: string;
+    SyncedAt: string;
+    ByService?: Record<string, number>;
+  };
 }

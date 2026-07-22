@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import { useRunStore, useToastStore, useLabsStore } from '@FE/stores';
   import { ButtonSizeEnum } from '@FE/types/buttons';
+  import type { EstimateRunCostResponse } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
 
   const props = defineProps<{
     schema: object;
@@ -25,6 +26,8 @@
 
   const labName = useLabsStore().labs[props.labId]?.Name ?? '';
   const isLaunchingRun = ref(false);
+  const costEstimate = ref<EstimateRunCostResponse | null>(null);
+  const costEstimateLoading = ref(false);
   const emit = defineEmits(['submit-launch-request', 'submit-launch-request-error', 'has-launched', 'previous-tab']);
 
   const schema = JSON.parse(JSON.stringify(props.schema));
@@ -40,6 +43,25 @@
 
     return r;
   }
+
+  onMounted(async () => {
+    costEstimateLoading.value = true;
+    try {
+      costEstimate.value = await $api.labs.estimateRunCost(props.labId, {
+        platform: 'AWS HealthOmics',
+        workflowExternalId: props.workflowId,
+        workflowVersionName: props.workflowVersionName,
+        inputFileKeys: wipOmicsRun.value?.inputFileKeys,
+        sampleSheetS3Url: (props.params as any)?.input,
+        settings: withoutEmptyFields(props.params),
+      });
+    } catch (error) {
+      console.warn('Pre-run cost estimate unavailable:', error);
+      costEstimate.value = null;
+    } finally {
+      costEstimateLoading.value = false;
+    }
+  });
 
   async function launchRun() {
     emit('submit-launch-request');
@@ -62,6 +84,7 @@
           props.runName,
           withoutEmptyFields(props.params),
           props.workflowVersionName,
+          props.transactionId,
         );
         if (!startOmicsRes?.id) throw new Error('Workflow Run ID is missing in the response');
         externalRunId = startOmicsRes.id;
@@ -131,10 +154,11 @@
           <dt class="w-48 text-black">Laboratory</dt>
           <dd class="text-muted text-left">{{ labName }}</dd>
         </div>
-        <div class="text-md flex px-4 py-4">
+        <div class="text-md flex border-b px-4 py-4">
           <dt class="w-48 text-black">Run Name</dt>
           <dd class="text-muted text-left">{{ props.runName }}</dd>
         </div>
+        <EGRunCostRow :estimate="costEstimate" :loading="costEstimateLoading" class="border-b" />
       </dl>
     </section>
   </EGCard>

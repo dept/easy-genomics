@@ -190,6 +190,58 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
     }
   };
 
+  /**
+   * Query completed runs for a workflow via WorkflowExternalId + TerminalAt GSI.
+   * Used by the pre-run cost estimator for historical similarity matching.
+   */
+  public queryByWorkflowExternalId = async (
+    workflowExternalId: string,
+    options?: { sinceTerminalAt?: string; limit?: number },
+  ): Promise<LaboratoryRun[]> => {
+    const logRequestMessage = `Query LaboratoryRuns by WorkflowExternalId=${workflowExternalId} request`;
+    console.info(logRequestMessage);
+
+    const expressionAttributeNames: Record<string, string> = {
+      '#WorkflowExternalId': 'WorkflowExternalId',
+    };
+    const expressionAttributeValues: Record<string, { S: string }> = {
+      ':workflowExternalId': { S: workflowExternalId },
+    };
+    let keyCondition = '#WorkflowExternalId = :workflowExternalId';
+    if (options?.sinceTerminalAt) {
+      expressionAttributeNames['#TerminalAt'] = 'TerminalAt';
+      expressionAttributeValues[':since'] = { S: options.sinceTerminalAt };
+      keyCondition += ' AND #TerminalAt >= :since';
+    }
+
+    const results: LaboratoryRun[] = [];
+    let lastKey: Record<string, any> | undefined;
+    do {
+      const response: QueryCommandOutput = await this.queryItems({
+        TableName: this.LABORATORY_RUN_TABLE_NAME,
+        IndexName: 'WorkflowExternalId_Index',
+        KeyConditionExpression: keyCondition,
+        ExpressionAttributeNames: expressionAttributeNames,
+        ExpressionAttributeValues: expressionAttributeValues,
+        ScanIndexForward: false,
+        ...(options?.limit ? { Limit: options.limit } : {}),
+        ...(lastKey ? { ExclusiveStartKey: lastKey } : {}),
+      });
+      if (response.$metadata.httpStatusCode !== 200) {
+        throw new Error(`${logRequestMessage} unsuccessful: HTTP Status Code=${response.$metadata.httpStatusCode}`);
+      }
+      if (response.Items) {
+        for (const item of response.Items) {
+          results.push(withCoercedInputFileKeys(<LaboratoryRun>unmarshall(item)));
+        }
+      }
+      lastKey = response.LastEvaluatedKey as Record<string, any> | undefined;
+      if (options?.limit && results.length >= options.limit) break;
+    } while (lastKey);
+
+    return results;
+  };
+
   public update = async (laboratoryRun: LaboratoryRun): Promise<LaboratoryRun> => {
     const logRequestMessage = `Update LaboratoryRun LaboratoryId=${laboratoryRun.LaboratoryId}, RunId=${laboratoryRun.RunId} request`;
     console.info(logRequestMessage);
