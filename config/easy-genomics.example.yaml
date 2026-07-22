@@ -67,3 +67,17 @@ easy-genomics:
         analytics:
             enabled: false # true to opt in
             allow-dev: false # true to also allow analytics when env-type is 'dev'
+
+        ## Optional: AWS Cost Explorer billed per-run cost sync. OFF by default.
+        ##
+        ## When enabled, Easy Genomics deploys a daily Lambda that reads billed
+        ## spend from Cost Explorer (grouped by RunId tag) and the UI shows
+        ## billed-cost pending / 24–48h messaging. Pre-run and platform post-run
+        ## estimates work regardless of this flag.
+        ##
+        ## Enabling this flag does NOT enable Cost Explorer in AWS. Operators must
+        ## still Launch Cost Explorer and activate cost allocation tags in the
+        ## Billing console (see docs/deployment/production.md §8), then set
+        ## enabled: true and redeploy back-end + rebuild front-end.
+        cost-explorer:
+            enabled: false # true after Launch Cost Explorer + cost allocation tags

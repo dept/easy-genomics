@@ -74,6 +74,9 @@ export default defineNuxtConfig({
       ANALYTICS_ALLOW_DEV: process.env.ANALYTICS_ALLOW_DEV === 'true',
       ANALYTICS_DEPLOYMENT_ID: process.env.ANALYTICS_DEPLOYMENT_ID || '',
       ANALYTICS_SALT: process.env.ANALYTICS_SALT || '',
+      // AWS Cost Explorer billed per-run cost. When false, UI keeps estimates but
+      // does not imply billed totals will sync within 24–48 hours.
+      COST_EXPLORER_ENABLED: process.env.COST_EXPLORER_ENABLED === 'true',
     },
   },
 

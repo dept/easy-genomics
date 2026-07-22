@@ -47,6 +47,9 @@ export interface BackEndStackProps extends BaseStackProps {
   // back-end provisions the anonymous per-deployment identifier secrets.
   // Defaults to false / undefined (off).
   analyticsEnabled?: boolean;
+  // AWS Cost Explorer billed per-run cost sync. When true, CDK deploys the
+  // daily process-sync-run-costs Lambda + CE IAM. Defaults to false / undefined (off).
+  costExplorerEnabled?: boolean;
 }
 
 // Defines Test User Accounts to provision for DevEnv deployments

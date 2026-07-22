@@ -369,20 +369,24 @@ export class EasyGenomicsNestedStack extends NestedStack {
         },
         // Daily Cost Explorer sync: batch GetCostAndUsage by TAG:RunId, write BilledCost
         // onto LaboratoryRun. Never call CE from user-facing routes.
-        '/easy-genomics/laboratory/run/process-sync-run-costs': {
-          timeoutSeconds: 900,
-          memorySizeMb: 1024,
-          callbacks: [
-            (lambdaFunction) => {
-              new Rule(this, `${this.props.namePrefix}-run-cost-sync-schedule`, {
-                ruleName: `${this.props.namePrefix}-run-cost-sync-schedule`,
-                schedule: Schedule.cron({ minute: '0', hour: '5' }),
-                description: 'Daily AWS Cost Explorer sync for billed per-run costs.',
-                targets: [new LambdaFunction(lambdaFunction)],
-              });
-            },
-          ],
-        },
+        // Gated by cost-explorer.enabled (default false) so accounts without CE
+        // do not deploy a failing scheduled Lambda.
+        '/easy-genomics/laboratory/run/process-sync-run-costs': this.props.costExplorerEnabled
+          ? {
+              timeoutSeconds: 900,
+              memorySizeMb: 1024,
+              callbacks: [
+                (lambdaFunction) => {
+                  new Rule(this, `${this.props.namePrefix}-run-cost-sync-schedule`, {
+                    ruleName: `${this.props.namePrefix}-run-cost-sync-schedule`,
+                    schedule: Schedule.cron({ minute: '0', hour: '5' }),
+                    description: 'Daily AWS Cost Explorer sync for billed per-run costs.',
+                    targets: [new LambdaFunction(lambdaFunction)],
+                  });
+                },
+              ],
+            }
+          : { skip: true },
       },
       environment: {
         // Defines the common environment settings for all lambda functions
@@ -2119,20 +2123,23 @@ export class EasyGenomicsNestedStack extends NestedStack {
 
     // /easy-genomics/laboratory/run/process-sync-run-costs
     // Daily Cost Explorer sync. Scoped ce:GetCostAndUsage only — never grant ce:* to lab roles.
-    this.iam.addPolicyStatements('/easy-genomics/laboratory/run/process-sync-run-costs', [
-      new PolicyStatement({
-        resources: [
-          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
-          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
-        ],
-        actions: ['dynamodb:Scan', 'dynamodb:Query', 'dynamodb:UpdateItem'],
-        effect: Effect.ALLOW,
-      }),
-      new PolicyStatement({
-        resources: ['*'],
-        actions: ['ce:GetCostAndUsage', 'ce:GetDimensionValues'],
-        effect: Effect.ALLOW,
-      }),
-    ]);
+    // Only when cost-explorer.enabled (Lambda itself is also skipped when disabled).
+    if (this.props.costExplorerEnabled) {
+      this.iam.addPolicyStatements('/easy-genomics/laboratory/run/process-sync-run-costs', [
+        new PolicyStatement({
+          resources: [
+            `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+            `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
+          ],
+          actions: ['dynamodb:Scan', 'dynamodb:Query', 'dynamodb:UpdateItem'],
+          effect: Effect.ALLOW,
+        }),
+        new PolicyStatement({
+          resources: ['*'],
+          actions: ['ce:GetCostAndUsage', 'ce:GetDimensionValues'],
+          effect: Effect.ALLOW,
+        }),
+      ]);
+    }
   };
 }

@@ -8,7 +8,8 @@ const runCostSyncService = new RunCostSyncService();
  * Scheduled daily Lambda: batch-sync AWS Cost Explorer billed costs onto
  * LaboratoryRun rows. Must not be invoked from user-facing API routes.
  *
- * EventBridge cron is wired in easy-genomics-nested-stack.
+ * EventBridge cron is wired in easy-genomics-nested-stack when
+ * cost-explorer.enabled is true (default false).
  */
 export const handler: Handler = async (event: unknown): Promise<APIGatewayProxyResult> => {
   console.log('EVENT: \n' + JSON.stringify(event, null, 2));

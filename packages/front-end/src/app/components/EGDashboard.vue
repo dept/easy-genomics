@@ -275,13 +275,17 @@
     return `${hours.toFixed(1)}h`;
   });
 
+  const costExplorerEnabled = computed(
+    () => (useRuntimeConfig().public as { COST_EXPLORER_ENABLED?: boolean }).COST_EXPLORER_ENABLED === true,
+  );
+
   /** Sum of Cost Explorer billed totals in the selected window (DynamoDB only). */
   const totalBilledSpend = computed(() => {
     const withBilled = filteredRunsForOverview.value.filter(
       (r) => typeof r.BilledCost?.TotalUsd === 'number' && Number.isFinite(r.BilledCost.TotalUsd),
     );
     if (withBilled.length === 0) {
-      // Fall back to platform compute estimates when CE has not synced yet.
+      // Fall back to platform compute estimates when CE has not synced / is disabled.
       const withEstimate = filteredRunsForOverview.value.filter(
         (r) =>
           typeof r.RunCostOutcome?.ActualComputeCostUsd === 'number' &&
@@ -293,6 +297,13 @@
     }
     const sum = withBilled.reduce((s, r) => s + (r.BilledCost?.TotalUsd ?? 0), 0);
     return `US$${sum.toFixed(2)}`;
+  });
+
+  const runSpendIsEstimateOnly = computed(() => {
+    const withBilled = filteredRunsForOverview.value.some(
+      (r) => typeof r.BilledCost?.TotalUsd === 'number' && Number.isFinite(r.BilledCost.TotalUsd),
+    );
+    return !withBilled;
   });
 
   const recentRuns = computed(() => {
@@ -553,7 +564,7 @@
       key: 'run-spend',
       icon: 'i-heroicons-currency-dollar',
       value: totalBilledSpend.value,
-      label: 'Run spend',
+      label: !costExplorerEnabled.value || runSpendIsEstimateOnly.value ? 'Estimated run spend' : 'Run spend',
       bgColor: 'bg-primary-muted',
       iconColor: 'text-primary',
     },

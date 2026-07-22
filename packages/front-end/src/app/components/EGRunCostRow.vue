@@ -22,10 +22,19 @@
     },
   );
 
+  const costExplorerEnabled = computed(
+    () => (useRuntimeConfig().public as { COST_EXPLORER_ENABLED?: boolean }).COST_EXPLORER_ENABLED === true,
+  );
+
   const isPostRun = computed(() => !!props.labRun);
   const billed = computed(() => props.labRun?.BilledCost);
   const outcome = computed(() => props.labRun?.RunCostOutcome);
   const preRun = computed(() => props.labRun?.PreRunCostEstimate ?? null);
+
+  /** True when post-run but no billed / platform / pre-run figure is available yet. */
+  const isBilledPending = computed(
+    () => isPostRun.value && !billed.value && outcome.value?.ActualComputeCostUsd == null && !preRun.value,
+  );
 
   const rowLabel = computed(() => {
     if (!isPostRun.value) return 'Estimated cost';
@@ -55,7 +64,7 @@
       if (preRun.value) {
         return `${formatUsd(preRun.value.LowUsd)} – ${formatUsd(preRun.value.HighUsd)}`;
       }
-      return 'Billed cost pending';
+      return costExplorerEnabled.value ? 'Billed cost pending' : 'Billed cost unavailable';
     }
     if (!props.estimate) return '—';
     if (!props.estimate.estimateAvailable || !props.estimate.computeCostUsd) {
@@ -67,12 +76,20 @@
 
   const tooltipTitle = computed(() => {
     if (billed.value) return 'Billed cost from AWS Cost Explorer';
+    if (isBilledPending.value) {
+      return costExplorerEnabled.value ? 'Billed cost pending' : 'Billed cost unavailable';
+    }
     return 'Estimated, not billed.';
   });
 
   const tooltipBody = computed(() => {
     if (billed.value) {
       return 'Grouped by run tags. Pre-run estimate and platform compute estimate shown for comparison. Data may lag 24–48 hours.';
+    }
+    if (isBilledPending.value) {
+      return costExplorerEnabled.value
+        ? 'AWS Cost Explorer billed cost typically appears within 24–48 hours after the run completes. Check back later.'
+        : 'Billed per-run AWS cost requires Cost Explorer (and cost allocation tags) to be enabled for this deployment. Platform and historical estimates are still available when there is run history.';
     }
     if (isPostRun.value && outcome.value) {
       return outcome.value.CostSource === 'SEQERA_PROGRESS'
@@ -120,6 +137,14 @@
     if (billed.value?.AsOfDate) {
       return `Data as of ${billed.value.AsOfDate}. AWS billing data typically updates within 24–48 hours.`;
     }
+    if (isBilledPending.value) {
+      return costExplorerEnabled.value
+        ? 'Billed amounts are synced daily from Cost Explorer once available.'
+        : 'Enable Cost Explorer for this deployment to sync billed AWS charges.';
+    }
+    if (isPostRun.value && !billed.value && !costExplorerEnabled.value) {
+      return 'Billed AWS charges are not synced until Cost Explorer is enabled for this deployment.';
+    }
     return 'Actual AWS charges may vary with runtime and retries.';
   });
 </script>
@@ -137,7 +162,11 @@
         >
           {{ chipLabel }}
         </span>
-        <UTooltip :popper="{ placement: 'bottom' }">
+        <!-- Nuxt UI tooltip defaults to h-6 + truncate on a white bg; override so multi-line copy is visible. -->
+        <UTooltip
+          :popper="{ placement: 'bottom' }"
+          :ui="{ base: 'h-auto w-auto max-w-xs whitespace-normal text-left' }"
+        >
           <button
             type="button"
             class="hover:border-primary-500 hover:text-primary-600 inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-400 text-[11px] italic text-gray-500"
@@ -146,16 +175,16 @@
             i
           </button>
           <template #text>
-            <div class="max-w-xs space-y-2 text-left text-xs leading-relaxed">
-              <p class="font-semibold text-white">{{ tooltipTitle }}</p>
-              <p class="text-gray-300">{{ tooltipBody }}</p>
-              <div v-if="breakdownLines.length" class="space-y-1 border-t border-gray-600 pt-2">
-                <div v-for="line in breakdownLines" :key="line.label" class="flex justify-between gap-4 text-gray-300">
+            <div class="space-y-2 py-1 text-xs leading-relaxed">
+              <p class="font-semibold text-gray-900">{{ tooltipTitle }}</p>
+              <p class="text-gray-600">{{ tooltipBody }}</p>
+              <div v-if="breakdownLines.length" class="space-y-1 border-t border-gray-200 pt-2">
+                <div v-for="line in breakdownLines" :key="line.label" class="flex justify-between gap-4 text-gray-600">
                   <span>{{ line.label }}</span>
                   <span>{{ line.value }}</span>
                 </div>
               </div>
-              <p class="text-[11px] text-gray-400">{{ footerText }}</p>
+              <p class="text-[11px] text-gray-500">{{ footerText }}</p>
             </div>
           </template>
         </UTooltip>
