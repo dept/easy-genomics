@@ -716,6 +716,18 @@ root.gitignore.addPatterns(
   'packages/front-end/tests/e2e/.auth/*.json',
   'packages/front-end/playwright-report',
   '.pnpm-store',
+  // Graphify — opt-in via amer-easy-genomics-dev-ai-tools (local graph never committed)
+  'graphify-out/',
+  '.graphifyignore',
+  '.graphifyignore.with-docs',
+  // AI definitions — live in amer-easy-genomics-dev-ai-tools; local symlinks via that repo's setup.sh
+  'CLAUDE.md',
+  'AGENTS.md',
+  '.cursorrules',
+  '.mcp.json',
+  '.cursor/mcp.json',
+  '.cursor/rules/',
+  '.claude/',
 );
 // Exception: Include .env example files (used for local dev setup documentation)
 root.gitignore.addPatterns('!packages/back-end/.env.local.example', '!config/.env.nuxt.local.example');

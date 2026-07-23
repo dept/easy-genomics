@@ -16,8 +16,13 @@ commits — see [Branch Naming convention](#branch-naming-convention)).
 ## AI Coding Principles
 
 Every change — whether written by a human or with AI assistance — must follow the **AI Coding Principles** and
-**Architecture Rules** defined in `CLAUDE.md` at the repo root. `CLAUDE.md` is the authoritative source; the summary
-below is a pointer, not a replacement — read it before contributing.
+**Architecture Rules** defined in `CLAUDE.md` at the repo root (symlinked from `amer-easy-genomics-dev-ai-tools`).
+`CLAUDE.md` is the authoritative source; the summary below is a pointer, not a replacement — read it before
+contributing.
+
+For optional AI codebase navigation (Cursor / Claude Code), use the sibling `amer-easy-genomics-dev-ai-tools` repo
+(`./setup.sh`). That installs Graphify wiring and a **local** `graphify-out/` (gitignored — never commit it). See that
+repo’s `graphify/README.md`. Graphify is opt-in and does **not** install git hooks by default.
 
 - **Write for humans first** — descriptive names, explicit over clever, comment _why_ (not _what_).
 - **Be specific and consistent** — match the naming, structure, and patterns already in the codebase; don't invent new
