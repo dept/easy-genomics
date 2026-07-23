@@ -124,6 +124,27 @@
     { value: 'RESTRICTED', label: 'Restricted (default)' },
     { value: 'VPC', label: 'VPC' },
   ];
+
+  // Badge state for the always-visible collapsible settings cards — reflects whether the
+  // section is actually in effect right now, not just whether its fields are populated.
+  const integrationsBadges = computed(() => [
+    {
+      label: `Seqera ${state.value.NextFlowTowerEnabled ? 'On' : 'Off'}`,
+      tone: state.value.NextFlowTowerEnabled ? 'positive' : 'neutral',
+    } as const,
+    {
+      label: `HealthOmics ${state.value.AwsHealthOmicsEnabled ? 'On' : 'Off'}`,
+      tone: state.value.AwsHealthOmicsEnabled ? 'positive' : 'neutral',
+    } as const,
+  ]);
+  const healthOmicsVpcNetworkingBadge = computed(() => {
+    const active = state.value.AwsHealthOmicsEnabled && state.value.AwsHealthOmicsNetworkingMode === 'VPC';
+    return { label: active ? 'On' : 'Off', tone: active ? 'positive' : 'neutral' } as const;
+  });
+  const aiFailureAnalysisBadge = computed(() => {
+    const active = !!state.value.HealthOmicsLlmProvider || !!state.value.SeqeraLlmProvider;
+    return { label: active ? 'Enabled' : 'Disabled', tone: active ? 'positive' : 'neutral' } as const;
+  });
   function modelIdPlaceholderFor(provider: string | undefined): string {
     switch (provider) {
       case 'bedrock':
@@ -743,159 +764,175 @@
           searchable-placeholder="Search existing S3 buckets..."
         />
       </EGFormGroup>
+    </EGCard>
 
-      <hr class="mb-6" role="presentation" />
+    <div class="mt-6 flex flex-col gap-6">
+      <EGCollapsibleSection
+        heading-id="lab-settings-integrations-heading"
+        title="Integrations"
+        description="Seqera and HealthOmics connections for this lab."
+        :badges="integrationsBadges"
+      >
+        <section :aria-labelledby="seqeraSectionId">
+          <h3 :id="seqeraSectionId" class="sr-only">Seqera integration</h3>
 
-      <section :aria-labelledby="seqeraSectionId">
-        <h3 :id="seqeraSectionId" class="sr-only">Seqera integration</h3>
-
-        <!-- Next Flow Tower: Toggle -->
-        <EGFormGroup
-          label="Enable Seqera Integration"
-          name="NextFlowTowerEnable"
-          eager-validation
-          class="flex items-center justify-between"
-        >
-          <label :id="seqeraToggleLabelId" :for="`${seqeraToggleLabelId}-input`" class="sr-only">
-            Enable Seqera Integration
-          </label>
-          <UToggle
-            :id="`${seqeraToggleLabelId}-input`"
-            class="ml-2"
-            v-model="state.NextFlowTowerEnabled"
-            :disabled="!isEditing || isSubmittingFormData"
-            :aria-labelledby="seqeraToggleLabelId"
-          />
-        </EGFormGroup>
-
-        <!-- Next Flow Tower: Endpoint -->
-        <EGFormGroup
-          v-if="state.NextFlowTowerEnabled"
-          label="Seqera Endpoint URL"
-          name="NextFlowTowerApiBaseUrl"
-          eager-validation
-          required
-        >
-          <EGInput v-model="state.NextFlowTowerApiBaseUrl" :disabled="!isEditing || isSubmittingFormData" />
-        </EGFormGroup>
-
-        <!-- Next Flow Tower: Workspace ID -->
-        <EGFormGroup
-          v-if="state.NextFlowTowerEnabled"
-          label="Workspace ID"
-          name="NextFlowTowerWorkspaceId"
-          eager-validation
-        >
-          <EGInput
-            v-model="state.NextFlowTowerWorkspaceId"
-            placeholder="Defaults to the Next Flow Tower personal workspace if not specified."
-            :disabled="!isEditing || isSubmittingFormData"
-          />
-        </EGFormGroup>
-
-        <!-- Next Flow Tower: Access Token -->
-        <EGFormGroup
-          v-if="isEditing && state.NextFlowTowerEnabled"
-          label="Personal Access Token"
-          name="NextFlowTowerAccessToken"
-          eager-validation
-          :required="formMode === LabDetailsFormModeEnum.enum.Create"
-        >
-          <!-- Next Flow Tower: Access Token: Create  Mode -->
-          <EGPasswordInput
-            v-if="formMode === LabDetailsFormModeEnum.enum.Create"
-            v-model="state.NextFlowTowerAccessToken"
-            :password="true"
-            :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
-            :disabled="!isEditing || isSubmittingFormData"
-          />
-          <!-- Next Flow Tower: Access Token: Edit  Mode -->
-          <EGPasswordInput
-            v-if="formMode === LabDetailsFormModeEnum.enum.Edit"
-            v-model="state.NextFlowTowerAccessToken"
-            :select-on-focus="true"
-            :password="true"
-            placeholder="Add or update the Next Flow Tower personal access token. Note: A previously set token will never be shown."
-            :show-toggle-password-button="isEditingNextFlowTowerAccessToken"
-            :autocomplete="AutoCompleteOptionsEnum.enum.Off"
+          <!-- Next Flow Tower: Toggle -->
+          <EGFormGroup
+            label="Enable Seqera Integration"
+            name="NextFlowTowerEnable"
             eager-validation
-            :disabled="!isEditing || isSubmittingFormData"
-          />
-        </EGFormGroup>
-      </section>
+            class="flex items-center justify-between"
+          >
+            <label :id="seqeraToggleLabelId" :for="`${seqeraToggleLabelId}-input`" class="sr-only">
+              Enable Seqera Integration
+            </label>
+            <UToggle
+              :id="`${seqeraToggleLabelId}-input`"
+              class="ml-2"
+              v-model="state.NextFlowTowerEnabled"
+              :disabled="!isEditing || isSubmittingFormData"
+              :aria-labelledby="seqeraToggleLabelId"
+            />
+          </EGFormGroup>
 
-      <hr class="mb-6" role="presentation" />
-
-      <section :aria-labelledby="healthOmicsSectionId">
-        <h3 :id="healthOmicsSectionId" class="sr-only">HealthOmics integration</h3>
-
-        <!-- HealthOmics Toggle -->
-        <EGFormGroup
-          label="Enable HealthOmics Integration"
-          name="HealthOmicsEnable"
-          eager-validation
-          class="flex items-center justify-between"
-        >
-          <label :id="healthOmicsToggleLabelId" :for="`${healthOmicsToggleLabelId}-input`" class="sr-only">
-            Enable HealthOmics Integration
-          </label>
-          <UToggle
-            :id="`${healthOmicsToggleLabelId}-input`"
-            class="ml-2"
-            v-model="state.AwsHealthOmicsEnabled"
-            :disabled="!isEditing || isSubmittingFormData"
-            :aria-labelledby="healthOmicsToggleLabelId"
-          />
-        </EGFormGroup>
-        <EGFormGroup
-          v-if="isEditing && state.AwsHealthOmicsEnabled"
-          label="GitHub Personal Access Token"
-          name="GitHubAccessToken"
-          eager-validation
-          :required="formMode === LabDetailsFormModeEnum.enum.Create"
-        >
-          <div v-if="formMode === LabDetailsFormModeEnum.enum.Edit" class="mb-2 flex items-center gap-2">
-            <UBadge
-              size="sm"
-              class="bg-alert-danger-muted text-alert-danger rounded-xl border-0 ring-0"
-              aria-hidden="true"
-            >
-              TOKEN SAVED
-            </UBadge>
-            <p class="text-alert-danger-dark text-xs font-medium">
-              Saving a new value will replace the existing token.
-            </p>
-          </div>
-          <EGPasswordInput
-            v-if="formMode === LabDetailsFormModeEnum.enum.Create"
-            v-model="state.GitHubAccessToken"
-            :password="true"
-            :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
-            :disabled="!isEditing || isSubmittingFormData"
-          />
-          <EGPasswordInput
-            v-if="formMode === LabDetailsFormModeEnum.enum.Edit"
-            v-model="state.GitHubAccessToken"
-            :select-on-focus="true"
-            :password="true"
-            placeholder="Add or update the GitHub personal access token. Note: A previously set token will never be shown."
-            :show-toggle-password-button="isEditingGitHubAccessToken"
-            :autocomplete="AutoCompleteOptionsEnum.enum.Off"
+          <!-- Next Flow Tower: Endpoint -->
+          <EGFormGroup
+            v-if="state.NextFlowTowerEnabled"
+            label="Seqera Endpoint URL"
+            name="NextFlowTowerApiBaseUrl"
             eager-validation
-            :disabled="!isEditing || isSubmittingFormData"
-          />
-        </EGFormGroup>
-      </section>
+            required
+          >
+            <EGInput v-model="state.NextFlowTowerApiBaseUrl" :disabled="!isEditing || isSubmittingFormData" />
+          </EGFormGroup>
+
+          <!-- Next Flow Tower: Workspace ID -->
+          <EGFormGroup
+            v-if="state.NextFlowTowerEnabled"
+            label="Workspace ID"
+            name="NextFlowTowerWorkspaceId"
+            eager-validation
+          >
+            <EGInput
+              v-model="state.NextFlowTowerWorkspaceId"
+              placeholder="Defaults to the Next Flow Tower personal workspace if not specified."
+              :disabled="!isEditing || isSubmittingFormData"
+            />
+          </EGFormGroup>
+
+          <!-- Next Flow Tower: Access Token -->
+          <EGFormGroup
+            v-if="isEditing && state.NextFlowTowerEnabled"
+            label="Personal Access Token"
+            name="NextFlowTowerAccessToken"
+            eager-validation
+            :required="formMode === LabDetailsFormModeEnum.enum.Create"
+          >
+            <!-- Next Flow Tower: Access Token: Create  Mode -->
+            <EGPasswordInput
+              v-if="formMode === LabDetailsFormModeEnum.enum.Create"
+              v-model="state.NextFlowTowerAccessToken"
+              :password="true"
+              :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
+              :disabled="!isEditing || isSubmittingFormData"
+            />
+            <!-- Next Flow Tower: Access Token: Edit  Mode -->
+            <EGPasswordInput
+              v-if="formMode === LabDetailsFormModeEnum.enum.Edit"
+              v-model="state.NextFlowTowerAccessToken"
+              :select-on-focus="true"
+              :password="true"
+              placeholder="Add or update the Next Flow Tower personal access token. Note: A previously set token will never be shown."
+              :show-toggle-password-button="isEditingNextFlowTowerAccessToken"
+              :autocomplete="AutoCompleteOptionsEnum.enum.Off"
+              eager-validation
+              :disabled="!isEditing || isSubmittingFormData"
+            />
+          </EGFormGroup>
+        </section>
+
+        <section :aria-labelledby="healthOmicsSectionId">
+          <h3 :id="healthOmicsSectionId" class="sr-only">HealthOmics integration</h3>
+
+          <!-- HealthOmics Toggle -->
+          <EGFormGroup
+            label="Enable HealthOmics Integration"
+            name="HealthOmicsEnable"
+            eager-validation
+            class="flex items-center justify-between"
+          >
+            <label :id="healthOmicsToggleLabelId" :for="`${healthOmicsToggleLabelId}-input`" class="sr-only">
+              Enable HealthOmics Integration
+            </label>
+            <UToggle
+              :id="`${healthOmicsToggleLabelId}-input`"
+              class="ml-2"
+              v-model="state.AwsHealthOmicsEnabled"
+              :disabled="!isEditing || isSubmittingFormData"
+              :aria-labelledby="healthOmicsToggleLabelId"
+            />
+          </EGFormGroup>
+          <EGFormGroup
+            v-if="isEditing && state.AwsHealthOmicsEnabled"
+            label="GitHub Personal Access Token"
+            name="GitHubAccessToken"
+            eager-validation
+            :required="formMode === LabDetailsFormModeEnum.enum.Create"
+          >
+            <div v-if="formMode === LabDetailsFormModeEnum.enum.Edit" class="mb-2 flex items-center gap-2">
+              <UBadge
+                size="sm"
+                class="bg-alert-danger-muted text-alert-danger rounded-xl border-0 ring-0"
+                aria-hidden="true"
+              >
+                TOKEN SAVED
+              </UBadge>
+              <p class="text-alert-danger-dark text-xs font-medium">
+                Saving a new value will replace the existing token.
+              </p>
+            </div>
+            <EGPasswordInput
+              v-if="formMode === LabDetailsFormModeEnum.enum.Create"
+              v-model="state.GitHubAccessToken"
+              :password="true"
+              :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
+              :disabled="!isEditing || isSubmittingFormData"
+            />
+            <EGPasswordInput
+              v-if="formMode === LabDetailsFormModeEnum.enum.Edit"
+              v-model="state.GitHubAccessToken"
+              :select-on-focus="true"
+              :password="true"
+              placeholder="Add or update the GitHub personal access token. Note: A previously set token will never be shown."
+              :show-toggle-password-button="isEditingGitHubAccessToken"
+              :autocomplete="AutoCompleteOptionsEnum.enum.Off"
+              eager-validation
+              :disabled="!isEditing || isSubmittingFormData"
+            />
+          </EGFormGroup>
+        </section>
+      </EGCollapsibleSection>
 
       <!-- AI Failure Analysis: BYOK per integration. HealthOmics and Seqera each get
            their own provider/model/key + enable toggle. The deterministic HealthOmics
            lookup table runs regardless; the LLM is only used as a fallback for
            ambiguous HealthOmics codes (WORKFLOW_RUN_FAILED etc.) and free-text
-           Seqera errors. -->
-      <template v-if="state.AwsHealthOmicsEnabled || state.NextFlowTowerEnabled">
-        <hr class="mb-6" />
+           Seqera errors. Always visible (not gated on either integration being enabled)
+           so the badge communicates status at a glance; content explains what's needed
+           when neither integration is on. -->
+      <EGCollapsibleSection
+        heading-id="lab-settings-ai-failure-analysis-heading"
+        title="AI Failure Analysis"
+        description="When a run fails, classify the cause by responsible party using an LLM."
+        :badges="[aiFailureAnalysisBadge]"
+      >
         <div class="mb-3 flex items-center gap-1.5">
-          <p class="text-sm font-medium text-black">AI Failure Analysis</p>
+          <p class="text-muted text-xs">
+            Documented HealthOmics error codes are always classified using a built-in lookup; the LLM is used only for
+            ambiguous HealthOmics codes and free-text Seqera errors. Each integration can use a different provider — for
+            example a cheaper model for high-volume Seqera traffic, a more accurate model for HealthOmics ambiguous
+            cases.
+          </p>
           <!-- Provider guidance: helps an admin decide which LLM to bring (Bedrock vs OpenAI vs Anthropic)
                before they pick one in the dropdowns below. -->
           <UTooltip :delay-duration="0" :ui="{ base: 'h-auto w-auto max-w-sm whitespace-normal text-left' }">
@@ -921,16 +958,14 @@
             </template>
             <UIcon
               name="i-heroicons-information-circle"
-              class="text-muted h-4 w-4"
+              class="text-muted h-4 w-4 shrink-0"
               aria-label="LLM provider guidance"
             />
           </UTooltip>
         </div>
-        <p class="text-muted mb-4 text-xs">
-          When a run fails, classify the cause by responsible party using an LLM. Documented HealthOmics error codes are
-          always classified using a built-in lookup; the LLM is used only for ambiguous HealthOmics codes and free-text
-          Seqera errors. Each integration can use a different provider — for example a cheaper model for high-volume
-          Seqera traffic, a more accurate model for HealthOmics ambiguous cases.
+
+        <p v-if="!state.AwsHealthOmicsEnabled && !state.NextFlowTowerEnabled" class="text-muted text-xs">
+          Enable HealthOmics or Seqera integration above to configure AI failure analysis for that integration.
         </p>
 
         <!-- HealthOmics sub-section -->
@@ -1059,54 +1094,51 @@
             />
           </EGFormGroup>
         </div>
-      </template>
+      </EGCollapsibleSection>
 
-      <template v-if="state.AwsHealthOmicsEnabled">
-        <hr class="mb-6" role="presentation" />
+      <!-- HealthOmics VPC Networking: always visible (badge communicates on/off status) so an
+           admin can discover the feature exists even before enabling HealthOmics. Fields stay
+           visible but disabled when HealthOmics is off, per the hint text below, rather than
+           hiding the whole card — hiding it entirely does not clear AwsHealthOmicsNetworkingMode /
+           AwsHealthOmicsVpcConfigurationName, so a dormant VPC config is preserved either way. -->
+      <EGCollapsibleSection
+        heading-id="lab-settings-healthomics-vpc-networking-heading"
+        title="HealthOmics VPC Networking"
+        description="Route this lab's HealthOmics runs through a saved VPC configuration so they can reach resources outside the default restricted network, for example internet reference datasets, license servers, or private VPC and on-prem data. Restricted runs can only reach S3 and ECR in-region."
+        :badges="[healthOmicsVpcNetworkingBadge]"
+      >
+        <EGFormGroup
+          label="Networking mode"
+          name="AwsHealthOmicsNetworkingMode"
+          eager-validation
+          hint="Restricted (default) reaches only S3 and ECR in-region. VPC routes this lab's runs through a saved configuration. Only available when HealthOmics is enabled."
+        >
+          <USelect
+            v-model="state.AwsHealthOmicsNetworkingMode"
+            :options="networkingModeOptions"
+            value-attribute="value"
+            option-attribute="label"
+            :disabled="!isEditing || isSubmittingFormData || !state.AwsHealthOmicsEnabled"
+          />
+        </EGFormGroup>
 
-        <section aria-labelledby="lab-settings-healthomics-vpc-networking-heading">
-          <h3 id="lab-settings-healthomics-vpc-networking-heading" class="mb-1 text-sm font-medium text-black">
-            HealthOmics VPC Networking
-          </h3>
-          <p class="text-muted mb-4 text-xs">
-            Route this lab's HealthOmics runs through a saved VPC configuration so they can reach resources outside the
-            default restricted network, for example internet reference datasets, license servers, or private VPC and
-            on-prem data. Restricted runs can only reach S3 and ECR in-region.
-          </p>
-
-          <EGFormGroup
-            label="Networking mode"
-            name="AwsHealthOmicsNetworkingMode"
-            eager-validation
-            hint="Restricted (default) reaches only S3 and ECR in-region. VPC routes this lab's runs through a saved configuration. Only available when HealthOmics is enabled."
-          >
-            <USelect
-              v-model="state.AwsHealthOmicsNetworkingMode"
-              :options="networkingModeOptions"
-              value-attribute="value"
-              option-attribute="label"
-              :disabled="!isEditing || isSubmittingFormData"
-            />
-          </EGFormGroup>
-
-          <EGFormGroup
-            v-if="state.AwsHealthOmicsNetworkingMode === 'VPC'"
-            label="VPC configuration name"
-            name="AwsHealthOmicsVpcConfigurationName"
-            eager-validation
-            required
-            hint="Name of an ACTIVE HealthOmics configuration set up by ops."
-          >
-            <EGInput
-              v-model="state.AwsHealthOmicsVpcConfigurationName"
-              maxlength="50"
-              placeholder="wslh-prod-vpc"
-              :disabled="!isEditing || isSubmittingFormData"
-            />
-          </EGFormGroup>
-        </section>
-      </template>
-    </EGCard>
+        <EGFormGroup
+          v-if="state.AwsHealthOmicsNetworkingMode === 'VPC'"
+          label="VPC configuration name"
+          name="AwsHealthOmicsVpcConfigurationName"
+          eager-validation
+          required
+          hint="Name of an ACTIVE HealthOmics configuration set up by ops."
+        >
+          <EGInput
+            v-model="state.AwsHealthOmicsVpcConfigurationName"
+            maxlength="50"
+            placeholder="wslh-prod-vpc"
+            :disabled="!isEditing || isSubmittingFormData || !state.AwsHealthOmicsEnabled"
+          />
+        </EGFormGroup>
+      </EGCollapsibleSection>
+    </div>
 
     <!-- Form Buttons: Create Mode -->
     <div v-if="formMode === LabDetailsFormModeEnum.enum.Create" class="mt-6 flex space-x-2">
