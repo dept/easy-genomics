@@ -49,6 +49,20 @@ class OmicsWorkflowsModule extends HttpFactory {
     return res;
   }
 
+  async listShared(labId: string): Promise<{
+    items?: Array<{ id?: string; name?: string; source?: 'SHARED'; ownerAccountId?: string }>;
+  }> {
+    const res = await this.callOmics<{
+      items?: Array<{ id?: string; name?: string; source?: 'SHARED'; ownerAccountId?: string }>;
+    }>('GET', `/workflow/list-shared-workflows?laboratoryId=${labId}`);
+
+    if (!res) {
+      throw new Error('Failed to retrieve shared omics workflows');
+    }
+
+    return res;
+  }
+
   async create(labId: string, payload: CreateOmicsWorkflowRequest): Promise<CreateWorkflow> {
     const res = await this.callOmics<CreateWorkflow>(
       'POST',
@@ -80,10 +94,11 @@ class OmicsWorkflowsModule extends HttpFactory {
     return res;
   }
 
-  async get(labId: string, workflowId: string): Promise<ReadWorkflow> {
+  async get(labId: string, workflowId: string, workflowOwnerId?: string): Promise<ReadWorkflow> {
+    const ownerQuery = workflowOwnerId ? `&workflowOwnerId=${encodeURIComponent(workflowOwnerId)}` : '';
     const res = await this.callOmics<ReadWorkflow>(
       'GET',
-      `/workflow/read-private-workflow/${workflowId}?laboratoryId=${labId}`,
+      `/workflow/read-private-workflow/${workflowId}?laboratoryId=${labId}${ownerQuery}`,
     );
 
     if (!res) {
@@ -93,10 +108,11 @@ class OmicsWorkflowsModule extends HttpFactory {
     return res;
   }
 
-  async listVersions(labId: string, workflowId: string): Promise<ListWorkflowVersionsResponse> {
+  async listVersions(labId: string, workflowId: string, workflowOwnerId?: string): Promise<ListWorkflowVersionsResponse> {
+    const ownerQuery = workflowOwnerId ? `&workflowOwnerId=${encodeURIComponent(workflowOwnerId)}` : '';
     const res = await this.callOmics<ListWorkflowVersionsResponse>(
       'GET',
-      `/workflow/list-workflow-versions?laboratoryId=${labId}&workflowId=${encodeURIComponent(workflowId)}`,
+      `/workflow/list-workflow-versions?laboratoryId=${labId}&workflowId=${encodeURIComponent(workflowId)}${ownerQuery}`,
     );
 
     if (!res) {
@@ -106,5 +122,4 @@ class OmicsWorkflowsModule extends HttpFactory {
     return res;
   }
 }
-
 export default OmicsWorkflowsModule;

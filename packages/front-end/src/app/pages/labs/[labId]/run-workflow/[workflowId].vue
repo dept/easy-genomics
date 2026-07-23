@@ -147,11 +147,16 @@
     steps.value[0].disabled = false;
 
     // get full workflow details from API and save them in the store
-    const omicsWorkflow: ReadWorkflow = await $api.omicsWorkflows.get(labId, workflowId);
-    omicsWorkflowsStore.workflows[workflowId] = omicsWorkflow;
+    const cachedOwnerId = omicsWorkflowsStore.workflows[workflowId]?.ownerAccountId;
+    const omicsWorkflow: ReadWorkflow = await $api.omicsWorkflows.get(labId, workflowId, cachedOwnerId);
+    omicsWorkflowsStore.workflows[workflowId] = {
+      ...omicsWorkflowsStore.workflows[workflowId],
+      ...omicsWorkflow,
+      ...(cachedOwnerId ? { ownerAccountId: cachedOwnerId } : {}),
+    };
 
     try {
-      const versionsRes = await $api.omicsWorkflows.listVersions(labId, workflowId);
+      const versionsRes = await $api.omicsWorkflows.listVersions(labId, workflowId, cachedOwnerId);
       const names = (versionsRes.items ?? [])
         .map((v) => v.versionName)
         .filter((n): n is string => !!n)
@@ -409,6 +414,7 @@
             :workflow-id="workflowId"
             :workflow-name="workflow.name"
             :workflow-version-name="wipOmicsRun?.workflowVersionName"
+            :workflow-owner-id="omicsWorkflowsStore.workflows[workflowId]?.ownerAccountId"
             @submit-launch-request="() => handleSubmitLaunchRequest()"
             @submit-launch-request-error="() => handleSubmitLaunchRequestError()"
             @has-launched="() => handleLaunchSuccess()"
