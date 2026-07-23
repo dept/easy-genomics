@@ -10,11 +10,12 @@
       headingId: string;
       title: string;
       description?: string;
-      badges: Badge[];
+      badges?: Badge[];
       defaultOpen?: boolean;
     }>(),
     {
       description: '',
+      badges: () => [],
       defaultOpen: false,
     },
   );

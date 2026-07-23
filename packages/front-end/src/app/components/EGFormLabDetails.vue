@@ -721,7 +721,7 @@
     <EGText v-if="formMode !== LabDetailsFormModeEnum.enum.Create" :id="settingsHeadingId" tag="h2" class="sr-only">
       Lab settings
     </EGText>
-    <EGCard>
+    <EGCollapsibleSection heading-id="lab-settings-details-heading" title="Lab details" default-open>
       <!-- Lab Name -->
       <EGFormGroup label="Lab Name" name="Name" eager-validation required>
         <EGInput
@@ -764,7 +764,7 @@
           searchable-placeholder="Search existing S3 buckets..."
         />
       </EGFormGroup>
-    </EGCard>
+    </EGCollapsibleSection>
 
     <div class="mt-6 flex flex-col gap-6">
       <EGCollapsibleSection
