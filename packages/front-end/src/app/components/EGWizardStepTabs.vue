@@ -25,8 +25,13 @@
   /**
    * Tab styles must live in this SFC so Tailwind includes the utility classes.
    * Duplicate changes to EGDetailTabs.vue and any page-local EGTabsStyles.
+   *
+   * Once launched, every step is complete and none is "current", but HeadlessUI's TabGroup always
+   * keeps one tab internally selected (it has no concept of "no selection"). Without this override,
+   * that lingering selected tab keeps the purple `active` fill while `isStepComplete()` also gives
+   * its label `text-primary` (below), rendering purple text on a purple background.
    */
-  const EGTabsStyles = {
+  const EGTabsStyles = computed(() => ({
     base: 'focus-visible:outline-none',
     list: {
       base: '!flex rounded-none mb-6 mt-0',
@@ -39,7 +44,9 @@
       tab: {
         base: 'font-serif w-auto mr-3 rounded-xl border border-solid focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2',
         background: '',
-        active: 'text-white bg-primary border-primary',
+        active: props.hasLaunched
+          ? 'font-serif text-text-body border-background-dark-grey'
+          : 'text-white bg-primary border-primary',
         inactive: 'font-serif text-text-body border-background-dark-grey',
         height: '',
         padding: 'px-5 py-2',
@@ -47,7 +54,7 @@
         disabled: 'cursor-not-allowed opacity-50',
       },
     },
-  };
+  }));
 
   function isStepComplete(index: number) {
     return props.modelValue > index || props.hasLaunched;
