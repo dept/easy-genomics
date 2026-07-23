@@ -36,6 +36,8 @@ jobs:
       TEST_S3_URL: ${{ secrets.TEST_S3_URL }}
       TEST_WORKSPACE_ID: ${{ secrets.TEST_WORKSPACE_ID }}
       TEST_INVITE_EMAIL: ${{ vars.TEST_INVITE_EMAIL }}
+      ANALYTICS_ENABLED: ${{ vars.ANALYTICS_ENABLED }}
+      ANALYTICS_ALLOW_DEV: ${{ vars.ANALYTICS_ALLOW_DEV }}
       SLACK_E2E_TEST_WEBHOOK_URL: ${{ vars.SLACK_E2E_TEST_WEBHOOK_URL }}
     steps:
       - name: Checkout
@@ -105,6 +107,8 @@ jobs:
       TEST_S3_URL: ${{ secrets.TEST_S3_URL }}
       TEST_WORKSPACE_ID: ${{ secrets.TEST_WORKSPACE_ID }}
       TEST_INVITE_EMAIL: ${{ vars.TEST_INVITE_EMAIL }}
+      ANALYTICS_ENABLED: ${{ vars.ANALYTICS_ENABLED }}
+      ANALYTICS_ALLOW_DEV: ${{ vars.ANALYTICS_ALLOW_DEV }}
       SLACK_E2E_TEST_WEBHOOK_URL: ${{ vars.SLACK_E2E_TEST_WEBHOOK_URL }}
     steps:
       - name: Checkout
@@ -208,6 +212,8 @@ jobs:
       TEST_S3_URL: ${{ secrets.TEST_S3_URL }}
       TEST_WORKSPACE_ID: ${{ secrets.TEST_WORKSPACE_ID }}
       TEST_INVITE_EMAIL: ${{ vars.TEST_INVITE_EMAIL }}
+      ANALYTICS_ENABLED: ${{ vars.ANALYTICS_ENABLED }}
+      ANALYTICS_ALLOW_DEV: ${{ vars.ANALYTICS_ALLOW_DEV }}
       SLACK_E2E_TEST_WEBHOOK_URL: ${{ vars.SLACK_E2E_TEST_WEBHOOK_URL }}
     steps:
       - name: Checkout
