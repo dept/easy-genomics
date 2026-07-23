@@ -7,7 +7,7 @@ import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-gen
 import { LaboratoryUserDetails } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user-details';
 import { z } from 'zod';
 import HttpFactory from '@FE/repository/factory';
-import { DeletedResponse, EditUserResponse } from '@FE/types/api';
+import { DeletedResponse, EditUserResponse, LaboratoryUserBulkResult } from '@FE/types/api';
 import { validateApiResponse } from '@FE/utils/api-utils';
 
 class LabsModule extends HttpFactory {
@@ -131,6 +131,29 @@ class LabsModule extends HttpFactory {
 
     if (!res) {
       throw new Error('Failed to edit Laboratory user');
+    }
+
+    return res;
+  }
+
+  /**
+   * Add multiple existing org users to a laboratory with one role, atomically per user
+   * @param labId
+   * @param userIds
+   * @param isLabManager
+   */
+  async addBulkLabUsers(labId: string, userIds: string[], isLabManager: boolean): Promise<LaboratoryUserBulkResult[]> {
+    const res = await this.call<LaboratoryUserBulkResult[]>('POST', '/laboratory/user/add-bulk-laboratory-users', {
+      LaboratoryId: labId,
+      Users: userIds.map((userId) => ({
+        UserId: userId,
+        LabManager: isLabManager,
+        LabTechnician: !isLabManager,
+      })),
+    });
+
+    if (!res) {
+      throw new Error('Failed to add users to Laboratory');
     }
 
     return res;

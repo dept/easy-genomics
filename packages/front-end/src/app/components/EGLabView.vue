@@ -63,7 +63,6 @@
   const orgId = computed<string | null>(() => lab.value?.OrganizationId ?? null);
   const labName = computed<string>(() => lab.value?.Name || '');
 
-  const addUsersPanelId = 'lab-add-users-panel';
   const usersHeadingId = 'lab-users-heading';
 
   /** Prevents duplicate redirects when multiple watchers or lifecycle hooks fire. */
@@ -441,17 +440,6 @@
     ]),
   );
 
-  watch(showAddUserModule, (isOpen) => {
-    if (!isOpen) return;
-    nextTick(() => {
-      const panel = document.getElementById(addUsersPanelId);
-      const focusable = panel?.querySelector<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-      );
-      focusable?.focus();
-    });
-  });
-
   function showRemoveUserDialog(user: LabUser) {
     userToRemove.value = user;
     primaryMessage.value = `Are you sure you want to remove ${user.displayName} from ${labName.value}?`;
@@ -688,7 +676,6 @@
   }
 
   async function handleUserAddedToLab() {
-    showAddUserModule.value = false;
     await getLabUsers();
   }
 
@@ -847,25 +834,28 @@
         u-button-type="button"
         label="Add Lab Users"
         :disabled="!canAddUsers"
-        :aria-expanded="showAddUserModule"
-        :aria-controls="addUsersPanelId"
-        @click="showAddUserModule = !showAddUserModule"
+        @click="showAddUserModule = true"
       />
-      <div
-        v-if="showAddUserModule && activeTabKey === 'users' && !!orgId"
-        :id="addUsersPanelId"
-        role="region"
-        aria-label="Add users to lab"
-        class="mt-2"
-      >
-        <EGAddLabUsersModule
-          @added-user-to-lab="handleUserAddedToLab()"
-          :org-id="orgId"
-          :lab-id="labId"
-          :lab-name="labName"
-          :lab-users="labUsers"
-        />
-      </div>
+      <UModal v-model="showAddUserModule">
+        <UCard>
+          <template #header>
+            <h2 class="text-lg font-semibold">Add users to {{ labName }}</h2>
+          </template>
+          <EGAddLabUsersModule
+            v-if="!!orgId"
+            @added-user-to-lab="handleUserAddedToLab()"
+            :org-id="orgId"
+            :lab-id="labId"
+            :lab-name="labName"
+            :lab-users="labUsers"
+          />
+          <template #footer>
+            <div class="flex justify-end">
+              <EGButton u-button-type="button" variant="secondary" label="Done" @click="showAddUserModule = false" />
+            </div>
+          </template>
+        </UCard>
+      </UModal>
     </EGPageHeader>
 
     <!-- Data Collections -->

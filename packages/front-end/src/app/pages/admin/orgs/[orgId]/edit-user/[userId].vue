@@ -1,7 +1,13 @@
 <script setup lang="ts">
+  const $router = useRouter();
   const $route = useRoute();
+
+  onBeforeMount(() => {
+    $router.replace({
+      path: `/admin/orgs/${$route.params.orgId}`,
+      query: { openUser: $route.params.userId as string },
+    });
+  });
 </script>
 
-<template>
-  <EGUserAccess :org-id="$route.params.orgId" :user-id="$route.params.userId" />
-</template>
+<template></template>
