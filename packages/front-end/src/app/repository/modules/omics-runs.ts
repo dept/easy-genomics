@@ -1,5 +1,9 @@
 import { CancelRunCommandOutput, StartRunCommandOutput } from '@aws-sdk/client-omics';
-import { ListRuns, ReadRun } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
+import {
+  ListRuns,
+  ReadRun,
+  ReadRunTasks,
+} from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
 import HttpFactory from '@FE/repository/factory';
 
 class OmicsRunsModule extends HttpFactory {
@@ -18,6 +22,16 @@ class OmicsRunsModule extends HttpFactory {
 
     if (!res) {
       throw new Error('Failed to retrieve omics run details');
+    }
+
+    return res;
+  }
+
+  async getRunProgress(labId: string, omicsRunId: string): Promise<ReadRunTasks> {
+    const res = await this.callOmics<ReadRunTasks>('GET', `/run/read-run-tasks/${omicsRunId}?laboratoryId=${labId}`);
+
+    if (!res) {
+      throw new Error('Failed to retrieve omics run task progress');
     }
 
     return res;

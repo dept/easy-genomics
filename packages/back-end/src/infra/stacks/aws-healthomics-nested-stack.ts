@@ -330,10 +330,10 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
           },
         },
       }),
-      // Allow GetRun, ListRuns, and CancelRun only for Runs tagged with the same LaboratoryId and OrganizationId as the principal
+      // Allow GetRun, ListRuns, ListRunTasks, and CancelRun only for Runs tagged with the same LaboratoryId and OrganizationId as the principal
       new PolicyStatement({
         resources: ['*'],
-        actions: ['omics:GetRun', 'omics:ListRuns', 'omics:CancelRun'],
+        actions: ['omics:GetRun', 'omics:ListRuns', 'omics:ListRunTasks', 'omics:CancelRun'],
         effect: Effect.ALLOW,
         conditions: {
           StringEquals: {
@@ -748,6 +748,28 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:run/*`],
         actions: ['omics:GetRun'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
+        ],
+        actions: ['sts:AssumeRole', 'sts:TagSession'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+    // /aws-healthomics/run/read-run-tasks
+    this.iam.addPolicyStatements('/aws-healthomics/run/read-run-tasks', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+      }),
+      new PolicyStatement({
+        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:run/*`],
+        actions: ['omics:ListRunTasks'],
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({

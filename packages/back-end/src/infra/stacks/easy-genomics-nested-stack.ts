@@ -1287,7 +1287,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
       new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:run/*`],
-        actions: ['omics:GetRun'],
+        actions: ['omics:GetRun', 'omics:ListRunTasks'],
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({

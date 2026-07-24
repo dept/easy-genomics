@@ -90,6 +90,20 @@ export const LaboratoryRunSchema = z
      * AI-assisted disclaimer in the UI and for ops debugging.
      */
     FailureClassifiedBy: z.enum(['lookup', 'llm']).optional(),
+    /**
+     * Approximate task completion percentage derived from HealthOmics ListRunTasks
+     * (or Seqera progress when populated). Denominator grows as the workflow DAG
+     * expands, so prefer showing TasksCompleted/TasksTotal alongside this value.
+     */
+    ProgressPercent: z.number().min(0).max(100).optional(),
+    /** Total known tasks at last status check (denominator for ProgressPercent). */
+    TasksTotal: z.number().nonnegative().optional(),
+    /** Tasks in COMPLETED status at last status check. */
+    TasksCompleted: z.number().nonnegative().optional(),
+    /** Tasks in RUNNING/STARTING status at last status check. */
+    TasksRunning: z.number().nonnegative().optional(),
+    /** Tasks in FAILED status at last status check. */
+    TasksFailed: z.number().nonnegative().optional(),
   })
   .strict();
 export type LaboratoryRun = z.infer<typeof LaboratoryRunSchema>;
@@ -128,6 +142,11 @@ export const ReadLaboratoryRunSchema = z
     FailureSummary: z.string().optional(),
     FailureAction: z.string().optional(),
     FailureClassifiedBy: z.enum(['lookup', 'llm']).optional(),
+    ProgressPercent: z.number().min(0).max(100).optional(),
+    TasksTotal: z.number().nonnegative().optional(),
+    TasksCompleted: z.number().nonnegative().optional(),
+    TasksRunning: z.number().nonnegative().optional(),
+    TasksFailed: z.number().nonnegative().optional(),
   })
   .strict();
 export type ReadLaboratoryRun = z.infer<typeof ReadLaboratoryRunSchema>;

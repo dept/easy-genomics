@@ -432,6 +432,10 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
   'GET /aws-healthomics/run/read-run/{id}': {
     query: [{ name: 'laboratoryId', required: false, description: 'Laboratory to verify HealthOmics access' }],
   },
+  'GET /aws-healthomics/run/read-run-tasks/{id}': {
+    query: [{ name: 'laboratoryId', required: false, description: 'Laboratory to verify HealthOmics access' }],
+    response: 'ReadRunTasks',
+  },
 
   // ── aws-healthomics/workflow/ ────────────────────────────────────────────────
 
