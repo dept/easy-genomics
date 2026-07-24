@@ -15,7 +15,7 @@ describe('update-laboratory-user-notification-preference.lambda', () => {
       pathParameters,
       requestContext: {
         authorizer: {
-          claims: { 'cognito:username': 'user-1', email: 'user@example.com' },
+          claims: { 'cognito:username': 'user-1', 'email': 'user@example.com' },
         },
       },
     }) as unknown as APIGatewayProxyWithCognitoAuthorizerEvent;
