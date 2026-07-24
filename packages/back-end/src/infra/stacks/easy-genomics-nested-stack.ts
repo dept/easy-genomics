@@ -350,6 +350,24 @@ export class EasyGenomicsNestedStack extends NestedStack {
             SNS_LABORATORY_RUN_UPDATE_TOPIC: this.sns.snsTopics.get('laboratory-run-update-topic')?.topicArn || '',
           },
         },
+        // Scheduled poller (every 2 minutes, matching the front-end's own poll cadence) that
+        // finds every non-terminal run and re-enqueues a status check, so terminal
+        // transitions are detected without an open browser. See process-poll-active-runs.lambda.ts.
+        '/easy-genomics/laboratory/run/process-poll-active-runs': {
+          environment: {
+            SNS_LABORATORY_RUN_UPDATE_TOPIC: this.sns.snsTopics.get('laboratory-run-update-topic')?.topicArn || '',
+          },
+          callbacks: [
+            (lambdaFunction) => {
+              new Rule(this, `${this.props.namePrefix}-poll-active-runs-schedule`, {
+                ruleName: `${this.props.namePrefix}-poll-active-runs-schedule`,
+                schedule: Schedule.rate(Duration.minutes(2)),
+                description: 'Finds non-terminal runs and re-enqueues status checks for the notification pipeline.',
+                targets: [new LambdaFunction(lambdaFunction)],
+              });
+            },
+          ],
+        },
         '/easy-genomics/organization/workflow-access/list-workflow-catalog': {
           environment: {
             SEQERA_API_BASE_URL: this.props.seqeraApiBaseUrl,
@@ -1211,6 +1229,18 @@ export class EasyGenomicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: [`${this.sns.snsTopics.get('laboratory-run-update-topic')?.topicArn || ''}`],
         actions: ['sns:Publish'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/laboratory/run/process-poll-active-runs
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/run/process-poll-active-runs', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
         effect: Effect.ALLOW,
       }),
     ]);
