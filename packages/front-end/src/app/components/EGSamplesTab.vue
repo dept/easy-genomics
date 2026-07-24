@@ -627,25 +627,26 @@
 
           <div
             v-else-if="!filtered.length"
-            class="flex min-h-[14rem] items-center justify-center p-6 text-center text-sm text-gray-400"
+            class="flex min-h-[14rem] items-center justify-center p-6 text-center text-sm text-gray-600"
           >
             No samples match your current search or filters.
           </div>
 
-          <div
-            v-else-if="explorerView === 'cards'"
-            class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-            role="list"
-            aria-label="Samples"
-            aria-multiselectable="true"
-          >
-            <template v-for="(sec, secIdx) in sampleSections" :key="sec.batchId ?? 'unbatched'">
+          <div v-else-if="explorerView === 'cards'" class="flex flex-col">
+            <section
+              v-for="(sec, secIdx) in sampleSections"
+              :key="sec.batchId ?? 'unbatched'"
+              class="min-w-0"
+              :aria-labelledby="`samples-batch-heading-${sec.batchId ?? 'unbatched'}`"
+            >
               <div
-                class="border-border-muted col-span-full flex items-start justify-between gap-3 border-b pb-2"
+                class="border-border-muted flex items-start justify-between gap-3 border-b pb-2"
                 :class="secIdx === 0 ? 'mt-0' : 'mt-6'"
-                role="presentation"
               >
-                <h3 class="text-muted min-w-0 flex-1 whitespace-normal text-xs font-normal leading-snug tracking-wide">
+                <h3
+                  :id="`samples-batch-heading-${sec.batchId ?? 'unbatched'}`"
+                  class="text-muted min-w-0 flex-1 whitespace-normal text-xs font-normal leading-snug tracking-wide"
+                >
                   <span class="inline-flex flex-wrap items-baseline gap-x-3 gap-y-1">
                     <span class="inline-flex min-w-0 flex-wrap items-baseline gap-x-1.5">
                       <span class="font-semibold text-gray-900">
@@ -687,72 +688,84 @@
                 </button>
               </div>
               <div
-                v-for="s in sec.samples"
-                :key="s.SampleId"
-                data-file-card
-                :data-key="s.SampleId"
-                role="listitem"
-                tabindex="0"
-                class="border-border-muted focus-visible:ring-primary relative min-w-0 cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-                :class="{
-                  'bg-primary-muted ring-primary ring-2': isSelected(s.SampleId),
-                  'z-[80]': analysisPopoverOpenKey === s.SampleId,
-                }"
-                :aria-selected="isSelected(s.SampleId)"
-                :aria-label="`${s.Name}, ${contentsLabel(s)}`"
-                @click="toggle(s.SampleId)"
-                @keydown="onSampleItemKeydown($event, s.SampleId)"
+                class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                role="listbox"
+                aria-multiselectable="true"
+                :aria-labelledby="`samples-batch-heading-${sec.batchId ?? 'unbatched'}`"
               >
-                <div class="absolute left-0 top-0 z-[1]" @mousedown.stop @click.stop>
-                  <EGFileAnalysisHistoryTooltip
-                    :lab-id="labId"
-                    :file-key="s.SampleId"
-                    :file-name="s.Name"
-                    :batch-name="batchDisplayName(s) === '—' ? undefined : batchDisplayName(s)"
-                    :standard-tag-names="standardTagNamesForSample(s.SampleId)"
-                    :run-usages="runUsagesForSample(s.SampleId)"
-                    variant="card"
-                    @select-run-files="selectSamplesForRun($event.runId)"
-                    @update:open="onAnalysisPopoverOpen(s.SampleId, $event)"
-                  />
-                </div>
-                <div class="absolute right-2 top-2" @mousedown.stop @click.stop>
-                  <UCheckbox :model-value="isSelected(s.SampleId)" @update:model-value="toggle(s.SampleId)" />
-                </div>
-                <div class="w-full min-w-0 pr-8">
-                  <div
-                    class="mt-7 line-clamp-2 w-full min-w-0 break-all text-sm font-medium leading-snug text-gray-900"
-                  >
-                    {{ s.Name }}
+                <div
+                  v-for="s in sec.samples"
+                  :key="s.SampleId"
+                  data-file-card
+                  :data-key="s.SampleId"
+                  role="option"
+                  tabindex="0"
+                  class="border-border-muted focus-visible:ring-primary relative min-w-0 cursor-pointer rounded-xl border bg-white p-3 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                  :class="{
+                    'bg-primary-muted ring-primary ring-2': isSelected(s.SampleId),
+                    'z-[80]': analysisPopoverOpenKey === s.SampleId,
+                  }"
+                  :aria-selected="isSelected(s.SampleId)"
+                  :aria-label="`${s.Name}, ${contentsLabel(s)}`"
+                  @click="toggle(s.SampleId)"
+                  @keydown="onSampleItemKeydown($event, s.SampleId)"
+                >
+                  <div class="absolute left-0 top-0 z-[1]" @mousedown.stop @click.stop>
+                    <EGFileAnalysisHistoryTooltip
+                      :lab-id="labId"
+                      :file-key="s.SampleId"
+                      :file-name="s.Name"
+                      :batch-name="batchDisplayName(s) === '—' ? undefined : batchDisplayName(s)"
+                      :standard-tag-names="standardTagNamesForSample(s.SampleId)"
+                      :run-usages="runUsagesForSample(s.SampleId)"
+                      variant="card"
+                      @select-run-files="selectSamplesForRun($event.runId)"
+                      @update:open="onAnalysisPopoverOpen(s.SampleId, $event)"
+                    />
                   </div>
-                  <div class="text-muted mt-1 text-xs">{{ contentsLabel(s) }}</div>
-                </div>
-                <div class="mt-2 flex min-h-[1.25rem] min-w-0 max-w-full flex-wrap gap-1">
-                  <span
-                    v-if="!standardTagIdsForSet(s.SampleId).length"
-                    class="inline-flex min-w-0 max-w-full overflow-hidden rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-medium text-gray-600"
-                    @click.stop
-                  >
-                    <span class="truncate">Untagged</span>
-                  </span>
-                  <template v-else>
+                  <div class="absolute right-2 top-2" @mousedown.stop @click.stop>
+                    <UCheckbox
+                      :model-value="isSelected(s.SampleId)"
+                      :label="`Select sample ${s.Name}`"
+                      :ui="{ label: 'sr-only' }"
+                      @update:model-value="toggle(s.SampleId)"
+                    />
+                  </div>
+                  <div class="w-full min-w-0 pr-8">
+                    <div
+                      class="mt-7 line-clamp-2 w-full min-w-0 break-all text-sm font-medium leading-snug text-gray-900"
+                    >
+                      {{ s.Name }}
+                    </div>
+                    <div class="text-muted mt-1 text-xs">{{ contentsLabel(s) }}</div>
+                  </div>
+                  <div class="mt-2 flex min-h-[1.25rem] min-w-0 max-w-full flex-wrap gap-1">
                     <span
-                      v-for="tid in standardTagIdsForSet(s.SampleId)"
-                      :key="tid"
-                      class="inline-flex min-w-0 max-w-full overflow-hidden rounded-full px-2 py-0.5 text-[10px] font-medium"
-                      :title="tagById(tid)?.Name || tid"
-                      :style="{
-                        background: tagById(tid)?.ColorHex || '#e2e2e8',
-                        color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
-                      }"
+                      v-if="!standardTagIdsForSet(s.SampleId).length"
+                      class="inline-flex min-w-0 max-w-full overflow-hidden rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-medium text-gray-600"
                       @click.stop
                     >
-                      <span class="truncate">{{ tagById(tid)?.Name || tid }}</span>
+                      <span class="truncate">Untagged</span>
                     </span>
-                  </template>
+                    <template v-else>
+                      <span
+                        v-for="tid in standardTagIdsForSet(s.SampleId)"
+                        :key="tid"
+                        class="inline-flex min-w-0 max-w-full overflow-hidden rounded-full px-2 py-0.5 text-[10px] font-medium"
+                        :title="tagById(tid)?.Name || tid"
+                        :style="{
+                          background: tagById(tid)?.ColorHex || '#e2e2e8',
+                          color: pillTextColor(tagById(tid)?.ColorHex || '#e2e2e8'),
+                        }"
+                        @click.stop
+                      >
+                        <span class="truncate">{{ tagById(tid)?.Name || tid }}</span>
+                      </span>
+                    </template>
+                  </div>
                 </div>
               </div>
-            </template>
+            </section>
           </div>
 
           <div v-else class="overflow-x-auto">
@@ -760,10 +773,10 @@
               <thead class="sticky top-0 z-10 bg-gray-50">
                 <tr>
                   <th class="w-10 p-3" />
-                  <th class="p-3 text-left text-xs uppercase text-gray-400">Sample ID</th>
-                  <th class="p-3 text-left text-xs uppercase text-gray-400">Contents</th>
-                  <th class="p-3 text-left text-xs uppercase text-gray-400">Tags</th>
-                  <th class="p-3 text-left text-xs uppercase text-gray-400">Run Status</th>
+                  <th class="p-3 text-left text-xs uppercase text-gray-600">Sample ID</th>
+                  <th class="p-3 text-left text-xs uppercase text-gray-600">Contents</th>
+                  <th class="p-3 text-left text-xs uppercase text-gray-600">Tags</th>
+                  <th class="p-3 text-left text-xs uppercase text-gray-600">Run Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -830,7 +843,12 @@
                     @keydown="onSampleItemKeydown($event, s.SampleId)"
                   >
                     <td class="p-3" @mousedown.stop @click.stop>
-                      <UCheckbox :model-value="isSelected(s.SampleId)" @update:model-value="toggle(s.SampleId)" />
+                      <UCheckbox
+                        :model-value="isSelected(s.SampleId)"
+                        :label="`Select sample ${s.Name}`"
+                        :ui="{ label: 'sr-only' }"
+                        @update:model-value="toggle(s.SampleId)"
+                      />
                     </td>
                     <td class="p-3 font-medium">{{ s.Name }}</td>
                     <td class="p-3 text-gray-600">{{ contentsLabel(s) }}</td>
@@ -958,6 +976,8 @@
             >
               <UCheckbox
                 :model-value="bulkAddTagIds.includes(t.TagId)"
+                :label="`Add tag ${t.Name}`"
+                :ui="{ label: 'sr-only' }"
                 @update:model-value="toggleBulkAddTag(t.TagId)"
               />
               <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: t.ColorHex }" />
@@ -1014,7 +1034,12 @@
               :key="'rm-' + tid"
               class="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 hover:bg-gray-50"
             >
-              <UCheckbox :model-value="bulkRemoveTagIds.includes(tid)" @update:model-value="toggleBulkRemoveTag(tid)" />
+              <UCheckbox
+                :model-value="bulkRemoveTagIds.includes(tid)"
+                :label="`Remove tag ${tagById(tid)?.Name || tid}`"
+                :ui="{ label: 'sr-only' }"
+                @update:model-value="toggleBulkRemoveTag(tid)"
+              />
               <span
                 class="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
                 :style="{ background: tagById(tid)?.ColorHex || '#ccc' }"

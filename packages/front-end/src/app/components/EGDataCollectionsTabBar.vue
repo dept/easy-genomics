@@ -27,12 +27,12 @@
       :class="
         activeTab === tab.key
           ? 'border-primary text-primary-700'
-          : 'border-transparent text-gray-500 hover:text-gray-700'
+          : 'border-transparent text-gray-600 hover:text-gray-800'
       "
       @click="emit('update:activeTab', tab.key)"
     >
       {{ tab.label }}
-      <span class="ml-1 font-normal text-gray-400">
+      <span class="ml-1 font-normal text-gray-600">
         ·
         {{ tab.key === 'collections' ? collectionCount : tab.key === 'samples' ? sampleCount : fileCount }}
       </span>

@@ -189,7 +189,7 @@
 
     tbody tr td:not(:first-child) {
       font-size: 12px;
-      color: #818181;
+      color: #666666;
       white-space: normal;
     }
 
