@@ -1025,6 +1025,12 @@ export interface components {
        */
       EnableNewWorkflowsByDefault?: boolean;
       /**
+       * @description Lab-manager kill switch for run-completion email notifications. Defaults to `true`
+       * (enabled) at the application layer when absent. Does not itself subscribe anyone —
+       * individual opt-in still gates whether any email is actually sent.
+       */
+      NotificationsEnabled?: boolean;
+      /**
        * @description Laboratory-wide run retention policy, in months, applied after a run reaches a terminal state.
        * - 0 means "never delete run records" (no TTL expiration).
        */
@@ -1574,6 +1580,9 @@ export interface components {
       FavouriteWorkflows?: components["schemas"]["FavouriteWorkflow"][];
       /** @enum {string} */
       AnalyticsConsent?: "denied" | "granted" | "unset";
+      NotifyOnOwnRuns?: boolean;
+      /** @enum {string} */
+      NotificationEventFilter?: "all_terminal" | "failures_only";
       CreatedAt?: string;
       CreatedBy?: string;
       ModifiedAt?: string;

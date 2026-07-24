@@ -1610,6 +1610,12 @@ components:
             When true, workflows/pipelines without a DENY row are allowed (new AWS-console workflows included).
             When false/omitted, only explicit ALLOW rows grant access.
           type: boolean
+        NotificationsEnabled:
+          description: |-
+            Lab-manager kill switch for run-completion email notifications. Defaults to `true`
+            (enabled) at the application layer when absent. Does not itself subscribe anyone —
+            individual opt-in still gates whether any email is actually sent.
+          type: boolean
         RunRetentionMonths:
           description: |-
             Laboratory-wide run retention policy, in months, applied after a run reaches a terminal state.
@@ -2820,6 +2826,13 @@ components:
             - denied
             - granted
             - unset
+          type: string
+        NotifyOnOwnRuns:
+          type: boolean
+        NotificationEventFilter:
+          enum:
+            - all_terminal
+            - failures_only
           type: string
         CreatedAt:
           type: string

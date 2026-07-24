@@ -62,6 +62,13 @@ export interface Laboratory extends BaseAttributes {
   EnableNewWorkflowsByDefault?: boolean;
 
   /**
+   * Lab-manager kill switch for run-completion email notifications. Defaults to `true`
+   * (enabled) at the application layer when absent. Does not itself subscribe anyone —
+   * individual opt-in still gates whether any email is actually sent.
+   */
+  NotificationsEnabled?: boolean;
+
+  /**
    * Laboratory-wide run retention policy, in months, applied after a run reaches a terminal state.
    * - 0 means "never delete run records" (no TTL expiration).
    */
