@@ -126,4 +126,19 @@ export interface LaboratoryRun extends BaseAttributes {
    * `llm` = produced by the configured LLM provider (display "AI-assisted" disclaimer).
    */
   FailureClassifiedBy?: 'lookup' | 'llm';
+
+  /**
+   * Sparse marker present only while the run is non-terminal. Backs the `PollStatus_Index`
+   * GSI so the notification poller can query "every active run" in O(1) regardless of total
+   * run history, instead of scanning or iterating every lab. Removed (not set false) on the
+   * non-terminal -> terminal transition.
+   */
+  PollStatus?: 'ACTIVE';
+
+  /**
+   * ISO timestamp set exactly once, guarded by a conditional write
+   * (`attribute_not_exists(NotifiedAt)`), the first time a terminal-state notification is
+   * published for this run. Prevents a duplicate status-check message from double-emailing.
+   */
+  NotifiedAt?: string;
 }

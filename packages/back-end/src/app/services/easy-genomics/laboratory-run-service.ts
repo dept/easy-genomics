@@ -306,6 +306,81 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
     );
   }
 
+  /**
+   * Guards the run-completion notification publish behind a conditional write. Only the
+   * caller that wins `attribute_not_exists(NotifiedAt)` gets `published: true` — a duplicate
+   * or retried status-check message for the same terminal state gets `published: false` and
+   * must not re-publish to the notification topic.
+   */
+  public async markTerminalNotified(input: {
+    LaboratoryId: string;
+    RunId: string;
+    ModifiedAt: string;
+    ModifiedBy: string;
+  }): Promise<{ published: boolean; run: LaboratoryRun }> {
+    try {
+      const response: UpdateItemCommandOutput = await this.updateItem({
+        TableName: this.LABORATORY_RUN_TABLE_NAME,
+        Key: {
+          LaboratoryId: { S: input.LaboratoryId },
+          RunId: { S: input.RunId },
+        },
+        UpdateExpression:
+          'SET #NotifiedAt = :NotifiedAt, #ModifiedAt = :ModifiedAt, #ModifiedBy = :ModifiedBy REMOVE #PollStatus',
+        ConditionExpression: 'attribute_not_exists(#NotifiedAt)',
+        ExpressionAttributeNames: {
+          '#NotifiedAt': 'NotifiedAt',
+          '#ModifiedAt': 'ModifiedAt',
+          '#ModifiedBy': 'ModifiedBy',
+          '#PollStatus': 'PollStatus',
+        },
+        ExpressionAttributeValues: marshall({
+          ':NotifiedAt': input.ModifiedAt,
+          ':ModifiedAt': input.ModifiedAt,
+          ':ModifiedBy': input.ModifiedBy,
+        }),
+        ReturnValues: 'ALL_NEW',
+      });
+
+      if (response.$metadata.httpStatusCode === 200 && response.Attributes) {
+        return { published: true, run: withCoercedInputFileKeys(<LaboratoryRun>unmarshall(response.Attributes)) };
+      }
+      throw new Error(
+        `markTerminalNotified for LaboratoryId=${input.LaboratoryId} RunId=${input.RunId} failed: HTTP ${response.$metadata.httpStatusCode}`,
+      );
+    } catch (err: any) {
+      if (err?.name === 'ConditionalCheckFailedException') {
+        return { published: false, run: await this.get(input.LaboratoryId, input.RunId) };
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Queries the sparse `PollStatus_Index` GSI for every currently non-terminal run, across
+   * all labs. Cost stays flat regardless of total historical run volume (unlike a full scan
+   * or a per-lab query loop) because only active runs carry the `PollStatus` attribute.
+   */
+  public queryActiveForPolling = async (): Promise<LaboratoryRun[]> => {
+    const results: LaboratoryRun[] = [];
+    let lastKey: Record<string, any> | undefined;
+    do {
+      const response: QueryCommandOutput = await this.queryItems({
+        TableName: this.LABORATORY_RUN_TABLE_NAME,
+        IndexName: 'PollStatus_Index',
+        KeyConditionExpression: '#PollStatus = :pollStatus',
+        ExpressionAttributeNames: { '#PollStatus': 'PollStatus' },
+        ExpressionAttributeValues: { ':pollStatus': { S: 'ACTIVE' } },
+        ...(lastKey ? { ExclusiveStartKey: lastKey } : {}),
+      });
+      if (response.Items) {
+        results.push(...response.Items.map((item) => withCoercedInputFileKeys(<LaboratoryRun>unmarshall(item))));
+      }
+      lastKey = response.LastEvaluatedKey as Record<string, any> | undefined;
+    } while (lastKey);
+    return results;
+  };
+
   public delete = async (laboratoryRun: LaboratoryRun): Promise<boolean> => {
     const logRequestMessage = `Delete LaboratoryRun LaboratoryId=${laboratoryRun.LaboratoryId}, RunId=${laboratoryRun.RunId} request`;
     console.info(logRequestMessage);
