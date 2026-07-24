@@ -30,4 +30,5 @@ export interface LaboratoryUser extends LaboratoryRoles, BaseAttributes {
   UserId: string; // DynamoDB Sort Key (String) & Global Secondary Index (String)
   OrganizationId: string; // Global Secondary Index (String)
   Status: Status;
+  NotifyOnLabRuns?: boolean;
 }

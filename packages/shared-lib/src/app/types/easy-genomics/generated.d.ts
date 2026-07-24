@@ -1326,6 +1326,7 @@ export interface components {
       UserId: string;
       OrganizationId: string;
       Status: components["schemas"]["Status"];
+      NotifyOnLabRuns?: boolean;
       LabManager: boolean;
       LabTechnician: boolean;
       CreatedAt?: string;

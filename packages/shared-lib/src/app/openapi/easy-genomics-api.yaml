@@ -2196,6 +2196,8 @@ components:
           type: string
         Status:
           $ref: '#/components/schemas/Status'
+        NotifyOnLabRuns:
+          type: boolean
         LabManager:
           type: boolean
         LabTechnician:
