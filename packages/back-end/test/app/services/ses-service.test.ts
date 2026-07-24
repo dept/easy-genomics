@@ -135,4 +135,34 @@ describe('SesService', () => {
       'Send New User Invitation Email request: test@example.com unsuccessful: Email address is not verified',
     );
   });
+
+  describe('SesService.sendRunCompletionEmail', () => {
+    it('sends the RunCompletionEmailTemplate with a deep link built from LaboratoryId/RunId', async () => {
+      mockSend.mockResolvedValueOnce({ MessageId: 'msg-1' });
+      const service = new SesService({
+        accountId: '123456789012',
+        region: 'us-west-2',
+        domainName: 'example.com',
+        envType: 'dev',
+        envName: 'sandbox',
+      });
+
+      await service.sendRunCompletionEmail('tech@example.com', {
+        runName: 'My Run',
+        status: 'COMPLETED',
+        laboratoryName: 'Test Lab',
+        workflowName: 'Variant Calling',
+        runDurationSeconds: 3600,
+        runId: 'run-1',
+        laboratoryId: 'lab-1',
+      });
+
+      expect(SendTemplatedEmailCommand).toHaveBeenCalledTimes(1);
+      const cmdInput = (SendTemplatedEmailCommand as unknown as jest.Mock).mock.calls[0][0];
+      expect(cmdInput.Template).toBe('sandbox-dev-RunCompletionEmailTemplate');
+      expect(cmdInput.Destination?.ToAddresses).toEqual(['tech@example.com']);
+      const templateData = JSON.parse(cmdInput.TemplateData);
+      expect(templateData.RUN_LINK).toBe('https://example.com/labs/lab-1/run/run-1');
+    });
+  });
 });

@@ -131,4 +131,50 @@ export class SesService {
       throw new Error(`${logRequestMessage} unsuccessful: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+
+  public async sendRunCompletionEmail(
+    toAddress: string,
+    data: {
+      runName: string;
+      status: string;
+      laboratoryName: string;
+      workflowName?: string;
+      runDurationSeconds?: number;
+      runId: string;
+      laboratoryId: string;
+    },
+  ): Promise<SendTemplatedEmailCommandOutput> {
+    const logRequestMessage = `Send Run Completion Email request: ${toAddress}`;
+    console.info(logRequestMessage);
+
+    const sendTemplatedEmailCommand: SendTemplatedEmailCommand = new SendTemplatedEmailCommand({
+      Source: `no.reply@${this.props.domainName}`,
+      Destination: {
+        ToAddresses: [toAddress],
+      },
+      ReplyToAddresses: [`no.reply@${this.props.domainName}`],
+      ReturnPath: `no.reply@${this.props.domainName}`,
+      SourceArn: `arn:aws:ses:${this.props.region}:${this.props.accountId}:identity/${this.props.domainName}`,
+      Template: `${this.templateNamePrefix}RunCompletionEmailTemplate`,
+      TemplateData: JSON.stringify({
+        COPYRIGHT_YEAR: `${new Date().getFullYear()}`,
+        DOMAIN_NAME: this.props.domainName,
+        RUN_NAME: data.runName,
+        STATUS: data.status,
+        LABORATORY_NAME: data.laboratoryName,
+        WORKFLOW_NAME: data.workflowName || 'N/A',
+        RUN_DURATION_SECONDS: data.runDurationSeconds != null ? `${data.runDurationSeconds}` : 'N/A',
+        RUN_LINK: `https://${this.props.domainName}/labs/${data.laboratoryId}/run/${data.runId}`,
+        EASY_GENOMICS_EMAIL_LOGO: `https://${this.props.domainName}/images/email/easy-genomics.png`,
+      }),
+    });
+
+    try {
+      const response = await this.sesClient.send(sendTemplatedEmailCommand);
+      console.info(`Send Run Completion Email to ${toAddress} response: `, response);
+      return response;
+    } catch (error: unknown) {
+      throw new Error(`${logRequestMessage} unsuccessful: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 }

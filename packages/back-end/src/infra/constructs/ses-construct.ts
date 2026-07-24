@@ -43,6 +43,7 @@ export class SesConstruct extends Construct {
       this.setupNewUserInvitationEmailTemplate();
       this.setupExistingUserCourtesyEmailTemplate();
       this.setupUserForgotPasswordEmailTemplate();
+      this.setupRunCompletionEmailTemplate();
     }
   }
 
@@ -378,7 +379,7 @@ export class SesConstruct extends Construct {
                                 <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin: auto;">
                                     <tr>
                                         <td style="border-radius: 4px; background: #5524e0; text-align: center;">
-                                            <a href="https://{{DOMAIN_NAME}}/reset-password?forgot-password={{FORGOT_PASSWORD_JWT}}" 
+                                            <a href="https://{{DOMAIN_NAME}}/reset-password?forgot-password={{FORGOT_PASSWORD_JWT}}"
                                                style="background: #5524e0; border: 15px solid #5524e0; color: #ffffff; font-size: 14px; line-height: 1.1; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block; font-family: Arial, sans-serif;">
                                                 Reset Password
                                             </a>
@@ -419,5 +420,47 @@ export class SesConstruct extends Construct {
     forgotPasswordEmailTemplate.applyRemovalPolicy(RemovalPolicy.DESTROY);
 
     return forgotPasswordEmailTemplate;
+  }
+
+  private setupRunCompletionEmailTemplate() {
+    const runCompletionEmailTemplate: CfnTemplate = new CfnTemplate(this, 'RunCompletionEmailTemplate', {
+      template: {
+        templateName: `${this.templateNamePrefix}RunCompletionEmailTemplate`,
+        subjectPart: 'Your Easy Genomics run has finished',
+        htmlPart: `
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Your Easy Genomics run has finished</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #ffffff; font-family: Arial, sans-serif;">
+    <center style="width: 100%; background: #ffffff;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" width="600" style="margin: auto; background-color: #ffffff;" class="email-container">
+            <tr>
+                <td style="padding: 24px;">
+                    <img src="{{EASY_GENOMICS_EMAIL_LOGO}}" alt="Easy Genomics" width="160" style="display:block; margin-bottom: 24px;" />
+                    <h2 style="margin: 0 0 12px;">Run "{{RUN_NAME}}" is {{STATUS}}</h2>
+                    <p style="margin: 0 0 8px;"><strong>Laboratory:</strong> {{LABORATORY_NAME}}</p>
+                    <p style="margin: 0 0 8px;"><strong>Workflow:</strong> {{WORKFLOW_NAME}}</p>
+                    <p style="margin: 0 0 8px;"><strong>Duration (seconds):</strong> {{RUN_DURATION_SECONDS}}</p>
+                    <p style="margin: 24px 0;">
+                        <a href="{{RUN_LINK}}" style="background:#0f62fe; color:#ffffff; padding: 12px 20px; text-decoration:none; border-radius:4px;">View run details</a>
+                    </p>
+                    <p style="margin: 32px 0 0; font-size: 12px; color: #666;">&copy; {{COPYRIGHT_YEAR}} Easy Genomics, {{DOMAIN_NAME}}</p>
+                </td>
+            </tr>
+        </table>
+    </center>
+</body>
+</html>`,
+        textPart:
+          'Run "{{RUN_NAME}}" is {{STATUS}} in {{LABORATORY_NAME}} ({{WORKFLOW_NAME}}, {{RUN_DURATION_SECONDS}}s). View it at {{RUN_LINK}}',
+      },
+    });
+    runCompletionEmailTemplate.applyRemovalPolicy(RemovalPolicy.DESTROY);
+
+    return runCompletionEmailTemplate;
   }
 }
