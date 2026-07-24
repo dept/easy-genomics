@@ -91,16 +91,20 @@
   const omicsRunDetail = ref<GetRunResponse | null>(null);
 
   let progressPollTimeoutId: number | undefined;
+  // Guard so an in-flight poll's `finally` cannot reschedule after unmount.
+  let progressPollActive = false;
 
   onBeforeMount(async () => {
     if (await ensureLabInActiveOrg({ labId })) {
       return;
     }
     await fetchLabRuns();
+    progressPollActive = true;
     scheduleProgressPoll();
   });
 
   onBeforeUnmount(() => {
+    progressPollActive = false;
     if (progressPollTimeoutId != null) {
       window.clearTimeout(progressPollTimeoutId);
       progressPollTimeoutId = undefined;
@@ -118,6 +122,7 @@
   }
 
   function scheduleProgressPoll() {
+    if (!progressPollActive) return;
     if (progressPollTimeoutId != null) {
       window.clearTimeout(progressPollTimeoutId);
     }
@@ -125,13 +130,16 @@
     if (!run || TERMINAL_STATUSES.has(run.Status)) return;
 
     progressPollTimeoutId = window.setTimeout(async () => {
+      if (!progressPollActive) return;
       try {
         await runStore.loadLabRunsForLab(labId);
         await fetchTaskProgress({ silent: true });
       } catch (error) {
         console.error('Failed to poll run progress:', error);
       } finally {
-        scheduleProgressPoll();
+        if (progressPollActive) {
+          scheduleProgressPoll();
+        }
       }
     }, DETAIL_PROGRESS_POLL_MS);
   }
