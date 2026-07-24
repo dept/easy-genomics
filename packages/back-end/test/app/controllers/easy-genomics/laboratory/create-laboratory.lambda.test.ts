@@ -5,10 +5,12 @@ import { handler } from '../../../../../src/app/controllers/easy-genomics/labora
 
 jest.mock('../../../../../src/app/services/easy-genomics/organization-service');
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
+jest.mock('../../../../../src/app/services/easy-genomics/laboratory-s3-access-service');
 jest.mock('../../../../../src/app/services/ssm-service');
 jest.mock('../../../../../src/app/utils/auth-utils');
 jest.mock('../../../../../src/app/utils/rest-api-utils');
 
+import { LaboratoryS3AccessService } from '../../../../../src/app/services/easy-genomics/laboratory-s3-access-service';
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
 import { OrganizationService } from '../../../../../src/app/services/easy-genomics/organization-service';
 import { SsmService } from '../../../../../src/app/services/ssm-service';
@@ -20,6 +22,7 @@ describe('create-laboratory.lambda', () => {
 
   let mockOrgService: jest.MockedClass<typeof OrganizationService>;
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
+  let mockS3AccessService: jest.MockedClass<typeof LaboratoryS3AccessService>;
   let mockSsmService: jest.MockedClass<typeof SsmService>;
   let mockValidateOrgAdmin: jest.MockedFunction<typeof validateOrganizationAdminAccess>;
 
@@ -82,6 +85,7 @@ describe('create-laboratory.lambda', () => {
     jest.clearAllMocks();
     mockOrgService = OrganizationService as jest.MockedClass<typeof OrganizationService>;
     mockLabService = LaboratoryService as jest.MockedClass<typeof LaboratoryService>;
+    mockS3AccessService = LaboratoryS3AccessService as jest.MockedClass<typeof LaboratoryS3AccessService>;
     mockSsmService = SsmService as jest.MockedClass<typeof SsmService>;
     mockValidateOrgAdmin = validateOrganizationAdminAccess as any;
 
@@ -93,6 +97,7 @@ describe('create-laboratory.lambda', () => {
 
     mockOrgService.prototype.get = jest.fn();
     mockLabService.prototype.add = jest.fn();
+    mockS3AccessService.prototype.upsert = jest.fn().mockResolvedValue({});
     mockSsmService.prototype.putParameter = jest.fn();
   });
 
@@ -118,6 +123,39 @@ describe('create-laboratory.lambda', () => {
     expect(mockOrgService.prototype.get).toHaveBeenCalledWith(ORG_ID);
     expect(mockLabService.prototype.add).toHaveBeenCalled();
     expect(mockSsmService.prototype.putParameter).toHaveBeenCalled();
+
+    const createdLabId = (mockLabService.prototype.add as jest.Mock).mock.calls[0][0].LaboratoryId;
+    expect(mockS3AccessService.prototype.upsert).toHaveBeenCalledWith({
+      LaboratoryId: createdLabId,
+      BucketName: 'bucket',
+      OrganizationId: ORG_ID,
+      Effect: 'ALLOW',
+    });
+  });
+
+  it('does not seed S3 access when S3Bucket is omitted', async () => {
+    (mockOrgService.prototype.get as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+    });
+
+    const requestWithoutBucket = {
+      ...baseRequest,
+      S3Bucket: undefined,
+      NextFlowTowerEnabled: false,
+      NextFlowTowerApiBaseUrl: undefined,
+      NextFlowTowerWorkspaceId: undefined,
+      NextFlowTowerAccessToken: undefined,
+    };
+
+    (mockLabService.prototype.add as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: 'lab-1',
+    });
+
+    const result = await handler(createEvent(requestWithoutBucket), createContext(), () => {});
+
+    expect(result.statusCode).toBe(200);
+    expect(mockS3AccessService.prototype.upsert).not.toHaveBeenCalled();
   });
 
   it('returns 400 for invalid request body', async () => {

@@ -1024,6 +1024,9 @@ components:
         LaboratoryId:
           type: string
           minLength: 1
+        S3Bucket:
+          type: string
+          minLength: 1
         RelativePrefix:
           type: string
         MaxTotalKeys:
@@ -1522,6 +1525,8 @@ components:
           minimum: 0
         EnableNewWorkflowsByDefault:
           type: boolean
+        EnableNewBucketsByDefault:
+          type: boolean
         HealthOmicsLlmProvider:
           type: string
           enum:
@@ -1585,6 +1590,11 @@ components:
           description: |-
             When true, workflows/pipelines without a DENY row are allowed (new AWS-console workflows included).
             When false/omitted, only explicit ALLOW rows grant access.
+          type: boolean
+        EnableNewBucketsByDefault:
+          description: |-
+            When true, data buckets without a DENY row are allowed for this lab.
+            When false/omitted, only explicit ALLOW rows grant bucket access.
           type: boolean
         RunRetentionMonths:
           description: |-
@@ -1680,6 +1690,8 @@ components:
         RunRetentionMonths:
           type: number
         EnableNewWorkflowsByDefault:
+          type: boolean
+        EnableNewBucketsByDefault:
           type: boolean
         HealthOmicsLlmProvider:
           enum:
@@ -2018,6 +2030,15 @@ components:
       required:
         - Status
       additionalProperties: false
+    ListGrantedLaboratoryBucketsResponse:
+      type: object
+      properties:
+        buckets:
+          type: array
+          items:
+            type: string
+      required:
+        - buckets
     UpdateLaboratoryRequest:
       type: object
       properties:
@@ -2048,6 +2069,8 @@ components:
           type: integer
           minimum: 0
         EnableNewWorkflowsByDefault:
+          type: boolean
+        EnableNewBucketsByDefault:
           type: boolean
         HealthOmicsLlmProvider:
           type: string
@@ -2284,6 +2307,79 @@ components:
       required:
         - Name
         - OrganizationId
+    EditS3AccessBatchRequest:
+      type: object
+      properties:
+        assignments:
+          type: array
+          items:
+            type: object
+            properties:
+              laboratoryId:
+                type: string
+                minLength: 1
+              bucketName:
+                type: string
+                minLength: 1
+              granted:
+                type: boolean
+            required:
+              - laboratoryId
+              - bucketName
+              - granted
+            additionalProperties: false
+      required:
+        - assignments
+      additionalProperties: false
+    LaboratoryS3Access:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+        BucketName:
+          type: string
+        OrganizationId:
+          type: string
+        Effect:
+          description: ALLOW or DENY; omitted/undefined on legacy rows means ALLOW.
+          enum:
+            - ALLOW
+            - DENY
+          type: string
+        CreatedAt:
+          type: string
+        ModifiedAt:
+          type: string
+      required:
+        - BucketName
+        - LaboratoryId
+        - OrganizationId
+    ListLaboratoryS3AccessAssignmentsResponse:
+      type: object
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/LaboratoryS3Access'
+      required:
+        - assignments
+    S3BucketCatalogEntry:
+      description: API / UI catalog row (data-tagged S3 buckets).
+      type: object
+      properties:
+        name:
+          type: string
+      required:
+        - name
+    ListS3BucketCatalogResponse:
+      type: object
+      properties:
+        buckets:
+          type: array
+          items:
+            $ref: '#/components/schemas/S3BucketCatalogEntry'
+      required:
+        - buckets
     UpdateOrganizationRequest:
       type: object
       properties:
@@ -8292,6 +8388,34 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/s3-access/list-granted-buckets:
+    get:
+      operationId: listGrantedBuckets
+      summary: List Granted Buckets
+      parameters:
+        - name: laboratoryId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Laboratory ID
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListGrantedLaboratoryBucketsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /easy-genomics/laboratory/update-laboratory/{id}:
     put:
       operationId: updateLaboratory
@@ -8658,6 +8782,88 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Organization'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/organization/s3-access/edit-s3-access-batch:
+    post:
+      operationId: editS3AccessBatch
+      summary: Edit S3 Access Batch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditS3AccessBatchRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/organization/s3-access/list-s3-access-assignments:
+    get:
+      operationId: listS3AccessAssignments
+      summary: List S3 Access Assignments
+      parameters:
+        - name: organizationId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by organization
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListLaboratoryS3AccessAssignmentsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/organization/s3-access/list-s3-bucket-catalog:
+    get:
+      operationId: listS3BucketCatalog
+      summary: List S3 Bucket Catalog
+      parameters:
+        - name: organizationId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by organization
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListS3BucketCatalogResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

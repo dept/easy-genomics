@@ -12,6 +12,7 @@
     RequestSearchBucketObjects,
     S3SearchResponse,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
+  import { isS3BucketAccessDeniedError } from '@FE/utils/laboratory-s3';
 
   type S3SearchPrefix = S3Prefix;
 
@@ -150,7 +151,11 @@
       return children;
     } catch (error) {
       console.error('Error loading directory children:', error);
-      useToastStore().error('Failed to load folder contents');
+      useToastStore().error(
+        isS3BucketAccessDeniedError(error)
+          ? 'Access to this S3 bucket was revoked. Ask an organization admin to grant access, or set a new default bucket in lab settings.'
+          : 'Failed to load folder contents',
+      );
       return [];
     }
   };
@@ -593,7 +598,11 @@
     } catch (error) {
       if (requestId !== searchRequestSeq.value) return;
       console.error('Error searching files in bucket:', error);
-      useToastStore().error('Failed to search files');
+      useToastStore().error(
+        isS3BucketAccessDeniedError(error)
+          ? 'Access to this S3 bucket was revoked. Ask an organization admin to grant access, or set a new default bucket in lab settings.'
+          : 'Failed to search files',
+      );
       searchResults.value = [];
     } finally {
       if (requestId === searchRequestSeq.value) {

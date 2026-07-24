@@ -1,10 +1,18 @@
 process.env.NAME_PREFIX = 'unit-test';
 
+const mockListByLaboratoryId = jest.fn();
+
+jest.mock('../../../../src/app/services/easy-genomics/laboratory-s3-access-service', () => ({
+  LaboratoryS3AccessService: jest.fn().mockImplementation(() => ({
+    listByLaboratoryId: mockListByLaboratoryId,
+  })),
+}));
+
 import { ConditionalCheckFailedException, type AttributeValue } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import {
-  S3BucketMismatchError,
+  S3BucketAccessDeniedError,
   S3KeyOutOfPrefixError,
   SequenceCollectionNotFoundError,
 } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
@@ -27,6 +35,9 @@ describe('LaboratorySampleService.bulkCreateSamples', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockListByLaboratoryId.mockResolvedValue([
+      { LaboratoryId: 'lab-1', BucketName: 'my-bucket', OrganizationId: 'org-1' },
+    ]);
     svc = new LaboratorySampleService();
     mockCopy = jest.fn().mockResolvedValue(undefined);
     (svc as unknown as { s3Service: { copyBucketObject: typeof mockCopy } }).s3Service = {
@@ -49,7 +60,7 @@ describe('LaboratorySampleService.bulkCreateSamples', () => {
         samples: [],
         copyJobs: [{ sourceBucket: 'evil-bucket', sourceKey: 'org-1/lab-1/a.fq.gz', destKey: 'org-1/lab-1/b.fq.gz' }],
       }),
-    ).rejects.toThrow(S3BucketMismatchError);
+    ).rejects.toThrow(S3BucketAccessDeniedError);
     expect(mockCopy).not.toHaveBeenCalled();
   });
 

@@ -37,6 +37,7 @@ import {
   RequestLaboratorySchema,
 } from '../schema/easy-genomics/laboratory';
 import { AddLaboratoryRunSchema, EditLaboratoryRunSchema } from '../schema/easy-genomics/laboratory-run';
+import { BatchUpdateLaboratoryS3AccessRequestSchema } from '../schema/easy-genomics/laboratory-s3-access';
 import {
   AddBulkLaboratoryUsersSchema,
   AddLaboratoryUserSchema,
@@ -145,6 +146,27 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
   'GET /easy-genomics/organization/workflow-access/list-workflow-catalog': {
     response: 'ListUnifiedWorkflowCatalogResponse',
     query: [{ name: 'organizationId', required: false, description: 'Filter by organization' }],
+  },
+
+  // ── easy-genomics/organization/s3-access/ ─────────────────────────────────────
+
+  'POST /easy-genomics/organization/s3-access/edit-s3-access-batch': {
+    request: BatchUpdateLaboratoryS3AccessRequestSchema,
+  },
+  'GET /easy-genomics/organization/s3-access/list-s3-access-assignments': {
+    response: 'ListLaboratoryS3AccessAssignmentsResponse',
+    query: [{ name: 'organizationId', required: false, description: 'Filter by organization' }],
+  },
+  'GET /easy-genomics/organization/s3-access/list-s3-bucket-catalog': {
+    response: 'ListS3BucketCatalogResponse',
+    query: [{ name: 'organizationId', required: false, description: 'Filter by organization' }],
+  },
+
+  // ── easy-genomics/laboratory/s3-access/ ─────────────────────────────────────
+
+  'GET /easy-genomics/laboratory/s3-access/list-granted-buckets': {
+    response: 'ListGrantedLaboratoryBucketsResponse',
+    query: [{ name: 'laboratoryId', required: false, description: 'Laboratory ID' }],
   },
 
   // ── easy-genomics/laboratory/ ────────────────────────────────────────────────

@@ -3,6 +3,8 @@ import { z } from 'zod';
 export const RequestLaboratoryBucketObjectsSchema = z
   .object({
     LaboratoryId: z.string().min(1),
+    /** When omitted, uses the laboratory default S3 bucket. */
+    S3Bucket: z.string().min(1).optional(),
     /** Optional prefix relative to the lab root `${OrganizationId}/${LaboratoryId}/`. */
     RelativePrefix: z.string().optional(),
     /**

@@ -5,6 +5,7 @@ import { RequestListBucketObjectsSchema } from '@easy-genomics/shared-lib/src/ap
 import { RequestListBucketObjects } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { S3Service } from '@BE/services/s3-service';
 import {
@@ -13,9 +14,11 @@ import {
   validateOrganizationAdminAccess,
   validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
+import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
 
 const laboratoryService = new LaboratoryService();
 const s3Service = new S3Service();
+const s3AccessService = new LaboratoryS3AccessService();
 
 /**
  * This API enables the Easy Genomics FE to request the specified S3 Bucket's
@@ -56,6 +59,11 @@ export const handler: Handler = async (
     const s3Prefix: string = request.S3Prefix
       ? request.S3Prefix
       : `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
+
+    if (!s3Bucket) {
+      throw new InvalidRequestError('Missing S3 bucket');
+    }
+    await assertLaboratoryHasS3BucketAccess(laboratory, s3Bucket, s3AccessService);
 
     let isTruncated = true;
     let continuationToken: string | undefined = undefined;

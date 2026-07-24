@@ -16,7 +16,7 @@ export const handler: Handler = async (
     if (!GenerateSequenceCollectionSampleSheetSchema.safeParse(body).success) throw new InvalidRequestError();
 
     const { laboratory } = await assertSequenceCollectionsAccess(event, body.LaboratoryId);
-    sampleService.assertBucketMatchesLab(laboratory, body.S3Bucket);
+    await sampleService.assertLaboratoryHasS3BucketAccess(laboratory, body.S3Bucket);
 
     const res = await sampleService.generateSequenceCollectionSampleSheet(
       laboratory,

@@ -10,13 +10,16 @@ import {
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { S3Service } from '@BE/services/s3-service';
+import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
 
 const EASY_GENOMICS_SINGLE_FILE_TRANSFER_LIMIT: number = 5 * Math.pow(1024, 3); // 5GiB
 
 const laboratoryService = new LaboratoryService();
 const s3Service = new S3Service();
+const s3AccessService = new LaboratoryS3AccessService();
 
 /**
  * This API expects a LaboratoryId and a list of file details (consisting of the
@@ -57,6 +60,7 @@ export const handler: Handler = async (
     if (!s3Bucket) {
       throw new Error(`Laboratory ${laboratoryId} S3 Bucket needs to be configured`);
     }
+    await assertLaboratoryHasS3BucketAccess(laboratory, s3Bucket, s3AccessService);
 
     // Retrieve S3 Bucket Region and also sanity check S3 Bucket exists still
     const bucketLocation = await s3Service

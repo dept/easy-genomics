@@ -23,6 +23,7 @@
  *   HasNextFlowTowerAccessToken?: <boolean>,
  *   HasGitHubAccessToken?: <boolean>,
  *   EnableNewWorkflowsByDefault?: <boolean>,
+ *   EnableNewBucketsByDefault?: <boolean>,
  *   CreatedAt?: <string>,
  *   CreatedBy?: <string>,
  *   ModifiedAt?: <string>,
@@ -50,6 +51,12 @@ export interface Laboratory extends BaseAttributes {
    * When false/omitted, only explicit ALLOW rows grant access.
    */
   EnableNewWorkflowsByDefault?: boolean;
+
+  /**
+   * When true, data buckets without a DENY row are allowed for this lab.
+   * When false/omitted, only explicit ALLOW rows grant bucket access.
+   */
+  EnableNewBucketsByDefault?: boolean;
 
   /**
    * Laboratory-wide run retention policy, in months, applied after a run reaches a terminal state.

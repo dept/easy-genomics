@@ -78,8 +78,12 @@ export class LaboratorySampleService extends DynamoDBService {
     this.taggingService.assertKeyUnderLabPrefix(laboratory, key);
   }
 
-  public assertBucketMatchesLab(laboratory: Laboratory, bucket: string): void {
-    this.taggingService.assertBucketMatchesLab(laboratory, bucket);
+  public async assertBucketMatchesLab(laboratory: Laboratory, bucket: string): Promise<void> {
+    await this.assertLaboratoryHasS3BucketAccess(laboratory, bucket);
+  }
+
+  public async assertLaboratoryHasS3BucketAccess(laboratory: Laboratory, bucket: string): Promise<void> {
+    await this.taggingService.assertLaboratoryHasS3BucketAccess(laboratory, bucket);
   }
 
   public async listSamples(laboratoryId: string): Promise<ListLaboratorySamplesResponse> {
@@ -182,7 +186,7 @@ export class LaboratorySampleService extends DynamoDBService {
     },
   ): Promise<LaboratorySample> {
     const laboratoryId = laboratory.LaboratoryId;
-    this.assertBucketMatchesLab(laboratory, bucket);
+    await this.assertLaboratoryHasS3BucketAccess(laboratory, bucket);
     for (const key of opts.keys) {
       this.assertKeyUnderLabPrefix(laboratory, key);
     }
@@ -244,7 +248,7 @@ export class LaboratorySampleService extends DynamoDBService {
       expandRegexFromListing?: boolean;
     },
   ): Promise<LaboratorySample> {
-    this.assertBucketMatchesLab(laboratory, bucket);
+    await this.assertLaboratoryHasS3BucketAccess(laboratory, bucket);
     let keys = [...opts.keys];
 
     if (opts.expandRegexFromListing && opts.filenameRegex) {
@@ -558,7 +562,7 @@ export class LaboratorySampleService extends DynamoDBService {
     },
   ): Promise<GenerateSequenceCollectionSampleSheetResponse> {
     const laboratoryId = laboratory.LaboratoryId;
-    this.assertBucketMatchesLab(laboratory, bucket);
+    await this.assertLaboratoryHasS3BucketAccess(laboratory, bucket);
 
     const collection = await this.getSequenceCollection(laboratoryId, collectionId);
     if (!collection) throw new SequenceCollectionNotFoundError(collectionId);
@@ -701,7 +705,7 @@ export class LaboratorySampleService extends DynamoDBService {
       batchTagId?: string;
     },
   ): Promise<BulkCreateSamplesResponse> {
-    this.assertBucketMatchesLab(laboratory, bucket);
+    await this.assertLaboratoryHasS3BucketAccess(laboratory, bucket);
     const importSource: SampleImportSource = {
       type: 's3_import',
       label: opts.importLabel,
@@ -709,7 +713,7 @@ export class LaboratorySampleService extends DynamoDBService {
     };
 
     for (const job of opts.copyJobs || []) {
-      this.assertBucketMatchesLab(laboratory, job.sourceBucket);
+      await this.assertLaboratoryHasS3BucketAccess(laboratory, job.sourceBucket);
       this.assertKeyUnderLabPrefix(laboratory, job.sourceKey);
       this.assertKeyUnderLabPrefix(laboratory, job.destKey);
       await this.s3Service.copyBucketObject({

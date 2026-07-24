@@ -7,6 +7,7 @@ const mockListFileRows: jest.Mock = jest.fn();
 const mockDeleteRow: jest.Mock = jest.fn();
 const mockDeleteObject: jest.Mock = jest.fn();
 const mockListTags: jest.Mock = jest.fn();
+const mockListS3AccessByLaboratoryId: jest.Mock = jest.fn();
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service', () => ({
   LaboratoryService: jest.fn().mockImplementation(() => ({
@@ -14,10 +15,16 @@ jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service', ()
   })),
 }));
 
+jest.mock('../../../../../src/app/services/easy-genomics/laboratory-s3-access-service', () => ({
+  LaboratoryS3AccessService: jest.fn().mockImplementation(() => ({
+    listByLaboratoryId: mockListS3AccessByLaboratoryId,
+  })),
+}));
+
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-data-tagging-service', () => {
   const actual = jest.requireActual('../../../../../src/app/services/easy-genomics/laboratory-data-tagging-service');
   const proto = actual.LaboratoryDataTaggingService.prototype as {
-    assertBucketMatchesLab: (laboratory: unknown, bucket: string) => void;
+    assertLaboratoryHasS3BucketAccess: (laboratory: unknown, bucket: string) => Promise<void>;
     assertKeyUnderLabPrefix: (laboratory: unknown, key: string) => void;
   };
   return {
@@ -26,8 +33,8 @@ jest.mock('../../../../../src/app/services/easy-genomics/laboratory-data-tagging
       listAllFileRowsForLab: mockListFileRows,
       deleteFileRowAndAssociations: mockDeleteRow,
       listTags: mockListTags,
-      assertBucketMatchesLab: (laboratory: unknown, bucket: string) =>
-        proto.assertBucketMatchesLab(laboratory as never, bucket),
+      assertLaboratoryHasS3BucketAccess: (laboratory: unknown, bucket: string) =>
+        proto.assertLaboratoryHasS3BucketAccess(laboratory as never, bucket),
       assertKeyUnderLabPrefix: (laboratory: unknown, key: string) =>
         proto.assertKeyUnderLabPrefix(laboratory as never, key),
     })),
@@ -68,6 +75,9 @@ describe('process-expired-laboratory-data.lambda eligibility', () => {
         { TagId: 'batch-1', Name: 'B1', ColorHex: '#000000', Kind: 'batch', FileCount: 0 },
       ],
     });
+    mockListS3AccessByLaboratoryId
+      .mockReset()
+      .mockResolvedValue([{ LaboratoryId: 'lab-1', OrganizationId: 'org-1', BucketName: 'my-bucket' }]);
   });
 
   it('deletes the S3 object and tagging rows for files with no usages and a workflow tag', async () => {

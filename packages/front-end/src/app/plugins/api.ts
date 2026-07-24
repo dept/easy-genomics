@@ -6,6 +6,7 @@ import LabsModule from '@FE/repository/modules/labs';
 import OmicsRunsModule from '@FE/repository/modules/omics-runs';
 import OmicsWorkflowsModule from '@FE/repository/modules/omics-workflows';
 import OrgsModule from '@FE/repository/modules/orgs';
+import S3AccessModule from '@FE/repository/modules/s3-access';
 import SeqeraPipelinesModule from '@FE/repository/modules/seqera-pipelines';
 import SeqeraRunsModules from '@FE/repository/modules/seqera-runs';
 import UploadsModule from '@FE/repository/modules/uploads';
@@ -25,6 +26,7 @@ interface IApiInstance {
   uploads: UploadsModule;
   users: UsersModule;
   workflowAccess: WorkflowAccessModule;
+  s3Access: S3AccessModule;
 }
 
 interface FetchOptions {
@@ -48,6 +50,7 @@ const createApiInstance = (apiFetcher: any): IApiInstance => ({
   uploads: new UploadsModule(apiFetcher),
   users: new UsersModule(apiFetcher),
   workflowAccess: new WorkflowAccessModule(apiFetcher),
+  s3Access: new S3AccessModule(apiFetcher),
 });
 
 export default defineNuxtPlugin((nuxtApp) => {

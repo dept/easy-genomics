@@ -1,6 +1,7 @@
 import {
   isLaboratoryS3Configured,
   isMissingLaboratoryS3BucketError,
+  isS3BucketAccessDeniedError,
   shouldIgnoreUnlinkedBucketObjectsError,
 } from '../../../src/app/utils/laboratory-s3';
 
@@ -36,11 +37,28 @@ describe('isMissingLaboratoryS3BucketError', () => {
   });
 });
 
+describe('isS3BucketAccessDeniedError', () => {
+  it('matches direct and HttpFactory-wrapped access-denied errors', () => {
+    expect(isS3BucketAccessDeniedError(new Error('S3 bucket access denied'))).toBe(true);
+    expect(isS3BucketAccessDeniedError(new Error('Request error: S3 bucket access denied'))).toBe(true);
+  });
+
+  it('returns false for unrelated errors', () => {
+    expect(isS3BucketAccessDeniedError(new Error('Failed to load folder contents'))).toBe(false);
+    expect(isS3BucketAccessDeniedError('network error')).toBe(false);
+  });
+});
+
 describe('shouldIgnoreUnlinkedBucketObjectsError', () => {
   it('ignores missing-bucket API errors', () => {
     expect(shouldIgnoreUnlinkedBucketObjectsError(new Error('Laboratory has no S3 bucket configured'), null)).toBe(
       true,
     );
+  });
+
+  it('ignores access-denied errors regardless of configured bucket', () => {
+    const lab = { S3Bucket: 'my-bucket' } as never;
+    expect(shouldIgnoreUnlinkedBucketObjectsError(new Error('S3 bucket access denied'), lab)).toBe(true);
   });
 
   it('ignores bucket-not-found errors when the lab has no S3 bucket configured', () => {

@@ -10,13 +10,16 @@ import {
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { S3Service } from '@BE/services/s3-service';
+import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
 
 const SAMPLE_SHEET_CSV_HEADER: string[] = ['sample,fastq_1,fastq_2'];
 
 const laboratoryService = new LaboratoryService();
 const s3Service = new S3Service();
+const s3AccessService = new LaboratoryS3AccessService();
 
 /**
  * The SampleSheetRequest's supplied UploadedFiles array is intended to allow
@@ -60,6 +63,7 @@ export const handler: Handler = async (
     if (!s3Bucket) {
       throw new InvalidRequestError(`Laboratory ${laboratoryId} S3 Bucket needs to be configured`);
     }
+    await assertLaboratoryHasS3BucketAccess(laboratory, s3Bucket, s3AccessService);
 
     const platform: string = request.Platform === 'AWS HealthOmics' ? 'aws-healthomics' : 'seqera-platform';
     const s3Path: string = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/${platform}/${transactionId}`;

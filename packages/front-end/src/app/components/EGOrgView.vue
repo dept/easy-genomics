@@ -42,6 +42,7 @@
   const searchOutput = ref('');
 
   const showWorkflowAccessTab = computed(() => props.superuser || props.orgAdmin);
+  const showS3AccessTab = computed(() => props.superuser || props.orgAdmin);
 
   const tabItems = computed<{ key: string; label: string; icon: string }[]>(() => {
     const items: { key: string; label: string; icon: string }[] = [];
@@ -52,22 +53,34 @@
     if (showWorkflowAccessTab.value) {
       items.push({ key: 'workflow-access', label: 'Workflow access', icon: 'i-heroicons-key' });
     }
+    if (showS3AccessTab.value) {
+      items.push({ key: 's3-access', label: 'S3 access', icon: 'i-heroicons-circle-stack' });
+    }
     items.push({ key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth' });
     return items;
   });
 
   /** Mount workflow access panel once opened (or via ?tab=) so data loads lazily; stay mounted to keep unsaved edits. */
   const workflowAccessPanelMounted = ref(false);
+  const s3AccessPanelMounted = ref(false);
   const tabIndex = ref(0);
 
-  function syncWorkflowAccessTabFromQuery() {
-    if (String(route.query.tab) !== 'workflow-access' || !showWorkflowAccessTab.value) {
+  function syncAdminTabsFromQuery() {
+    const tab = String(route.query.tab);
+    if (tab === 'workflow-access' && showWorkflowAccessTab.value) {
+      const idx = tabItems.value.findIndex((t) => t.key === 'workflow-access');
+      if (idx >= 0) {
+        tabIndex.value = idx;
+        workflowAccessPanelMounted.value = true;
+      }
       return;
     }
-    const idx = tabItems.value.findIndex((t) => t.key === 'workflow-access');
-    if (idx >= 0) {
-      tabIndex.value = idx;
-      workflowAccessPanelMounted.value = true;
+    if (tab === 's3-access' && showS3AccessTab.value) {
+      const idx = tabItems.value.findIndex((t) => t.key === 's3-access');
+      if (idx >= 0) {
+        tabIndex.value = idx;
+        s3AccessPanelMounted.value = true;
+      }
     }
   }
 
@@ -88,15 +101,18 @@
     if (item?.key === 'workflow-access') {
       workflowAccessPanelMounted.value = true;
     }
+    if (item?.key === 's3-access') {
+      s3AccessPanelMounted.value = true;
+    }
   });
 
   watch(
     () => route.query.tab,
-    () => syncWorkflowAccessTabFromQuery(),
+    () => syncAdminTabsFromQuery(),
   );
 
   onBeforeMount(() => {
-    syncWorkflowAccessTabFromQuery();
+    syncAdminTabsFromQuery();
   });
 
   const tableColumns = [
@@ -298,6 +314,7 @@
   const invitePanelId = 'org-invite-users-panel';
   const usersHeadingId = 'org-users-heading';
   const workflowAccessHeadingId = 'org-workflow-access-heading';
+  const s3AccessHeadingId = 'org-s3-access-heading';
 
   usePageTitle(() => (org.value.Name ? `${org.value.Name}` : 'Organization'));
 
@@ -456,6 +473,17 @@
       embedded
       :heading-id="workflowAccessHeadingId"
     />
+  </div>
+
+  <div
+    v-if="activeTabKey === 's3-access' && showS3AccessTab"
+    role="tabpanel"
+    id="panel-s3-access"
+    aria-labelledby="tab-s3-access"
+    tabindex="0"
+    class="outline-none focus:outline-none"
+  >
+    <EGS3LabAccessPage v-if="s3AccessPanelMounted" :org-id="props.orgId" embedded :heading-id="s3AccessHeadingId" />
   </div>
 
   <!-- All users tab -->

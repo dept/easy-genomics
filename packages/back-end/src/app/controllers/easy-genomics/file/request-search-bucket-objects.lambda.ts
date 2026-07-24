@@ -5,6 +5,7 @@ import { RequestSearchBucketObjectsSchema } from '@easy-genomics/shared-lib/src/
 import { RequestSearchBucketObjects } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { S3Service } from '@BE/services/s3-service';
 import {
@@ -13,9 +14,11 @@ import {
   validateOrganizationAdminAccess,
   validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
+import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
 
 const laboratoryService = new LaboratoryService();
 const s3Service = new S3Service();
+const s3AccessService = new LaboratoryS3AccessService();
 
 const DEFAULT_MAX_RESULTS = 200;
 
@@ -72,9 +75,7 @@ export const handler: Handler = async (
       throw new InvalidRequestError('S3 bucket mismatch between S3Bucket and S3Prefix URI');
     }
 
-    if (laboratory.S3Bucket && s3Bucket !== laboratory.S3Bucket) {
-      throw new UnauthorizedAccessError();
-    }
+    await assertLaboratoryHasS3BucketAccess(laboratory, s3Bucket, s3AccessService);
 
     const normalizedPrefix = s3Prefix.endsWith('/') ? s3Prefix : `${s3Prefix}/`;
     const laboratoryOwnedPrefix = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
