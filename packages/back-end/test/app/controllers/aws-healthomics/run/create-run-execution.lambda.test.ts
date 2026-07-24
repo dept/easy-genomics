@@ -198,6 +198,42 @@ describe('create-run-execution.lambda', () => {
     expect(startRunInput.tags.UserEmail).toBeUndefined();
   });
 
+  it('adds networkingMode and configurationName to StartRun when the lab is VPC-mode', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+      AwsHealthOmicsNetworkingMode: 'VPC',
+      AwsHealthOmicsVpcConfigurationName: 'wslh-prod-vpc',
+    });
+
+    (mockOmicsService.prototype.startRun as jest.Mock).mockResolvedValue({ id: 'run-123' });
+
+    const result = await handler(createEvent(baseRequest), createContext(), () => {});
+
+    expect(result.statusCode).toBe(200);
+    const startRunInput = (mockOmicsService.prototype.startRun as jest.Mock).mock.calls[0][0];
+    expect(startRunInput.networkingMode).toBe('VPC');
+    expect(startRunInput.configurationName).toBe('wslh-prod-vpc');
+  });
+
+  it('omits networkingMode and configurationName when the lab is RESTRICTED/omitted', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+    });
+
+    (mockOmicsService.prototype.startRun as jest.Mock).mockResolvedValue({ id: 'run-123' });
+
+    const result = await handler(createEvent(baseRequest), createContext(), () => {});
+
+    expect(result.statusCode).toBe(200);
+    const startRunInput = (mockOmicsService.prototype.startRun as jest.Mock).mock.calls[0][0];
+    expect(startRunInput.networkingMode).toBeUndefined();
+    expect(startRunInput.configurationName).toBeUndefined();
+  });
+
   it('rejects invalid request body', async () => {
     const event = createEvent({}, {});
 

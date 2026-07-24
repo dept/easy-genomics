@@ -37,6 +37,13 @@ const LlmProviderSchema = z.enum(['bedrock', 'openai', 'anthropic']);
 const LlmModelIdSchema = z.string().trim().max(256, 'Model ID must be no more than 256 characters');
 const LlmApiKeySchema = z.string().trim().min(1, 'API key cannot be empty');
 
+const NetworkingModeSchema = z.enum(['RESTRICTED', 'VPC']);
+const VpcConfigurationNameSchema = z
+  .string()
+  .trim()
+  .min(1, 'VPC configuration name is required')
+  .max(50, 'VPC configuration name must be no more than 50 characters');
+
 // Just the fields required for read-only display
 const LabDetailsSchema = z.object({
   Name: LabNameSchema,
@@ -49,6 +56,8 @@ const LabDetailsSchema = z.object({
   NextFlowTowerWorkspaceId: NextFlowTowerWorkspaceIdSchema,
   NextFlowTowerApiBaseUrl: NextFlowTowerApiBaseUrlSchema,
   AwsHealthOmicsEnabled: z.boolean(),
+  AwsHealthOmicsNetworkingMode: NetworkingModeSchema.optional(),
+  AwsHealthOmicsVpcConfigurationName: VpcConfigurationNameSchema.optional(),
   // BYOK provider selection per integration. Setting a provider IS the enable
   // signal — there is no separate toggle. HealthOmics and Seqera can use
   // different providers/models/keys (e.g. cheap model for Seqera, accurate
@@ -83,12 +92,14 @@ export {
   LlmApiKeySchema,
   LlmModelIdSchema,
   LlmProviderSchema,
+  NetworkingModeSchema,
   NextFlowTowerApiBaseUrlSchema,
   NextFlowTowerAccessTokenSchema,
   GitHubAccessTokenSchema,
   NextFlowTowerWorkspaceIdSchema,
   RunRetentionMonthsSchema,
   S3BucketSchema,
+  VpcConfigurationNameSchema,
   type LabDetails,
   type LabDetailsFormMode,
 };

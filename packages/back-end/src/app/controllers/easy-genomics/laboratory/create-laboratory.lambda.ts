@@ -18,13 +18,16 @@ import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genom
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { OrganizationService } from '@BE/services/easy-genomics/organization-service';
+import { OmicsService } from '@BE/services/omics-service';
 import { SsmService } from '@BE/services/ssm-service';
 import { validateOrganizationAdminAccess } from '@BE/utils/auth-utils';
+import { assertHealthOmicsVpcConfigurationIsActive } from '@BE/utils/laboratory-omics-vpc-utils';
 import { httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
 const organizationService = new OrganizationService();
 const laboratoryService = new LaboratoryService();
 const ssmService = new SsmService();
+const omicsService = new OmicsService();
 
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -61,6 +64,10 @@ export const handler: Handler = async (
       throw new LaboratorySeqeraCredentialsIncorrectError();
     }
 
+    if (request.AwsHealthOmicsNetworkingMode === 'VPC') {
+      await assertHealthOmicsVpcConfigurationIsActive(request.AwsHealthOmicsVpcConfigurationName!, omicsService);
+    }
+
     // Automatically create an S3 Bucket for this Lab based on the LaboratoryId, and must be less than 63
     const laboratoryId: string = crypto.randomUUID().toLowerCase();
 
@@ -73,6 +80,8 @@ export const handler: Handler = async (
         Status: 'Active',
         S3Bucket: request.S3Bucket, // S3 Bucket Full Name
         AwsHealthOmicsEnabled: request.AwsHealthOmicsEnabled ?? organization.AwsHealthOmicsEnabled ?? false,
+        AwsHealthOmicsNetworkingMode: request.AwsHealthOmicsNetworkingMode,
+        AwsHealthOmicsVpcConfigurationName: request.AwsHealthOmicsVpcConfigurationName,
         NextFlowTowerEnabled: request.NextFlowTowerEnabled ?? organization.NextFlowTowerEnabled ?? false,
         NextFlowTowerApiBaseUrl: request.NextFlowTowerApiBaseUrl,
         NextFlowTowerWorkspaceId: request.NextFlowTowerWorkspaceId,

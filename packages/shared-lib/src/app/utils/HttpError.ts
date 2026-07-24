@@ -284,6 +284,36 @@ export class LaboratorySeqeraCredentialsIncorrectError extends HttpError {
 }
 
 /**
+ * Laboratory HealthOmics VPC Configuration not found
+ *
+ * @param configurationName
+ * @param messageOpt - optional additional message
+ */
+export class LaboratoryHealthOmicsConfigurationNotFoundError extends HttpError {
+  constructor(configurationName: string, messageOpt?: string) {
+    super(`AWS HealthOmics Configuration '${configurationName}' could not be found`, 404, 'EG-309', messageOpt);
+  }
+}
+
+/**
+ * Laboratory HealthOmics VPC Configuration exists but is not ACTIVE
+ *
+ * @param configurationName
+ * @param status
+ * @param messageOpt - optional additional message
+ */
+export class LaboratoryHealthOmicsConfigurationNotActiveError extends HttpError {
+  constructor(configurationName: string, status: string, messageOpt?: string) {
+    super(
+      `AWS HealthOmics Configuration '${configurationName}' is not ACTIVE (status: ${status})`,
+      400,
+      'EG-310',
+      messageOpt,
+    );
+  }
+}
+
+/**
  * Laboratory User already exists
  *
  * @param messageOpt - optional additional message

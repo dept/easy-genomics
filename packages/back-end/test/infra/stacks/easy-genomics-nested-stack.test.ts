@@ -196,4 +196,40 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
       ]),
     );
   });
+
+  it('adds omics:GetConfiguration IAM policy for create-laboratory endpoint', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/laboratory/create-laboratory',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['omics:GetConfiguration']),
+        }),
+      ]),
+    );
+  });
+
+  it('adds omics:GetConfiguration IAM policy for update-laboratory endpoint', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/laboratory/update-laboratory',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['omics:GetConfiguration']),
+        }),
+      ]),
+    );
+  });
 });

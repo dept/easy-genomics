@@ -5,6 +5,9 @@ import {
   CancelRunCommand,
   CancelRunCommandInput,
   CancelRunCommandOutput,
+  GetConfigurationCommand,
+  GetConfigurationCommandInput,
+  GetConfigurationCommandOutput,
   GetRunCommand,
   GetRunCommandInput,
   GetRunCommandOutput,
@@ -37,6 +40,7 @@ import type { AwsCredentialIdentity } from '@aws-sdk/types';
 export enum OmicsCommand {
   CREATE_WORKFLOW = 'create-workflow',
   CANCEL_RUN = 'cancel-run',
+  GET_CONFIGURATION = 'get-configuration',
   GET_RUN = 'get-run',
   GET_WORKFLOW = 'get-workflow',
   LIST_RUNS = 'list-runs',
@@ -72,6 +76,15 @@ export class OmicsService {
     return this.omicsRequest<CreateWorkflowCommandInput, CreateWorkflowCommandOutput>(
       OmicsCommand.CREATE_WORKFLOW,
       createWorkflowCommandInput,
+    );
+  };
+
+  public getConfiguration = async (
+    getConfigurationCommandInput: GetConfigurationCommandInput,
+  ): Promise<GetConfigurationCommandOutput> => {
+    return this.omicsRequest<GetConfigurationCommandInput, GetConfigurationCommandOutput>(
+      OmicsCommand.GET_CONFIGURATION,
+      getConfigurationCommandInput,
     );
   };
 
@@ -150,6 +163,8 @@ export class OmicsService {
         return new CreateWorkflowCommand(data as CreateWorkflowCommandInput);
       case OmicsCommand.CANCEL_RUN:
         return new CancelRunCommand(data as CancelRunCommandInput);
+      case OmicsCommand.GET_CONFIGURATION:
+        return new GetConfigurationCommand(data as GetConfigurationCommandInput);
       case OmicsCommand.GET_RUN:
         return new GetRunCommand(data as GetRunCommandInput);
       case OmicsCommand.GET_WORKFLOW:

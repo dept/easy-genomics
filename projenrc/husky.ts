@@ -37,7 +37,7 @@ export class Husky extends Component {
       preCommit.addLine('pnpm --filter @easy-genomics/shared-lib run generate:openapi');
       preCommit.addLine('pnpm --filter @easy-genomics/shared-lib run generate:api-types');
       preCommit.addLine(
-        'git add packages/shared-lib/src/app/openapi/easy-genomics-api.yaml packages/shared-lib/src/app/types/easy-genomics/generated.d.ts',
+        'git add packages/shared-lib/src/app/openapi/easy-genomics-api.yaml packages/shared-lib/src/app/openapi/easy-genomics-api.json packages/shared-lib/src/app/types/easy-genomics/generated.d.ts',
       );
       preCommit.addLine('pnpm --filter @easy-genomics/back-end test -- --silent');
       preCommit.addLine('');

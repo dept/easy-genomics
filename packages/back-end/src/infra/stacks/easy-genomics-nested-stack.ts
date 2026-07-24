@@ -656,6 +656,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: ['ssm:PutParameter'],
         effect: Effect.ALLOW,
       }),
+      new PolicyStatement({
+        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:configuration/*`],
+        actions: ['omics:GetConfiguration'],
+        effect: Effect.ALLOW,
+      }),
     ]);
     // /easy-genomics/laboratory/read-laboratory
     this.iam.addPolicyStatements('/easy-genomics/laboratory/read-laboratory', [
@@ -736,6 +741,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-seqera`,
         ],
         actions: ['ssm:GetParameter', 'ssm:PutParameter'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:configuration/*`],
+        actions: ['omics:GetConfiguration'],
         effect: Effect.ALLOW,
       }),
     ]);

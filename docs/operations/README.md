@@ -2,10 +2,11 @@
 
 Day-2 operational guides: troubleshooting and migration runbooks.
 
-| Doc                                          | What it covers                                                   | Status       |
-| -------------------------------------------- | ---------------------------------------------------------------- | ------------ |
-| [troubleshooting.md](./troubleshooting.md)   | Common deploy/auth/run failures and the EG-xxx error-code lookup | ✅ Available |
-| [migration-runbooks/](./migration-runbooks/) | Environment migration runbooks                                   | ✅ Available |
+| Doc                                                              | What it covers                                                           | Status       |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------ |
+| [troubleshooting.md](./troubleshooting.md)                       | Common deploy/auth/run failures and the EG-xxx error-code lookup         | ✅ Available |
+| [migration-runbooks/](./migration-runbooks/)                     | Environment migration runbooks                                           | ✅ Available |
+| [healthomics-vpc-networking.md](./healthomics-vpc-networking.md) | Per-lab HealthOmics VPC networking: CLI/Console setup + design rationale | ✅ Available |
 
 ## migration-runbooks/
 

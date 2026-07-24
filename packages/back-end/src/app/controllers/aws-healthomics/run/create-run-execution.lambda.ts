@@ -103,6 +103,10 @@ export const handler: Handler = async (
       },
       outputUri: parameters.outdir, // AWS HealthOmics requires setting outputUri for copying 'outdir' output to the final destination
       workflowType: 'PRIVATE',
+      ...(laboratory.AwsHealthOmicsNetworkingMode === 'VPC' && {
+        networkingMode: 'VPC' as const,
+        configurationName: laboratory.AwsHealthOmicsVpcConfigurationName,
+      }),
       roleArn: `arn:aws:iam::${process.env.ACCOUNT_ID}:role/${process.env.NAME_PREFIX}-easy-genomics-healthomics-workflow-run-role`,
       tags: {
         LaboratoryId: laboratory.LaboratoryId,

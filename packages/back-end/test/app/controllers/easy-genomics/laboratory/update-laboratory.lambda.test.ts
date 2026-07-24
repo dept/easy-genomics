@@ -6,10 +6,12 @@ import { handler } from '../../../../../src/app/controllers/easy-genomics/labora
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../src/app/services/ssm-service');
+jest.mock('../../../../../src/app/services/omics-service');
 jest.mock('../../../../../src/app/utils/auth-utils');
 jest.mock('../../../../../src/app/utils/rest-api-utils');
 
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
+import { OmicsService } from '../../../../../src/app/services/omics-service';
 import { SsmService } from '../../../../../src/app/services/ssm-service';
 import { validateOrganizationAdminAccess } from '../../../../../src/app/utils/auth-utils';
 import { httpRequest } from '../../../../../src/app/utils/rest-api-utils';
@@ -20,6 +22,7 @@ describe('update-laboratory.lambda', () => {
 
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
   let mockSsmService: jest.MockedClass<typeof SsmService>;
+  let mockOmicsService: jest.MockedClass<typeof OmicsService>;
   let mockValidateOrgAdmin: jest.MockedFunction<typeof validateOrganizationAdminAccess>;
 
   const createEvent = (
@@ -93,6 +96,9 @@ describe('update-laboratory.lambda', () => {
     mockLabService.prototype.update = jest.fn();
     mockSsmService.prototype.getParameter = jest.fn();
     mockSsmService.prototype.putParameter = jest.fn();
+
+    mockOmicsService = OmicsService as jest.MockedClass<typeof OmicsService>;
+    mockOmicsService.prototype.getConfiguration = jest.fn().mockResolvedValue({ status: 'ACTIVE' });
   });
 
   it('updates laboratory successfully and overwrites NF access token', async () => {
@@ -219,5 +225,95 @@ describe('update-laboratory.lambda', () => {
 
     expect(result.statusCode).toBe(200);
     expect(httpRequest as jest.Mock).not.toHaveBeenCalled();
+  });
+
+  it('validates and persists the VPC configuration when networking mode is VPC', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: 'lab-1',
+    });
+    (mockLabService.prototype.update as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: 'lab-1',
+      EnableNewWorkflowsByDefault: false,
+    });
+
+    const requestWithVpc = {
+      ...baseRequest,
+      NextFlowTowerEnabled: false,
+      AwsHealthOmicsNetworkingMode: 'VPC',
+      AwsHealthOmicsVpcConfigurationName: 'wslh-prod-vpc',
+    };
+
+    const result = await handler(createEvent('lab-1', requestWithVpc), createContext(), () => {});
+
+    expect(result.statusCode).toBe(200);
+    expect(mockOmicsService.prototype.getConfiguration).toHaveBeenCalledWith({ name: 'wslh-prod-vpc' });
+    expect(mockLabService.prototype.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        AwsHealthOmicsNetworkingMode: 'VPC',
+        AwsHealthOmicsVpcConfigurationName: 'wslh-prod-vpc',
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('returns 400 when the referenced VPC configuration is not ACTIVE', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: 'lab-1',
+    });
+    (mockOmicsService.prototype.getConfiguration as jest.Mock).mockResolvedValue({ status: 'DELETING' });
+
+    const requestWithVpc = {
+      ...baseRequest,
+      NextFlowTowerEnabled: false,
+      AwsHealthOmicsNetworkingMode: 'VPC',
+      AwsHealthOmicsVpcConfigurationName: 'wslh-prod-vpc',
+    };
+
+    const result = await handler(createEvent('lab-1', requestWithVpc), createContext(), () => {});
+
+    expect(result.statusCode).toBe(400);
+    expect(mockLabService.prototype.update).not.toHaveBeenCalled();
+  });
+
+  it('persists a disabled lab that still holds a previously-saved VPC config, unchanged', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: 'lab-1',
+      AwsHealthOmicsEnabled: true,
+      AwsHealthOmicsNetworkingMode: 'VPC',
+      AwsHealthOmicsVpcConfigurationName: 'wslh-prod-vpc',
+    });
+    (mockLabService.prototype.update as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: 'lab-1',
+      AwsHealthOmicsEnabled: false,
+      AwsHealthOmicsNetworkingMode: 'VPC',
+      AwsHealthOmicsVpcConfigurationName: 'wslh-prod-vpc',
+      EnableNewWorkflowsByDefault: false,
+    });
+
+    const requestDisablingHealthOmics = {
+      ...baseRequest,
+      NextFlowTowerEnabled: false,
+      AwsHealthOmicsEnabled: false,
+      AwsHealthOmicsNetworkingMode: 'VPC',
+      AwsHealthOmicsVpcConfigurationName: 'wslh-prod-vpc',
+    };
+
+    const result = await handler(createEvent('lab-1', requestDisablingHealthOmics), createContext(), () => {});
+
+    expect(result.statusCode).toBe(200);
+    expect(mockOmicsService.prototype.getConfiguration).toHaveBeenCalledWith({ name: 'wslh-prod-vpc' });
+    expect(mockLabService.prototype.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        AwsHealthOmicsEnabled: false,
+        AwsHealthOmicsNetworkingMode: 'VPC',
+        AwsHealthOmicsVpcConfigurationName: 'wslh-prod-vpc',
+      }),
+      expect.anything(),
+    );
   });
 });
