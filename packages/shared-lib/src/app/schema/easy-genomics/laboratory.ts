@@ -38,6 +38,12 @@ export const LaboratorySchema = z
      * lookup + LLM on failureReason only).
      */
     HealthOmicsLogEnrichmentEnabled: z.boolean().optional(),
+    /**
+     * AWS HealthOmics run cache id (call caching / "resume"). Lazily provisioned on the first
+     * HealthOmics run and reused for all subsequent runs so failed runs can resume from their
+     * last completed task. Managed internally; not set via the create/update Laboratory APIs.
+     */
+    HealthOmicsRunCacheId: z.string().optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
@@ -96,6 +102,7 @@ export const ReadLaboratorySchema = z
     /** Boolean indicators. The actual keys live in SSM and are never returned. */
     HasHealthOmicsLlmApiKey: z.boolean().optional(),
     HasSeqeraLlmApiKey: z.boolean().optional(),
+    HealthOmicsRunCacheId: z.string().optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),

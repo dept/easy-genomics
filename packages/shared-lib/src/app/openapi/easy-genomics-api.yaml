@@ -1630,6 +1630,12 @@ components:
           type: boolean
         HasSeqeraLlmApiKey:
           type: boolean
+        HealthOmicsRunCacheId:
+          description: |-
+            AWS HealthOmics run cache id used for call caching ("resume"). Lazily provisioned on the
+            first HealthOmics run and reused for all subsequent runs, so a failed run can be retried and
+            resume from its last completed task instead of recomputing everything. Managed internally.
+          type: string
         CreatedAt:
           type: string
         CreatedBy:
@@ -1708,6 +1714,8 @@ components:
           type: boolean
         HasSeqeraLlmApiKey:
           type: boolean
+        HealthOmicsRunCacheId:
+          type: string
       required:
         - LaboratoryId
         - Name

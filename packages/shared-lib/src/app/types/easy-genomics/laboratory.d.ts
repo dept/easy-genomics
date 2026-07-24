@@ -85,4 +85,11 @@ export interface Laboratory extends BaseAttributes {
   /** Boolean indicators returned by read-laboratory; the actual keys never leave SSM. */
   HasHealthOmicsLlmApiKey?: boolean;
   HasSeqeraLlmApiKey?: boolean;
+
+  /**
+   * AWS HealthOmics run cache id used for call caching ("resume"). Lazily provisioned on the
+   * first HealthOmics run and reused for all subsequent runs, so a failed run can be retried and
+   * resume from its last completed task instead of recomputing everything. Managed internally.
+   */
+  HealthOmicsRunCacheId?: string;
 }
