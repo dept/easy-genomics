@@ -173,11 +173,17 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
     const missingTerminalAt = existingRun.TerminalAt == null;
     const missingExpiresAt = existingRun.ExpiresAt == null && shouldExpireWithRetentionMonths(retentionMonths);
     const missingDuration = existingRun.RunDurationSeconds == null;
+    const missingNotification = existingRun.NotifiedAt == null;
 
     // Backfill branch: run is already terminal but missing one or more of
-    // TerminalAt / ExpiresAt / RunDurationSeconds. Fetch platform data once so we can heal
-    // historical rows without waiting for another status transition.
-    if (isAlreadyTerminal && (missingTerminalAt || missingExpiresAt || missingDuration)) {
+    // TerminalAt / ExpiresAt / RunDurationSeconds / NotifiedAt. Fetch platform data once so we can
+    // heal historical rows without waiting for another status transition. The NotifiedAt case
+    // closes a rare gap: if the status-change branch below's `update()` call previously succeeded
+    // but its subsequent `markTerminalNotified()` call then failed with a transient (non-conditional)
+    // error, `existingRun.Status` is already terminal on SQS retry, so that branch never runs again
+    // and the run would otherwise never get notified. The poller's routine re-enqueue of this
+    // already-terminal-but-unnotified run lands here instead, giving notification another chance.
+    if (isAlreadyTerminal && (missingTerminalAt || missingExpiresAt || missingDuration || missingNotification)) {
       const now = new Date();
       const terminalAtIso = getTerminalAtIsoString(existingRun, now);
 
@@ -208,6 +214,19 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
       });
       void updated;
       await safePropagateExpiresAt(laboratory, updated, backfilledExpiresAt);
+
+      if (missingNotification) {
+        const { published, run: notifiedRun } = await laboratoryRunService.markTerminalNotified({
+          LaboratoryId: updated.LaboratoryId,
+          RunId: updated.RunId,
+          ModifiedAt: now.toISOString(),
+          ModifiedBy: 'Status Check',
+        });
+        if (published) {
+          await safePublishForNotification(notifiedRun);
+        }
+      }
+
       return true;
     }
 

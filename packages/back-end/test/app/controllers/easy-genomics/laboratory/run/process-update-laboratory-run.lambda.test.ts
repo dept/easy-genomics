@@ -800,4 +800,71 @@ describe('process-update-laboratory-run.lambda', () => {
       expect.objectContaining({ TopicArn: expect.stringContaining('notification') }),
     );
   });
+
+  it('backfill branch: heals a missing notification on an already-terminal run whose other fields are already populated', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      ExternalRunId: 'ext-1',
+      Status: 'FAILED',
+      Platform: 'AWS HealthOmics',
+      TerminalAt: '2026-07-20T00:00:00.000Z',
+      ExpiresAt: 1234567890,
+      RunDurationSeconds: 120,
+    });
+    mockUpdateRun.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Status: 'FAILED',
+    });
+    mockMarkTerminalNotified.mockResolvedValue({
+      published: true,
+      run: { RunId: 'run-1', LaboratoryId: 'lab-1', Status: 'FAILED' },
+    });
+    process.env.SNS_LABORATORY_RUN_NOTIFICATION_TOPIC = 'arn:aws:sns:region:acct:notification-topic.fifo';
+
+    const result = await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
+
+    expect(result).toBe(true);
+    // TerminalAt / ExpiresAt / RunDurationSeconds are already populated, so the platform
+    // should never be queried for this purely notification-healing pass.
+    expect(mockGetRun).not.toHaveBeenCalled();
+    expect(mockMarkTerminalNotified).toHaveBeenCalledWith(
+      expect.objectContaining({ LaboratoryId: 'lab-1', RunId: 'run-1' }),
+    );
+    expect(mockPublish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        TopicArn: 'arn:aws:sns:region:acct:notification-topic.fifo',
+        MessageGroupId: 'notify-laboratory-run-run-1',
+      }),
+    );
+  });
+
+  it('backfill branch: does not call markTerminalNotified again when NotifiedAt is already set, even if other fields still need healing', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      ExternalRunId: 'ext-1',
+      Status: 'FAILED',
+      Platform: 'AWS HealthOmics',
+      // TerminalAt intentionally omitted so the backfill branch is still entered.
+      ExpiresAt: 1234567890,
+      RunDurationSeconds: 120,
+      NotifiedAt: '2026-07-20T00:05:00.000Z',
+    });
+    mockUpdateRun.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Status: 'FAILED',
+    });
+
+    const result = await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
+
+    expect(result).toBe(true);
+    expect(mockRunService.prototype.update).toHaveBeenCalled();
+    expect(mockMarkTerminalNotified).not.toHaveBeenCalled();
+    expect(mockPublish).not.toHaveBeenCalled();
+  });
 });
