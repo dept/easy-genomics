@@ -60,6 +60,31 @@ async function safePublishForClassification(run: LaboratoryRun): Promise<void> {
 }
 
 /**
+ * Best-effort SNS publish that hands a freshly-terminal run off to the notification sender.
+ * Only called when `markTerminalNotified` won its conditional write — see that method's
+ * docstring for why this closes the duplicate-status-check race.
+ */
+async function safePublishForNotification(run: LaboratoryRun): Promise<void> {
+  const topicArn = process.env.SNS_LABORATORY_RUN_NOTIFICATION_TOPIC;
+  if (!topicArn) return;
+  try {
+    const record: SnsProcessingEvent = {
+      Operation: 'UPDATE',
+      Type: 'LaboratoryRun',
+      Record: run,
+    };
+    await snsService.publish({
+      TopicArn: topicArn,
+      Message: JSON.stringify(record),
+      MessageGroupId: `notify-laboratory-run-${run.RunId}`,
+      MessageDeduplicationId: uuidv4(),
+    });
+  } catch (err) {
+    console.warn('Failed to publish terminal run to notification topic (continuing):', err);
+  }
+}
+
+/**
  * Best-effort mirror of a run's ExpiresAt into each input file's `LaboratoryRunUsages` entry.
  * Logs and swallows so tagging-side failures never break the status-check pipeline.
  */
@@ -237,6 +262,17 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
       await safePropagateExpiresAt(laboratory, laboratoryRun, newExpiresAt);
       if (newStatusNormalized === 'FAILED' && existingRun.FailureOwner == null) {
         await safePublishForClassification(laboratoryRun);
+      }
+      if (nextStatusTerminal) {
+        const { published, run: notifiedRun } = await laboratoryRunService.markTerminalNotified({
+          LaboratoryId: laboratoryRun.LaboratoryId,
+          RunId: laboratoryRun.RunId,
+          ModifiedAt: now.toISOString(),
+          ModifiedBy: 'Status Check',
+        });
+        if (published) {
+          await safePublishForNotification(notifiedRun);
+        }
       }
     } else if (snapshot.durationSeconds != null && existingRun.RunDurationSeconds == null) {
       // No status change, but the platform now reports a duration we hadn't captured yet.
