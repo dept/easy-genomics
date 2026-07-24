@@ -285,6 +285,42 @@ class LabsModule extends HttpFactory {
     return res;
   }
 
+  /**
+   * Pre-run historical compute cost estimate (no Cost Explorer calls).
+   */
+  async estimateRunCost(
+    laboratoryId: string,
+    body: {
+      platform: 'AWS HealthOmics' | 'Seqera Cloud';
+      workflowExternalId: string;
+      workflowVersionName?: string;
+      inputFileKeys?: string[];
+      sampleSheetS3Url?: string;
+      settings?: unknown;
+      sampleCount?: number;
+      inputBytesTotal?: number;
+    },
+  ): Promise<{
+    estimateAvailable: boolean;
+    confidence: 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE';
+    comparableRunCount: number;
+    computeCostUsd?: { low: number; median: number; high: number };
+    currency: 'USD';
+    label: string;
+    disclaimer: string;
+    exclusions: string[];
+  }> {
+    const res = await this.call<any>(
+      'POST',
+      `/laboratory/run/request-estimate-run-cost?laboratoryId=${laboratoryId}`,
+      body,
+    );
+    if (!res) {
+      throw new Error('Failed to estimate run cost');
+    }
+    return res;
+  }
+
   async updateLabRun(runId: string, labRunRequest: LaboratoryRun): Promise<LaboratoryRun> {
     const res = await this.call<any>('PUT', `/laboratory/run/update-laboratory-run/${runId}`, labRunRequest);
     if (!res) {

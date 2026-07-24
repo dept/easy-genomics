@@ -15,6 +15,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryDataTaggingService } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
+import { captureRunCostOutcome } from '@BE/services/easy-genomics/run-cost-capture-service';
 import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import { SnsService } from '@BE/services/sns-service';
 import { SsmService } from '@BE/services/ssm-service';
@@ -32,6 +33,19 @@ const laboratoryRunService = new LaboratoryRunService();
 const laboratoryDataTaggingService = new LaboratoryDataTaggingService();
 const snsService = new SnsService();
 const ssmService = new SsmService();
+
+/**
+ * Best-effort platform cost capture. Must never break the status-check pipeline.
+ */
+async function safeCaptureRunCost(run: LaboratoryRun): Promise<LaboratoryRun['RunCostOutcome'] | undefined> {
+  if (run.RunCostOutcome?.CostCapturedAt) return run.RunCostOutcome;
+  try {
+    return await captureRunCostOutcome(run);
+  } catch (err) {
+    console.warn(`Failed to capture run cost for RunId=${run.RunId} (continuing):`, err);
+    return undefined;
+  }
+}
 
 /**
  * Best-effort SNS publish that hands off a freshly-failed run to the
@@ -150,9 +164,10 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
     const missingDuration = existingRun.RunDurationSeconds == null;
 
     // Backfill branch: run is already terminal but missing one or more of
-    // TerminalAt / ExpiresAt / RunDurationSeconds. Fetch platform data once so we can heal
+    // TerminalAt / ExpiresAt / RunDurationSeconds / RunCostOutcome. Fetch platform data once so we can heal
     // historical rows without waiting for another status transition.
-    if (isAlreadyTerminal && (missingTerminalAt || missingExpiresAt || missingDuration)) {
+    const missingCost = existingRun.RunCostOutcome?.CostCapturedAt == null;
+    if (isAlreadyTerminal && (missingTerminalAt || missingExpiresAt || missingDuration || missingCost)) {
       const now = new Date();
       const terminalAtIso = getTerminalAtIsoString(existingRun, now);
 
@@ -167,6 +182,8 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         }
       }
 
+      const costOutcome = missingCost ? await safeCaptureRunCost(existingRun) : undefined;
+
       const backfilledExpiresAt = missingExpiresAt
         ? calculateExpiresAtEpochSeconds(new Date(terminalAtIso), retentionMonths)
         : undefined;
@@ -178,6 +195,7 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         ...(snapshot?.durationSeconds != null && existingRun.RunDurationSeconds == null
           ? { RunDurationSeconds: snapshot.durationSeconds }
           : {}),
+        ...(costOutcome ? { RunCostOutcome: costOutcome } : {}),
         ModifiedAt: now.toISOString(),
         ModifiedBy: 'Status Check',
       });
@@ -214,6 +232,11 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
           ? calculateExpiresAtEpochSeconds(new Date(terminalAtIso), retentionMonths)
           : undefined;
 
+      const costOutcome =
+        nextStatusTerminal && existingRun.RunCostOutcome?.CostCapturedAt == null
+          ? await safeCaptureRunCost(existingRun)
+          : undefined;
+
       laboratoryRun = await laboratoryRunService.update({
         ...existingRun,
         Status: newStatusNormalized,
@@ -222,6 +245,7 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         ...(snapshot.durationSeconds != null && existingRun.RunDurationSeconds == null
           ? { RunDurationSeconds: snapshot.durationSeconds }
           : {}),
+        ...(costOutcome ? { RunCostOutcome: costOutcome } : {}),
         ...(newStatusNormalized === 'FAILED' && snapshot.failureReason && existingRun.FailureReason == null
           ? { FailureReason: snapshot.failureReason }
           : {}),

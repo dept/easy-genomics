@@ -145,6 +145,11 @@
       "type": "runtime"
     },
     {
+      "name": "@aws-sdk/client-cost-explorer",
+      "version": "3.782.0",
+      "type": "runtime"
+    },
+    {
       "name": "@aws-sdk/client-dynamodb",
       "type": "runtime"
     },

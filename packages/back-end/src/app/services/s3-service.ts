@@ -209,6 +209,10 @@ export class S3Service {
     }
   };
 
+  public headObject = async (headObjectInput: HeadObjectCommandInput): Promise<HeadObjectCommandOutput> => {
+    return this.s3Request<HeadObjectCommandInput, HeadObjectCommandOutput>(S3Command.HEAD_OBJECT, headObjectInput);
+  };
+
   public getObject = async (getObjectInput: GetObjectCommandInput): Promise<GetObjectCommandOutput> => {
     return this.s3Request<GetObjectCommandInput, GetObjectCommandOutput>(S3Command.GET_OBJECT, getObjectInput);
   };

@@ -48,6 +48,7 @@ export async function exportNuxtConfigurationSettings(
   easyGenomicsApiUrl?: string,
   analyticsEnabled: boolean = false,
   analyticsAllowDev: boolean = false,
+  costExplorerEnabled: boolean = false,
 ) {
   const namePrefix: string = `${envType}-${envName}`;
   const apiGatewayRestApiName: string = `${namePrefix}-easy-genomics-apigw`;
@@ -105,6 +106,8 @@ export async function exportNuxtConfigurationSettings(
     console.log(`  ANALYTICS_DEPLOYMENT_ID=${analyticsDeploymentId ? '<set>' : '<missing>'}`);
   }
 
+  console.log(`  COST_EXPLORER_ENABLED=${costExplorerEnabled}`);
+
   const normalizedEasyGenomicsApiUrl = easyGenomicsApiUrl?.replace(/\/+$/, '');
   const nuxtConfigurationSettings: string =
     '###\n' +
@@ -123,7 +126,8 @@ export async function exportNuxtConfigurationSettings(
     `ANALYTICS_ENABLED=${analyticsEnabled ? 'true' : 'false'}\n` +
     `ANALYTICS_ALLOW_DEV=${analyticsAllowDev ? 'true' : 'false'}\n` +
     `ANALYTICS_DEPLOYMENT_ID=${analyticsDeploymentId}\n` +
-    `ANALYTICS_SALT=${analyticsSalt}\n`;
+    `ANALYTICS_SALT=${analyticsSalt}\n` +
+    `COST_EXPLORER_ENABLED=${costExplorerEnabled ? 'true' : 'false'}\n`;
 
   fs.writeFileSync(join(__dirname, '../../config/.env.nuxt'), nuxtConfigurationSettings, {
     encoding: 'utf8',
@@ -148,6 +152,7 @@ void (async () => {
       const easyGenomicsApiUrl = process.env.AWS_EASY_GENOMICS_API_URL;
       const analyticsEnabled = process.env.ANALYTICS_ENABLED === 'true';
       const analyticsAllowDev = process.env.ANALYTICS_ALLOW_DEV === 'true';
+      const costExplorerEnabled = process.env.COST_EXPLORER_ENABLED === 'true';
       if (!awsRegion || !envName || !envType) {
         throw new Error('Missing required CI/CD env vars: AWS_REGION, ENV_NAME, ENV_TYPE.');
       }
@@ -160,6 +165,7 @@ void (async () => {
         easyGenomicsApiUrl,
         analyticsEnabled,
         analyticsAllowDev,
+        costExplorerEnabled,
       );
     } else {
       // @ts-ignore
@@ -186,6 +192,7 @@ void (async () => {
       const easyGenomicsApiUrl: string | undefined = configSettings['aws-easy-genomics-api-url'] ?? undefined;
       const analyticsEnabled: boolean = configSettings.analytics?.enabled === true;
       const analyticsAllowDev: boolean = configSettings.analytics?.['allow-dev'] === true;
+      const costExplorerEnabled: boolean = configSettings['cost-explorer']?.enabled === true;
 
       await exportNuxtConfigurationSettings(
         awsRegion,
@@ -195,6 +202,7 @@ void (async () => {
         easyGenomicsApiUrl,
         analyticsEnabled,
         analyticsAllowDev,
+        costExplorerEnabled,
       );
     }
   } catch (error) {

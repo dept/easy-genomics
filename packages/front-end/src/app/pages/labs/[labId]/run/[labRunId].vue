@@ -269,6 +269,8 @@
               <dd :class="rowContentStyle">{{ labRun.Platform }}</dd>
             </div>
 
+            <EGRunCostRow :lab-run="labRun" :label-class="rowLabelStyle" :value-class="rowContentStyle" />
+
             <div :class="rowStyle">
               <dt :class="rowLabelStyle">Owner</dt>
               <dd :class="rowContentStyle">{{ labRun.Owner }}</dd>

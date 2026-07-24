@@ -7,7 +7,8 @@ applicable.
 ## `backfill-omics-run-tags.ts`
 
 **Purpose:** Adds tags to existing AWS HealthOmics runs so they match the tags applied when new run executions are
-created. The laboratory run table is the source of truth; `WorkflowId` is taken from each row’s `ExternalRunId`.
+created. The laboratory run table is the source of truth; `WorkflowId` is taken from each row’s `WorkflowExternalId`,
+and `RunId` is the Easy Genomics run UUID (for Cost Explorer attribution).
 
 **When to use:** After a change to tagging behavior or for legacy runs that were never tagged.
 
@@ -21,6 +22,36 @@ pnpm run backfill-omics-run-tags:dry-run
 - `--dry-run` — log what would be tagged without calling the Omics API.
 
 **Environment:** `NAME_PREFIX`, `ACCOUNT_ID`, `REGION` (see script header for IAM expectations).
+
+## `backfill-run-input-profiles.ts`
+
+**Purpose:** Populates `RunInputProfile` (sample count, input bytes, parameter hash) on existing laboratory runs for the
+pre-run cost estimator.
+
+```bash
+pnpm run backfill-run-input-profiles
+pnpm run backfill-run-input-profiles:dry-run
+```
+
+## `backfill-run-cost-outcomes.ts`
+
+**Purpose:** Re-queries HealthOmics `ListRunTasks` / Seqera Tower progress for terminal runs still on the platform and
+writes `RunCostOutcome`.
+
+```bash
+pnpm run backfill-run-cost-outcomes
+pnpm run backfill-run-cost-outcomes:dry-run
+```
+
+## `backfill-billed-costs.ts`
+
+**Purpose:** One-time batched Cost Explorer sync for runs with `RunId` tags (prefer the daily `process-sync-run-costs`
+Lambda for ongoing sync).
+
+```bash
+pnpm run backfill-billed-costs
+pnpm run backfill-billed-costs:dry-run -- --max-age-days=90
+```
 
 ## `backfill-workflow-run-history-and-usages.ts`
 

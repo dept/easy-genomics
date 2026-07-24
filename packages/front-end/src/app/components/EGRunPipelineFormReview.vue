@@ -3,6 +3,7 @@
   import EGAccordion from '@FE/components/EGAccordion.vue';
   import { ButtonSizeEnum } from '@FE/types/buttons';
   import { Pipeline as SeqeraPipeline } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
+  import type { EstimateRunCostResponse } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
 
   const props = defineProps<{
     schema: object;
@@ -21,6 +22,8 @@
   const labName = labsStore.labs[props.labId]?.Name ?? '';
   const labNextFlowTowerApiBaseUrl = labsStore.labs[props.labId]?.NextFlowTowerApiBaseUrl ?? '';
   const isLaunchingRun = ref(false);
+  const costEstimate = ref<EstimateRunCostResponse | null>(null);
+  const costEstimateLoading = ref(false);
   const emit = defineEmits(['submit-launch-request', 'submit-launch-request-error', 'has-launched', 'previous-tab']);
 
   const remountAccordionKey = ref(0);
@@ -43,6 +46,24 @@
   const schema = JSON.parse(JSON.stringify(props.schema));
 
   const schemaDefinitions = schema.$defs || schema.definitions;
+
+  onMounted(async () => {
+    costEstimateLoading.value = true;
+    try {
+      costEstimate.value = await $api.labs.estimateRunCost(props.labId, {
+        platform: 'Seqera Cloud',
+        workflowExternalId: props.pipelineId,
+        inputFileKeys: wipSeqeraRun.value?.inputFileKeys,
+        sampleSheetS3Url: (props.params as any)?.input,
+        settings: paramsFiltered,
+      });
+    } catch (error) {
+      console.warn('Pre-run cost estimate unavailable:', error);
+      costEstimate.value = null;
+    } finally {
+      costEstimateLoading.value = false;
+    }
+  });
 
   async function launchRun() {
     emit('submit-launch-request');
@@ -175,10 +196,11 @@
           <dt class="w-48 text-black">Laboratory</dt>
           <dd class="text-muted text-left">{{ labName }}</dd>
         </div>
-        <div class="text-md flex px-4 py-4">
+        <div class="text-md flex border-b px-4 py-4">
           <dt class="w-48 text-black">Run Name</dt>
           <dd class="text-muted text-left">{{ wipSeqeraRun?.runName }}</dd>
         </div>
+        <EGRunCostRow :estimate="costEstimate" :loading="costEstimateLoading" class="border-b" />
       </dl>
     </section>
   </EGCard>

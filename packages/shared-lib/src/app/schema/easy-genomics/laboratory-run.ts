@@ -1,9 +1,21 @@
 import { z } from 'zod';
+import {
+  BilledCostSchema,
+  PreRunCostEstimateSchema,
+  RunCostOutcomeSchema,
+  RunInputProfileSchema,
+} from './laboratory-run-cost';
 
-const literalSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
-type Literal = z.infer<typeof literalSchema>;
-type Json = Literal | { [key: string]: Json } | Json[];
-const jsonSchema: z.ZodType<Json> = z.lazy(() => z.union([literalSchema, z.array(jsonSchema), z.record(jsonSchema)]));
+const laboratoryRunCostFields = {
+  /** Pre-run input features for historical cost similarity matching. */
+  RunInputProfile: RunInputProfileSchema.optional(),
+  /** Snapshot of the pre-run estimate band shown at Review & Launch. */
+  PreRunCostEstimate: PreRunCostEstimateSchema.optional(),
+  /** Platform compute/storage estimate captured at terminal state. */
+  RunCostOutcome: RunCostOutcomeSchema.optional(),
+  /** AWS Cost Explorer billed cost synced ~24–48h after completion. */
+  BilledCost: BilledCostSchema.optional(),
+};
 
 export const LaboratoryRunSchema = z
   .object({
@@ -90,6 +102,7 @@ export const LaboratoryRunSchema = z
      * AI-assisted disclaimer in the UI and for ops debugging.
      */
     FailureClassifiedBy: z.enum(['lookup', 'llm']).optional(),
+    ...laboratoryRunCostFields,
   })
   .strict();
 export type LaboratoryRun = z.infer<typeof LaboratoryRunSchema>;
@@ -128,6 +141,7 @@ export const ReadLaboratoryRunSchema = z
     FailureSummary: z.string().optional(),
     FailureAction: z.string().optional(),
     FailureClassifiedBy: z.enum(['lookup', 'llm']).optional(),
+    ...laboratoryRunCostFields,
   })
   .strict();
 export type ReadLaboratoryRun = z.infer<typeof ReadLaboratoryRunSchema>;

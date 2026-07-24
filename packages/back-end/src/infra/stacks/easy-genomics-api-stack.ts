@@ -336,6 +336,17 @@ export class EasyGenomicsApiStack extends Stack {
             type: AttributeType.STRING,
           },
         },
+        {
+          // Historical cost estimator: query completed runs by workflow identity + terminal time.
+          partitionKey: {
+            name: 'WorkflowExternalId',
+            type: AttributeType.STRING,
+          },
+          sortKey: {
+            name: 'TerminalAt',
+            type: AttributeType.STRING,
+          },
+        },
       ],
       lsi: baseLSIAttributes,
     });

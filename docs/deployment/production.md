@@ -288,3 +288,33 @@ Run these checks immediately after a successful first deploy:
 - [ ] Open CloudWatch → Log Groups, filter by `prod-{env-name}` — no `ERROR`-level entries at startup
 - [ ] (If AWS HealthOmics workflows are planned) Confirm the HealthOmics service is accessible in your chosen region
       from this account — some regions require explicit service opt-in
+
+---
+
+## 8. Cost Explorer (run cost billing) — one-time enablement
+
+Easy Genomics can show **billed** per-run cost from AWS Cost Explorer after HealthOmics runs are tagged with `RunId`
+(and related cost allocation tags). This is a **manual, account-level** setup.
+
+Pre-run estimates and platform post-run compute estimates work **without** Cost Explorer. Billed totals require both the
+AWS Billing steps below **and** `cost-explorer.enabled: true` in `config/easy-genomics.yaml` (default `false`). That
+flag deploys the daily sync Lambda / CE IAM and switches the UI from “billed unavailable” copy to the 24–48h pending
+messaging. After flipping the YAML, redeploy the back-end and rebuild the front-end.
+
+1. In the AWS Billing console, **Launch Cost Explorer** (one-way enablement; cannot be turned off, only IAM-restricted).
+2. Activate these **cost allocation tags** (Billing → Cost allocation tags). Activation can take up to 24 hours:
+   - `LaboratoryId`
+   - `OrganizationId`
+   - `RunId`
+   - `Application`
+   - `Platform`
+   - `UserId`
+   - `UserEmail`
+   - `WorkflowId` (optional; useful for workflow-level rollups)
+3. Do **not** enable hourly/resource-level CE granularity unless separately justified (extra AWS charges).
+4. Set `cost-explorer.enabled: true` in `config/easy-genomics.yaml`, then redeploy back-end and rebuild front-end.
+5. Expect **24–48 hours** after run completion before billed cost appears in Easy Genomics (daily cost-sync Lambda).
+6. Typical EG CE API spend under the recommended daily batch sync is on the order of **~$0.30–$1/month**.
+
+For Seqera / Batch per-run billed attribution, see `docs/deployment/seqera-cost-labels.md` (resource labels + CUR /
+Split Cost Allocation Data). Tower **estimated** compute cost does not require Cost Explorer.

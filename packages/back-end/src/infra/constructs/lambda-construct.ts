@@ -43,6 +43,8 @@ interface LambdaFunctionsResources {
   // (e.g. ones that ship non-JS assets read at runtime). Scoped per-endpoint so only
   // the handler that needs them pays the bundle-size cost.
   nodeModules?: string[];
+  /** When true, do not build or register this auto-discovered controller. */
+  skip?: boolean;
 }
 
 // List of allowed "CRUD" Lambda Function operations with respective REST API command mapping
@@ -89,6 +91,10 @@ export class LambdaConstruct extends Construct {
     const lambdaId: string = `${this.props.lambdaFunctionsNamespace}-${lambdaName}`;
     const lambdaApiDir: string = lambdaPath.split(LAMBDA_FUNCTION_ROOT_DIR).pop() || '';
     const lambdaApiEndpoint: string = `${lambdaApiDir}/${lambdaName}`;
+
+    if (this.props.lambdaFunctionsResources[lambdaApiEndpoint]?.skip) {
+      return;
+    }
 
     const commonProcessEnv = this.props.environment || undefined;
     const lambdaProcessEnv = this.props.lambdaFunctionsResources[lambdaApiEndpoint]?.environment || undefined;

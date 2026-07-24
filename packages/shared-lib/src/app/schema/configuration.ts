@@ -66,5 +66,18 @@ export const ConfigurationSettingsSchema = z
       })
       .nullable()
       .optional(),
+
+    // Optional: AWS Cost Explorer billed per-run cost sync.
+    //
+    // Off by default. When `enabled: true`, CDK deploys the daily CE sync
+    // Lambda and the front-end shows billed-cost pending / 24–48h messaging.
+    // Operators must still Launch Cost Explorer and activate cost allocation
+    // tags in the AWS Billing console (see docs/deployment/production.md).
+    ['cost-explorer']: z
+      .object({
+        ['enabled']: z.boolean().nullable().optional(), // Defaults to false when unset
+      })
+      .nullable()
+      .optional(),
   })
   .strict();

@@ -17,6 +17,8 @@ import { associateInputsWithWorkflowTag } from '@BE/services/easy-genomics/assoc
 import { LaboratoryDataTaggingService } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
+import { RunCostEstimationService } from '@BE/services/easy-genomics/run-cost-estimation-service';
+import { buildRunInputProfile } from '@BE/services/easy-genomics/run-input-profile-service';
 import { SnsService } from '@BE/services/sns-service';
 import {
   validateLaboratoryManagerAccess,
@@ -33,6 +35,7 @@ import {
 const laboratoryRunService = new LaboratoryRunService();
 const laboratoryService = new LaboratoryService();
 const dataTaggingService = new LaboratoryDataTaggingService();
+const runCostEstimationService = new RunCostEstimationService();
 const snsService = new SnsService();
 
 export const handler: Handler = async (
@@ -74,6 +77,31 @@ export const handler: Handler = async (
         ? calculateExpiresAtEpochSeconds(createdAt, retentionMonths)
         : undefined;
 
+    // Best-effort input profile + pre-run estimate for historical cost calibration.
+    let runInputProfile;
+    let preRunCostEstimate;
+    try {
+      runInputProfile = await buildRunInputProfile({
+        laboratory,
+        inputFileKeys: request.InputFileKeys,
+        sampleSheetS3Url: request.SampleSheetS3Url,
+        settings: request.Settings,
+      });
+      const estimate = await runCostEstimationService.estimate(laboratory, {
+        platform: request.Platform,
+        workflowExternalId: request.WorkflowExternalId || '',
+        workflowVersionName: request.WorkflowVersionName,
+        inputFileKeys: request.InputFileKeys,
+        sampleSheetS3Url: request.SampleSheetS3Url,
+        settings: request.Settings,
+        sampleCount: runInputProfile.SampleCount,
+        inputBytesTotal: runInputProfile.InputBytesTotal,
+      });
+      preRunCostEstimate = runCostEstimationService.toPreRunCostEstimate(estimate);
+    } catch (err) {
+      console.warn('Failed to build RunInputProfile / PreRunCostEstimate (continuing):', err);
+    }
+
     const laboratoryRun: LaboratoryRun = await laboratoryRunService.add(<LaboratoryRun>{
       LaboratoryId: laboratory.LaboratoryId,
       RunId: request.RunId,
@@ -97,6 +125,8 @@ export const handler: Handler = async (
       CreatedBy: currentUserId,
       ...(isTerminalAtCreate ? { TerminalAt: createdAt.toISOString() } : {}),
       ...(laboratorioRunExpiresAt !== undefined ? { ExpiresAt: laboratorioRunExpiresAt } : {}),
+      ...(runInputProfile ? { RunInputProfile: runInputProfile } : {}),
+      ...(preRunCostEstimate ? { PreRunCostEstimate: preRunCostEstimate } : {}),
     });
 
     // Best-effort: associate input files with a workflow tag and record this run's usage
