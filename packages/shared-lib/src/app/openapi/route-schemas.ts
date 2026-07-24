@@ -43,6 +43,7 @@ import {
   EditLaboratoryUserSchema,
   RemoveLaboratoryUserSchema,
   RequestLaboratoryUserSchema,
+  UpdateLaboratoryUserNotificationPreferenceSchema,
 } from '../schema/easy-genomics/laboratory-user';
 import { BatchUpdateLaboratoryWorkflowAccessRequestSchema } from '../schema/easy-genomics/laboratory-workflow-access';
 import { CreateOrganizationSchema, UpdateOrganizationSchema } from '../schema/easy-genomics/organization';
@@ -180,6 +181,10 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
   },
   'POST /easy-genomics/laboratory/user/edit-laboratory-user': {
     request: EditLaboratoryUserSchema,
+    response: 'LaboratoryUser',
+  },
+  'PUT /easy-genomics/laboratory/user/update-laboratory-user-notification-preference/{id}': {
+    request: UpdateLaboratoryUserNotificationPreferenceSchema,
     response: 'LaboratoryUser',
   },
   'GET /easy-genomics/laboratory/user/list-laboratory-users': {

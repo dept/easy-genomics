@@ -973,6 +973,16 @@ export class EasyGenomicsNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
     ]);
+    // /easy-genomics/laboratory/user/update-laboratory-user-notification-preference
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/user/update-laboratory-user-notification-preference', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-user-table`,
+        ],
+        actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
     // /easy-genomics/laboratory/user/list-laboratory-users
     this.iam.addPolicyStatements('/easy-genomics/laboratory/user/list-laboratory-users', [
       new PolicyStatement({

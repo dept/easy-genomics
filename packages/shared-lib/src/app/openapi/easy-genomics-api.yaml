@@ -2299,6 +2299,14 @@ components:
         - LaboratoryId
         - UserId
       additionalProperties: false
+    UpdateLaboratoryUserNotificationPreferenceRequest:
+      type: object
+      properties:
+        NotifyOnLabRuns:
+          type: boolean
+      required:
+        - NotifyOnLabRuns
+      additionalProperties: false
     CreateOrganizationRequest:
       type: object
       properties:
@@ -8588,6 +8596,39 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/RequestLaboratoryUserRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaboratoryUser'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/user/update-laboratory-user-notification-preference/{id}:
+    put:
+      operationId: updateLaboratoryUserNotificationPreference
+      summary: Update Laboratory User Notification Preference
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLaboratoryUserNotificationPreferenceRequest'
       responses:
         '200':
           description: Success

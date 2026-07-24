@@ -270,6 +270,10 @@ export interface paths {
     /** Request Laboratory User */
     post: operations["requestLaboratoryUser"];
   };
+  "/easy-genomics/laboratory/user/update-laboratory-user-notification-preference/{id}": {
+    /** Update Laboratory User Notification Preference */
+    put: operations["updateLaboratoryUserNotificationPreference"];
+  };
   "/easy-genomics/list-api-docs": {
     /** List Api Docs */
     get: operations["listApiDocs"];
@@ -1371,6 +1375,9 @@ export interface components {
       LaboratoryId: string;
       /** Format: uuid */
       UserId: string;
+    };
+    UpdateLaboratoryUserNotificationPreferenceRequest: {
+      NotifyOnLabRuns: boolean;
     };
     CreateOrganizationRequest: {
       Name: string;
@@ -4794,6 +4801,32 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": components["schemas"]["RequestLaboratoryUserRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["LaboratoryUser"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Update Laboratory User Notification Preference */
+  updateLaboratoryUserNotificationPreference: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateLaboratoryUserNotificationPreferenceRequest"];
       };
     };
     responses: {
