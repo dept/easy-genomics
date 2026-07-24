@@ -84,6 +84,7 @@ describe('list-workflow-versions.lambda', () => {
 
     mockLabService.prototype.queryByLaboratoryId = jest.fn();
     mockOmicsService.prototype.listWorkflowVersions = jest.fn();
+    mockOmicsService.prototype.listSharedWorkflows = jest.fn().mockResolvedValue({ shares: [] });
   });
 
   it('returns ACTIVE and unset-status versions only', async () => {
@@ -118,6 +119,44 @@ describe('list-workflow-versions.lambda', () => {
       expect.objectContaining({
         workflowId: WF_ID,
         type: 'PRIVATE',
+      }),
+    );
+    expect(mockOmicsService.prototype.listWorkflowVersions.mock.calls[0][0].workflowOwnerId).toBeUndefined();
+  });
+
+  it('passes workflowOwnerId when the workflow is a shared workflow', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+    });
+
+    (mockOmicsService.prototype.listSharedWorkflows as jest.Mock).mockResolvedValue({
+      shares: [
+        {
+          resourceId: WF_ID,
+          ownerId: '111122223333',
+          status: 'ACTIVE',
+        },
+      ],
+    });
+
+    (mockOmicsService.prototype.listWorkflowVersions as jest.Mock).mockResolvedValue({
+      items: [{ versionName: 'v1', status: WorkflowStatus.ACTIVE }],
+    });
+
+    const result = await handler(
+      createEvent({ laboratoryId: LAB_ID, workflowId: WF_ID }) as any,
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockOmicsService.prototype.listWorkflowVersions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflowId: WF_ID,
+        type: 'PRIVATE',
+        workflowOwnerId: '111122223333',
       }),
     );
   });

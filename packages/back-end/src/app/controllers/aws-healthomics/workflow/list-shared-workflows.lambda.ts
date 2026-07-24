@@ -1,44 +1,43 @@
-import { ListSharesCommandInput } from '@aws-sdk/client-omics';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   LaboratoryNotFoundError,
+  MissingAWSHealthOmicsAccessError,
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
- MissingAWSHealthOmicsAccessError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
+import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
 import { OmicsService } from '@BE/services/omics-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
-import { AwsHealthOmicsQueryParameters, getAwsHealthOmicsApiQueryParameters } from '@BE/utils/rest-api-utils';
+import { isWorkflowAccessAllowed } from '@BE/utils/laboratory-workflow-access-utils';
+import { listAllSharedWorkflowSummaries } from '@BE/utils/omics-shared-workflow-utils';
 
 const laboratoryService = new LaboratoryService();
 const omicsService = new OmicsService();
+const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
 
 /**
- * This GET /aws-healthomics/workflow/list-shared-workflows?laboratoryId={LaboratoryId}
- * API queries the same region's AWS HealthOmics service to retrieve a list of
- * Shared Workflows, and it expects:
- *  - Required Query Parameter:
- *    - 'laboratoryId': to retrieve the Laboratory to verify access to AWS HealthOmics
- *  - Optional Query Parameters:
- *    - 'maxResults': pagination number of results
- *    - 'nextToken': pagination results offset index
- *    - 'name': string to search by the Workflow name attribute
+ * GET /aws-healthomics/workflow/list-shared-workflows?laboratoryId={LaboratoryId}
  *
- * @param event
+ * Returns ACTIVE cross-account shared HealthOmics workflows the lab may access,
+ * after applying laboratory workflow-access grants (same semantics as
+ * list-private-workflows). Fetches every ListShares page so grants beyond the
+ * first page are not hidden.
+ *
+ * Response shape mirrors private listing for FE merge:
+ *   { items: [{ id, name, ownerAccountId?, source: 'SHARED' }] }
  */
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
 ): Promise<APIGatewayProxyResult> => {
   console.log('EVENT: \n' + JSON.stringify(event, null, 2));
   try {
-    // Get required query parameter
     const laboratoryId: string = event.queryStringParameters?.laboratoryId || '';
     if (laboratoryId === '') throw new RequiredIdNotFoundError('laboratoryId');
 
@@ -48,7 +47,6 @@ export const handler: Handler = async (
       throw new LaboratoryNotFoundError();
     }
 
-    // Only available for Org Admins or Laboratory Managers and Technicians
     if (
       !(
         validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
@@ -59,17 +57,25 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
-    // Requires AWS Health Omics access
     if (!laboratory.AwsHealthOmicsEnabled) {
       throw new MissingAWSHealthOmicsAccessError();
     }
 
-    const queryParameters: AwsHealthOmicsQueryParameters = getAwsHealthOmicsApiQueryParameters(event);
-    const response = await omicsService.listSharedWorkflows(<ListSharesCommandInput>{
-      resourceOwner: 'OTHER',
-      ...queryParameters,
-    });
-    return buildResponse(200, JSON.stringify(response), event);
+    const nameFilter = event.queryStringParameters?.name?.trim().toLowerCase();
+    const allShared = await listAllSharedWorkflowSummaries(omicsService);
+    const accessRows = await laboratoryWorkflowAccessService.listByLaboratoryId(laboratoryId);
+
+    const items = allShared
+      .filter((w) => isWorkflowAccessAllowed(laboratory, accessRows, 'HEALTH_OMICS', w.id))
+      .filter((w) => !nameFilter || w.name.toLowerCase().includes(nameFilter))
+      .map((w) => ({
+        id: w.id,
+        name: w.name,
+        source: 'SHARED' as const,
+        ...(w.ownerAccountId ? { ownerAccountId: w.ownerAccountId } : {}),
+      }));
+
+    return buildResponse(200, JSON.stringify({ items }), event);
   } catch (err: any) {
     console.error(err);
     return buildErrorResponse(err, event);

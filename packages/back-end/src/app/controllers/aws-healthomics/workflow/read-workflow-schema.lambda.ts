@@ -14,6 +14,7 @@ import {
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
+import { resolveSharedWorkflowOwnerId } from '@BE/utils/omics-shared-workflow-utils';
 
 const laboratoryService = new LaboratoryService();
 const omicsService = new OmicsService();
@@ -40,9 +41,11 @@ function parseGitHubRepoUrl(url: string): { owner: string; repo: string } {
  * Used when DynamoDB has no cached schema (EventBridge trigger may have failed).
  */
 async function fetchSchemaFromGitHub(workflowId: string): Promise<WorkflowSchema | null> {
+  const workflowOwnerId = await resolveSharedWorkflowOwnerId(omicsService, workflowId);
   const workflow = await omicsService.getWorkflow(<GetWorkflowCommandInput>{
     id: workflowId,
     type: 'PRIVATE',
+    ...(workflowOwnerId ? { workflowOwnerId } : {}),
   });
 
   const githubSchemaUrlTag = workflow.tags?.[GITHUB_SCHEMA_URL_TAG];

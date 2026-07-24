@@ -16,6 +16,8 @@
     workflowName: string;
     /** When set, passed to Omics StartRun and stored on the laboratory run */
     workflowVersionName?: string;
+    /** Owner account for SHARED HealthOmics workflows (StartRun workflowOwnerId) */
+    workflowOwnerId?: string;
   }>();
 
   const { $api } = useNuxtApp();
@@ -62,6 +64,7 @@
           props.runName,
           withoutEmptyFields(props.params),
           props.workflowVersionName,
+          props.workflowOwnerId,
         );
         if (!startOmicsRes?.id) throw new Error('Workflow Run ID is missing in the response');
         externalRunId = startOmicsRes.id;

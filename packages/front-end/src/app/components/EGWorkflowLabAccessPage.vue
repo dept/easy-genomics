@@ -465,6 +465,7 @@
                   <tr class="border-background-dark-grey text-text-muted border-b text-xs font-semibold uppercase">
                     <th scope="col" class="pb-3 pr-4">Workflow</th>
                     <th scope="col" class="pb-3 pr-4">Type</th>
+                    <th scope="col" class="pb-3 pr-4">Source</th>
                     <th scope="col" class="pb-3">Access</th>
                   </tr>
                 </thead>
@@ -490,6 +491,22 @@
                       >
                         {{ row.platform === 'HealthOmics' ? 'HealthOmics' : 'Seqera' }}
                       </UBadge>
+                    </td>
+                    <td class="py-3 pr-4">
+                      <template v-if="row.platform === 'HealthOmics'">
+                        <UBadge
+                          size="sm"
+                          class="rounded-xl border-0 font-serif ring-0"
+                          :class="
+                            row.source === 'SHARED'
+                              ? 'bg-alert-blue-muted text-alert-blue'
+                              : 'bg-background-light-grey text-text-body'
+                          "
+                        >
+                          {{ row.source === 'SHARED' ? 'Shared' : 'Private' }}
+                        </UBadge>
+                      </template>
+                      <span v-else class="text-text-muted text-xs">—</span>
                     </td>
                     <td class="py-3">
                       <UToggle

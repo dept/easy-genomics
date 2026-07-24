@@ -7,6 +7,7 @@ import type { UnifiedWorkflowCatalogEntry } from '@easy-genomics/shared-lib/src/
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { OmicsService } from '@BE/services/omics-service';
 import { SsmService } from '@BE/services/ssm-service';
+import { listAllSharedWorkflowSummaries } from '@BE/utils/omics-shared-workflow-utils';
 import { getNextFlowApiQueryParameters, httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -110,11 +111,10 @@ export async function buildUnifiedWorkflowCatalogForOrganization(
 
   const anyOmics = laboratories.some((l) => l.AwsHealthOmicsEnabled);
   if (anyOmics) {
-    // Only PRIVATE workflows are enumerated here. Shared workflows are intentionally
-    // excluded: the lab-facing endpoint (list-private-workflows) only ever returns
-    // PRIVATE workflows and applies the access filter, so any shared workflow listed
-    // here would be grantable in the admin panel yet never visible to lab users.
-    const privateWf = await listAllPrivateWorkflows();
+    const [privateWf, sharedSummaries] = await Promise.all([
+      listAllPrivateWorkflows(),
+      listAllSharedWorkflowSummaries(omicsService),
+    ]);
     for (const w of privateWf) {
       if (!w.id) {
         continue;
@@ -128,6 +128,21 @@ export async function buildUnifiedWorkflowCatalogForOrganization(
         platform: 'HealthOmics',
         workflowId: w.id,
         name: w.name ?? w.id,
+        source: 'PRIVATE',
+      });
+    }
+    for (const s of sharedSummaries) {
+      const key = `HealthOmics:${s.id}`;
+      if (seenKeys.has(key)) {
+        continue;
+      }
+      seenKeys.add(key);
+      workflows.push({
+        platform: 'HealthOmics',
+        workflowId: s.id,
+        name: s.name,
+        source: 'SHARED',
+        ...(s.ownerAccountId ? { ownerAccountId: s.ownerAccountId } : {}),
       });
     }
   }

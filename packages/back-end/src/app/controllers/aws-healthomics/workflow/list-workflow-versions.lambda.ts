@@ -15,6 +15,7 @@ import {
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
+import { resolveSharedWorkflowOwnerId } from '@BE/utils/omics-shared-workflow-utils';
 import { AwsHealthOmicsQueryParameters, getAwsHealthOmicsApiQueryParameters } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -22,13 +23,14 @@ const omicsService = new OmicsService();
 
 /**
  * This GET /aws-healthomics/workflow/list-workflow-versions?laboratoryId={LaboratoryId}&workflowId={WorkflowId}
- * API queries AWS HealthOmics for workflow versions for a private workflow.
+ * API queries AWS HealthOmics for workflow versions for a private or shared workflow.
+ * Shared workflows resolve workflowOwnerId via ListShares when not supplied.
  *
  * Required query parameters:
  *  - laboratoryId
  *  - workflowId
  *
- * Optional: maxResults, nextToken (startingToken)
+ * Optional: maxResults, nextToken (startingToken), workflowOwnerId
  *
  * @param event
  */
@@ -64,9 +66,14 @@ export const handler: Handler = async (
     }
 
     const queryParameters: AwsHealthOmicsQueryParameters = getAwsHealthOmicsApiQueryParameters(event);
+    const workflowOwnerId =
+      event.queryStringParameters?.workflowOwnerId ||
+      (await resolveSharedWorkflowOwnerId(omicsService, workflowId));
+
     const response = await omicsService.listWorkflowVersions(<ListWorkflowVersionsCommandInput>{
       workflowId,
       type: 'PRIVATE',
+      ...(workflowOwnerId ? { workflowOwnerId } : {}),
       ...queryParameters,
     });
 

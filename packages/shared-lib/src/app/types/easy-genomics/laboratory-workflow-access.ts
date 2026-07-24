@@ -24,11 +24,18 @@ export interface LaboratoryWorkflowAccess {
   ModifiedAt?: string;
 }
 
+/** HealthOmics catalog source; omitted for Seqera entries. */
+export type HealthOmicsWorkflowSource = 'PRIVATE' | 'SHARED';
+
 /** API / UI catalog row (unified HealthOmics + Seqera). */
 export interface UnifiedWorkflowCatalogEntry {
   platform: 'HealthOmics' | 'Seqera';
   workflowId: string;
   name: string;
+  /** Present for HealthOmics entries only. */
+  source?: HealthOmicsWorkflowSource;
+  /** AWS account that owns a SHARED HealthOmics workflow (from ShareDetails). */
+  ownerAccountId?: string;
 }
 
 export interface ListLaboratoryWorkflowAccessAssignmentsResponse {

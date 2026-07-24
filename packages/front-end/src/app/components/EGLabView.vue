@@ -13,7 +13,7 @@
   import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
   import { v4 as uuidv4 } from 'uuid';
   import { Pipeline as SeqeraPipeline } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
-  import { WorkflowListItem as OmicsWorkflow } from '@aws-sdk/client-omics';
+  import type { LabOmicsWorkflow } from '@FE/stores/omicsWorkflows';
   import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
   import EGDataCollectionsPage from '@FE/components/EGDataCollectionsPage.vue';
   import type { DataCollectionsTab } from '@FE/components/EGDataCollectionsTabBar.vue';
@@ -42,7 +42,7 @@
 
   const labUsers = ref<LabUser[]>([]);
   const seqeraPipelines = computed<SeqeraPipeline[]>(() => seqeraPipelinesStore.pipelinesForLab(props.labId));
-  const omicsWorkflows = computed<OmicsWorkflow[]>(() => omicsWorkflowsStore.workflowsForLab(props.labId));
+  const omicsWorkflows = computed<LabOmicsWorkflow[]>(() => omicsWorkflowsStore.workflowsForLab(props.labId));
   const canAddUsers = computed<boolean>(() => userStore.canAddLabUsers(props.labId));
   const canCreateOmicsWorkflows = computed<boolean>(() => userStore.canEditLabUsers(props.labId));
   const showAddUserModule = ref(false);
@@ -471,6 +471,7 @@
 
   const omicsWorkflowsTableColumns = [
     { key: 'Name', label: 'Name' },
+    { key: 'source', label: 'Source' },
     { key: 'description', label: 'Description' },
     { key: 'actions', label: 'Actions' },
   ];
@@ -479,7 +480,7 @@
     [{ label: 'Run', click: () => viewRunOmicsWorkflow(workflow) }],
   ];
 
-  function viewRunOmicsWorkflow(workflow: OmicsWorkflow) {
+  function viewRunOmicsWorkflow(workflow: LabOmicsWorkflow) {
     $router.push({
       path: `/labs/${props.labId}/run-workflow/${workflow.id}`,
       query: {
@@ -1031,6 +1032,20 @@
         <div class="flex items-center">
           {{ workflow?.name }}
         </div>
+      </template>
+
+      <template #source-data="{ row: workflow }">
+        <UBadge
+          size="sm"
+          class="rounded-xl border-0 font-serif ring-0"
+          :class="
+            workflow?.source === 'SHARED'
+              ? 'bg-alert-blue-muted text-alert-blue'
+              : 'bg-primary-muted text-primary-dark'
+          "
+        >
+          {{ workflow?.source === 'SHARED' ? 'Shared' : 'Private' }}
+        </UBadge>
       </template>
 
       <template #description-data="{ row: workflow }">
