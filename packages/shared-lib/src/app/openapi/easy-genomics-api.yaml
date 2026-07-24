@@ -2112,6 +2112,34 @@ components:
         - Name
         - Status
       additionalProperties: false
+    AddBulkLaboratoryUsersRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          format: uuid
+        Users:
+          type: array
+          items:
+            type: object
+            properties:
+              UserId:
+                type: string
+                format: uuid
+              LabManager:
+                type: boolean
+              LabTechnician:
+                type: boolean
+            required:
+              - UserId
+              - LabManager
+              - LabTechnician
+            additionalProperties: false
+          minItems: 1
+      required:
+        - LaboratoryId
+        - Users
+      additionalProperties: false
     AddLaboratoryUserRequest:
       type: object
       properties:
@@ -8324,6 +8352,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Laboratory'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/user/add-bulk-laboratory-users:
+    post:
+      operationId: addBulkLaboratoryUsers
+      summary: Add Bulk Laboratory Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddBulkLaboratoryUsersRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

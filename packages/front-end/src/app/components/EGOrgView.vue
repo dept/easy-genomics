@@ -24,6 +24,7 @@
   const buttonRequestPending = ref<Record<number, boolean>>({});
   const orgUsersDetailsData = ref<OrgUser[]>([]);
   const showInviteModule = ref(false);
+  const openUserId = computed<string | null>(() => (route.query.openUser as string) || null);
 
   const resetFormKey = ref(0);
 
@@ -33,6 +34,7 @@
   // Dynamic remove user dialog values
   const isRemoveUserModalOpen = ref(false);
   const removeUserModalPrimaryMessage = ref('');
+  const removeUserModalActionLabel = ref('Remove User');
   const userToRemoveId = ref('');
   const isRemovingUser = ref(false);
 
@@ -119,7 +121,12 @@
   ];
 
   function editUser(userId: string) {
-    router.push({ path: `/orgs/${props.orgId}/edit-user/${userId}` });
+    router.push({ query: { ...route.query, openUser: userId } });
+  }
+
+  function closeUserAccessDrawer() {
+    const { openUser: _openUser, ...remainingQuery } = route.query;
+    router.push({ query: remainingQuery });
   }
 
   function onRowClicked(row: OrgUser) {
@@ -137,14 +144,18 @@
     ];
 
     if (props.superuser || props.orgAdmin) {
+      const invited = isInvited(user.OrganizationUserStatus);
       items.push([
         {
-          label: 'Remove From Org',
+          label: invited ? 'Revoke invite' : 'Remove From Org',
           class: 'text-alert-danger-dark',
           isHighlighted: true,
           click: () => {
             userToRemoveId.value = user.UserId;
-            removeUserModalPrimaryMessage.value = `Are you sure you want to remove ${user.displayName} from ${org.value.Name}?`;
+            removeUserModalPrimaryMessage.value = invited
+              ? `Are you sure you want to revoke the invitation for ${user.UserEmail}?`
+              : `Are you sure you want to remove ${user.displayName} from ${org.value.Name}?`;
+            removeUserModalActionLabel.value = invited ? 'Revoke Invite' : 'Remove User';
             isRemoveUserModalOpen.value = true;
           },
         },
@@ -207,11 +218,11 @@
   });
 
   async function handleRemoveOrgUser() {
-    isRemoveUserModalOpen.value = false;
     isRemovingUser.value = true;
 
     const userToRemove = orgUsersDetailsData.value.find((user) => user.UserId === userToRemoveId.value);
     const displayName = userToRemove?.displayName;
+    const wasInvited = userToRemove ? isInvited(userToRemove.OrganizationUserStatus) : false;
 
     try {
       if (!userToRemoveId.value) {
@@ -221,13 +232,21 @@
       const res: DeletedResponse = await $api.orgs.removeUser(props.orgId, userToRemoveId.value);
 
       if (res?.Status === 'Success') {
-        useToastStore().success(`${displayName} has been removed from ${org.value.Name}`);
+        useToastStore().success(
+          wasInvited
+            ? `Invitation for ${userToRemove?.UserEmail} has been revoked`
+            : `${displayName} has been removed from ${org.value.Name}`,
+        );
         await fetchOrgData(false);
       } else {
         throw new Error('User not removed from Organization');
       }
     } catch (error) {
-      useToastStore().error(`Failed to remove ${displayName} from  ${org.value.Name}`);
+      useToastStore().error(
+        wasInvited
+          ? `Failed to revoke the invitation for ${userToRemove?.UserEmail}`
+          : `Failed to remove ${displayName} from  ${org.value.Name}`,
+      );
       throw error;
     } finally {
       userToRemoveId.value = '';
@@ -469,13 +488,25 @@
         <p class="sr-only" aria-live="polite" aria-atomic="true">{{ usersSearchStatusMessage }}</p>
 
         <EGDialog
-          action-label="Remove User"
+          :action-label="removeUserModalActionLabel"
           :action-variant="ButtonVariantEnum.enum.destructive"
           cancel-label="Cancel"
           :cancel-variant="ButtonVariantEnum.enum.secondary"
           @action-triggered="handleRemoveOrgUser"
           :primary-message="removeUserModalPrimaryMessage"
+          :loading="isRemovingUser"
           v-model="isRemoveUserModalOpen"
+        />
+
+        <EGUserAccessDrawer
+          :model-value="!!openUserId"
+          :org-id="props.orgId"
+          :user-id="openUserId || ''"
+          @update:model-value="
+            (open) => {
+              if (!open) closeUserAccessDrawer();
+            }
+          "
         />
 
         <EGTable
@@ -498,10 +529,7 @@
             </div>
           </template>
           <template #status-data="{ row }">
-            <span class="text-muted">
-              <span class="sr-only">Status:</span>
-              {{ (row as OrgUser).OrganizationUserStatus }}
-            </span>
+            <EGUserStatusChip :status="(row as OrgUser).OrganizationUserStatus" />
           </template>
           <template #labs-data="{ row }">
             <span class="text-muted">
@@ -517,7 +545,7 @@
                 size="sm"
                 variant="secondary"
                 label="Resend Invite"
-                v-if="isInvited((row as OrgUser).OrganizationUserStatus)"
+                v-if="isInvited((row as OrgUser).OrganizationUserStatus) && (props.superuser || props.orgAdmin)"
                 :aria-label="`Resend invite to ${(row as OrgUser).displayName}`"
                 @click="
                   $event.stopPropagation();

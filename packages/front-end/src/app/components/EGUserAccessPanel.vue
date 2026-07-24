@@ -28,12 +28,6 @@
 
   const orgAdminToggleId = useId();
 
-  usePageTitle(() =>
-    getSelectedUserDisplayName.value && getSelectedUserDisplayName.value !== '???'
-      ? `Edit access — ${getSelectedUserDisplayName.value}`
-      : 'Edit user access',
-  );
-
   const selectedUserOrgAdmin = computed<boolean | null>(
     () => selectedUser.value?.OrganizationAccess?.[props.orgId]?.OrganizationAdmin ?? null,
   );
@@ -259,14 +253,6 @@
 </script>
 
 <template>
-  <EGPageHeader
-    title="Edit User Access"
-    :show-back="true"
-    :back-action="() => $router.push(`/orgs/${props.orgId}`)"
-    show-org-breadcrumb
-    :breadcrumbs="[getSelectedUserDisplayName !== '???' ? getSelectedUserDisplayName : null]"
-  />
-
   <!-- org admin toggle -->
   <div class="mb-4">
     <!-- loading skeleton -->
@@ -283,9 +269,9 @@
     <!-- toggle -->
     <div
       v-else
-      class="border-stroke-light flex h-[82px] items-center justify-between gap-3 rounded border border-solid bg-white p-4"
+      class="border-stroke-light flex min-h-[82px] items-center justify-between gap-3 rounded border border-solid bg-white p-4"
     >
-      <div class="flex items-center gap-3">
+      <div class="user-summary flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
         <EGUserDisplay
           :initials="getSelectedUserInitials"
           :name="getSelectedUserDisplayName"
@@ -293,7 +279,7 @@
           :inactive="selectedUser.OrganizationUserStatus !== 'Active'"
         />
       </div>
-      <div class="flex items-center">
+      <div class="flex shrink-0 items-center whitespace-nowrap">
         <label :id="orgAdminToggleId" class="text-xs" :for="`${orgAdminToggleId}-input`">Organization Admin</label>
         <UToggle
           :id="`${orgAdminToggleId}-input`"
@@ -379,3 +365,21 @@
     v-model="isRemoveUserDialogOpen"
   />
 </template>
+
+<style scoped lang="scss">
+  // EGUserDisplay's own text column has no width constraint or truncation,
+  // which is fine at full page width but clips abruptly in this drawer's
+  // narrower card. Pierce into it to constrain + ellipsis-truncate instead.
+  .user-summary {
+    :deep(.flex.grow) {
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    :deep(.flex.grow > div) {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+  }
+</style>

@@ -49,3 +49,19 @@ export const RequestLaboratoryUserSchema = z
     UserId: z.string().uuid(),
   })
   .strict();
+
+export const AddBulkLaboratoryUsersSchema = z
+  .object({
+    LaboratoryId: z.string().uuid(),
+    Users: z
+      .array(
+        z.object({
+          UserId: z.string().uuid(),
+          LabManager: z.boolean(),
+          LabTechnician: z.boolean(),
+        }),
+      )
+      .min(1),
+  })
+  .strict();
+export type AddBulkLaboratoryUsers = z.infer<typeof AddBulkLaboratoryUsersSchema>;

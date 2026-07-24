@@ -38,6 +38,7 @@ import {
 } from '../schema/easy-genomics/laboratory';
 import { AddLaboratoryRunSchema, EditLaboratoryRunSchema } from '../schema/easy-genomics/laboratory-run';
 import {
+  AddBulkLaboratoryUsersSchema,
   AddLaboratoryUserSchema,
   EditLaboratoryUserSchema,
   RemoveLaboratoryUserSchema,
@@ -173,6 +174,9 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
   'POST /easy-genomics/laboratory/user/add-laboratory-user': {
     request: AddLaboratoryUserSchema,
     response: 'LaboratoryUser',
+  },
+  'POST /easy-genomics/laboratory/user/add-bulk-laboratory-users': {
+    request: AddBulkLaboratoryUsersSchema,
   },
   'POST /easy-genomics/laboratory/user/edit-laboratory-user': {
     request: EditLaboratoryUserSchema,
