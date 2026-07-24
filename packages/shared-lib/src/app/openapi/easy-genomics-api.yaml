@@ -143,6 +143,9 @@ components:
         instanceType:
           description: <p> The instance type for a task.</p>
           type: string
+        uuid:
+          description: <p>The universally unique identifier (UUID) for the workflow task.</p>
+          type: string
     ReadRunTasks:
       description: Response for GET /aws-healthomics/run/read-run-tasks/{id}.
       type: object

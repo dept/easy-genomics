@@ -511,6 +511,8 @@ export interface components {
       gpus?: number;
       /** @description <p> The instance type for a task.</p> */
       instanceType?: string;
+      /** @description <p>The universally unique identifier (UUID) for the workflow task.</p> */
+      uuid?: string;
     };
     /** @description Response for GET /aws-healthomics/run/read-run-tasks/{id}. */
     ReadRunTasks: {
