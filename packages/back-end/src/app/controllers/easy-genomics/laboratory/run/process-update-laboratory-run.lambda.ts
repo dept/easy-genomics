@@ -25,6 +25,7 @@ import {
   isTerminalLaboratoryRunStatus,
   shouldExpireWithRetentionMonths,
 } from '@BE/utils/laboratory-run-ttl-utils';
+import { aggregateTaskProgress, OmicsTaskProgress } from '@BE/utils/omics-run-progress-utils';
 import { getNextFlowApiQueryParameters, httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -124,12 +125,35 @@ type PlatformRunSnapshot = {
   // HealthOmics surfaces it as `statusMessage`, Seqera as `workflow.errorReport`.
   statusMessage?: string;
   errorReport?: string;
+  progress?: OmicsTaskProgress;
 };
 
 function toMsIfPresent(value: Date | string | undefined): number | undefined {
   if (!value) return undefined;
   const t = value instanceof Date ? value.getTime() : new Date(value).getTime();
   return Number.isFinite(t) ? t : undefined;
+}
+
+function progressFieldsFromSnapshot(progress: OmicsTaskProgress | undefined): Partial<LaboratoryRun> {
+  if (!progress) return {};
+  return {
+    ProgressPercent: progress.percent,
+    TasksTotal: progress.tasksTotal,
+    TasksCompleted: progress.tasksCompleted,
+    TasksRunning: progress.tasksRunning,
+    TasksFailed: progress.tasksFailed,
+  };
+}
+
+function hasProgressChanged(existingRun: LaboratoryRun, progress: OmicsTaskProgress | undefined): boolean {
+  if (!progress) return false;
+  return (
+    existingRun.ProgressPercent !== progress.percent ||
+    existingRun.TasksTotal !== progress.tasksTotal ||
+    existingRun.TasksCompleted !== progress.tasksCompleted ||
+    existingRun.TasksRunning !== progress.tasksRunning ||
+    existingRun.TasksFailed !== progress.tasksFailed
+  );
 }
 
 export async function processStatusCheckEvent(operation: SnsProcessingOperation, laboratoryRun: LaboratoryRun) {
@@ -222,6 +246,7 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         ...(snapshot.durationSeconds != null && existingRun.RunDurationSeconds == null
           ? { RunDurationSeconds: snapshot.durationSeconds }
           : {}),
+        ...progressFieldsFromSnapshot(snapshot.progress),
         ...(newStatusNormalized === 'FAILED' && snapshot.failureReason && existingRun.FailureReason == null
           ? { FailureReason: snapshot.failureReason }
           : {}),
@@ -238,12 +263,19 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
       if (newStatusNormalized === 'FAILED' && existingRun.FailureOwner == null) {
         await safePublishForClassification(laboratoryRun);
       }
-    } else if (snapshot.durationSeconds != null && existingRun.RunDurationSeconds == null) {
-      // No status change, but the platform now reports a duration we hadn't captured yet.
+    } else if (
+      (snapshot.durationSeconds != null && existingRun.RunDurationSeconds == null) ||
+      hasProgressChanged(existingRun, snapshot.progress)
+    ) {
+      // No status change, but duration and/or task progress need persisting.
+      // Progress can change continuously while Status stays RUNNING.
       const now = new Date();
       laboratoryRun = await laboratoryRunService.update({
         ...existingRun,
-        RunDurationSeconds: snapshot.durationSeconds,
+        ...(snapshot.durationSeconds != null && existingRun.RunDurationSeconds == null
+          ? { RunDurationSeconds: snapshot.durationSeconds }
+          : {}),
+        ...progressFieldsFromSnapshot(snapshot.progress),
         ModifiedAt: now.toISOString(),
         ModifiedBy: 'Status Check',
       });
@@ -284,11 +316,24 @@ export async function getAWSHealthOmicsStatus(laboratoryRun: LaboratoryRun): Pro
   const durationSeconds =
     startMs != null && stopMs != null && stopMs >= startMs ? Math.round((stopMs - startMs) / 1000) : undefined;
 
+  const status = response.status || 'UNKNOWN';
+  let progress: OmicsTaskProgress | undefined;
+  if (!isTerminalLaboratoryRunStatus(status) && laboratoryRun.ExternalRunId) {
+    try {
+      const tasks = await omicsService.listRunTasks(laboratoryRun.ExternalRunId);
+      progress = aggregateTaskProgress(tasks);
+    } catch (err) {
+      // Progress is best-effort; do not fail the status-check pipeline if ListRunTasks fails.
+      console.warn(`ListRunTasks failed for RunId=${laboratoryRun.RunId}:`, err);
+    }
+  }
+
   return {
-    status: response.status || 'UNKNOWN',
+    status,
     durationSeconds,
     failureReason: response.failureReason,
     statusMessage: response.statusMessage,
+    progress,
   };
 }
 

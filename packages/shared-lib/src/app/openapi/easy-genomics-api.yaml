@@ -92,6 +92,91 @@ components:
         - name
         - parameters
       additionalProperties: false
+    TaskListItem:
+      description: <p>A workflow run task.</p>
+      type: object
+      properties:
+        taskId:
+          description: <p>The task's ID.</p>
+          type: string
+        status:
+          description: <p>The task's status.</p>
+          enum:
+            - CANCELLED
+            - COMPLETED
+            - FAILED
+            - PENDING
+            - RUNNING
+            - STARTING
+            - STOPPING
+          type: string
+        name:
+          description: <p>The task's name.</p>
+          type: string
+        cpus:
+          description: <p>The task's CPU count.</p>
+          type: number
+        cacheHit:
+          description: <p>Set to true if Amazon Web Services HealthOmics found a matching entry in the run cache for this task.</p>
+          type: boolean
+        cacheS3Uri:
+          description: <p>The S3 URI of the cache location.</p>
+          type: string
+        memory:
+          description: <p>The task's memory use in gigabyes.</p>
+          type: number
+        creationTime:
+          description: <p>When the task was created.</p>
+          type: string
+          format: date-time
+        startTime:
+          description: <p>When the task started.</p>
+          type: string
+          format: date-time
+        stopTime:
+          description: <p>When the task stopped.</p>
+          type: string
+          format: date-time
+        gpus:
+          description: <p> The number of Graphics Processing Units (GPU) specified for the task. </p>
+          type: number
+        instanceType:
+          description: <p> The instance type for a task.</p>
+          type: string
+        uuid:
+          description: <p>The universally unique identifier (UUID) for the workflow task.</p>
+          type: string
+    ReadRunTasks:
+      description: Response for GET /aws-healthomics/run/read-run-tasks/{id}.
+      type: object
+      properties:
+        progress:
+          description: Aggregated task progress derived from HealthOmics ListRunTasks.
+          type: object
+          properties:
+            tasksTotal:
+              type: number
+            tasksCompleted:
+              type: number
+            tasksRunning:
+              type: number
+            tasksFailed:
+              type: number
+            percent:
+              type: number
+          required:
+            - percent
+            - tasksCompleted
+            - tasksFailed
+            - tasksRunning
+            - tasksTotal
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskListItem'
+      required:
+        - progress
+        - tasks
     AddFilesToSampleRequest:
       type: object
       properties:
@@ -1928,6 +2013,24 @@ components:
             - llm
             - lookup
           type: string
+        ProgressPercent:
+          description: |-
+            Approximate task completion percentage derived from HealthOmics ListRunTasks
+            (or Seqera progress when populated). Denominator grows as the workflow DAG
+            expands, so prefer showing TasksCompleted/TasksTotal alongside this value.
+          type: number
+        TasksTotal:
+          description: Total known tasks at last status check (denominator for ProgressPercent).
+          type: number
+        TasksCompleted:
+          description: Tasks in COMPLETED status at last status check.
+          type: number
+        TasksRunning:
+          description: Tasks in RUNNING/STARTING status at last status check.
+          type: number
+        TasksFailed:
+          description: Tasks in FAILED status at last status check.
+          type: number
       required:
         - LaboratoryId
         - OrganizationId
@@ -2019,6 +2122,16 @@ components:
             - llm
             - lookup
           type: string
+        ProgressPercent:
+          type: number
+        TasksTotal:
+          type: number
+        TasksCompleted:
+          type: number
+        TasksRunning:
+          type: number
+        TasksFailed:
+          type: number
       required:
         - LaboratoryId
         - OrganizationId
@@ -6738,6 +6851,39 @@ paths:
           content:
             application/json:
               schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /aws-healthomics/run/read-run-tasks/{id}:
+    get:
+      operationId: readRunTasks
+      summary: Read Run Tasks
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: laboratoryId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Laboratory to verify HealthOmics access
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadRunTasks'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

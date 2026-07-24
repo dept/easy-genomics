@@ -22,6 +22,10 @@ export interface paths {
     /** List Runs */
     get: operations["listRuns"];
   };
+  "/aws-healthomics/run/read-run-tasks/{id}": {
+    /** Read Run Tasks */
+    get: operations["readRunTasks"];
+  };
   "/aws-healthomics/run/read-run/{id}": {
     /** Read Run */
     get: operations["readRun"];
@@ -468,6 +472,59 @@ export interface components {
       storageType?: "STATIC" | "DYNAMIC";
       workflowOwnerId?: string;
       workflowVersionName?: string;
+    };
+    /** @description <p>A workflow run task.</p> */
+    TaskListItem: {
+      /** @description <p>The task's ID.</p> */
+      taskId?: string;
+      /**
+       * @description <p>The task's status.</p>
+       * @enum {string}
+       */
+      status?: "CANCELLED" | "COMPLETED" | "FAILED" | "PENDING" | "RUNNING" | "STARTING" | "STOPPING";
+      /** @description <p>The task's name.</p> */
+      name?: string;
+      /** @description <p>The task's CPU count.</p> */
+      cpus?: number;
+      /** @description <p>Set to true if Amazon Web Services HealthOmics found a matching entry in the run cache for this task.</p> */
+      cacheHit?: boolean;
+      /** @description <p>The S3 URI of the cache location.</p> */
+      cacheS3Uri?: string;
+      /** @description <p>The task's memory use in gigabyes.</p> */
+      memory?: number;
+      /**
+       * Format: date-time
+       * @description <p>When the task was created.</p>
+       */
+      creationTime?: string;
+      /**
+       * Format: date-time
+       * @description <p>When the task started.</p>
+       */
+      startTime?: string;
+      /**
+       * Format: date-time
+       * @description <p>When the task stopped.</p>
+       */
+      stopTime?: string;
+      /** @description <p> The number of Graphics Processing Units (GPU) specified for the task. </p> */
+      gpus?: number;
+      /** @description <p> The instance type for a task.</p> */
+      instanceType?: string;
+      /** @description <p>The universally unique identifier (UUID) for the workflow task.</p> */
+      uuid?: string;
+    };
+    /** @description Response for GET /aws-healthomics/run/read-run-tasks/{id}. */
+    ReadRunTasks: {
+      /** @description Aggregated task progress derived from HealthOmics ListRunTasks. */
+      progress: {
+        tasksTotal: number;
+        tasksCompleted: number;
+        tasksRunning: number;
+        tasksFailed: number;
+        percent: number;
+      };
+      tasks: components["schemas"]["TaskListItem"][];
     };
     AddFilesToSampleRequest: {
       LaboratoryId: string;
@@ -1210,6 +1267,20 @@ export interface components {
        * @enum {string}
        */
       FailureClassifiedBy?: "llm" | "lookup";
+      /**
+       * @description Approximate task completion percentage derived from HealthOmics ListRunTasks
+       * (or Seqera progress when populated). Denominator grows as the workflow DAG
+       * expands, so prefer showing TasksCompleted/TasksTotal alongside this value.
+       */
+      ProgressPercent?: number;
+      /** @description Total known tasks at last status check (denominator for ProgressPercent). */
+      TasksTotal?: number;
+      /** @description Tasks in COMPLETED status at last status check. */
+      TasksCompleted?: number;
+      /** @description Tasks in RUNNING/STARTING status at last status check. */
+      TasksRunning?: number;
+      /** @description Tasks in FAILED status at last status check. */
+      TasksFailed?: number;
     };
     ReadLaboratoryRun: {
       LaboratoryId: string;
@@ -1247,6 +1318,11 @@ export interface components {
       FailureAction?: string;
       /** @enum {string} */
       FailureClassifiedBy?: "llm" | "lookup";
+      ProgressPercent?: number;
+      TasksTotal?: number;
+      TasksCompleted?: number;
+      TasksRunning?: number;
+      TasksFailed?: number;
     };
     UpdateLaboratoryRunRequest: {
       Status: string;
@@ -3391,6 +3467,31 @@ export interface operations {
       200: {
         content: {
           "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Read Run Tasks */
+  readRunTasks: {
+    parameters: {
+      query?: {
+        /** @description Laboratory to verify HealthOmics access */
+        laboratoryId?: string;
+      };
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["ReadRunTasks"];
         };
       };
       400: components["responses"]["BadRequest"];
