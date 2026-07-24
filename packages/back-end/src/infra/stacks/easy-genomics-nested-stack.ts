@@ -45,6 +45,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
    * Lambda's event source via `lambdaFunctionsResources` below.
    */
   laboratoryRunStreamDlq!: Queue;
+  /** DLQ for the run-completion notification sender queue. See constructor for wiring detail. */
+  notificationDlq!: Queue;
 
   constructor(scope: Construct, id: string, props: EasyGenomicsNestedStackProps) {
     super(scope, id);
@@ -60,9 +62,20 @@ export class EasyGenomicsNestedStack extends NestedStack {
         ['user-deletion-topic']: <TopicDetails>{ fifo: true, enforceSSL: true },
         ['laboratory-run-update-topic']: <TopicDetails>{ fifo: true, enforceSSL: true },
         ['laboratory-run-failure-classification-topic']: <TopicDetails>{ fifo: true, enforceSSL: true },
+        ['laboratory-run-notification-topic']: <TopicDetails>{ fifo: true, enforceSSL: true },
         ['user-invite-topic']: <TopicDetails>{ fifo: true, enforceSSL: true },
         ['folder-download-topic']: <TopicDetails>{ fifo: true, enforceSSL: true },
       },
+    });
+
+    // Dead-letter queue for the run-completion notification sender. A message that fails to
+    // send (systemic SES failure, not a single bad address — those are caught inside the
+    // sender) lands here after 3 attempts for manual inspection instead of blocking the queue.
+    this.notificationDlq = new Queue(this, `${this.props.namePrefix}-laboratory-run-notification-dlq`, {
+      queueName: `${this.props.namePrefix}-laboratory-run-notification-dlq.fifo`,
+      fifo: true,
+      retentionPeriod: Duration.days(14),
+      enforceSSL: true,
     });
 
     this.sqs = new SqsConstruct(this, `${this.props.constructNamespace}-sqs`, {
@@ -106,6 +119,14 @@ export class EasyGenomicsNestedStack extends NestedStack {
           visibilityTimeout: Duration.minutes(5),
           snsTopics: [this.sns.snsTopics.get('laboratory-run-failure-classification-topic')],
           enforceSSL: true,
+        },
+        ['laboratory-run-notification-queue']: <QueueDetails>{
+          fifo: true,
+          retentionPeriod: Duration.days(1),
+          visibilityTimeout: Duration.minutes(5),
+          snsTopics: [this.sns.snsTopics.get('laboratory-run-notification-topic')],
+          enforceSSL: true,
+          deadLetterQueue: { queue: this.notificationDlq, maxReceiveCount: 3 },
         },
         ['user-invite-queue']: <QueueDetails>{
           fifo: true,
@@ -285,6 +306,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
             SNS_LABORATORY_RUN_UPDATE_TOPIC: this.sns.snsTopics.get('laboratory-run-update-topic')?.topicArn || '',
             SNS_LABORATORY_RUN_FAILURE_CLASSIFICATION_TOPIC:
               this.sns.snsTopics.get('laboratory-run-failure-classification-topic')?.topicArn || '',
+            SNS_LABORATORY_RUN_NOTIFICATION_TOPIC:
+              this.sns.snsTopics.get('laboratory-run-notification-topic')?.topicArn || '',
           },
         },
         // Async classifier consumer for FAILED runs. Idempotent (skips runs that already
@@ -1282,6 +1305,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
       new PolicyStatement({
         resources: [`${this.sns.snsTopics.get('laboratory-run-failure-classification-topic')?.topicArn || ''}`],
+        actions: ['sns:Publish'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [`${this.sns.snsTopics.get('laboratory-run-notification-topic')?.topicArn || ''}`],
         actions: ['sns:Publish'],
         effect: Effect.ALLOW,
       }),

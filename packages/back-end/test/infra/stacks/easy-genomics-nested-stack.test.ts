@@ -2,6 +2,7 @@ import { App, Stack } from 'aws-cdk-lib';
 import { IamConstruct } from '../../../src/infra/constructs/iam-construct';
 import { LambdaConstruct } from '../../../src/infra/constructs/lambda-construct';
 import { SesConstruct } from '../../../src/infra/constructs/ses-construct';
+import { SqsConstruct } from '../../../src/infra/constructs/sqs-construct';
 import { EasyGenomicsNestedStack } from '../../../src/infra/stacks/easy-genomics-nested-stack';
 
 jest.mock('aws-cdk-lib/aws-lambda-event-sources', () => ({
@@ -35,6 +36,7 @@ jest.mock('../../../src/infra/constructs/sns-construct', () => ({
       ['laboratory-deletion-topic', { topicArn: 'arn:aws:sns:lab', addToResourcePolicy: jest.fn() }],
       ['user-deletion-topic', { topicArn: 'arn:aws:sns:user', addToResourcePolicy: jest.fn() }],
       ['laboratory-run-update-topic', { topicArn: 'arn:aws:sns:run', addToResourcePolicy: jest.fn() }],
+      ['laboratory-run-notification-topic', { topicArn: 'arn:aws:sns:run-notify', addToResourcePolicy: jest.fn() }],
       ['user-invite-topic', { topicArn: 'arn:aws:sns:invite', addToResourcePolicy: jest.fn() }],
       ['folder-download-topic', { topicArn: 'arn:aws:sns:folder-download', addToResourcePolicy: jest.fn() }],
     ]),
@@ -48,6 +50,7 @@ jest.mock('../../../src/infra/constructs/sqs-construct', () => ({
       ['laboratory-management-queue', {}],
       ['user-management-queue', {}],
       ['laboratory-run-update-queue', {}],
+      ['laboratory-run-notification-queue', {}],
       ['user-invite-queue', {}],
       ['folder-download-queue', {}],
     ]),
@@ -132,6 +135,33 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     const sesProps = sesConstructMock.mock.calls[0][2];
     expect(sesProps.envType).toBe('dev');
     expect(sesProps.envName).toBe('sandbox');
+  });
+
+  it('wires the notification queue with a dead-letter queue', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const sqsConstructMock = SqsConstruct as unknown as jest.Mock;
+    const sqsProps = sqsConstructMock.mock.calls[0][2];
+    const notificationQueueConfig = sqsProps.queues['laboratory-run-notification-queue'];
+
+    expect(notificationQueueConfig.fifo).toBe(true);
+    expect(notificationQueueConfig.deadLetterQueue).toBeDefined();
+    expect(notificationQueueConfig.deadLetterQueue.maxReceiveCount).toBe(3);
+  });
+
+  it('wires the new notification topic ARN into the existing process-update-laboratory-run lambda', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const lambdaConstructMock = LambdaConstruct as unknown as jest.Mock;
+    const lambdaProps = lambdaConstructMock.mock.calls[0][2];
+    const triggerConfig =
+      lambdaProps.lambdaFunctionsResources['/easy-genomics/laboratory/run/process-update-laboratory-run'];
+
+    expect(triggerConfig.environment.SNS_LABORATORY_RUN_NOTIFICATION_TOPIC).toBe('arn:aws:sns:run-notify');
   });
 
   it('adds IAM policy statements for top-level bucket objects endpoint', () => {
