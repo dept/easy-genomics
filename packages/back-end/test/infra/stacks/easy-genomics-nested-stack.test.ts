@@ -263,6 +263,24 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     );
   });
 
+  it('adds sns:Publish IAM policy for process-poll-active-runs to re-enqueue status checks', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/laboratory/run/process-poll-active-runs',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['sns:Publish']),
+        }),
+      ]),
+    );
+  });
+
   it('schedules the active-run poller on a 2-minute interval', () => {
     const app = new App();
     const parentStack = new Stack(app, 'parent-stack');

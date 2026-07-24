@@ -1258,6 +1258,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: ['dynamodb:Query'],
         effect: Effect.ALLOW,
       }),
+      new PolicyStatement({
+        resources: [`${this.sns.snsTopics.get('laboratory-run-update-topic')?.topicArn || ''}`],
+        actions: ['sns:Publish'],
+        effect: Effect.ALLOW,
+      }),
     ]);
 
     // /easy-genomics/laboratory/run/process-notify-laboratory-run-completion
