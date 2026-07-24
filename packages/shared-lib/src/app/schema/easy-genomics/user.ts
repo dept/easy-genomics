@@ -39,6 +39,10 @@ export const UserSchema = z.object({
   OmicsWorkflowDefaultParams: z.record(z.string(), z.record(z.string(), z.any())).optional(),
   FavouriteWorkflows: z.array(FavouriteWorkflowSchema).optional(),
   AnalyticsConsent: AnalyticsConsentSchema.optional(),
+  /** Email me when my own runs finish. Defaults to `false` (opt-in) at the application layer. */
+  NotifyOnOwnRuns: z.boolean().optional(),
+  /** Applies whichever way the user ends up notified (as owner or as an opted-in lab member). */
+  NotificationEventFilter: z.enum(['all_terminal', 'failures_only']).optional(),
   CreatedAt: z.string().optional(),
   CreatedBy: z.string().optional(),
   ModifiedAt: z.string().optional(),
@@ -65,6 +69,10 @@ export const UpdateUserSchema = z
     OmicsWorkflowDefaultParams: z.record(z.string(), z.record(z.string(), z.any())).optional(),
     FavouriteWorkflows: z.array(FavouriteWorkflowSchema).optional(),
     AnalyticsConsent: AnalyticsConsentSchema.optional(),
+    /** Email me when my own runs finish. Defaults to `false` (opt-in) at the application layer. */
+    NotifyOnOwnRuns: z.boolean().optional(),
+    /** Applies whichever way the user ends up notified (as owner or as an opted-in lab member). */
+    NotificationEventFilter: z.enum(['all_terminal', 'failures_only']).optional(),
   })
   .strict();
 export type UpdateUser = z.infer<typeof UpdateUserSchema>;

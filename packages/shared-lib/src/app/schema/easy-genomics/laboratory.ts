@@ -23,6 +23,12 @@ export const LaboratorySchema = z
     RunRetentionMonths: z.number().int().min(0).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
     /**
+     * Lab-manager kill switch for run-completion email notifications. Defaults to `true`
+     * (enabled) at the application layer when absent. Does not itself subscribe anyone —
+     * individual opt-in still gates whether any email is actually sent.
+     */
+    NotificationsEnabled: z.boolean().optional(),
+    /**
      * BYOK provider selection per integration. Setting a provider IS the enable
      * signal — when set, ambiguous HealthOmics failures (WORKFLOW_RUN_FAILED,
      * generic RUN_TASK_FAILED) and free-text Seqera errors are sent to the
@@ -68,6 +74,7 @@ export const CreateLaboratorySchema = z
     AwsHealthOmicsVpcConfigurationName: z.string().max(50).optional(),
     RunRetentionMonths: z.number().int().min(0).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
+    NotificationsEnabled: z.boolean().optional(),
     HealthOmicsLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
     HealthOmicsLlmModelId: z.string().optional(),
     SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
@@ -109,6 +116,7 @@ export const ReadLaboratorySchema = z
     HasGitHubAccessToken: z.boolean().optional(), // Return boolean indicator instead of actual GitHubAccessToken
     RunRetentionMonths: z.number().int().min(0).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
+    NotificationsEnabled: z.boolean().optional(),
     HealthOmicsLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
     HealthOmicsLlmModelId: z.string().optional(),
     SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
@@ -150,6 +158,7 @@ export const UpdateLaboratorySchema = z
     AwsHealthOmicsVpcConfigurationName: z.string().max(50).optional(),
     RunRetentionMonths: z.number().int().min(0).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
+    NotificationsEnabled: z.boolean().optional(),
     HealthOmicsLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
     HealthOmicsLlmModelId: z.string().optional(),
     SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),

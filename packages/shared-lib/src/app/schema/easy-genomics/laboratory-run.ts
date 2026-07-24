@@ -90,6 +90,19 @@ export const LaboratoryRunSchema = z
      * AI-assisted disclaimer in the UI and for ops debugging.
      */
     FailureClassifiedBy: z.enum(['lookup', 'llm']).optional(),
+    /**
+     * Sparse marker present only while the run is non-terminal. Backs the `PollStatus_Index`
+     * GSI so the notification poller can query "every active run" in O(1) regardless of total
+     * run history, instead of scanning or iterating every lab. Removed (not set false) on the
+     * non-terminal -> terminal transition.
+     */
+    PollStatus: z.literal('ACTIVE').optional(),
+    /**
+     * ISO timestamp set exactly once, guarded by a conditional write
+     * (`attribute_not_exists(NotifiedAt)`), the first time a terminal-state notification is
+     * published for this run. Prevents a duplicate status-check message from double-emailing.
+     */
+    NotifiedAt: z.string().optional(),
   })
   .strict();
 export type LaboratoryRun = z.infer<typeof LaboratoryRunSchema>;

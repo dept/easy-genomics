@@ -1530,6 +1530,8 @@ components:
           minimum: 0
         EnableNewWorkflowsByDefault:
           type: boolean
+        NotificationsEnabled:
+          type: boolean
         HealthOmicsLlmProvider:
           type: string
           enum:
@@ -1709,6 +1711,8 @@ components:
         RunRetentionMonths:
           type: number
         EnableNewWorkflowsByDefault:
+          type: boolean
+        NotificationsEnabled:
           type: boolean
         HealthOmicsLlmProvider:
           enum:
@@ -1928,6 +1932,20 @@ components:
             - llm
             - lookup
           type: string
+        PollStatus:
+          description: |-
+            Sparse marker present only while the run is non-terminal. Backs the `PollStatus_Index`
+            GSI so the notification poller can query "every active run" in O(1) regardless of total
+            run history, instead of scanning or iterating every lab. Removed (not set false) on the
+            non-terminal -> terminal transition.
+          const: ACTIVE
+          type: string
+        NotifiedAt:
+          description: |-
+            ISO timestamp set exactly once, guarded by a conditional write
+            (`attribute_not_exists(NotifiedAt)`), the first time a terminal-state notification is
+            published for this run. Prevents a duplicate status-check message from double-emailing.
+          type: string
       required:
         - LaboratoryId
         - OrganizationId
@@ -2085,6 +2103,8 @@ components:
           type: integer
           minimum: 0
         EnableNewWorkflowsByDefault:
+          type: boolean
+        NotificationsEnabled:
           type: boolean
         HealthOmicsLlmProvider:
           type: string
@@ -2865,6 +2885,13 @@ components:
             - unset
             - granted
             - denied
+        NotifyOnOwnRuns:
+          type: boolean
+        NotificationEventFilter:
+          type: string
+          enum:
+            - all_terminal
+            - failures_only
       additionalProperties: false
     ListComputeEnvsResponse:
       type: object
