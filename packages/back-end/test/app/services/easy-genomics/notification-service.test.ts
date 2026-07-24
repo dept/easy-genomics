@@ -157,4 +157,33 @@ describe('NotificationService.notifyRunCompletion', () => {
 
     expect(result.sent).toBe(0);
   });
+
+  it('deduplicates when owner has NotifyOnOwnRuns=true and also appears in lab-member list with NotifyOnLabRuns=true', async () => {
+    (userServiceInstance.get as jest.Mock).mockResolvedValue({
+      UserId: 'owner-1',
+      Email: 'owner@example.com',
+      NotifyOnOwnRuns: true,
+    });
+    (LaboratoryUserService as jest.MockedClass<typeof LaboratoryUserService>).prototype.queryByLaboratoryId = jest
+      .fn()
+      .mockResolvedValue([
+        { UserId: 'owner-1', NotifyOnLabRuns: true },
+        { UserId: 'member-2', NotifyOnLabRuns: true },
+      ]);
+    (userServiceInstance.listUsers as jest.Mock).mockResolvedValue([
+      { UserId: 'owner-1', Email: 'owner@example.com' },
+      { UserId: 'member-2', Email: 'member2@example.com' },
+    ]);
+
+    const service = new NotificationService();
+    const result = await service.notifyRunCompletion(run);
+
+    expect(result.sent).toBe(2);
+    expect(sesServiceInstance.sendRunCompletionEmail).toHaveBeenCalledTimes(2);
+    const calledAddresses = (sesServiceInstance.sendRunCompletionEmail as jest.Mock).mock.calls.map((c) => c[0]);
+    expect(calledAddresses.sort()).toEqual(['member2@example.com', 'owner@example.com']);
+    // Specifically assert the owner's email was sent exactly once, not twice
+    const ownerCallCount = calledAddresses.filter((addr) => addr === 'owner@example.com').length;
+    expect(ownerCallCount).toBe(1);
+  });
 });
