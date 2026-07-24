@@ -209,4 +209,32 @@ describe('create-laboratory-run.lambda', () => {
     expect(result.statusCode).toBe(403);
     expect(mockRunService.prototype.add).not.toHaveBeenCalled();
   });
+
+  it('sets PollStatus=ACTIVE on a newly created non-terminal run', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      LaboratoryId: LAB_ID,
+      OrganizationId: '00000000-0000-0000-0000-000000000001',
+    });
+    const addSpy = jest.fn().mockImplementation((run) => Promise.resolve(run));
+    mockRunService.prototype.add = addSpy;
+
+    const event = createEvent(baseRequest);
+    await handler(event, createContext(), () => {});
+
+    expect(addSpy).toHaveBeenCalledWith(expect.objectContaining({ PollStatus: 'ACTIVE' }));
+  });
+
+  it('does not set PollStatus when the run is created already terminal', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      LaboratoryId: LAB_ID,
+      OrganizationId: '00000000-0000-0000-0000-000000000001',
+    });
+    const addSpy = jest.fn().mockImplementation((run) => Promise.resolve(run));
+    mockRunService.prototype.add = addSpy;
+
+    const event = createEvent({ ...baseRequest, Status: 'COMPLETED' });
+    await handler(event, createContext(), () => {});
+
+    expect(addSpy).toHaveBeenCalledWith(expect.not.objectContaining({ PollStatus: 'ACTIVE' }));
+  });
 });

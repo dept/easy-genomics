@@ -95,7 +95,7 @@ export const handler: Handler = async (
       Settings: JSON.stringify(request.Settings || {}),
       CreatedAt: createdAt.toISOString(),
       CreatedBy: currentUserId,
-      ...(isTerminalAtCreate ? { TerminalAt: createdAt.toISOString() } : {}),
+      ...(isTerminalAtCreate ? { TerminalAt: createdAt.toISOString() } : { PollStatus: 'ACTIVE' as const }),
       ...(laboratorioRunExpiresAt !== undefined ? { ExpiresAt: laboratorioRunExpiresAt } : {}),
     });
 
