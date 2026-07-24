@@ -336,6 +336,15 @@ export class EasyGenomicsApiStack extends Stack {
             type: AttributeType.STRING,
           },
         },
+        {
+          partitionKey: {
+            // Sparse GSI: only runs currently non-terminal carry this attribute, so the index
+            // stays small regardless of total historical run volume. Backs the notification
+            // poller's "every active run" query.
+            name: 'PollStatus',
+            type: AttributeType.STRING,
+          },
+        },
       ],
       lsi: baseLSIAttributes,
     });
