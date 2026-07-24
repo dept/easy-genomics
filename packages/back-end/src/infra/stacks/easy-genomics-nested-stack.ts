@@ -368,6 +368,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
             },
           ],
         },
+        // SQS consumer for the run-completion notification queue. See
+        // process-notify-laboratory-run-completion.lambda.ts and NotificationService.
+        '/easy-genomics/laboratory/run/process-notify-laboratory-run-completion': {
+          events: [new SqsEventSource(this.sqs.sqsQueues.get('laboratory-run-notification-queue')!, { batchSize: 5 })],
+        },
         '/easy-genomics/organization/workflow-access/list-workflow-catalog': {
           environment: {
             SEQERA_API_BASE_URL: this.props.seqeraApiBaseUrl,
@@ -1242,6 +1247,41 @@ export class EasyGenomicsNestedStack extends NestedStack {
         ],
         actions: ['dynamodb:Query'],
         effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/laboratory/run/process-notify-laboratory-run-completion
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/run/process-notify-laboratory-run-completion', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-user-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-user-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-user-table`,
+        ],
+        actions: ['dynamodb:GetItem', 'dynamodb:BatchGetItem'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:ses:${this.props.env.region!}:${this.props.env.account!}:identity/${this.props.appDomainName}`,
+          `arn:aws:ses:${this.props.env.region!}:${this.props.env.account!}:identity/*@*`,
+          `arn:aws:ses:${this.props.env.region!}:${this.props.env.account!}:template/*`,
+        ],
+        actions: ['ses:SendTemplatedEmail'],
+        effect: Effect.ALLOW,
+        conditions: {
+          StringEquals: {
+            'ses:FromAddress': `no.reply@${this.props.appDomainName}`,
+          },
+        },
       }),
     ]);
 

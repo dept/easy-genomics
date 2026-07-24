@@ -276,4 +276,18 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     expect(pollerConfig.environment.SNS_LABORATORY_RUN_UPDATE_TOPIC).toBe('arn:aws:sns:run');
     expect(pollerConfig.callbacks).toHaveLength(1);
   });
+
+  it('wires the notification sender to the notification queue', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const lambdaConstructMock = LambdaConstruct as unknown as jest.Mock;
+    const lambdaProps = lambdaConstructMock.mock.calls[0][2];
+    const senderConfig =
+      lambdaProps.lambdaFunctionsResources['/easy-genomics/laboratory/run/process-notify-laboratory-run-completion'];
+
+    expect(senderConfig).toBeDefined();
+    expect(senderConfig.events).toHaveLength(1);
+  });
 });
