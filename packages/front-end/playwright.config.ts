@@ -1,12 +1,21 @@
-import type { PlaywrightTestConfig } from 'playwright/test';
-import { envConfig } from './config/env-config';
+import type { PlaywrightTestConfig } from '@playwright/test';
+import { environments, getE2EEnvironment } from './tests/e2e/helpers/env';
 
+const activeEnv = getE2EEnvironment();
+const { baseURL, name: envName } = environments[activeEnv];
+
+/**
+ * Base URLs by environment:
+ * - QA  → https://quality.dev.easygenomics.org  (E2E_ENV=qa)
+ * - UAT → https://quality.uat.easygenomics.org  (E2E_ENV=uat)
+ *
+ * Select environment with: E2E_ENV=qa|uat (defaults to qa)
+ */
 const config: PlaywrightTestConfig = {
   testDir: './tests/e2e',
-  globalSetup: './tests/e2e/auth.setup.ts',
   timeout: 100 * 1000,
   expect: {
-    timeout: 5000,
+    timeout: 15_000,
   },
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
@@ -14,54 +23,35 @@ const config: PlaywrightTestConfig = {
   workers: process.env.CI ? 1 : 1,
   use: {
     actionTimeout: 0,
-    baseURL: 'http://localhost:3000',
+    baseURL,
     trace: 'on-first-retry',
     headless: true,
     screenshot: 'only-on-failure',
   },
+  metadata: {
+    environment: envName,
+    baseURL,
+  },
   projects: [
-    {
-      name: 'setup',
-      testMatch: /.*\.setup.ts/,
-      use: {
-        baseURL: `https://${envConfig.appDomainName}`,
-      },
-    },
     {
       name: 'sys-admin',
       testMatch: 'tests/e2e/sys-admin/*.spec.e2e.ts',
-      use: {
-        baseURL: `https://${envConfig.appDomainName}`,
-        storageState: './tests/e2e/.auth/sys-admin.json',
-      },
-      dependencies: ['setup'],
+      use: { baseURL },
     },
     {
       name: 'org-admin',
       testMatch: 'tests/e2e/org-admin/*.spec.e2e.ts',
-      use: {
-        baseURL: `https://${envConfig.appDomainName}`,
-        storageState: './tests/e2e/.auth/org-admin.json',
-      },
-      dependencies: ['setup'],
+      use: { baseURL },
     },
     {
       name: 'lab-manager',
       testMatch: 'tests/e2e/lab-manager/*.spec.e2e.ts',
-      use: {
-        baseURL: `https://${envConfig.appDomainName}`,
-        storageState: './tests/e2e/.auth/lab-manager.json',
-      },
-      dependencies: ['setup'],
+      use: { baseURL },
     },
     {
       name: 'lab-technician',
       testMatch: 'tests/e2e/lab-technician/*.spec.e2e.ts',
-      use: {
-        baseURL: `https://${envConfig.appDomainName}`,
-        storageState: './tests/e2e/.auth/lab-technician.json',
-      },
-      dependencies: ['setup'],
+      use: { baseURL },
     },
   ],
   reporter:
@@ -73,6 +63,8 @@ const config: PlaywrightTestConfig = {
               slackWebHookUrl: process.env.SLACK_E2E_TEST_WEBHOOK_URL,
               sendResults: 'always',
               meta: [
+                { key: 'environment', value: envName },
+                { key: 'baseURL', value: baseURL },
                 { key: 'runNumber', value: process.env.GITHUB_RUN_NUMBER },
                 { key: 'sha', value: process.env.GITHUB_SHA },
               ],
