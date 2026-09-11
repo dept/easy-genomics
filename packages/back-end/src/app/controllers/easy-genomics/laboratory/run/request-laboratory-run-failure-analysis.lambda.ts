@@ -57,15 +57,16 @@ export const handler: Handler = async (
     if (configError) throw new LaboratoryLlmConfigurationInvalidError(configError);
 
     const requestedAt = new Date().toISOString();
-    await laboratoryRunService.update({
-      ...run,
-      AnalysisStatus: 'Queued',
-      AnalysisErrorCode: undefined,
-      AnalysisErrorMessage: undefined,
-      AnalysisRequestedAt: requestedAt,
-      ModifiedAt: requestedAt,
-      ModifiedBy: event.requestContext.authorizer.claims['cognito:username'],
-    });
+    await laboratoryRunService.updateWithAttributeRemoval(
+      {
+        ...run,
+        AnalysisStatus: 'Queued',
+        AnalysisRequestedAt: requestedAt,
+        ModifiedAt: requestedAt,
+        ModifiedBy: event.requestContext.authorizer.claims['cognito:username'],
+      },
+      ['AnalysisErrorCode', 'AnalysisErrorMessage'],
+    );
 
     const message: SnsProcessingEvent = { Operation: 'UPDATE', Type: 'LaboratoryRun', Record: run, Trigger: 'Manual' };
     await sqsService.sendMessage({

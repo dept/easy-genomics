@@ -35,6 +35,7 @@ import { SsmService } from '../../../../../../src/app/services/ssm-service';
 describe('process-classify-laboratory-run-failure.lambda', () => {
   let mockQueryByRunId: jest.Mock;
   let mockUpdate: jest.Mock;
+  let mockUpdateWithRemoval: jest.Mock;
   let mockQueryByLaboratoryId: jest.Mock;
   let mockGetParameter: jest.Mock;
 
@@ -70,11 +71,14 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
     mockFetchRedactedLogExcerpt.mockResolvedValue(undefined);
     mockQueryByRunId = jest.fn();
     mockUpdate = jest.fn().mockResolvedValue(undefined);
+    mockUpdateWithRemoval = jest.fn().mockResolvedValue(undefined);
     mockQueryByLaboratoryId = jest.fn().mockResolvedValue(labMixedProviders);
     mockGetParameter = jest.fn().mockResolvedValue({ Parameter: { Value: 'sk-seqera-key' } });
 
     (LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>).prototype.queryByRunId = mockQueryByRunId;
     (LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>).prototype.update = mockUpdate;
+    (LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>).prototype.updateWithAttributeRemoval =
+      mockUpdateWithRemoval;
     (LaboratoryService as jest.MockedClass<typeof LaboratoryService>).prototype.queryByLaboratoryId =
       mockQueryByLaboratoryId;
     (SsmService as jest.MockedClass<typeof SsmService>).prototype.getParameter = mockGetParameter;
@@ -93,8 +97,9 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
 
     expect(mockClassify).not.toHaveBeenCalled();
     expect(mockGetParameter).not.toHaveBeenCalled();
-    expect(mockUpdate).toHaveBeenCalledWith(
+    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(
       expect.objectContaining({ FailureOwner: 'Bioinformatician', FailureClassifiedBy: 'lookup' }),
+      ['AnalysisErrorCode', 'AnalysisErrorMessage'],
     );
   });
 
@@ -280,8 +285,9 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 
     expect(mockClassify).not.toHaveBeenCalled();
-    expect(mockUpdate).toHaveBeenCalledWith(
+    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(
       expect.objectContaining({ FailureOwner: 'Bioinformatician', FailureClassifiedBy: 'lookup' }),
+      ['AnalysisErrorCode', 'AnalysisErrorMessage'],
     );
   });
 
@@ -300,8 +306,9 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
 
     expect(mockClassify).not.toHaveBeenCalled();
     expect(mockGetParameter).not.toHaveBeenCalled();
-    expect(mockUpdate).toHaveBeenCalledWith(
+    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(
       expect.objectContaining({ FailureOwner: 'Bioinformatician', FailureClassifiedBy: 'lookup' }),
+      ['AnalysisErrorCode', 'AnalysisErrorMessage'],
     );
   });
 
@@ -323,8 +330,9 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
 
     expect(mockClassify).not.toHaveBeenCalled();
     expect(mockGetParameter).not.toHaveBeenCalled();
-    expect(mockUpdate).toHaveBeenCalledWith(
+    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(
       expect.objectContaining({ AnalysisStatus: 'Failed', AnalysisErrorCode: 'CONFIG_INCOMPLETE' }),
+      [],
     );
   });
 
@@ -341,8 +349,9 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 
     expect(mockClassify).not.toHaveBeenCalled();
-    expect(mockUpdate).toHaveBeenCalledWith(
+    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(
       expect.objectContaining({ AnalysisStatus: 'Failed', AnalysisErrorCode: 'CONFIG_INCOMPLETE' }),
+      [],
     );
   });
 
@@ -364,8 +373,9 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
 
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 
-    expect(mockUpdate).toHaveBeenCalledWith(
+    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(
       expect.objectContaining({ FailureOwner: 'Bioinformatician', FailureClassifiedBy: 'lookup' }),
+      ['AnalysisErrorCode', 'AnalysisErrorMessage'],
     );
   });
 
@@ -386,8 +396,9 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 
     expect(mockClassify).not.toHaveBeenCalled();
-    expect(mockUpdate).toHaveBeenCalledWith(
+    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(
       expect.objectContaining({ AnalysisStatus: 'Failed', AnalysisErrorCode: 'CONFIG_INCOMPLETE' }),
+      [],
     );
   });
 
@@ -429,7 +440,10 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
 
     expect(mockFetchRedactedLogExcerpt).toHaveBeenCalled();
     expect(mockClassify.mock.calls[0][0].logExcerpt).toBe('Caused by: OutOfMemoryError in task FOO');
-    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ FailureClassifiedBy: 'llm' }));
+    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(
+      expect.objectContaining({ FailureClassifiedBy: 'llm' }),
+      ['AnalysisErrorCode', 'AnalysisErrorMessage'],
+    );
   });
 
   it('enriches even a lookup-matched HealthOmics code when the toggle is on', async () => {
@@ -450,8 +464,9 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 
     expect(mockClassify).toHaveBeenCalled();
-    expect(mockUpdate).toHaveBeenCalledWith(
+    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(
       expect.objectContaining({ FailureSummary: 'FASTQC OOM', FailureClassifiedBy: 'llm' }),
+      ['AnalysisErrorCode', 'AnalysisErrorMessage'],
     );
   });
 
@@ -476,8 +491,9 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
 
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 
-    expect(mockUpdate).toHaveBeenCalledWith(
+    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(
       expect.objectContaining({ FailureOwner: 'Bioinformatician', FailureClassifiedBy: 'lookup' }),
+      [],
     );
   });
 
@@ -492,7 +508,7 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
 
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockUpdateWithRemoval).not.toHaveBeenCalled();
     expect(mockQueryByLaboratoryId).not.toHaveBeenCalled();
   });
 
@@ -540,7 +556,7 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
       Status: 'FAILED',
       FailureReason: 'OUT_OF_MEMORY_ERROR',
     });
-    mockUpdate.mockRejectedValue(new Error('DynamoDB unavailable'));
+    mockUpdateWithRemoval.mockRejectedValue(new Error('DynamoDB unavailable'));
     const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
 
     await expect(processClassificationEvent('UPDATE', { RunId: 'run-1' } as any)).rejects.toThrow(
@@ -566,6 +582,7 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
 describe('processClassificationEvent — trigger, toggle, and analysis status', () => {
   let mockQueryByRunId: jest.Mock;
   let mockUpdate: jest.Mock;
+  let mockUpdateWithRemoval: jest.Mock;
   let mockQueryByLaboratoryId: jest.Mock;
 
   const failedRun = {
@@ -592,10 +609,13 @@ describe('processClassificationEvent — trigger, toggle, and analysis status', 
     mockFetchRedactedLogExcerpt.mockResolvedValue(undefined);
     mockQueryByRunId = jest.fn().mockResolvedValue(failedRun);
     mockUpdate = jest.fn().mockResolvedValue(undefined);
+    mockUpdateWithRemoval = jest.fn().mockResolvedValue(undefined);
     mockQueryByLaboratoryId = jest.fn().mockResolvedValue(labWithLlm);
 
     (LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>).prototype.queryByRunId = mockQueryByRunId;
     (LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>).prototype.update = mockUpdate;
+    (LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>).prototype.updateWithAttributeRemoval =
+      mockUpdateWithRemoval;
     (LaboratoryService as jest.MockedClass<typeof LaboratoryService>).prototype.queryByLaboratoryId =
       mockQueryByLaboratoryId;
 
@@ -649,33 +669,38 @@ describe('processClassificationEvent — trigger, toggle, and analysis status', 
       expect(statuses).not.toContain('Running');
     });
 
-    it('writes Succeeded with the classification on success', async () => {
+    it('writes Succeeded with the classification on success, clearing any previous analysis error', async () => {
       mockClassify.mockResolvedValue({
         outcome: 'classified',
         result: { owner: 'Lab', summary: 'Bad sample sheet.', action: 'Re-upload it.' },
       });
       await processClassificationEvent('UPDATE', failedRun, 'Manual');
-      expect(mockUpdate).toHaveBeenLastCalledWith(
+      expect(mockUpdateWithRemoval).toHaveBeenLastCalledWith(
         expect.objectContaining({
           AnalysisStatus: 'Succeeded',
           FailureOwner: 'Lab',
           FailureClassifiedBy: 'llm',
         }),
+        ['AnalysisErrorCode', 'AnalysisErrorMessage'],
       );
+      const [payload] = mockUpdateWithRemoval.mock.calls[mockUpdateWithRemoval.mock.calls.length - 1];
+      expect(payload).not.toHaveProperty('AnalysisErrorCode');
+      expect(payload).not.toHaveProperty('AnalysisErrorMessage');
     });
 
-    it('writes Failed with the error code when the provider fails', async () => {
+    it('writes Failed with the error code when the provider fails, with an empty REMOVE list', async () => {
       mockClassify.mockResolvedValue({
         outcome: 'failed',
         error: { code: 'INVALID_MODEL_ID', message: 'bad model', retryable: false },
       });
       await processClassificationEvent('UPDATE', { ...failedRun, FailureReason: 'UNKNOWN_CODE' }, 'Manual');
-      expect(mockUpdate).toHaveBeenLastCalledWith(
+      expect(mockUpdateWithRemoval).toHaveBeenLastCalledWith(
         expect.objectContaining({
           AnalysisStatus: 'Failed',
           AnalysisErrorCode: 'INVALID_MODEL_ID',
           AnalysisErrorMessage: 'bad model',
         }),
+        [],
       );
     });
 
@@ -690,13 +715,14 @@ describe('processClassificationEvent — trigger, toggle, and analysis status', 
         error: { code: 'RATE_LIMITED', message: 'slow down', retryable: true },
       });
       await processClassificationEvent('UPDATE', { ...failedRun, FailureReason: 'ECR_PERMISSION_ERROR' }, 'Manual');
-      expect(mockUpdate).toHaveBeenLastCalledWith(
+      expect(mockUpdateWithRemoval).toHaveBeenLastCalledWith(
         expect.objectContaining({
           AnalysisStatus: 'Failed',
           AnalysisErrorCode: 'RATE_LIMITED',
           FailureOwner: 'Bioinformatician',
           FailureClassifiedBy: 'lookup',
         }),
+        [],
       );
     });
   });

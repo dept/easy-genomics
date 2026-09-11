@@ -157,22 +157,26 @@ export async function processClassificationEvent(
     const resolved = await resolveClassification(existingRun, laboratory);
 
     const classification = resolved.kind === 'classified' ? resolved : resolved.fallback;
-    await laboratoryRunService.update({
-      ...existingRun,
-      ...(classification
-        ? {
-            FailureOwner: classification.result.owner,
-            FailureSummary: classification.result.summary,
-            FailureAction: classification.result.action,
-            FailureClassifiedBy: classification.source,
-          }
-        : {}),
-      AnalysisStatus: resolved.kind === 'failed' ? 'Failed' : 'Succeeded',
-      AnalysisErrorCode: resolved.kind === 'failed' ? resolved.error.code : undefined,
-      AnalysisErrorMessage: resolved.kind === 'failed' ? resolved.error.message : undefined,
-      ModifiedAt: new Date().toISOString(),
-      ModifiedBy: 'Failure Classification',
-    });
+    await laboratoryRunService.updateWithAttributeRemoval(
+      {
+        ...existingRun,
+        ...(classification
+          ? {
+              FailureOwner: classification.result.owner,
+              FailureSummary: classification.result.summary,
+              FailureAction: classification.result.action,
+              FailureClassifiedBy: classification.source,
+            }
+          : {}),
+        AnalysisStatus: resolved.kind === 'failed' ? 'Failed' : 'Succeeded',
+        ...(resolved.kind === 'failed'
+          ? { AnalysisErrorCode: resolved.error.code, AnalysisErrorMessage: resolved.error.message }
+          : {}),
+        ModifiedAt: new Date().toISOString(),
+        ModifiedBy: 'Failure Classification',
+      },
+      resolved.kind === 'failed' ? [] : ['AnalysisErrorCode', 'AnalysisErrorMessage'],
+    );
 
     const platformConfig = laboratory ? resolvePlatformConfig(laboratory, existingRun.Platform) : undefined;
     logAnalysisEvent({

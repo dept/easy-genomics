@@ -24,7 +24,7 @@ describe('request-laboratory-run-failure-analysis handler', () => {
   let mockValidateLabTechnician: jest.MockedFunction<typeof validateLaboratoryTechnicianAccess>;
   let mockQueryByLaboratoryId: jest.Mock;
   let mockQueryByRunId: jest.Mock;
-  let mockUpdate: jest.Mock;
+  let mockUpdateWithRemoval: jest.Mock;
   let mockSendMessage: jest.Mock;
 
   const lab = {
@@ -78,12 +78,12 @@ describe('request-laboratory-run-failure-analysis handler', () => {
 
     mockQueryByLaboratoryId = jest.fn().mockResolvedValue(lab);
     mockQueryByRunId = jest.fn().mockResolvedValue({ ...failedRun });
-    mockUpdate = jest.fn().mockResolvedValue(undefined);
+    mockUpdateWithRemoval = jest.fn().mockResolvedValue(undefined);
     mockSendMessage = jest.fn().mockResolvedValue(undefined);
 
     mockLabService.prototype.queryByLaboratoryId = mockQueryByLaboratoryId;
     mockRunService.prototype.queryByRunId = mockQueryByRunId;
-    mockRunService.prototype.update = mockUpdate;
+    mockRunService.prototype.updateWithAttributeRemoval = mockUpdateWithRemoval;
     mockSqsService.prototype.sendMessage = mockSendMessage;
 
     process.env.SQS_LABORATORY_RUN_FAILURE_CLASSIFICATION_QUEUE_URL = 'arn:aws:sns:us-east-1:123:classify.fifo';
@@ -96,6 +96,22 @@ describe('request-laboratory-run-failure-analysis handler', () => {
     const response = await handler(buildEvent({ LaboratoryRunId: 'run-1' }), {} as any, () => undefined);
     expect(response.statusCode).toBe(403);
     expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('succeeds for a lab manager with no org-admin or technician access', async () => {
+    mockValidateOrgAdmin.mockReturnValue(false);
+    mockValidateLabManager.mockReturnValue(true);
+    mockValidateLabTechnician.mockReturnValue(false);
+    const response = await handler(buildEvent({ LaboratoryRunId: 'run-1' }), {} as any, () => undefined);
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('succeeds for a lab technician with no org-admin or manager access', async () => {
+    mockValidateOrgAdmin.mockReturnValue(false);
+    mockValidateLabManager.mockReturnValue(false);
+    mockValidateLabTechnician.mockReturnValue(true);
+    const response = await handler(buildEvent({ LaboratoryRunId: 'run-1' }), {} as any, () => undefined);
+    expect(response.statusCode).toBe(200);
   });
 
   it('returns 400 when the run is not FAILED', async () => {
@@ -123,9 +139,13 @@ describe('request-laboratory-run-failure-analysis handler', () => {
   it('marks the run Queued and publishes with a Manual trigger', async () => {
     const response = await handler(buildEvent({ LaboratoryRunId: 'run-1' }), {} as any, () => undefined);
     expect(response.statusCode).toBe(200);
-    expect(mockUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ AnalysisStatus: 'Queued', AnalysisErrorCode: undefined }),
+    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(
+      expect.objectContaining({ AnalysisStatus: 'Queued' }),
+      ['AnalysisErrorCode', 'AnalysisErrorMessage'],
     );
+    const [payload] = mockUpdateWithRemoval.mock.calls[0];
+    expect(payload).not.toHaveProperty('AnalysisErrorCode');
+    expect(payload).not.toHaveProperty('AnalysisErrorMessage');
     const published = JSON.parse(mockSendMessage.mock.calls[0][0].MessageBody);
     expect(published.Trigger).toBe('Manual');
     expect(published.Type).toBe('LaboratoryRun');
