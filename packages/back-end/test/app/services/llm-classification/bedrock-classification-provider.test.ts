@@ -1,3 +1,5 @@
+import { InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+
 import {
   BedrockClassificationProvider,
   mapBedrockError,
@@ -104,5 +106,19 @@ describe('BedrockClassificationProvider.validateConfig', () => {
     jest.spyOn((provider as any).client, 'send').mockRejectedValue({ name: 'AccessDeniedException' });
     const error = await provider.validateConfig();
     expect(error?.code).toBe('MODEL_ACCESS_DENIED');
+  });
+
+  it('sends a single-token probe for the configured model rather than a full classification', async () => {
+    const provider = new BedrockClassificationProvider('a-model');
+    const sendSpy = jest.spyOn((provider as any).client, 'send').mockResolvedValue({
+      body: new TextEncoder().encode(JSON.stringify({ content: [{ text: 'ok' }] })),
+    });
+
+    await provider.validateConfig();
+
+    const command = sendSpy.mock.calls[0][0] as InvokeModelCommand;
+    expect(command.input.modelId).toBe('a-model');
+    const body = JSON.parse(new TextDecoder().decode(command.input.body as Uint8Array));
+    expect(body.max_tokens).toBe(1);
   });
 });

@@ -19,6 +19,7 @@ export class OpenAIClassificationProvider implements LLMClassificationProvider {
     private readonly modelId: string,
     private readonly apiKey: string,
     private readonly endpoint: string = 'https://api.openai.com/v1/chat/completions',
+    private readonly modelsEndpoint: string = 'https://api.openai.com/v1/models',
   ) {}
 
   public async classify(input: ClassificationInput): Promise<ClassificationOutcome> {
@@ -67,7 +68,7 @@ export class OpenAIClassificationProvider implements LLMClassificationProvider {
    * there is no reason to spend a completion on validation.
    */
   public async validateConfig(): Promise<ClassificationError | null> {
-    const modelsUrl = this.endpoint.replace('/chat/completions', `/models/${encodeURIComponent(this.modelId)}`);
+    const modelsUrl = `${this.modelsEndpoint}/${encodeURIComponent(this.modelId)}`;
     try {
       const response = await fetch(modelsUrl, {
         method: 'GET',

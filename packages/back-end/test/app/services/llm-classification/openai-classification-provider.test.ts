@@ -139,4 +139,17 @@ describe('OpenAIClassificationProvider.validateConfig', () => {
     const provider = new OpenAIClassificationProvider('nope', 'sk-test-key');
     expect((await provider.validateConfig())?.code).toBe('INVALID_MODEL_ID');
   });
+
+  it('queries a configured modelsEndpoint override instead of deriving one from endpoint', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const provider = new OpenAIClassificationProvider(
+      'gpt-4o-mini',
+      'sk-test-key',
+      'https://proxy.example.com/openai/chat/completions',
+      'https://proxy.example.com/openai/models',
+    );
+    await provider.validateConfig();
+    expect(fetchMock.mock.calls[0][0]).toBe('https://proxy.example.com/openai/models/gpt-4o-mini');
+  });
 });
