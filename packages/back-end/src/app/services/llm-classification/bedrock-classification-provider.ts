@@ -1,12 +1,6 @@
 import { BedrockRuntimeClient, InvokeModelCommand, InvokeModelCommandInput } from '@aws-sdk/client-bedrock-runtime';
 
-import {
-  AMBIGUOUS_FALLBACK,
-  ClassificationError,
-  ClassificationOutcome,
-  classified,
-  failed,
-} from './classification-outcome';
+import { ClassificationError, ClassificationOutcome, classified, failed } from './classification-outcome';
 import { ClassificationInput, LLMClassificationProvider } from './llm-classification-provider';
 import { parseClassificationResponse } from './parse-classification-response';
 import { buildUserMessage, CLASSIFICATION_SYSTEM_PROMPT } from './prompts/classification-prompt';
@@ -107,4 +101,3 @@ export class BedrockClassificationProvider implements LLMClassificationProvider 
 // Re-export so existing tests that import `parseClassificationResponse` from
 // here continue to work without churn.
 export { parseClassificationResponse };
-export { AMBIGUOUS_FALLBACK };

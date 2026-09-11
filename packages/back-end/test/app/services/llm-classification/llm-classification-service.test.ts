@@ -1,5 +1,7 @@
 import { AnthropicClassificationProvider } from '../../../../src/app/services/llm-classification/anthropic-classification-provider';
 import { BedrockClassificationProvider } from '../../../../src/app/services/llm-classification/bedrock-classification-provider';
+import { AMBIGUOUS_FALLBACK } from '../../../../src/app/services/llm-classification/classification-outcome';
+import { ClassificationInput } from '../../../../src/app/services/llm-classification/llm-classification-provider';
 import { LLMClassificationService } from '../../../../src/app/services/llm-classification/llm-classification-service';
 import { OpenAIClassificationProvider } from '../../../../src/app/services/llm-classification/openai-classification-provider';
 
@@ -55,5 +57,36 @@ describe('LLMClassificationService.buildProvider', () => {
       modelId: '',
     });
     expect(provider).toBeNull();
+  });
+});
+
+describe('LLMClassificationService.classify', () => {
+  const service = new LLMClassificationService();
+  const input: ClassificationInput = { platform: 'AWS HealthOmics', failureReason: 'WORKFLOW_RUN_FAILED' };
+
+  it('returns CONFIG_INCOMPLETE when the model id is missing', async () => {
+    const result = await service.classify(input, { provider: 'bedrock', modelId: '' });
+    expect(result).toEqual({
+      outcome: 'failed',
+      error: {
+        code: 'CONFIG_INCOMPLETE',
+        message: 'AI failure analysis is not fully configured for this laboratory.',
+        retryable: false,
+      },
+    });
+  });
+
+  it('returns CONFIG_INCOMPLETE when a key-required provider has no key', async () => {
+    const result = await service.classify(input, { provider: 'openai', modelId: 'gpt-4o-mini' });
+    expect(result.outcome === 'failed' && result.error.code).toBe('CONFIG_INCOMPLETE');
+  });
+
+  it('delegates to the built provider when the config is complete', async () => {
+    const classify = jest.fn().mockResolvedValue({ outcome: 'classified', result: AMBIGUOUS_FALLBACK });
+    jest.spyOn(service, 'buildProvider').mockReturnValue({ classify, validateConfig: jest.fn() });
+
+    const result = await service.classify(input, { provider: 'bedrock', modelId: 'a-model' });
+    expect(classify).toHaveBeenCalledWith(input);
+    expect(result.outcome).toBe('classified');
   });
 });
