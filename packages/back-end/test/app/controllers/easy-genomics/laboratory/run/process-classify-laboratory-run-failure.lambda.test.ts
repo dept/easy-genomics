@@ -530,6 +530,37 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
     }
     logSpy.mockRestore();
   });
+
+  it('logs a failed structured line and still rethrows when the DynamoDB write throws', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      Platform: 'AWS HealthOmics',
+      Status: 'FAILED',
+      FailureReason: 'OUT_OF_MEMORY_ERROR',
+    });
+    mockUpdate.mockRejectedValue(new Error('DynamoDB unavailable'));
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await expect(processClassificationEvent('UPDATE', { RunId: 'run-1' } as any)).rejects.toThrow(
+      'DynamoDB unavailable',
+    );
+
+    const analysisLines = logSpy.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.includes('"event":"failure-analysis"'))
+      .map((line) => JSON.parse(line));
+    expect(analysisLines).toHaveLength(1);
+    expect(analysisLines[0]).toMatchObject({
+      runId: 'run-1',
+      laboratoryId: 'lab-1',
+      organizationId: 'org-1',
+      outcome: 'failed',
+      reason: 'unhandled-exception',
+    });
+    logSpy.mockRestore();
+  });
 });
 
 describe('processClassificationEvent — trigger, toggle, and analysis status', () => {

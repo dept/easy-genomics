@@ -60,130 +60,149 @@ export async function processClassificationEvent(
 ): Promise<boolean> {
   const startedAt = Date.now();
 
-  if (operation !== 'UPDATE') {
-    logAnalysisEvent({
-      runId: laboratoryRun.RunId,
-      laboratoryId: laboratoryRun.LaboratoryId,
-      organizationId: laboratoryRun.OrganizationId,
-      platform: laboratoryRun.Platform,
-      trigger,
-      outcome: 'skipped',
-      reason: 'unsupported-operation',
-      durationMs: Date.now() - startedAt,
-    });
-    return false;
-  }
+  // Populated as soon as it's fetched so the catch below can report the
+  // richest identifiers available at the point of failure, even when the
+  // exception is thrown from further down the function.
+  let existingRun: LaboratoryRun | undefined;
 
-  const isManual = trigger === 'Manual';
-  const existingRun: LaboratoryRun = await laboratoryRunService.queryByRunId(laboratoryRun.RunId);
-
-  // Idempotency against duplicate status-checks. A manual trigger is an
-  // explicit request to re-analyse, so it deliberately bypasses this.
-  if (!isManual && existingRun.FailureOwner) {
-    logAnalysisEvent({
-      runId: existingRun.RunId,
-      laboratoryId: existingRun.LaboratoryId,
-      organizationId: existingRun.OrganizationId,
-      platform: existingRun.Platform,
-      trigger,
-      outcome: 'skipped',
-      reason: 'already-classified',
-      durationMs: Date.now() - startedAt,
-    });
-    return true;
-  }
-
-  // Only classify runs that have actually failed and carry a failure signal.
-  if (existingRun.Status?.toUpperCase() !== 'FAILED') {
-    logAnalysisEvent({
-      runId: existingRun.RunId,
-      laboratoryId: existingRun.LaboratoryId,
-      organizationId: existingRun.OrganizationId,
-      platform: existingRun.Platform,
-      trigger,
-      outcome: 'skipped',
-      reason: 'not-failed',
-      durationMs: Date.now() - startedAt,
-    });
-    return true;
-  }
-
-  // Per-lab BYOK provider config lives on the Laboratory record. Deterministic
-  // lookup still runs without needing the lab record; LLM path needs the lab's
-  // provider + model + (for openai / anthropic) SSM API key.
-  let laboratory: Laboratory | undefined;
   try {
-    laboratory = await laboratoryService.queryByLaboratoryId(existingRun.LaboratoryId);
-  } catch (err) {
-    if (err instanceof LaboratoryNotFoundError) {
-      console.log(`Laboratory ${existingRun.LaboratoryId} not found; falling back to deterministic lookup.`);
-    } else {
-      throw err;
+    if (operation !== 'UPDATE') {
+      logAnalysisEvent({
+        runId: laboratoryRun.RunId,
+        laboratoryId: laboratoryRun.LaboratoryId,
+        organizationId: laboratoryRun.OrganizationId,
+        platform: laboratoryRun.Platform,
+        trigger,
+        outcome: 'skipped',
+        reason: 'unsupported-operation',
+        durationMs: Date.now() - startedAt,
+      });
+      return false;
     }
-  }
 
-  // Per-lab cost control. `!== false` rather than `=== true` so labs that
-  // predate the field keep today's behaviour with no data migration.
-  if (!isManual && laboratory?.AutomaticFailureAnalysisEnabled === false) {
-    logAnalysisEvent({
-      runId: existingRun.RunId,
-      laboratoryId: existingRun.LaboratoryId,
-      organizationId: existingRun.OrganizationId,
-      platform: existingRun.Platform,
-      trigger,
-      outcome: 'skipped',
-      reason: 'automatic-analysis-disabled',
-      durationMs: Date.now() - startedAt,
-    });
-    return true;
-  }
+    const isManual = trigger === 'Manual';
+    existingRun = await laboratoryRunService.queryByRunId(laboratoryRun.RunId);
 
-  // Nobody polls an automatic run, so skip the extra write on the hot path.
-  if (isManual) {
+    // Idempotency against duplicate status-checks. A manual trigger is an
+    // explicit request to re-analyse, so it deliberately bypasses this.
+    if (!isManual && existingRun.FailureOwner) {
+      logAnalysisEvent({
+        runId: existingRun.RunId,
+        laboratoryId: existingRun.LaboratoryId,
+        organizationId: existingRun.OrganizationId,
+        platform: existingRun.Platform,
+        trigger,
+        outcome: 'skipped',
+        reason: 'already-classified',
+        durationMs: Date.now() - startedAt,
+      });
+      return true;
+    }
+
+    // Only classify runs that have actually failed and carry a failure signal.
+    if (existingRun.Status?.toUpperCase() !== 'FAILED') {
+      logAnalysisEvent({
+        runId: existingRun.RunId,
+        laboratoryId: existingRun.LaboratoryId,
+        organizationId: existingRun.OrganizationId,
+        platform: existingRun.Platform,
+        trigger,
+        outcome: 'skipped',
+        reason: 'not-failed',
+        durationMs: Date.now() - startedAt,
+      });
+      return true;
+    }
+
+    // Per-lab BYOK provider config lives on the Laboratory record. Deterministic
+    // lookup still runs without needing the lab record; LLM path needs the lab's
+    // provider + model + (for openai / anthropic) SSM API key.
+    let laboratory: Laboratory | undefined;
+    try {
+      laboratory = await laboratoryService.queryByLaboratoryId(existingRun.LaboratoryId);
+    } catch (err) {
+      if (err instanceof LaboratoryNotFoundError) {
+        console.log(`Laboratory ${existingRun.LaboratoryId} not found; falling back to deterministic lookup.`);
+      } else {
+        throw err;
+      }
+    }
+
+    // Per-lab cost control. `!== false` rather than `=== true` so labs that
+    // predate the field keep today's behaviour with no data migration.
+    if (!isManual && laboratory?.AutomaticFailureAnalysisEnabled === false) {
+      logAnalysisEvent({
+        runId: existingRun.RunId,
+        laboratoryId: existingRun.LaboratoryId,
+        organizationId: existingRun.OrganizationId,
+        platform: existingRun.Platform,
+        trigger,
+        outcome: 'skipped',
+        reason: 'automatic-analysis-disabled',
+        durationMs: Date.now() - startedAt,
+      });
+      return true;
+    }
+
+    // Nobody polls an automatic run, so skip the extra write on the hot path.
+    if (isManual) {
+      await laboratoryRunService.update({
+        ...existingRun,
+        AnalysisStatus: 'Running',
+        ModifiedAt: new Date().toISOString(),
+        ModifiedBy: 'Failure Classification',
+      });
+    }
+
+    const resolved = await resolveClassification(existingRun, laboratory);
+
+    const classification = resolved.kind === 'classified' ? resolved : resolved.fallback;
     await laboratoryRunService.update({
       ...existingRun,
-      AnalysisStatus: 'Running',
+      ...(classification
+        ? {
+            FailureOwner: classification.result.owner,
+            FailureSummary: classification.result.summary,
+            FailureAction: classification.result.action,
+            FailureClassifiedBy: classification.source,
+          }
+        : {}),
+      AnalysisStatus: resolved.kind === 'failed' ? 'Failed' : 'Succeeded',
+      AnalysisErrorCode: resolved.kind === 'failed' ? resolved.error.code : undefined,
+      AnalysisErrorMessage: resolved.kind === 'failed' ? resolved.error.message : undefined,
       ModifiedAt: new Date().toISOString(),
       ModifiedBy: 'Failure Classification',
     });
+
+    const platformConfig = laboratory ? resolvePlatformConfig(laboratory, existingRun.Platform) : undefined;
+    logAnalysisEvent({
+      runId: existingRun.RunId,
+      laboratoryId: existingRun.LaboratoryId,
+      organizationId: existingRun.OrganizationId,
+      platform: existingRun.Platform,
+      trigger,
+      outcome: resolved.kind === 'failed' ? 'failed' : 'succeeded',
+      errorCode: resolved.kind === 'failed' ? resolved.error.code : undefined,
+      classifiedBy: classification?.source,
+      provider: platformConfig?.provider,
+      modelId: platformConfig?.modelId,
+      durationMs: Date.now() - startedAt,
+    });
+
+    return true;
+  } catch (err) {
+    logAnalysisEvent({
+      runId: existingRun?.RunId ?? laboratoryRun.RunId,
+      laboratoryId: existingRun?.LaboratoryId ?? laboratoryRun.LaboratoryId,
+      organizationId: existingRun?.OrganizationId ?? laboratoryRun.OrganizationId,
+      platform: existingRun?.Platform ?? laboratoryRun.Platform,
+      trigger,
+      outcome: 'failed',
+      reason: 'unhandled-exception',
+      durationMs: Date.now() - startedAt,
+    });
+    throw err;
   }
-
-  const resolved = await resolveClassification(existingRun, laboratory);
-
-  const classification = resolved.kind === 'classified' ? resolved : resolved.fallback;
-  await laboratoryRunService.update({
-    ...existingRun,
-    ...(classification
-      ? {
-          FailureOwner: classification.result.owner,
-          FailureSummary: classification.result.summary,
-          FailureAction: classification.result.action,
-          FailureClassifiedBy: classification.source,
-        }
-      : {}),
-    AnalysisStatus: resolved.kind === 'failed' ? 'Failed' : 'Succeeded',
-    AnalysisErrorCode: resolved.kind === 'failed' ? resolved.error.code : undefined,
-    AnalysisErrorMessage: resolved.kind === 'failed' ? resolved.error.message : undefined,
-    ModifiedAt: new Date().toISOString(),
-    ModifiedBy: 'Failure Classification',
-  });
-
-  const platformConfig = laboratory ? resolvePlatformConfig(laboratory, existingRun.Platform) : undefined;
-  logAnalysisEvent({
-    runId: existingRun.RunId,
-    laboratoryId: existingRun.LaboratoryId,
-    organizationId: existingRun.OrganizationId,
-    platform: existingRun.Platform,
-    trigger,
-    outcome: resolved.kind === 'failed' ? 'failed' : 'succeeded',
-    errorCode: resolved.kind === 'failed' ? resolved.error.code : undefined,
-    classifiedBy: classification?.source,
-    provider: platformConfig?.provider,
-    modelId: platformConfig?.modelId,
-    durationMs: Date.now() - startedAt,
-  });
-
-  return true;
 }
 
 type Classified = { result: ClassificationResult; source: 'lookup' | 'llm' };
