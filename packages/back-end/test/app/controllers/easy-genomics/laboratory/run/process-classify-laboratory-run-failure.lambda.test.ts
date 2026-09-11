@@ -107,9 +107,8 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
       FailureReason: 'WORKFLOW_RUN_FAILED',
     });
     mockClassify.mockResolvedValue({
-      owner: 'Ambiguous',
-      summary: 'Engine failure',
-      action: 'Check CloudWatch',
+      outcome: 'classified',
+      result: { owner: 'Ambiguous', summary: 'Engine failure', action: 'Check CloudWatch' },
     });
 
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
@@ -130,9 +129,8 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
       FailureReason: 'Process SAMPLESHEET_CHECK failed',
     });
     mockClassify.mockResolvedValue({
-      owner: 'Lab',
-      summary: 'Sample sheet invalid',
-      action: 'Re-upload',
+      outcome: 'classified',
+      result: { owner: 'Lab', summary: 'Sample sheet invalid', action: 'Re-upload' },
     });
 
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
@@ -158,7 +156,10 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
       FailureReason: 'WORKFLOW_RUN_FAILED',
       FailureStatusMessage: 'Task RNASEQ:FASTQC failed — see /aws/omics/run/123 logs',
     });
-    mockClassify.mockResolvedValue({ owner: 'Ambiguous', summary: 's', action: 'a' });
+    mockClassify.mockResolvedValue({
+      outcome: 'classified',
+      result: { owner: 'Ambiguous', summary: 's', action: 'a' },
+    });
 
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 
@@ -178,7 +179,7 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
       FailureReason: 'Process SAMPLESHEET_CHECK failed',
       FailureErrorReport: 'Caused by:\n  Missing required column "sample"',
     });
-    mockClassify.mockResolvedValue({ owner: 'Lab', summary: 's', action: 'a' });
+    mockClassify.mockResolvedValue({ outcome: 'classified', result: { owner: 'Lab', summary: 's', action: 'a' } });
 
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 
@@ -203,7 +204,10 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
       Status: 'FAILED',
       FailureReason: 'WORKFLOW_RUN_FAILED',
     });
-    mockClassify.mockResolvedValue({ owner: 'Ambiguous', summary: 's', action: 'a' });
+    mockClassify.mockResolvedValue({
+      outcome: 'classified',
+      result: { owner: 'Ambiguous', summary: 's', action: 'a' },
+    });
 
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 
@@ -229,7 +233,10 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
       Status: 'FAILED',
       FailureReason: 'WORKFLOW_RUN_FAILED',
     });
-    mockClassify.mockResolvedValue({ owner: 'Ambiguous', summary: 's', action: 'a' });
+    mockClassify.mockResolvedValue({
+      outcome: 'classified',
+      result: { owner: 'Ambiguous', summary: 's', action: 'a' },
+    });
 
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 
@@ -386,7 +393,10 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
       Status: 'FAILED',
       FailureReason: 'WORKFLOW_RUN_FAILED',
     });
-    mockClassify.mockResolvedValue({ owner: 'Ambiguous', summary: 's', action: 'a' });
+    mockClassify.mockResolvedValue({
+      outcome: 'classified',
+      result: { owner: 'Ambiguous', summary: 's', action: 'a' },
+    });
 
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 
@@ -404,7 +414,10 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
       Status: 'FAILED',
       FailureReason: 'WORKFLOW_RUN_FAILED',
     });
-    mockClassify.mockResolvedValue({ owner: 'Bioinformatician', summary: 'OOM', action: 'Raise memory' });
+    mockClassify.mockResolvedValue({
+      outcome: 'classified',
+      result: { owner: 'Bioinformatician', summary: 'OOM', action: 'Raise memory' },
+    });
 
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 
@@ -423,7 +436,10 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
       Status: 'FAILED',
       FailureReason: 'OUT_OF_MEMORY_ERROR', // present in the deterministic lookup
     });
-    mockClassify.mockResolvedValue({ owner: 'Bioinformatician', summary: 'FASTQC OOM', action: 'Raise memory' });
+    mockClassify.mockResolvedValue({
+      outcome: 'classified',
+      result: { owner: 'Bioinformatician', summary: 'FASTQC OOM', action: 'Raise memory' },
+    });
 
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 
@@ -443,7 +459,14 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
       Status: 'FAILED',
       FailureReason: 'OUT_OF_MEMORY_ERROR',
     });
-    mockClassify.mockResolvedValue({ owner: 'Ambiguous', summary: '', action: '' }); // unusable fallback
+    mockClassify.mockResolvedValue({
+      outcome: 'failed',
+      error: {
+        code: 'UNPARSEABLE_RESPONSE',
+        message: 'The model returned a response that could not be parsed.',
+        retryable: true,
+      },
+    }); // unusable fallback
 
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 

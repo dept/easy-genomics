@@ -152,11 +152,11 @@ async function resolveClassification(
     input.logExcerpt = await fetchRedactedLogExcerpt(run, { cloudWatchLogsService });
   }
 
-  const llmResult = await llmClassificationService.classify(input, config);
-  // The fallback path returns owner 'Ambiguous' with empty summary/action; fall
-  // back to the deterministic lookup when the model produced nothing usable.
-  if (!llmResult.summary && !llmResult.action) return lookupResult;
-  return { result: llmResult, source: 'llm' };
+  const llmOutcome = await llmClassificationService.classify(input, config);
+  // A failed outcome (invalid model id, auth failure, provider outage, ...)
+  // carries no usable classification; fall back to the deterministic lookup.
+  if (llmOutcome.outcome === 'failed') return lookupResult;
+  return { result: llmOutcome.result, source: 'llm' };
 }
 
 function isLogEnrichmentEnabled(laboratory: Laboratory, platform: LaboratoryRun['Platform']): boolean {

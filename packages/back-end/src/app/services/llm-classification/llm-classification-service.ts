@@ -1,7 +1,6 @@
-import { ClassificationResult } from '@easy-genomics/shared-lib/src/app/utils/failure-classifier';
-
 import { AnthropicClassificationProvider } from './anthropic-classification-provider';
-import { BedrockClassificationProvider, AMBIGUOUS_FALLBACK } from './bedrock-classification-provider';
+import { BedrockClassificationProvider } from './bedrock-classification-provider';
+import { ClassificationOutcome, failed } from './classification-outcome';
 import { ClassificationInput, LLMClassificationProvider } from './llm-classification-provider';
 import { OpenAIClassificationProvider } from './openai-classification-provider';
 
@@ -19,14 +18,16 @@ export interface ProviderConfig {
  * per-Laboratory ProviderConfig — there is no env-var fallback. Each lab
  * brings its own provider, model, and (for non-Bedrock) API key.
  *
- * `classify()` short-circuits with a no-op result whenever the supplied
- * config is unusable (missing model id, missing key for a key-required
- * provider, etc.) so callers can invoke it defensively.
+ * `classify()` short-circuits with a `CONFIG_INCOMPLETE` failure whenever the
+ * supplied config is unusable (missing model id, missing key for a
+ * key-required provider, etc.) so callers can invoke it defensively.
  */
 export class LLMClassificationService {
-  public async classify(input: ClassificationInput, config: ProviderConfig): Promise<ClassificationResult> {
+  public async classify(input: ClassificationInput, config: ProviderConfig): Promise<ClassificationOutcome> {
     const provider = this.buildProvider(config);
-    if (!provider) return AMBIGUOUS_FALLBACK;
+    if (!provider) {
+      return failed('CONFIG_INCOMPLETE', 'The configured LLM provider is missing required configuration.', false);
+    }
     return provider.classify(input);
   }
 
