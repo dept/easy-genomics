@@ -1,6 +1,10 @@
-import { ClassificationResult } from '@easy-genomics/shared-lib/src/app/utils/failure-classifier';
-
-import { AMBIGUOUS_FALLBACK } from './bedrock-classification-provider';
+import {
+  ClassificationError,
+  ClassificationOutcome,
+  classified,
+  failed,
+  mapHttpStatusToError,
+} from './classification-outcome';
 import { ClassificationInput, LLMClassificationProvider } from './llm-classification-provider';
 import { parseClassificationResponse } from './parse-classification-response';
 import { buildUserMessage, CLASSIFICATION_SYSTEM_PROMPT } from './prompts/classification-prompt';
@@ -17,7 +21,7 @@ export class OpenAIClassificationProvider implements LLMClassificationProvider {
     private readonly endpoint: string = 'https://api.openai.com/v1/chat/completions',
   ) {}
 
-  public async classify(input: ClassificationInput): Promise<ClassificationResult> {
+  public async classify(input: ClassificationInput): Promise<ClassificationOutcome> {
     const body = {
       model: this.modelId,
       temperature: 0,
@@ -40,16 +44,25 @@ export class OpenAIClassificationProvider implements LLMClassificationProvider {
         body: JSON.stringify(body),
       });
       if (!response.ok) {
-        console.error('[openai-classification-provider] OpenAI API non-2xx:', response.status, await response.text());
-        return AMBIGUOUS_FALLBACK;
+        // The response body is deliberately not included in the error message:
+        // it can echo the submitted key, and this message reaches the UI.
+        const mapped = mapHttpStatusToError('openai', response.status);
+        return failed(mapped.code, mapped.message, mapped.retryable);
       }
       const parsed = (await response.json()) as any;
       responseText = parsed?.choices?.[0]?.message?.content ?? '';
     } catch (error) {
-      console.error('[openai-classification-provider] OpenAI request failed:', error);
-      return AMBIGUOUS_FALLBACK;
+      return failed('PROVIDER_UNAVAILABLE', 'The OpenAI request could not be completed.', true);
     }
 
-    return parseClassificationResponse(responseText) ?? AMBIGUOUS_FALLBACK;
+    const result = parseClassificationResponse(responseText);
+    if (!result) {
+      return failed('UNPARSEABLE_RESPONSE', 'The model returned a response that could not be parsed.', true);
+    }
+    return classified(result);
+  }
+
+  public async validateConfig(): Promise<ClassificationError | null> {
+    throw new Error('not implemented until Task 6');
   }
 }
