@@ -9126,6 +9126,26 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/run/request-laboratory-run-failure-analysis:
+    post:
+      operationId: requestLaboratoryRunFailureAnalysis
+      summary: Request Laboratory Run Failure Analysis
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /easy-genomics/laboratory/run/request-laboratory-run-status-check:
     post:
       operationId: requestLaboratoryRunStatusCheck

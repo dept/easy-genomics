@@ -238,6 +238,10 @@ export interface paths {
     /** Request Estimate Run Cost */
     post: operations["requestEstimateRunCost"];
   };
+  "/easy-genomics/laboratory/run/request-laboratory-run-failure-analysis": {
+    /** Request Laboratory Run Failure Analysis */
+    post: operations["requestLaboratoryRunFailureAnalysis"];
+  };
   "/easy-genomics/laboratory/run/request-laboratory-run-status-check": {
     /** Request Laboratory Run Status Check */
     post: operations["requestLaboratoryRunStatusCheck"];
@@ -5016,6 +5020,22 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["EstimateRunCostResponse"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Request Laboratory Run Failure Analysis */
+  requestLaboratoryRunFailureAnalysis: {
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
         };
       };
       400: components["responses"]["BadRequest"];
