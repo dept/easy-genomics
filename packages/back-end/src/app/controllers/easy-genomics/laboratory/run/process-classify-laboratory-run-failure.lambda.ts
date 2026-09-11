@@ -17,6 +17,7 @@ import { SQSEvent } from 'aws-lambda/trigger/sqs';
 import { CloudWatchLogsService } from '@BE/services/cloudwatch-logs-service';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
+import { logAnalysisEvent } from '@BE/services/llm-classification/analysis-logger';
 import { ClassificationError, ClassificationOutcome } from '@BE/services/llm-classification/classification-outcome';
 import { ClassificationInput } from '@BE/services/llm-classification/llm-classification-provider';
 import { LLMClassificationService, ProviderConfig } from '@BE/services/llm-classification/llm-classification-service';
@@ -31,7 +32,6 @@ const ssmService = new SsmService();
 const cloudWatchLogsService = new CloudWatchLogsService();
 
 export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
   try {
     const sqsRecords: SQSRecord[] = event.Records;
     for (const sqsRecord of sqsRecords) {
@@ -58,8 +58,19 @@ export async function processClassificationEvent(
   laboratoryRun: LaboratoryRun,
   trigger: SnsProcessingTrigger = 'Automatic',
 ): Promise<boolean> {
+  const startedAt = Date.now();
+
   if (operation !== 'UPDATE') {
-    console.error(`Unsupported SNS Processing Event Operation: ${operation}`);
+    logAnalysisEvent({
+      runId: laboratoryRun.RunId,
+      laboratoryId: laboratoryRun.LaboratoryId,
+      organizationId: laboratoryRun.OrganizationId,
+      platform: laboratoryRun.Platform,
+      trigger,
+      outcome: 'skipped',
+      reason: 'unsupported-operation',
+      durationMs: Date.now() - startedAt,
+    });
     return false;
   }
 
@@ -69,13 +80,31 @@ export async function processClassificationEvent(
   // Idempotency against duplicate status-checks. A manual trigger is an
   // explicit request to re-analyse, so it deliberately bypasses this.
   if (!isManual && existingRun.FailureOwner) {
-    console.log(`Run ${existingRun.RunId} already classified as ${existingRun.FailureOwner}; skipping.`);
+    logAnalysisEvent({
+      runId: existingRun.RunId,
+      laboratoryId: existingRun.LaboratoryId,
+      organizationId: existingRun.OrganizationId,
+      platform: existingRun.Platform,
+      trigger,
+      outcome: 'skipped',
+      reason: 'already-classified',
+      durationMs: Date.now() - startedAt,
+    });
     return true;
   }
 
   // Only classify runs that have actually failed and carry a failure signal.
   if (existingRun.Status?.toUpperCase() !== 'FAILED') {
-    console.log(`Run ${existingRun.RunId} is not FAILED (status=${existingRun.Status}); skipping.`);
+    logAnalysisEvent({
+      runId: existingRun.RunId,
+      laboratoryId: existingRun.LaboratoryId,
+      organizationId: existingRun.OrganizationId,
+      platform: existingRun.Platform,
+      trigger,
+      outcome: 'skipped',
+      reason: 'not-failed',
+      durationMs: Date.now() - startedAt,
+    });
     return true;
   }
 
@@ -96,7 +125,16 @@ export async function processClassificationEvent(
   // Per-lab cost control. `!== false` rather than `=== true` so labs that
   // predate the field keep today's behaviour with no data migration.
   if (!isManual && laboratory?.AutomaticFailureAnalysisEnabled === false) {
-    console.log(`Laboratory ${existingRun.LaboratoryId} has automatic failure analysis disabled; skipping.`);
+    logAnalysisEvent({
+      runId: existingRun.RunId,
+      laboratoryId: existingRun.LaboratoryId,
+      organizationId: existingRun.OrganizationId,
+      platform: existingRun.Platform,
+      trigger,
+      outcome: 'skipped',
+      reason: 'automatic-analysis-disabled',
+      durationMs: Date.now() - startedAt,
+    });
     return true;
   }
 
@@ -128,6 +166,21 @@ export async function processClassificationEvent(
     AnalysisErrorMessage: resolved.kind === 'failed' ? resolved.error.message : undefined,
     ModifiedAt: new Date().toISOString(),
     ModifiedBy: 'Failure Classification',
+  });
+
+  const platformConfig = laboratory ? resolvePlatformConfig(laboratory, existingRun.Platform) : undefined;
+  logAnalysisEvent({
+    runId: existingRun.RunId,
+    laboratoryId: existingRun.LaboratoryId,
+    organizationId: existingRun.OrganizationId,
+    platform: existingRun.Platform,
+    trigger,
+    outcome: resolved.kind === 'failed' ? 'failed' : 'succeeded',
+    errorCode: resolved.kind === 'failed' ? resolved.error.code : undefined,
+    classifiedBy: classification?.source,
+    provider: platformConfig?.provider,
+    modelId: platformConfig?.modelId,
+    durationMs: Date.now() - startedAt,
   });
 
   return true;
@@ -175,7 +228,7 @@ async function resolveClassification(run: LaboratoryRun, laboratory: Laboratory 
     return { kind: 'classified', ...lookupResult };
   }
 
-  const config = await buildProviderConfig(laboratory, run.Platform, platformConfig);
+  const config = await buildProviderConfig(laboratory, platformConfig);
   if (!config) return noLlm();
 
   const input: ClassificationInput = {
@@ -230,7 +283,6 @@ function resolvePlatformConfig(laboratory: Laboratory, platform: LaboratoryRun['
 
 async function buildProviderConfig(
   laboratory: Laboratory,
-  platform: LaboratoryRun['Platform'],
   platformConfig: PlatformLlmConfig,
 ): Promise<ProviderConfig | null> {
   if (!platformConfig.provider || !platformConfig.modelId) return null;
@@ -249,9 +301,6 @@ async function buildProviderConfig(
     });
     const apiKey = param?.Parameter?.Value;
     if (!apiKey) {
-      console.warn(
-        `[process-classify] Lab ${laboratory.LaboratoryId} configured ${platformConfig.provider} for ${platform} but has no SSM API key; skipping.`,
-      );
       return null;
     }
     return {
@@ -259,11 +308,7 @@ async function buildProviderConfig(
       modelId: platformConfig.modelId,
       apiKey,
     };
-  } catch (err) {
-    console.warn(
-      `[process-classify] Failed to load ${platformConfig.ssmSuffix} for lab ${laboratory.LaboratoryId}:`,
-      err,
-    );
+  } catch {
     return null;
   }
 }

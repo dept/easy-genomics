@@ -513,6 +513,23 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
     const result = await handler(event, {} as any, () => {});
     expect(result.statusCode).toBe(200);
   });
+
+  it('never logs the raw SQS event', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Platform: 'AWS HealthOmics',
+      Status: 'FAILED',
+      FailureReason: 'OUT_OF_MEMORY_ERROR',
+    });
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const event = createEvent([buildSqsRecord({ RunId: 'run-1' })]);
+    await handler(event, {} as any, () => undefined);
+    for (const call of logSpy.mock.calls) {
+      expect(String(call[0])).not.toContain('EVENT:');
+    }
+    logSpy.mockRestore();
+  });
 });
 
 describe('processClassificationEvent — trigger, toggle, and analysis status', () => {
