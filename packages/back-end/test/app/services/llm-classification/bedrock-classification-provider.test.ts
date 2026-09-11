@@ -1,4 +1,7 @@
-import { parseClassificationResponse } from '../../../../src/app/services/llm-classification/bedrock-classification-provider';
+import {
+  mapBedrockError,
+  parseClassificationResponse,
+} from '../../../../src/app/services/llm-classification/bedrock-classification-provider';
 
 describe('parseClassificationResponse', () => {
   it('returns null for empty text', () => {
@@ -49,5 +52,39 @@ describe('parseClassificationResponse', () => {
     );
     expect(result!.summary.length).toBe(200);
     expect(result!.action.length).toBe(300);
+  });
+});
+
+describe('mapBedrockError', () => {
+  it('maps ValidationException to an invalid model id', () => {
+    const error = mapBedrockError({ name: 'ValidationException', message: 'bad model' });
+    expect(error.code).toBe('INVALID_MODEL_ID');
+    expect(error.retryable).toBe(false);
+  });
+
+  it('maps ResourceNotFoundException to an invalid model id', () => {
+    expect(mapBedrockError({ name: 'ResourceNotFoundException' }).code).toBe('INVALID_MODEL_ID');
+  });
+
+  it('maps AccessDeniedException to denied model access', () => {
+    const error = mapBedrockError({ name: 'AccessDeniedException' });
+    expect(error.code).toBe('MODEL_ACCESS_DENIED');
+    expect(error.message).toContain('model access');
+  });
+
+  it('maps ThrottlingException to a retryable rate limit', () => {
+    const error = mapBedrockError({ name: 'ThrottlingException' });
+    expect(error.code).toBe('RATE_LIMITED');
+    expect(error.retryable).toBe(true);
+  });
+
+  it('maps ServiceUnavailableException to a retryable outage', () => {
+    expect(mapBedrockError({ name: 'ServiceUnavailableException' }).retryable).toBe(true);
+  });
+
+  it('maps anything unrecognised to a non-retryable provider error', () => {
+    const error = mapBedrockError(new Error('something else'));
+    expect(error.code).toBe('PROVIDER_UNAVAILABLE');
+    expect(error.retryable).toBe(false);
   });
 });
