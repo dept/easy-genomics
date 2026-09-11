@@ -1099,6 +1099,7 @@ export interface components {
       SeqeraLlmProvider?: "bedrock" | "openai" | "anthropic";
       SeqeraLlmModelId?: string;
       HealthOmicsLogEnrichmentEnabled?: boolean;
+      AutomaticFailureAnalysisEnabled?: boolean;
       HealthOmicsLlmApiKey?: string;
       SeqeraLlmApiKey?: string;
     };
@@ -1224,6 +1225,7 @@ export interface components {
       SeqeraLlmProvider?: "anthropic" | "bedrock" | "openai";
       SeqeraLlmModelId?: string;
       HealthOmicsLogEnrichmentEnabled?: boolean;
+      AutomaticFailureAnalysisEnabled?: boolean;
       HasNextFlowTowerAccessToken?: boolean;
       HasGitHubAccessToken?: boolean;
       /** @description Boolean indicators. The actual keys live in SSM and are never returned. */
@@ -1350,6 +1352,19 @@ export interface components {
        */
       FailureClassifiedBy?: "llm" | "lookup";
       /**
+       * @description Execution state of the AI failure analysis for this run. Absent means it
+       * has never been requested. Written by the classification consumer; polled
+       * by the run detail page after a manual trigger.
+       * @enum {string}
+       */
+      AnalysisStatus?: "Failed" | "Queued" | "Running" | "Succeeded";
+      /** @description One of ClassificationErrorCode. Typed as a string so this schema does not couple to the provider taxonomy. */
+      AnalysisErrorCode?: string;
+      /** @description The provider's own detail. Shown as secondary text under the mapped UI copy, never in place of it. */
+      AnalysisErrorMessage?: string;
+      /** @description ISO timestamp. Load-bearing: lets the UI abandon a Running status stranded by a dead consumer. */
+      AnalysisRequestedAt?: string;
+      /**
        * @description Sparse marker present only while the run is non-terminal. Backs the `PollStatus_Index`
        * GSI so the notification poller can query "every active run" in O(1) regardless of total
        * run history, instead of scanning or iterating every lab. Removed (not set false) on the
@@ -1450,6 +1465,11 @@ export interface components {
       FailureAction?: string;
       /** @enum {string} */
       FailureClassifiedBy?: "llm" | "lookup";
+      /** @enum {string} */
+      AnalysisStatus?: "Failed" | "Queued" | "Running" | "Succeeded";
+      AnalysisErrorCode?: string;
+      AnalysisErrorMessage?: string;
+      AnalysisRequestedAt?: string;
       ProgressPercent?: number;
       TasksTotal?: number;
       TasksCompleted?: number;
@@ -1559,6 +1579,7 @@ export interface components {
       SeqeraLlmProvider?: "bedrock" | "openai" | "anthropic";
       SeqeraLlmModelId?: string;
       HealthOmicsLogEnrichmentEnabled?: boolean;
+      AutomaticFailureAnalysisEnabled?: boolean;
       HealthOmicsLlmApiKey?: string;
       SeqeraLlmApiKey?: string;
     };

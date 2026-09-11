@@ -284,6 +284,20 @@ export class LaboratorySeqeraCredentialsIncorrectError extends HttpError {
 }
 
 /**
+ * Laboratory LLM provider / model / API key failed live validation
+ *
+ * Is a pre-configured error with:
+ * - StatusCode: 400
+ *
+ * @param messageOpt - optional additional message
+ */
+export class LaboratoryLlmConfigurationInvalidError extends HttpError {
+  constructor(messageOpt?: string) {
+    super('Laboratory AI failure analysis configuration is invalid', 400, 'EG-337', messageOpt);
+  }
+}
+
+/**
  * Laboratory HealthOmics VPC Configuration not found
  *
  * @param configurationName

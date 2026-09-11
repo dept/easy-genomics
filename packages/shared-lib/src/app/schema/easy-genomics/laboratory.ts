@@ -51,6 +51,7 @@ export const LaboratorySchema = z
      * lookup + LLM on failureReason only).
      */
     HealthOmicsLogEnrichmentEnabled: z.boolean().optional(),
+    AutomaticFailureAnalysisEnabled: z.boolean().optional(),
     /**
      * AWS HealthOmics run cache id (call caching / "resume"). Lazily provisioned on the first
      * HealthOmics run and reused for all subsequent runs so failed runs can resume from their
@@ -92,6 +93,7 @@ export const CreateLaboratorySchema = z
     SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
     SeqeraLlmModelId: z.string().optional(),
     HealthOmicsLogEnrichmentEnabled: z.boolean().optional(),
+    AutomaticFailureAnalysisEnabled: z.boolean().optional(),
     /** Write-only on Create / Update. Persisted to SSM SecureString, never echoed back. */
     HealthOmicsLlmApiKey: z.string().optional(),
     SeqeraLlmApiKey: z.string().optional(),
@@ -137,6 +139,7 @@ export const ReadLaboratorySchema = z
     SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
     SeqeraLlmModelId: z.string().optional(),
     HealthOmicsLogEnrichmentEnabled: z.boolean().optional(),
+    AutomaticFailureAnalysisEnabled: z.boolean().optional(),
     /** Boolean indicators. The actual keys live in SSM and are never returned. */
     HasHealthOmicsLlmApiKey: z.boolean().optional(),
     HasSeqeraLlmApiKey: z.boolean().optional(),
@@ -183,6 +186,7 @@ export const UpdateLaboratorySchema = z
     SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
     SeqeraLlmModelId: z.string().optional(),
     HealthOmicsLogEnrichmentEnabled: z.boolean().optional(),
+    AutomaticFailureAnalysisEnabled: z.boolean().optional(),
     /** Write-only on Update. Persisted to SSM SecureString. */
     HealthOmicsLlmApiKey: z.string().optional(),
     SeqeraLlmApiKey: z.string().optional(),

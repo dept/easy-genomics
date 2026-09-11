@@ -1648,6 +1648,8 @@ components:
           type: string
         HealthOmicsLogEnrichmentEnabled:
           type: boolean
+        AutomaticFailureAnalysisEnabled:
+          type: boolean
         HealthOmicsLlmApiKey:
           type: string
         SeqeraLlmApiKey:
@@ -1859,6 +1861,8 @@ components:
           type: string
         HealthOmicsLogEnrichmentEnabled:
           type: boolean
+        AutomaticFailureAnalysisEnabled:
+          type: boolean
         HasNextFlowTowerAccessToken:
           type: boolean
         HasGitHubAccessToken:
@@ -2066,6 +2070,26 @@ components:
           enum:
             - llm
             - lookup
+          type: string
+        AnalysisStatus:
+          description: |-
+            Execution state of the AI failure analysis for this run. Absent means it
+            has never been requested. Written by the classification consumer; polled
+            by the run detail page after a manual trigger.
+          enum:
+            - Failed
+            - Queued
+            - Running
+            - Succeeded
+          type: string
+        AnalysisErrorCode:
+          description: One of ClassificationErrorCode. Typed as a string so this schema does not couple to the provider taxonomy.
+          type: string
+        AnalysisErrorMessage:
+          description: The provider's own detail. Shown as secondary text under the mapped UI copy, never in place of it.
+          type: string
+        AnalysisRequestedAt:
+          description: 'ISO timestamp. Load-bearing: lets the UI abandon a Running status stranded by a dead consumer.'
           type: string
         PollStatus:
           description: |-
@@ -2278,6 +2302,19 @@ components:
           enum:
             - llm
             - lookup
+          type: string
+        AnalysisStatus:
+          enum:
+            - Failed
+            - Queued
+            - Running
+            - Succeeded
+          type: string
+        AnalysisErrorCode:
+          type: string
+        AnalysisErrorMessage:
+          type: string
+        AnalysisRequestedAt:
           type: string
         ProgressPercent:
           type: number
@@ -2560,6 +2597,8 @@ components:
         SeqeraLlmModelId:
           type: string
         HealthOmicsLogEnrichmentEnabled:
+          type: boolean
+        AutomaticFailureAnalysisEnabled:
           type: boolean
         HealthOmicsLlmApiKey:
           type: string
