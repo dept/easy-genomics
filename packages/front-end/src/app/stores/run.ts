@@ -210,6 +210,17 @@ const useRunStore = defineStore('runStore', {
       }
     },
 
+    async loadSingleLabRun(runId: string): Promise<void> {
+      const { $api } = useNuxtApp();
+      try {
+        const labRun = await $api.labs.readLabRun(runId);
+        this.labRuns[labRun.RunId] = labRun;
+      } catch (error) {
+        useToastStore().error('Failed to refresh run details. Please refresh the page.');
+        console.error(error);
+      }
+    },
+
     // Temp Runs
 
     _updateWipRun(type: 'seqera' | 'omics', tempId: string, updates: Partial<WipRun>, unsets: (keyof WipRun)[]): void {
