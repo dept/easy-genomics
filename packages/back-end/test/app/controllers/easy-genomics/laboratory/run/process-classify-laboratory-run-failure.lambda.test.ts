@@ -323,7 +323,9 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
 
     expect(mockClassify).not.toHaveBeenCalled();
     expect(mockGetParameter).not.toHaveBeenCalled();
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ AnalysisStatus: 'Failed', AnalysisErrorCode: 'CONFIG_INCOMPLETE' }),
+    );
   });
 
   it('skips OpenAI when the integration-scoped SSM key is missing', async () => {
@@ -339,7 +341,9 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 
     expect(mockClassify).not.toHaveBeenCalled();
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ AnalysisStatus: 'Failed', AnalysisErrorCode: 'CONFIG_INCOMPLETE' }),
+    );
   });
 
   it('still uses the deterministic lookup for HealthOmics even when no provider is configured', async () => {
@@ -382,7 +386,9 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
     await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any);
 
     expect(mockClassify).not.toHaveBeenCalled();
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ AnalysisStatus: 'Failed', AnalysisErrorCode: 'CONFIG_INCOMPLETE' }),
+    );
   });
 
   it('does NOT fetch logs when the enrichment toggle is off (HealthOmics LLM path)', async () => {
@@ -506,5 +512,144 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
     const event = createEvent([buildSqsRecord({ RunId: 'run-1' })]);
     const result = await handler(event, {} as any, () => {});
     expect(result.statusCode).toBe(200);
+  });
+});
+
+describe('processClassificationEvent — trigger, toggle, and analysis status', () => {
+  let mockQueryByRunId: jest.Mock;
+  let mockUpdate: jest.Mock;
+  let mockQueryByLaboratoryId: jest.Mock;
+
+  const failedRun = {
+    RunId: 'run-1',
+    LaboratoryId: 'lab-1',
+    OrganizationId: 'org-1',
+    Platform: 'AWS HealthOmics',
+    Status: 'FAILED',
+    FailureReason: 'WORKFLOW_RUN_FAILED',
+  } as any;
+
+  const labWithLlm = {
+    LaboratoryId: 'lab-1',
+    OrganizationId: 'org-1',
+    HealthOmicsLlmProvider: 'bedrock',
+    HealthOmicsLlmModelId: 'a-model',
+  } as any;
+
+  // Each test in these blocks starts from the working defaults; individual tests
+  // override only what they are asserting on.
+  beforeEach(() => {
+    mockClassify.mockReset();
+    mockFetchRedactedLogExcerpt.mockReset();
+    mockFetchRedactedLogExcerpt.mockResolvedValue(undefined);
+    mockQueryByRunId = jest.fn().mockResolvedValue(failedRun);
+    mockUpdate = jest.fn().mockResolvedValue(undefined);
+    mockQueryByLaboratoryId = jest.fn().mockResolvedValue(labWithLlm);
+
+    (LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>).prototype.queryByRunId = mockQueryByRunId;
+    (LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>).prototype.update = mockUpdate;
+    (LaboratoryService as jest.MockedClass<typeof LaboratoryService>).prototype.queryByLaboratoryId =
+      mockQueryByLaboratoryId;
+
+    mockClassify.mockResolvedValue({
+      outcome: 'classified',
+      result: { owner: 'Lab', summary: 'Bad sample sheet.', action: 'Re-upload it.' },
+    });
+  });
+
+  describe('processClassificationEvent — trigger and toggle', () => {
+    it('runs for a manual trigger even when the run is already classified', async () => {
+      mockQueryByRunId.mockResolvedValue({ ...failedRun, FailureOwner: 'Lab' });
+      await processClassificationEvent('UPDATE', failedRun, 'Manual');
+      expect(mockClassify).toHaveBeenCalled();
+    });
+
+    it('skips an automatic trigger when the run is already classified', async () => {
+      mockQueryByRunId.mockResolvedValue({ ...failedRun, FailureOwner: 'Lab' });
+      await processClassificationEvent('UPDATE', failedRun, 'Automatic');
+      expect(mockClassify).not.toHaveBeenCalled();
+    });
+
+    it('skips an automatic trigger when the lab has automatic analysis disabled', async () => {
+      mockQueryByLaboratoryId.mockResolvedValue({ ...labWithLlm, AutomaticFailureAnalysisEnabled: false });
+      await processClassificationEvent('UPDATE', failedRun, 'Automatic');
+      expect(mockClassify).not.toHaveBeenCalled();
+    });
+
+    it('runs a manual trigger even when the lab has automatic analysis disabled', async () => {
+      mockQueryByLaboratoryId.mockResolvedValue({ ...labWithLlm, AutomaticFailureAnalysisEnabled: false });
+      await processClassificationEvent('UPDATE', failedRun, 'Manual');
+      expect(mockClassify).toHaveBeenCalled();
+    });
+
+    it('runs an automatic trigger when the flag is undefined — default-on needs no migration', async () => {
+      mockQueryByLaboratoryId.mockResolvedValue({ ...labWithLlm, AutomaticFailureAnalysisEnabled: undefined });
+      await processClassificationEvent('UPDATE', failedRun, 'Automatic');
+      expect(mockClassify).toHaveBeenCalled();
+    });
+  });
+
+  describe('processClassificationEvent — analysis status', () => {
+    it('writes Running before the work, but only for a manual trigger', async () => {
+      await processClassificationEvent('UPDATE', failedRun, 'Manual');
+      expect(mockUpdate.mock.calls[0][0]).toMatchObject({ AnalysisStatus: 'Running' });
+    });
+
+    it('does not write Running for an automatic trigger', async () => {
+      await processClassificationEvent('UPDATE', failedRun, 'Automatic');
+      const statuses = mockUpdate.mock.calls.map((call) => call[0].AnalysisStatus);
+      expect(statuses).not.toContain('Running');
+    });
+
+    it('writes Succeeded with the classification on success', async () => {
+      mockClassify.mockResolvedValue({
+        outcome: 'classified',
+        result: { owner: 'Lab', summary: 'Bad sample sheet.', action: 'Re-upload it.' },
+      });
+      await processClassificationEvent('UPDATE', failedRun, 'Manual');
+      expect(mockUpdate).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          AnalysisStatus: 'Succeeded',
+          FailureOwner: 'Lab',
+          FailureClassifiedBy: 'llm',
+        }),
+      );
+    });
+
+    it('writes Failed with the error code when the provider fails', async () => {
+      mockClassify.mockResolvedValue({
+        outcome: 'failed',
+        error: { code: 'INVALID_MODEL_ID', message: 'bad model', retryable: false },
+      });
+      await processClassificationEvent('UPDATE', { ...failedRun, FailureReason: 'UNKNOWN_CODE' }, 'Manual');
+      expect(mockUpdate).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          AnalysisStatus: 'Failed',
+          AnalysisErrorCode: 'INVALID_MODEL_ID',
+          AnalysisErrorMessage: 'bad model',
+        }),
+      );
+    });
+
+    it('keeps the deterministic lookup result even when the LLM fails', async () => {
+      // Log enrichment on means the LLM still runs even though the lookup already
+      // hit, so this exercises the fallback path rather than the lookup short-circuit.
+      mockQueryByLaboratoryId.mockResolvedValue({ ...labWithLlm, HealthOmicsLogEnrichmentEnabled: true });
+      // ECR_PERMISSION_ERROR is in HEALTHOMICS_FAILURE_LOOKUP, so the lookup hits.
+      mockQueryByRunId.mockResolvedValue({ ...failedRun, FailureReason: 'ECR_PERMISSION_ERROR' });
+      mockClassify.mockResolvedValue({
+        outcome: 'failed',
+        error: { code: 'RATE_LIMITED', message: 'slow down', retryable: true },
+      });
+      await processClassificationEvent('UPDATE', { ...failedRun, FailureReason: 'ECR_PERMISSION_ERROR' }, 'Manual');
+      expect(mockUpdate).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          AnalysisStatus: 'Failed',
+          AnalysisErrorCode: 'RATE_LIMITED',
+          FailureOwner: 'Bioinformatician',
+          FailureClassifiedBy: 'lookup',
+        }),
+      );
+    });
   });
 });

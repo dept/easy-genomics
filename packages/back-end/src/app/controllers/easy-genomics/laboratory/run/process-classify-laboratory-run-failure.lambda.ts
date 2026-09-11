@@ -5,6 +5,7 @@ import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-geno
 import {
   SnsProcessingEvent,
   SnsProcessingOperation,
+  SnsProcessingTrigger,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
 import {
   ClassificationResult,
@@ -16,6 +17,7 @@ import { SQSEvent } from 'aws-lambda/trigger/sqs';
 import { CloudWatchLogsService } from '@BE/services/cloudwatch-logs-service';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
+import { ClassificationError, ClassificationOutcome } from '@BE/services/llm-classification/classification-outcome';
 import { ClassificationInput } from '@BE/services/llm-classification/llm-classification-provider';
 import { LLMClassificationService, ProviderConfig } from '@BE/services/llm-classification/llm-classification-service';
 import { fetchRedactedLogExcerpt } from '@BE/services/llm-classification/run-log-fetcher';
@@ -41,7 +43,7 @@ export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxy
       }
 
       const laboratoryRun: LaboratoryRun = <LaboratoryRun>JSON.parse(JSON.stringify(snsEvent.Record));
-      await processClassificationEvent(snsEvent.Operation, laboratoryRun);
+      await processClassificationEvent(snsEvent.Operation, laboratoryRun, snsEvent.Trigger ?? 'Automatic');
     }
 
     return buildResponse(200, JSON.stringify({ Status: 'Success' }));
@@ -54,16 +56,19 @@ export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxy
 export async function processClassificationEvent(
   operation: SnsProcessingOperation,
   laboratoryRun: LaboratoryRun,
+  trigger: SnsProcessingTrigger = 'Automatic',
 ): Promise<boolean> {
   if (operation !== 'UPDATE') {
     console.error(`Unsupported SNS Processing Event Operation: ${operation}`);
     return false;
   }
 
+  const isManual = trigger === 'Manual';
   const existingRun: LaboratoryRun = await laboratoryRunService.queryByRunId(laboratoryRun.RunId);
 
-  // Idempotency: another invocation already classified this run.
-  if (existingRun.FailureOwner) {
+  // Idempotency against duplicate status-checks. A manual trigger is an
+  // explicit request to re-analyse, so it deliberately bypasses this.
+  if (!isManual && existingRun.FailureOwner) {
     console.log(`Run ${existingRun.RunId} already classified as ${existingRun.FailureOwner}; skipping.`);
     return true;
   }
@@ -88,18 +93,39 @@ export async function processClassificationEvent(
     }
   }
 
-  const classification = await resolveClassification(existingRun, laboratory);
-  if (!classification) {
-    console.log(`No classification produced for run ${existingRun.RunId}; leaving fields unset.`);
+  // Per-lab cost control. `!== false` rather than `=== true` so labs that
+  // predate the field keep today's behaviour with no data migration.
+  if (!isManual && laboratory?.AutomaticFailureAnalysisEnabled === false) {
+    console.log(`Laboratory ${existingRun.LaboratoryId} has automatic failure analysis disabled; skipping.`);
     return true;
   }
 
+  // Nobody polls an automatic run, so skip the extra write on the hot path.
+  if (isManual) {
+    await laboratoryRunService.update({
+      ...existingRun,
+      AnalysisStatus: 'Running',
+      ModifiedAt: new Date().toISOString(),
+      ModifiedBy: 'Failure Classification',
+    });
+  }
+
+  const resolved = await resolveClassification(existingRun, laboratory);
+
+  const classification = resolved.kind === 'classified' ? resolved : resolved.fallback;
   await laboratoryRunService.update({
     ...existingRun,
-    FailureOwner: classification.result.owner,
-    FailureSummary: classification.result.summary,
-    FailureAction: classification.result.action,
-    FailureClassifiedBy: classification.source,
+    ...(classification
+      ? {
+          FailureOwner: classification.result.owner,
+          FailureSummary: classification.result.summary,
+          FailureAction: classification.result.action,
+          FailureClassifiedBy: classification.source,
+        }
+      : {}),
+    AnalysisStatus: resolved.kind === 'failed' ? 'Failed' : 'Succeeded',
+    AnalysisErrorCode: resolved.kind === 'failed' ? resolved.error.code : undefined,
+    AnalysisErrorMessage: resolved.kind === 'failed' ? resolved.error.message : undefined,
     ModifiedAt: new Date().toISOString(),
     ModifiedBy: 'Failure Classification',
   });
@@ -107,36 +133,50 @@ export async function processClassificationEvent(
   return true;
 }
 
-type ResolvedClassification = { result: ClassificationResult; source: 'lookup' | 'llm' };
+type Classified = { result: ClassificationResult; source: 'lookup' | 'llm' };
 
-async function resolveClassification(
-  run: LaboratoryRun,
-  laboratory: Laboratory | undefined,
-): Promise<ResolvedClassification | null> {
+type Resolved =
+  // The LLM path failed. `fallback` carries the deterministic lookup hit, if
+  // there was one — a provider error must never cost the lab its free
+  // classification.
+  { kind: 'failed'; error: ClassificationError; fallback: Classified | null } | ({ kind: 'classified' } & Classified);
+
+async function resolveClassification(run: LaboratoryRun, laboratory: Laboratory | undefined): Promise<Resolved> {
   // Deterministic lookup first — free and high-confidence. Held (not returned
   // immediately) so it can serve as a fallback if the LLM path runs and fails.
   const lookup =
     run.Platform === 'AWS HealthOmics' && run.FailureReason ? classifyHealthOmicsFailure(run.FailureReason) : null;
-  const lookupResult: ResolvedClassification | null = lookup ? { result: lookup, source: 'lookup' } : null;
+  const lookupResult: Classified | null = lookup ? { result: lookup, source: 'lookup' } : null;
 
-  if (!laboratory) return lookupResult;
+  const noLlm = (): Resolved =>
+    lookupResult
+      ? { kind: 'classified', ...lookupResult }
+      : {
+          kind: 'failed',
+          error: {
+            code: 'CONFIG_INCOMPLETE',
+            message: 'AI failure analysis is not configured for this laboratory.',
+            retryable: false,
+          },
+          fallback: null,
+        };
+
+  if (!laboratory) return noLlm();
 
   // Setting a provider IS the enable signal for the LLM. Without one we can only
   // offer the deterministic lookup (if any).
   const platformConfig = resolvePlatformConfig(laboratory, run.Platform);
-  if (!platformConfig.provider || !platformConfig.modelId) {
-    return lookupResult;
-  }
+  if (!platformConfig.provider || !platformConfig.modelId) return noLlm();
 
   // Log enrichment is opt-in per lab + platform. When off, a lookup hit wins
   // immediately (today's behaviour) and the LLM only handles lookup misses.
   const logEnrichmentEnabled = isLogEnrichmentEnabled(laboratory, run.Platform);
   if (lookupResult && !logEnrichmentEnabled) {
-    return lookupResult;
+    return { kind: 'classified', ...lookupResult };
   }
 
   const config = await buildProviderConfig(laboratory, run.Platform, platformConfig);
-  if (!config) return lookupResult;
+  if (!config) return noLlm();
 
   const input: ClassificationInput = {
     platform: run.Platform,
@@ -152,11 +192,13 @@ async function resolveClassification(
     input.logExcerpt = await fetchRedactedLogExcerpt(run, { cloudWatchLogsService });
   }
 
-  const llmOutcome = await llmClassificationService.classify(input, config);
+  const outcome: ClassificationOutcome = await llmClassificationService.classify(input, config);
   // A failed outcome (invalid model id, auth failure, provider outage, ...)
   // carries no usable classification; fall back to the deterministic lookup.
-  if (llmOutcome.outcome === 'failed') return lookupResult;
-  return { result: llmOutcome.result, source: 'llm' };
+  if (outcome.outcome === 'failed') {
+    return { kind: 'failed', error: outcome.error, fallback: lookupResult };
+  }
+  return { kind: 'classified', result: outcome.result, source: 'llm' };
 }
 
 function isLogEnrichmentEnabled(laboratory: Laboratory, platform: LaboratoryRun['Platform']): boolean {

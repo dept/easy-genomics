@@ -1766,6 +1766,12 @@ components:
             CloudWatch engine log, redacts PII + secrets, and sends a bounded excerpt to
             the configured LLM for deeper diagnosis. Requires a HealthOmics LLM provider.
           type: boolean
+        AutomaticFailureAnalysisEnabled:
+          description: |-
+            Per-lab kill switch for the automatic failure-classification consumer.
+            `undefined` means enabled — labs that predate this field keep today's
+            behaviour with no data migration. Does not gate a manual trigger.
+          type: boolean
         HasHealthOmicsLlmApiKey:
           description: Boolean indicators returned by read-laboratory; the actual keys never leave SSM.
           type: boolean

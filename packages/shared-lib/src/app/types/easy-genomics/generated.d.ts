@@ -1179,6 +1179,12 @@ export interface components {
        * the configured LLM for deeper diagnosis. Requires a HealthOmics LLM provider.
        */
       HealthOmicsLogEnrichmentEnabled?: boolean;
+      /**
+       * @description Per-lab kill switch for the automatic failure-classification consumer.
+       * `undefined` means enabled — labs that predate this field keep today's
+       * behaviour with no data migration. Does not gate a manual trigger.
+       */
+      AutomaticFailureAnalysisEnabled?: boolean;
       /** @description Boolean indicators returned by read-laboratory; the actual keys never leave SSM. */
       HasHealthOmicsLlmApiKey?: boolean;
       HasSeqeraLlmApiKey?: boolean;
