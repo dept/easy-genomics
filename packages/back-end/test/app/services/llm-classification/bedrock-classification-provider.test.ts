@@ -1,4 +1,5 @@
 import {
+  BedrockClassificationProvider,
   mapBedrockError,
   parseClassificationResponse,
 } from '../../../../src/app/services/llm-classification/bedrock-classification-provider';
@@ -86,5 +87,22 @@ describe('mapBedrockError', () => {
     const error = mapBedrockError(new Error('something else'));
     expect(error.code).toBe('PROVIDER_UNAVAILABLE');
     expect(error.retryable).toBe(false);
+  });
+});
+
+describe('BedrockClassificationProvider.validateConfig', () => {
+  it('resolves null when the probe succeeds', async () => {
+    const provider = new BedrockClassificationProvider('a-model');
+    jest.spyOn((provider as any).client, 'send').mockResolvedValue({
+      body: new TextEncoder().encode(JSON.stringify({ content: [{ text: 'ok' }] })),
+    });
+    await expect(provider.validateConfig()).resolves.toBeNull();
+  });
+
+  it('resolves MODEL_ACCESS_DENIED when the account lacks model access', async () => {
+    const provider = new BedrockClassificationProvider('a-model');
+    jest.spyOn((provider as any).client, 'send').mockRejectedValue({ name: 'AccessDeniedException' });
+    const error = await provider.validateConfig();
+    expect(error?.code).toBe('MODEL_ACCESS_DENIED');
   });
 });

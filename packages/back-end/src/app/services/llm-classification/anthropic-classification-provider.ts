@@ -60,7 +60,33 @@ export class AnthropicClassificationProvider implements LLMClassificationProvide
     return classified(result);
   }
 
+  /**
+   * Anthropic has no per-model lookup endpoint, so the probe is the smallest
+   * possible message — one token out.
+   */
   public async validateConfig(): Promise<ClassificationError | null> {
-    throw new Error('not implemented until Task 6');
+    try {
+      const response = await fetch(this.endpoint, {
+        method: 'POST',
+        headers: {
+          'x-api-key': this.apiKey,
+          'anthropic-version': '2023-06-01',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: this.modelId,
+          max_tokens: 1,
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'ping' }] }],
+        }),
+      });
+      if (!response.ok) return mapHttpStatusToError('anthropic', response.status);
+      return null;
+    } catch (error) {
+      return {
+        code: 'PROVIDER_UNAVAILABLE',
+        message: 'The Anthropic API could not be reached to validate this configuration.',
+        retryable: true,
+      };
+    }
   }
 }

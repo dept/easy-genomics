@@ -62,7 +62,25 @@ export class OpenAIClassificationProvider implements LLMClassificationProvider {
     return classified(result);
   }
 
+  /**
+   * A model lookup is free and exercises both the key and the model ID, so
+   * there is no reason to spend a completion on validation.
+   */
   public async validateConfig(): Promise<ClassificationError | null> {
-    throw new Error('not implemented until Task 6');
+    const modelsUrl = this.endpoint.replace('/chat/completions', `/models/${encodeURIComponent(this.modelId)}`);
+    try {
+      const response = await fetch(modelsUrl, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${this.apiKey}` },
+      });
+      if (!response.ok) return mapHttpStatusToError('openai', response.status);
+      return null;
+    } catch (error) {
+      return {
+        code: 'PROVIDER_UNAVAILABLE',
+        message: 'The OpenAI API could not be reached to validate this configuration.',
+        retryable: true,
+      };
+    }
   }
 }

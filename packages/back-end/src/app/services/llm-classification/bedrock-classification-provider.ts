@@ -93,8 +93,30 @@ export class BedrockClassificationProvider implements LLMClassificationProvider 
     return classified(result);
   }
 
+  /**
+   * Smallest call that still exercises the model ID and this Lambda's Bedrock
+   * permissions: one token, no prompt of substance.
+   */
   public async validateConfig(): Promise<ClassificationError | null> {
-    throw new Error('not implemented until Task 6');
+    try {
+      await this.client.send(
+        new InvokeModelCommand({
+          modelId: this.modelId,
+          contentType: 'application/json',
+          accept: 'application/json',
+          body: new TextEncoder().encode(
+            JSON.stringify({
+              anthropic_version: 'bedrock-2023-05-31',
+              max_tokens: 1,
+              messages: [{ role: 'user', content: [{ type: 'text', text: 'ping' }] }],
+            }),
+          ),
+        }),
+      );
+      return null;
+    } catch (error) {
+      return mapBedrockError(error);
+    }
   }
 }
 

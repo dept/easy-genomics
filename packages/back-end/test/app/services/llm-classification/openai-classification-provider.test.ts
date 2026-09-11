@@ -119,3 +119,24 @@ describe('OpenAIClassificationProvider', () => {
     expect(result.outcome === 'failed' && result.error.message).not.toContain('sk-test-key');
   });
 });
+
+describe('OpenAIClassificationProvider.validateConfig', () => {
+  it('resolves null when the model lookup returns 200', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 }) as unknown as typeof fetch;
+    const provider = new OpenAIClassificationProvider('gpt-4o-mini', 'sk-test-key');
+    await expect(provider.validateConfig()).resolves.toBeNull();
+  });
+
+  it('queries the models endpoint for the configured model id', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await new OpenAIClassificationProvider('gpt-4o-mini', 'sk-test-key').validateConfig();
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.openai.com/v1/models/gpt-4o-mini');
+  });
+
+  it('resolves INVALID_MODEL_ID on a 404', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 }) as unknown as typeof fetch;
+    const provider = new OpenAIClassificationProvider('nope', 'sk-test-key');
+    expect((await provider.validateConfig())?.code).toBe('INVALID_MODEL_ID');
+  });
+});

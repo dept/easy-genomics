@@ -117,3 +117,25 @@ describe('AnthropicClassificationProvider', () => {
     expect(result.outcome === 'failed' && result.error.code).toBe('UNPARSEABLE_RESPONSE');
   });
 });
+
+describe('AnthropicClassificationProvider.validateConfig', () => {
+  it('resolves null when the probe returns 200', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 }) as unknown as typeof fetch;
+    const provider = new AnthropicClassificationProvider('claude-x', 'sk-ant-test');
+    await expect(provider.validateConfig()).resolves.toBeNull();
+  });
+
+  it('sends a single-token probe rather than a full classification', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await new AnthropicClassificationProvider('claude-x', 'sk-ant-test').validateConfig();
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.max_tokens).toBe(1);
+  });
+
+  it('resolves AUTH_FAILED on a 401', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({ ok: false, status: 401 }) as unknown as typeof fetch;
+    const provider = new AnthropicClassificationProvider('claude-x', 'bad-key');
+    expect((await provider.validateConfig())?.code).toBe('AUTH_FAILED');
+  });
+});

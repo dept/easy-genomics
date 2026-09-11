@@ -1,6 +1,6 @@
 import { AnthropicClassificationProvider } from './anthropic-classification-provider';
 import { BedrockClassificationProvider } from './bedrock-classification-provider';
-import { ClassificationOutcome, failed } from './classification-outcome';
+import { ClassificationError, ClassificationOutcome, failed } from './classification-outcome';
 import { ClassificationInput, LLMClassificationProvider } from './llm-classification-provider';
 import { OpenAIClassificationProvider } from './openai-classification-provider';
 
@@ -30,6 +30,22 @@ export class LLMClassificationService {
       return failed('CONFIG_INCOMPLETE', 'AI failure analysis is not fully configured for this laboratory.', false);
     }
     return provider.classify(input);
+  }
+
+  /**
+   * Live probe used by `update-laboratory` before a provider config is stored.
+   * Returns null when the config works, or the reason it does not.
+   */
+  public async validateConfig(config: ProviderConfig): Promise<ClassificationError | null> {
+    const provider = this.buildProvider(config);
+    if (!provider) {
+      return {
+        code: 'CONFIG_INCOMPLETE',
+        message: 'AI failure analysis is not fully configured for this laboratory.',
+        retryable: false,
+      };
+    }
+    return provider.validateConfig();
   }
 
   /** Exposed for testing. Returns null when the config is incomplete or the provider is unsupported. */

@@ -90,3 +90,19 @@ describe('LLMClassificationService.classify', () => {
     expect(result.outcome).toBe('classified');
   });
 });
+
+describe('LLMClassificationService.validateConfig', () => {
+  const service = new LLMClassificationService();
+
+  it('returns CONFIG_INCOMPLETE without probing when the config is incomplete', async () => {
+    const error = await service.validateConfig({ provider: 'openai', modelId: 'gpt-4o-mini' });
+    expect(error?.code).toBe('CONFIG_INCOMPLETE');
+  });
+
+  it('delegates to the provider probe when the config is complete', async () => {
+    const validateConfig = jest.fn().mockResolvedValue(null);
+    jest.spyOn(service, 'buildProvider').mockReturnValue({ classify: jest.fn(), validateConfig });
+    await expect(service.validateConfig({ provider: 'bedrock', modelId: 'a-model' })).resolves.toBeNull();
+    expect(validateConfig).toHaveBeenCalled();
+  });
+});
