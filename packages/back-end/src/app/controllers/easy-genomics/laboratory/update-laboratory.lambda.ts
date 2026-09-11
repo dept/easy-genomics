@@ -5,6 +5,7 @@ import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib
 import {
   InvalidRequestError,
   LaboratoryAccessTokenUnavailableError,
+  LaboratoryLlmConfigurationInvalidError,
   LaboratoryNameTakenError,
   LaboratorySeqeraCredentialsIncorrectError,
   RequiredIdNotFoundError,
@@ -20,6 +21,7 @@ import { migrateS3AccessOnDefaultModeChange } from '@BE/services/easy-genomics/l
 import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { migrateWorkflowAccessOnDefaultModeChange } from '@BE/services/easy-genomics/laboratory-workflow-access-default-migration';
+import { LLMClassificationService } from '@BE/services/llm-classification/llm-classification-service';
 import { OmicsService } from '@BE/services/omics-service';
 import { SsmService } from '@BE/services/ssm-service';
 import { validateOrganizationAdminAccess } from '@BE/utils/auth-utils';
@@ -31,6 +33,7 @@ const laboratoryService = new LaboratoryService();
 const ssmService = new SsmService();
 const omicsService = new OmicsService();
 const s3AccessService = new LaboratoryS3AccessService();
+const llmClassificationService = new LLMClassificationService();
 
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -101,6 +104,31 @@ export const handler: Handler = async (
         request.S3Bucket,
         s3AccessService,
       );
+    }
+
+    // Live probe only when the stored LLM config actually changes. Probing on
+    // every laboratory save would add a provider round-trip to an unrelated
+    // action.
+    for (const platform of ['AWS HealthOmics', 'Seqera Cloud'] as const) {
+      const isOmics = platform === 'AWS HealthOmics';
+      const provider = isOmics ? request.HealthOmicsLlmProvider : request.SeqeraLlmProvider;
+      const modelId = isOmics ? request.HealthOmicsLlmModelId : request.SeqeraLlmModelId;
+      const apiKey = isOmics ? request.HealthOmicsLlmApiKey : request.SeqeraLlmApiKey;
+
+      const changed =
+        provider !== (isOmics ? existing.HealthOmicsLlmProvider : existing.SeqeraLlmProvider) ||
+        modelId !== (isOmics ? existing.HealthOmicsLlmModelId : existing.SeqeraLlmModelId) ||
+        apiKey !== undefined;
+
+      if (!changed || !provider || !modelId) continue;
+
+      const configError = await llmClassificationService.validateConfig({
+        provider,
+        modelId,
+        apiKey,
+        bedrockRegion: process.env.BEDROCK_REGION || process.env.AWS_REGION,
+      });
+      if (configError) throw new LaboratoryLlmConfigurationInvalidError(configError.message);
     }
 
     const response = await laboratoryService
