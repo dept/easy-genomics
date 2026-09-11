@@ -826,6 +826,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: ['omics:GetConfiguration'],
         effect: Effect.ALLOW,
       }),
+      new PolicyStatement({
+        resources: [`arn:aws:bedrock:${this.props.env.region!}::foundation-model/*`],
+        actions: ['bedrock:InvokeModel'],
+        effect: Effect.ALLOW,
+      }),
     ]);
     // /easy-genomics/laboratory/delete-laboratory
     this.iam.addPolicyStatements('/easy-genomics/laboratory/delete-laboratory', [
