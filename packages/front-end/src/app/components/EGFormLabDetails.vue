@@ -1484,20 +1484,10 @@
               />
             </EGFormGroup>
 
-            <EGFormGroup
-              v-if="state.HealthOmicsLlmProvider"
-              name="HealthOmicsLogEnrichmentEnabled"
-              hint="Sends a redacted excerpt of the failed run's CloudWatch logs to the AI for deeper analysis. Identifiers, paths, and secrets are stripped before sending."
-            >
-              <div class="flex items-center">
-                <span class="text-sm text-black">Analyse run logs on failure</span>
-                <UToggle
-                  class="ml-2"
-                  v-model="state.HealthOmicsLogEnrichmentEnabled"
-                  :disabled="!isEditing || isSubmittingFormData"
-                />
-              </div>
-            </EGFormGroup>
+            <!-- Log-enrichment control hidden per product decision (manual-only analysis;
+                 keep the settings surface simple). state.HealthOmicsLogEnrichmentEnabled is
+                 still submitted as-is on save — a lab that already had it on keeps that
+                 behavior; it's just no longer user-editable from this form. -->
           </div>
 
           <!-- Seqera sub-section -->
