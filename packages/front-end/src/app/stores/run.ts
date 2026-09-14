@@ -5,6 +5,12 @@ import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-geno
 import { Workflow as SeqeraRun } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
 import { defineStore } from 'pinia';
 import { FilePair } from '@FE/components/EGRunFormUploadData.vue';
+import { analysisErrorMessage } from '@FE/utils/analysis-error-message';
+
+const ANALYSIS_POLL_INTERVAL_MS = 3_000;
+// Log enrichment plus a slow provider can legitimately take a while; past this
+// the run is assumed stranded rather than slow.
+const ANALYSIS_POLL_TIMEOUT_MS = 90_000;
 
 /*
 The WIP run is a construct for storing all of the data for a pipeline run that's being configured but hasn't been
@@ -52,6 +58,9 @@ interface RunState {
   omicsRunIdsByLab: Record<string, string[]>;
   // configs of new Omics runs yet to be launched
   wipOmicsRuns: Record<string, WipRun>;
+
+  /** Interval handles for in-flight analysis polls, keyed by RunId. */
+  analysisPolls: Record<string, ReturnType<typeof setInterval>>;
 }
 
 const initialState = (): RunState => ({
@@ -65,6 +74,8 @@ const initialState = (): RunState => ({
   omicsRuns: {},
   omicsRunIdsByLab: {},
   wipOmicsRuns: {},
+
+  analysisPolls: {},
 });
 
 const useRunStore = defineStore('runStore', {
@@ -218,6 +229,56 @@ const useRunStore = defineStore('runStore', {
       } catch (error) {
         useToastStore().error('Failed to refresh run details. Please refresh the page.');
         console.error(error);
+      }
+    },
+
+    async requestFailureAnalysis(labId: string, runId: string): Promise<void> {
+      const { $api } = useNuxtApp();
+      try {
+        await $api.labs.requestLabRunFailureAnalysis(labId, runId);
+      } catch (error: any) {
+        // Config errors are rejected synchronously by the endpoint, so this is
+        // where an invalid model ID surfaces most of the time.
+        useToastStore().error(error?.message || analysisErrorMessage(undefined));
+        return;
+      }
+      this.startAnalysisPolling(runId);
+    },
+
+    startAnalysisPolling(runId: string): void {
+      this.stopAnalysisPolling(runId);
+      const startedAt = Date.now();
+
+      const handle = setInterval(async () => {
+        // A consumer that dies mid-flight leaves the status on Running forever.
+        // Without this the interval would outlive the page.
+        if (Date.now() - startedAt > ANALYSIS_POLL_TIMEOUT_MS) {
+          this.stopAnalysisPolling(runId);
+          useToastStore().error('AI failure analysis is taking longer than expected. Check back shortly.');
+          return;
+        }
+
+        await this.loadSingleLabRun(runId);
+        const status = this.labRuns[runId]?.AnalysisStatus;
+
+        if (status === 'Succeeded') {
+          this.stopAnalysisPolling(runId);
+          useToastStore().success('AI failure analysis complete.');
+        } else if (status === 'Failed') {
+          this.stopAnalysisPolling(runId);
+          const run = this.labRuns[runId];
+          useToastStore().error(analysisErrorMessage(run?.AnalysisErrorCode));
+        }
+      }, ANALYSIS_POLL_INTERVAL_MS);
+
+      this.analysisPolls[runId] = handle;
+    },
+
+    stopAnalysisPolling(runId: string): void {
+      const handle = this.analysisPolls[runId];
+      if (handle) {
+        clearInterval(handle);
+        delete this.analysisPolls[runId];
       }
     },
 
