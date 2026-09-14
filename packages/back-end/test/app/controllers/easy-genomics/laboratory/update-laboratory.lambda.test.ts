@@ -176,6 +176,37 @@ describe('update-laboratory.lambda', () => {
     );
   });
 
+  // Regression: FailureAnalysisEnabled was never included in the explicit field
+  // list this handler builds for laboratoryService.update — a technician could
+  // toggle "AI error analysis" off in Settings, get a success toast, and the
+  // stored value never changed, so the run-page button stayed visible.
+  it('passes FailureAnalysisEnabled through to the service update call', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      FailureAnalysisEnabled: true,
+    });
+
+    (mockLabService.prototype.update as jest.Mock).mockResolvedValue({
+      OrganizationId: 'org-1',
+      LaboratoryId: 'lab-1',
+    });
+
+    const result = await handler(
+      createEvent(LAB_ID, { ...baseRequest, FailureAnalysisEnabled: false }),
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockLabService.prototype.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        FailureAnalysisEnabled: false,
+      }),
+      expect.anything(),
+    );
+  });
+
   it('preserves existing polling intervals when they are omitted from the request', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
       OrganizationId: ORG_ID,

@@ -172,6 +172,7 @@ export const handler: Handler = async (
           // Same direct-mapping rationale: an unchecked toggle (undefined) clears the flag.
           HealthOmicsLogEnrichmentEnabled: request.HealthOmicsLogEnrichmentEnabled,
           NotificationsEnabled: request.NotificationsEnabled,
+          FailureAnalysisEnabled: request.FailureAnalysisEnabled,
           ModifiedAt: new Date().toISOString(),
           ModifiedBy: userId,
         },
