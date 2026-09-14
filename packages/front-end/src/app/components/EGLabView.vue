@@ -7,7 +7,13 @@
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/roles';
   import { ButtonVariantEnum } from '@FE/types/buttons';
   import { DeletedResponse, EditUserResponse } from '@FE/types/api';
-  import { useRunStore, useSeqeraPipelinesStore, useToastStore, useUiStore } from '@FE/stores';
+  import {
+    useFavouriteWorkflowsStore,
+    useRunStore,
+    useSeqeraPipelinesStore,
+    useToastStore,
+    useUiStore,
+  } from '@FE/stores';
   import useUser from '@FE/composables/useUser';
   import { LaboratoryUserDetails } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user-details';
   import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
@@ -40,12 +46,12 @@
   const userStore = useUserStore();
   const seqeraPipelinesStore = useSeqeraPipelinesStore();
   const omicsWorkflowsStore = useOmicsWorkflowsStore();
+  const favouriteWorkflowsStore = useFavouriteWorkflowsStore();
   const runsTableRefreshKey = ref(0);
 
   const { stringSortCompare } = useSort();
 
   const labUsers = ref<LabUser[]>([]);
-  const favouriteWorkflows = ref<FavouriteWorkflow[]>([]);
   const seqeraPipelines = computed<SeqeraPipeline[]>(() => seqeraPipelinesStore.pipelinesForLab(props.labId));
   const omicsWorkflows = computed<LabOmicsWorkflow[]>(() => omicsWorkflowsStore.workflowsForLab(props.labId));
   const canAddUsers = computed<boolean>(() => userStore.canAddLabUsers(props.labId));
@@ -519,36 +525,19 @@
   ];
 
   function isWorkflowFavourited(workflowId: string): boolean {
-    return favouriteWorkflows.value.some((w) => w.WorkflowId === workflowId && w.LaboratoryId === props.labId);
+    return favouriteWorkflowsStore.isFavourited(props.labId, workflowId);
   }
 
   async function toggleFavouriteWorkflow(workflow: LabOmicsWorkflow) {
-    const workflowId = workflow.id ?? '';
-    const isFav = isWorkflowFavourited(workflowId);
+    const favourite: FavouriteWorkflow = {
+      WorkflowId: workflow.id ?? '',
+      WorkflowName: workflow.name ?? '',
+      Description: workflow.description ?? undefined,
+      Platform: 'AWS HealthOmics',
+      LaboratoryId: props.labId,
+    };
 
-    let updated: FavouriteWorkflow[];
-    if (isFav) {
-      updated = favouriteWorkflows.value.filter(
-        (w) => !(w.WorkflowId === workflowId && w.LaboratoryId === props.labId),
-      );
-    } else {
-      const newFav: FavouriteWorkflow = {
-        WorkflowId: workflowId,
-        WorkflowName: workflow.name ?? '',
-        Description: workflow.description ?? undefined,
-        Platform: 'AWS HealthOmics',
-        LaboratoryId: props.labId,
-      };
-      updated = [...favouriteWorkflows.value, newFav];
-    }
-
-    try {
-      await $api.users.updateUser(userStore.currentUserDetails.id!, { FavouriteWorkflows: updated });
-      favouriteWorkflows.value = updated;
-      useToastStore().success(isFav ? 'Workflow removed from favorites' : 'Workflow added to favorites');
-    } catch {
-      useToastStore().error(isFav ? 'Failed to remove workflow from favorites' : 'Failed to add workflow to favorites');
-    }
+    await favouriteWorkflowsStore.toggleFavourite(favourite);
   }
 
   function viewRunOmicsWorkflow(workflow: LabOmicsWorkflow) {
@@ -720,15 +709,6 @@
     }
   }
 
-  async function loadFavouriteWorkflows(): Promise<void> {
-    try {
-      const user = await $api.users.getUser();
-      favouriteWorkflows.value = user.FavouriteWorkflows ?? [];
-    } catch (error) {
-      console.error('Error loading favorite workflows', error);
-    }
-  }
-
   // this anticipates these store values being needed on run click
   async function getSeqeraRuns(): Promise<void> {
     useUiStore().setRequestPending('getSeqeraRuns');
@@ -888,7 +868,7 @@
       return;
     }
 
-    promises.push(loadFavouriteWorkflows());
+    promises.push(favouriteWorkflowsStore.load());
 
     if (newLab.NextFlowTowerEnabled) {
       if (newLab.HasNextFlowTowerAccessToken == null) {

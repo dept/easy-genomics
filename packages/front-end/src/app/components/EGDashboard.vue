@@ -4,8 +4,13 @@
   import { FavouriteWorkflow } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
   import { Pipeline as SeqeraPipeline } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
   import { WorkflowListItem as OmicsWorkflow } from '@aws-sdk/client-omics';
-  import { useUiStore, useSeqeraPipelinesStore, useOmicsWorkflowsStore } from '@FE/stores';
+  import { useUiStore, useSeqeraPipelinesStore, useOmicsWorkflowsStore, useFavouriteWorkflowsStore } from '@FE/stores';
   import { isLaboratoryRunOwnedByUser } from '@FE/utils/laboratory-run-ownership';
+  import {
+    type LabWorkflowAvailability,
+    type PlatformWorkflowAvailability,
+    selectVisibleFavouriteWorkflows,
+  } from '@FE/utils/favourite-workflows';
   import { TableSort } from './EGTable.vue';
 
   const props = defineProps<{
@@ -21,12 +26,15 @@
   useInitialPendingRequests('loadDashboardData');
   const seqeraPipelinesStore = useSeqeraPipelinesStore();
   const omicsWorkflowsStore = useOmicsWorkflowsStore();
+  const favouriteWorkflowsStore = useFavouriteWorkflowsStore();
 
   const lab = computed<Laboratory | null>(() => labStore.labs[props.labId] ?? null);
   const labName = computed<string>(() => lab.value?.Name || '');
 
   const allRuns = ref<LaboratoryRun[]>([]);
-  const favouriteWorkflows = ref<FavouriteWorkflow[]>([]);
+  /** Whether this lab's live workflow list was fetched, per platform; drives favourite validation. */
+  const seqeraListStatus = ref<PlatformWorkflowAvailability['state']>('unknown');
+  const omicsListStatus = ref<PlatformWorkflowAvailability['state']>('unknown');
   const searchQuery = ref('');
   const searchFocused = ref(false);
   const overviewTimeFilter = ref<'7' | '30' | '90'>('30');
@@ -53,6 +61,34 @@
 
   const seqeraPipelines = computed<SeqeraPipeline[]>(() => seqeraPipelinesStore.pipelinesForLab(props.labId));
   const omicsWorkflows = computed<OmicsWorkflow[]>(() => omicsWorkflowsStore.workflowsForLab(props.labId));
+
+  function platformAvailability(
+    state: PlatformWorkflowAvailability['state'],
+    liveWorkflowIds: () => string[],
+  ): PlatformWorkflowAvailability {
+    return state === 'loaded' ? { state, workflowIds: new Set(liveWorkflowIds()) } : { state };
+  }
+
+  const workflowAvailability = computed<LabWorkflowAvailability>(() => ({
+    'Seqera Cloud': platformAvailability(seqeraListStatus.value, () =>
+      seqeraPipelines.value.map((pipeline) => String(pipeline.pipelineId ?? '')),
+    ),
+    'AWS HealthOmics': platformAvailability(omicsListStatus.value, () =>
+      omicsWorkflows.value.map((workflow) => workflow.id ?? ''),
+    ),
+  }));
+
+  /**
+   * Favourites are a snapshot on the user record, so a workflow deleted on the platform would
+   * otherwise keep appearing here. Hide any favourite the lab's live list no longer contains.
+   */
+  const favouriteWorkflows = computed<FavouriteWorkflow[]>(() =>
+    selectVisibleFavouriteWorkflows(
+      favouriteWorkflowsStore.favouriteWorkflows,
+      props.labId,
+      workflowAvailability.value,
+    ),
+  );
 
   const searchResults = computed<SearchResult[]>(() => {
     const q = searchQuery.value.trim().toLowerCase();
@@ -398,6 +434,7 @@
   const favouriteWorkflowsTableColumns = [
     { key: 'WorkflowName', label: 'Name' },
     { key: 'Description', label: 'Description' },
+    { key: 'favourite', label: 'Favorite' },
     { key: 'run', label: 'Run' },
   ];
 
@@ -420,6 +457,10 @@
         },
       ],
     ];
+  }
+
+  async function removeFavouriteWorkflow(workflow: FavouriteWorkflow) {
+    await favouriteWorkflowsStore.toggleFavourite(workflow);
   }
 
   function runFavouriteWorkflow(workflow: FavouriteWorkflow) {
@@ -531,29 +572,39 @@
       await labStore.loadLab(props.labId);
 
       const labData = labStore.labs[props.labId];
-      const promises: Promise<any>[] = [$api.labs.listLabRuns(props.labId), $api.users.getUser()];
+      const promises: Promise<any>[] = [$api.labs.listLabRuns(props.labId), favouriteWorkflowsStore.load()];
 
       if (labData?.NextFlowTowerEnabled) {
         promises.push(
           seqeraPipelinesStore
             .loadPipelinesForLab(props.labId)
+            .then(() => {
+              seqeraListStatus.value = 'loaded';
+            })
             .catch(() => useToastStore().error('Failed to load pipelines. Please refresh.')),
         );
+      } else {
+        seqeraListStatus.value = 'disabled';
       }
       if (labData?.AwsHealthOmicsEnabled) {
         promises.push(
           omicsWorkflowsStore
             .loadWorkflowsForLab(props.labId)
+            .then(() => {
+              omicsListStatus.value = 'loaded';
+            })
             .catch(() => useToastStore().error('Failed to load workflows. Please refresh.')),
         );
+      } else {
+        omicsListStatus.value = 'disabled';
       }
 
-      const [runs, user] = await Promise.all(promises);
+      const [runs] = await Promise.all(promises);
 
       allRuns.value = runs;
-      favouriteWorkflows.value = (user.FavouriteWorkflows ?? []).filter(
-        (w: FavouriteWorkflow) => w.LaboratoryId === props.labId,
-      );
+
+      // Now that the live lists are in, drop the favourites they prove no longer exist.
+      void favouriteWorkflowsStore.pruneMissingForLab(props.labId, workflowAvailability.value);
 
       void requestRuntimeRefresh(runs);
     } catch (error) {
@@ -718,6 +769,7 @@
       </div>
 
       <EGTable
+        narrow-run-and-favourite-columns
         :table-data="displayedFavouriteWorkflows"
         :columns="favouriteWorkflowsTableColumns"
         :is-loading="uiStore.isRequestPending('loadDashboardData')"
@@ -730,6 +782,18 @@
 
         <template #Description-data="{ row: workflow }">
           <div class="text-muted text-sm">{{ workflow.Description || '—' }}</div>
+        </template>
+
+        <template #favourite-data="{ row: workflow }">
+          <button
+            type="button"
+            class="text-primary hover:text-primary-dark hover:bg-primary-muted focus-visible:outline-primary-500 flex items-center justify-center rounded-full p-1 transition-all duration-150 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+            :aria-label="`Remove ${workflow.WorkflowName} from favorites`"
+            title="Remove workflow from favorites"
+            @click.stop="removeFavouriteWorkflow(workflow)"
+          >
+            <UIcon name="i-heroicons-star-solid" class="text-primary h-6 w-6" aria-hidden="true" />
+          </button>
         </template>
 
         <template #run-data="{ row: workflow }">
