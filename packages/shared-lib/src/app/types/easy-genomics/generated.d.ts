@@ -1103,7 +1103,7 @@ export interface components {
       SeqeraLlmProvider?: "bedrock" | "openai" | "anthropic";
       SeqeraLlmModelId?: string;
       HealthOmicsLogEnrichmentEnabled?: boolean;
-      AutomaticFailureAnalysisEnabled?: boolean;
+      FailureAnalysisEnabled?: boolean;
       HealthOmicsLlmApiKey?: string;
       SeqeraLlmApiKey?: string;
     };
@@ -1184,11 +1184,13 @@ export interface components {
        */
       HealthOmicsLogEnrichmentEnabled?: boolean;
       /**
-       * @description Per-lab kill switch for the automatic failure-classification consumer.
-       * `undefined` means enabled — labs that predate this field keep today's
-       * behaviour with no data migration. Does not gate a manual trigger.
+       * @description Master switch for AI failure analysis at this lab. `undefined` means
+       * enabled — labs that predate this field keep today's behaviour with no
+       * data migration. When `false`, the manual trigger is unavailable to
+       * everyone (technicians and admins alike) — there is no automatic path;
+       * analysis is always technician-initiated per run.
        */
-      AutomaticFailureAnalysisEnabled?: boolean;
+      FailureAnalysisEnabled?: boolean;
       /** @description Boolean indicators returned by read-laboratory; the actual keys never leave SSM. */
       HasHealthOmicsLlmApiKey?: boolean;
       HasSeqeraLlmApiKey?: boolean;
@@ -1235,7 +1237,7 @@ export interface components {
       SeqeraLlmProvider?: "anthropic" | "bedrock" | "openai";
       SeqeraLlmModelId?: string;
       HealthOmicsLogEnrichmentEnabled?: boolean;
-      AutomaticFailureAnalysisEnabled?: boolean;
+      FailureAnalysisEnabled?: boolean;
       HasNextFlowTowerAccessToken?: boolean;
       HasGitHubAccessToken?: boolean;
       /** @description Boolean indicators. The actual keys live in SSM and are never returned. */
@@ -1589,7 +1591,7 @@ export interface components {
       SeqeraLlmProvider?: "bedrock" | "openai" | "anthropic";
       SeqeraLlmModelId?: string;
       HealthOmicsLogEnrichmentEnabled?: boolean;
-      AutomaticFailureAnalysisEnabled?: boolean;
+      FailureAnalysisEnabled?: boolean;
       HealthOmicsLlmApiKey?: string;
       SeqeraLlmApiKey?: string;
     };

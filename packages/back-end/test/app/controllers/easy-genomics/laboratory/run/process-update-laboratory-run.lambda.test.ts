@@ -33,6 +33,7 @@ import {
   getAWSHealthOmicsStatus,
   getSeqeraCloudStatus,
   processStatusCheckEvent,
+  safePublishForClassification,
 } from '../../../../../../src/app/controllers/easy-genomics/laboratory/run/process-update-laboratory-run.lambda';
 
 describe('process-update-laboratory-run.lambda', () => {
@@ -728,54 +729,12 @@ describe('process-update-laboratory-run.lambda', () => {
     expect(updateArg.FailureReason).toBeUndefined();
   });
 
-  it('safePublishForClassification: publishes to SNS when run transitions to FAILED and FailureOwner is unset', async () => {
+  // Automatic classification is disabled by product decision (AI failure
+  // analysis is manual-trigger-only) — the handler never calls this any more.
+  // safePublishForClassification is exported and still directly tested below
+  // so it stays correct and ready for a one-line re-enable if that changes.
+  it("doesn't publish for classification when a run transitions to FAILED with no FailureOwner", async () => {
     process.env.SQS_LABORATORY_RUN_FAILURE_CLASSIFICATION_QUEUE_URL = 'arn:aws:sns:us-east-1:123:classify.fifo';
-
-    mockQueryByRunId.mockResolvedValue({
-      RunId: 'run-1',
-      LaboratoryId: 'lab-1',
-      OrganizationId: 'org-1',
-      ExternalRunId: 'ext-1',
-      Status: 'RUNNING',
-      Platform: 'AWS HealthOmics',
-    });
-
-    mockGetRun.mockResolvedValue({ status: 'FAILED', failureReason: 'OUT_OF_MEMORY_ERROR' } as any);
-    mockUpdateRun.mockResolvedValue({ RunId: 'run-1', Status: 'FAILED' });
-
-    await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
-
-    expect(mockPublish).toHaveBeenCalledWith(
-      expect.objectContaining({
-        QueueUrl: 'arn:aws:sns:us-east-1:123:classify.fifo',
-        MessageGroupId: 'classify-laboratory-run-run-1',
-      }),
-    );
-  });
-
-  it('safePublishForClassification: skips publish when FailureOwner is already set', async () => {
-    process.env.SQS_LABORATORY_RUN_FAILURE_CLASSIFICATION_QUEUE_URL = 'arn:aws:sns:us-east-1:123:classify.fifo';
-
-    mockQueryByRunId.mockResolvedValue({
-      RunId: 'run-1',
-      LaboratoryId: 'lab-1',
-      OrganizationId: 'org-1',
-      ExternalRunId: 'ext-1',
-      Status: 'RUNNING',
-      Platform: 'AWS HealthOmics',
-      FailureOwner: 'Bioinformatician',
-    });
-
-    mockGetRun.mockResolvedValue({ status: 'FAILED', failureReason: 'ECR_PERMISSION_ERROR' } as any);
-    mockUpdateRun.mockResolvedValue({ RunId: 'run-1', Status: 'FAILED' });
-
-    await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
-
-    expect(mockPublish).not.toHaveBeenCalled();
-  });
-
-  it('safePublishForClassification: skips publish when topic ARN env var is unset', async () => {
-    delete process.env.SQS_LABORATORY_RUN_FAILURE_CLASSIFICATION_QUEUE_URL;
 
     mockQueryByRunId.mockResolvedValue({
       RunId: 'run-1',
@@ -794,24 +753,44 @@ describe('process-update-laboratory-run.lambda', () => {
     expect(mockPublish).not.toHaveBeenCalled();
   });
 
-  it('safePublishForClassification: swallows SNS errors so the status-check pipeline completes', async () => {
-    process.env.SQS_LABORATORY_RUN_FAILURE_CLASSIFICATION_QUEUE_URL = 'arn:aws:sns:us-east-1:123:classify.fifo';
-    mockPublish.mockRejectedValue(new Error('SNS unavailable'));
-
-    mockQueryByRunId.mockResolvedValue({
+  describe('safePublishForClassification (exported, currently unused by this handler)', () => {
+    const run = {
       RunId: 'run-1',
       LaboratoryId: 'lab-1',
       OrganizationId: 'org-1',
       ExternalRunId: 'ext-1',
-      Status: 'RUNNING',
+      Status: 'FAILED',
       Platform: 'AWS HealthOmics',
+    } as any;
+
+    it('publishes to SQS with the expected message group and dedup shape', async () => {
+      process.env.SQS_LABORATORY_RUN_FAILURE_CLASSIFICATION_QUEUE_URL = 'arn:aws:sns:us-east-1:123:classify.fifo';
+
+      await safePublishForClassification(run);
+
+      expect(mockPublish).toHaveBeenCalledWith(
+        expect.objectContaining({
+          QueueUrl: 'arn:aws:sns:us-east-1:123:classify.fifo',
+          MessageGroupId: 'classify-laboratory-run-run-1',
+        }),
+      );
     });
 
-    mockGetRun.mockResolvedValue({ status: 'FAILED', failureReason: 'OUT_OF_MEMORY_ERROR' } as any);
-    mockUpdateRun.mockResolvedValue({ RunId: 'run-1', Status: 'FAILED' });
+    it('skips publishing when the queue URL env var is unset', async () => {
+      delete process.env.SQS_LABORATORY_RUN_FAILURE_CLASSIFICATION_QUEUE_URL;
 
-    await expect(processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any)).resolves.toBe(true);
-    expect(mockPublish).toHaveBeenCalled();
+      await safePublishForClassification(run);
+
+      expect(mockPublish).not.toHaveBeenCalled();
+    });
+
+    it('swallows SQS errors rather than throwing', async () => {
+      process.env.SQS_LABORATORY_RUN_FAILURE_CLASSIFICATION_QUEUE_URL = 'arn:aws:sns:us-east-1:123:classify.fifo';
+      mockPublish.mockRejectedValue(new Error('SNS unavailable'));
+
+      await expect(safePublishForClassification(run)).resolves.toBeUndefined();
+      expect(mockPublish).toHaveBeenCalled();
+    });
   });
 
   it('attaches RunCostOutcome when transitioning to a terminal status', async () => {

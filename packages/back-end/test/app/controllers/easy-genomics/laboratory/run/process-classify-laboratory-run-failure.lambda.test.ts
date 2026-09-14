@@ -440,10 +440,10 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
 
     expect(mockFetchRedactedLogExcerpt).toHaveBeenCalled();
     expect(mockClassify.mock.calls[0][0].logExcerpt).toBe('Caused by: OutOfMemoryError in task FOO');
-    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(
-      expect.objectContaining({ FailureClassifiedBy: 'llm' }),
-      ['AnalysisErrorCode', 'AnalysisErrorMessage'],
-    );
+    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(expect.objectContaining({ FailureClassifiedBy: 'llm' }), [
+      'AnalysisErrorCode',
+      'AnalysisErrorMessage',
+    ]);
   });
 
   it('enriches even a lookup-matched HealthOmics code when the toggle is on', async () => {
@@ -638,20 +638,22 @@ describe('processClassificationEvent — trigger, toggle, and analysis status', 
       expect(mockClassify).not.toHaveBeenCalled();
     });
 
-    it('skips an automatic trigger when the lab has automatic analysis disabled', async () => {
-      mockQueryByLaboratoryId.mockResolvedValue({ ...labWithLlm, AutomaticFailureAnalysisEnabled: false });
+    it('skips an automatic trigger when the lab has failure analysis disabled', async () => {
+      mockQueryByLaboratoryId.mockResolvedValue({ ...labWithLlm, FailureAnalysisEnabled: false });
       await processClassificationEvent('UPDATE', failedRun, 'Automatic');
       expect(mockClassify).not.toHaveBeenCalled();
     });
 
-    it('runs a manual trigger even when the lab has automatic analysis disabled', async () => {
-      mockQueryByLaboratoryId.mockResolvedValue({ ...labWithLlm, AutomaticFailureAnalysisEnabled: false });
+    it('is a master switch — a manual trigger is also skipped when the lab has failure analysis disabled', async () => {
+      // The request endpoint is the primary gate; this is defense-in-depth for the
+      // race where an admin disables the lab while a manual request is in flight.
+      mockQueryByLaboratoryId.mockResolvedValue({ ...labWithLlm, FailureAnalysisEnabled: false });
       await processClassificationEvent('UPDATE', failedRun, 'Manual');
-      expect(mockClassify).toHaveBeenCalled();
+      expect(mockClassify).not.toHaveBeenCalled();
     });
 
     it('runs an automatic trigger when the flag is undefined — default-on needs no migration', async () => {
-      mockQueryByLaboratoryId.mockResolvedValue({ ...labWithLlm, AutomaticFailureAnalysisEnabled: undefined });
+      mockQueryByLaboratoryId.mockResolvedValue({ ...labWithLlm, FailureAnalysisEnabled: undefined });
       await processClassificationEvent('UPDATE', failedRun, 'Automatic');
       expect(mockClassify).toHaveBeenCalled();
     });

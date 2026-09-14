@@ -692,14 +692,14 @@ describe('update-laboratory.lambda', () => {
       expect(mockLabService.prototype.update).not.toHaveBeenCalled();
     });
 
-    it('toggling AutomaticFailureAnalysisEnabled alone does not probe', async () => {
+    it('toggling FailureAnalysisEnabled alone does not probe', async () => {
       (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
         ...lab,
-        AutomaticFailureAnalysisEnabled: true,
+        FailureAnalysisEnabled: true,
       });
 
       const result = await handler(
-        createEvent(LAB_ID, { ...updateBody, AutomaticFailureAnalysisEnabled: false }),
+        createEvent(LAB_ID, { ...updateBody, FailureAnalysisEnabled: false }),
         createContext(),
         () => {},
       );

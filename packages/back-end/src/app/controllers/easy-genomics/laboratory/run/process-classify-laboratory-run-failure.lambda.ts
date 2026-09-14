@@ -128,9 +128,13 @@ export async function processClassificationEvent(
       }
     }
 
-    // Per-lab cost control. `!== false` rather than `=== true` so labs that
-    // predate the field keep today's behaviour with no data migration.
-    if (!isManual && laboratory?.AutomaticFailureAnalysisEnabled === false) {
+    // Master switch: applies to every trigger, not just automatic ones — there
+    // is no automatic path today, but this is the defense-in-depth backstop if
+    // an admin disables analysis for a lab while a manual request is already
+    // in flight (the request endpoint is the primary, synchronous gate).
+    // `!== false` rather than `=== true` so labs that predate the field keep
+    // today's behaviour with no data migration.
+    if (laboratory?.FailureAnalysisEnabled === false) {
       logAnalysisEvent({
         runId: existingRun.RunId,
         laboratoryId: existingRun.LaboratoryId,
@@ -138,7 +142,7 @@ export async function processClassificationEvent(
         platform: existingRun.Platform,
         trigger,
         outcome: 'skipped',
-        reason: 'automatic-analysis-disabled',
+        reason: 'failure-analysis-disabled',
         durationMs: Date.now() - startedAt,
       });
       return true;

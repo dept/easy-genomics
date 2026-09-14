@@ -136,13 +136,28 @@ describe('request-laboratory-run-failure-analysis handler', () => {
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
+  it('returns EG-338 and enqueues nothing when the lab has failure analysis disabled', async () => {
+    mockQueryByLaboratoryId.mockResolvedValue({ ...lab, FailureAnalysisEnabled: false });
+    const response = await handler(buildEvent({ LaboratoryRunId: 'run-1' }), {} as any, () => undefined);
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(response.body).ErrorCode).toBe('EG-338');
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockUpdateWithRemoval).not.toHaveBeenCalled();
+  });
+
+  it('succeeds when FailureAnalysisEnabled is undefined — default-on needs no migration', async () => {
+    mockQueryByLaboratoryId.mockResolvedValue({ ...lab, FailureAnalysisEnabled: undefined });
+    const response = await handler(buildEvent({ LaboratoryRunId: 'run-1' }), {} as any, () => undefined);
+    expect(response.statusCode).toBe(200);
+  });
+
   it('marks the run Queued and publishes with a Manual trigger', async () => {
     const response = await handler(buildEvent({ LaboratoryRunId: 'run-1' }), {} as any, () => undefined);
     expect(response.statusCode).toBe(200);
-    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(
-      expect.objectContaining({ AnalysisStatus: 'Queued' }),
-      ['AnalysisErrorCode', 'AnalysisErrorMessage'],
-    );
+    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(expect.objectContaining({ AnalysisStatus: 'Queued' }), [
+      'AnalysisErrorCode',
+      'AnalysisErrorMessage',
+    ]);
     const [payload] = mockUpdateWithRemoval.mock.calls[0];
     expect(payload).not.toHaveProperty('AnalysisErrorCode');
     expect(payload).not.toHaveProperty('AnalysisErrorMessage');

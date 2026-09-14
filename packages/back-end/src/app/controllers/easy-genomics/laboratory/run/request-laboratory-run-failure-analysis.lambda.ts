@@ -1,6 +1,7 @@
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   InvalidRequestError,
+  LaboratoryFailureAnalysisDisabledError,
   LaboratoryLlmConfigurationInvalidError,
   LaboratoryNotFoundError,
   UnauthorizedAccessError,
@@ -49,6 +50,13 @@ export const handler: Handler = async (
     if (run.LaboratoryId !== laboratoryId) throw new InvalidRequestError('Run does not belong to this Laboratory');
     if (run.Status?.toUpperCase() !== 'FAILED') {
       throw new InvalidRequestError('AI failure analysis is only available for failed runs');
+    }
+
+    // Master switch: analysis is manual-trigger-only, and an admin/lab-manager
+    // can turn it off for the whole lab. `!== false` so labs that predate the
+    // field keep today's behaviour with no data migration.
+    if (laboratory.FailureAnalysisEnabled === false) {
+      throw new LaboratoryFailureAnalysisDisabledError();
     }
 
     // Config errors are knowable before any work starts, so they are reported

@@ -105,7 +105,7 @@
     SeqeraLlmApiKey: '',
     HealthOmicsLogEnrichmentEnabled: false,
     // Backend kill-switch semantics: absent/undefined means enabled, only `=== false` disables.
-    AutomaticFailureAnalysisEnabled: true,
+    FailureAnalysisEnabled: true,
     NotificationsEnabled: true,
   };
 
@@ -168,10 +168,9 @@
   });
   const aiFailureAnalysisBadge = computed(() => {
     const configured = !!state.value.HealthOmicsLlmProvider || !!state.value.SeqeraLlmProvider;
-    if (!configured) return { label: 'Disabled', tone: 'neutral' } as const;
-    return state.value.AutomaticFailureAnalysisEnabled
-      ? ({ label: 'Automatic', tone: 'positive' } as const)
-      : ({ label: 'On demand', tone: 'neutral' } as const);
+    // `!== false` mirrors the back end: an unset field means enabled, no data migration needed.
+    const active = configured && state.value.FailureAnalysisEnabled !== false;
+    return { label: active ? 'Enabled' : 'Disabled', tone: active ? 'positive' : 'neutral' } as const;
   });
   const runNotificationsBadge = computed(() => {
     const active = !!state.value.NotificationsEnabled;
@@ -369,7 +368,7 @@
     AwsHealthOmicsEnabled: 'Integrations – HealthOmics enabled',
     AwsHealthOmicsNetworkingMode: 'HealthOmics VPC Networking – Networking mode',
     AwsHealthOmicsVpcConfigurationName: 'HealthOmics VPC Networking – VPC configuration name',
-    AutomaticFailureAnalysisEnabled: 'AI Failure Analysis – Automatic AI analysis',
+    FailureAnalysisEnabled: 'AI Failure Analysis – Enable AI error analysis',
     HealthOmicsLogEnrichmentEnabled: 'AI Failure Analysis (HealthOmics) – Log enrichment enabled',
     HealthOmicsLlmProvider: 'AI Failure Analysis (HealthOmics) – LLM provider',
     HealthOmicsLlmModelId: 'AI Failure Analysis (HealthOmics) – Model ID',
@@ -950,7 +949,7 @@
     'SeqeraLlmModelId',
     'SeqeraLlmApiKey',
     'HealthOmicsLogEnrichmentEnabled',
-    'AutomaticFailureAnalysisEnabled',
+    'FailureAnalysisEnabled',
     'AwsHealthOmicsNetworkingMode',
     'AwsHealthOmicsVpcConfigurationName',
     'NotificationsEnabled',
@@ -1404,14 +1403,14 @@
           </p>
 
           <EGFormGroup
-            name="AutomaticFailureAnalysisEnabled"
-            hint="Run AI analysis automatically when a run fails. Turn this off to analyse failures only on demand."
+            name="FailureAnalysisEnabled"
+            hint="Let technicians request AI analysis on a failed run. Turn this off to hide the analyzer for this lab."
           >
             <div class="flex items-center">
-              <span class="text-sm text-black">Automatic AI analysis</span>
+              <span class="text-sm text-black">AI error analysis</span>
               <UToggle
                 class="ml-2"
-                v-model="state.AutomaticFailureAnalysisEnabled"
+                v-model="state.FailureAnalysisEnabled"
                 :disabled="!isEditing || isSubmittingFormData"
               />
             </div>

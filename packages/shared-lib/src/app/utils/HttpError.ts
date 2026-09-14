@@ -298,6 +298,20 @@ export class LaboratoryLlmConfigurationInvalidError extends HttpError {
 }
 
 /**
+ * AI failure analysis is disabled for this laboratory (FailureAnalysisEnabled === false)
+ *
+ * Is a pre-configured error with:
+ * - StatusCode: 400
+ *
+ * @param messageOpt - optional additional message
+ */
+export class LaboratoryFailureAnalysisDisabledError extends HttpError {
+  constructor(messageOpt?: string) {
+    super('AI failure analysis is disabled for this laboratory', 400, 'EG-338', messageOpt);
+  }
+}
+
+/**
  * Laboratory HealthOmics VPC Configuration not found
  *
  * @param configurationName

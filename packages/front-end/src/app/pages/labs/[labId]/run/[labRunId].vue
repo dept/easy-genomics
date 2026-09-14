@@ -278,7 +278,14 @@
       : !!lab.value.SeqeraLlmProvider && !!lab.value.SeqeraLlmModelId;
   });
 
-  const canRequestAnalysis = computed<boolean>(() => isFailed.value && labHasLlmConfigured.value);
+  // Master switch: hidden for everyone (tech and admin alike) when the lab has
+  // turned AI error analysis off — `!== false` so a lab that predates the field
+  // keeps today's behaviour with no data migration.
+  const failureAnalysisEnabled = computed<boolean>(() => lab.value?.FailureAnalysisEnabled !== false);
+
+  const canRequestAnalysis = computed<boolean>(
+    () => isFailed.value && labHasLlmConfigured.value && failureAnalysisEnabled.value,
+  );
   const analysisButtonLabel = computed<string>(() =>
     labRun.value?.FailureOwner ? 'Re-run AI analysis' : 'Run AI analysis',
   );
