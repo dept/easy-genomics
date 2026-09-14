@@ -21,7 +21,7 @@
   import { FormError } from '#ui/types';
   import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import { ButtonSizeEnum, ButtonVariantEnum } from '@FE/types/buttons';
-  import { useToastStore, useUiStore } from '@FE/stores';
+  import { useLabsStore, useToastStore, useUiStore } from '@FE/stores';
   import { maybeAddFieldValidationErrors } from '@FE/utils/form-utils';
   import { extractApiErrorMessage, formatValidationIssues } from '@FE/utils/api-utils';
   import {
@@ -562,6 +562,12 @@
         state.value = { ...state.value, ...withRetentionDefault };
         // Store the unedited lab details to support the cancel button in Edit mode
         uneditedLabDetails.value = { ...withRetentionDefault };
+        // This form keeps its own local copy of the lab rather than reading through
+        // the shared store, so a save here would otherwise leave labsStore.labs[labId]
+        // holding a stale pre-save record forever — anything elsewhere in the app that
+        // reads the lab from the store (e.g. the run detail page's AI-analysis button
+        // gating) would never see the update without a full page reload.
+        useLabsStore().labs[labDetails.LaboratoryId] = labDetails;
       } else {
         throw new Error('Failed to parse lab details');
       }
