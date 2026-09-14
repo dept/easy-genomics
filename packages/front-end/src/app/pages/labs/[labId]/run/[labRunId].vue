@@ -491,6 +491,53 @@
     </section>
   </div>
 
+  <!-- Failure classification (owner + summary + suggested action). Populated asynchronously
+       by the classifier Lambda when a run reaches FAILED; absent on older rows or while the
+       classifier is still working. Sits beside Failed Tasks, above the tabs, so it's visible
+       without clicking into Run Details. Independent of showSeqeraProgressCard/
+       showOmicsProgressCard — a FAILED run can lack progress-card content (no failure
+       reason, no task list) while still having a classification or a manual-trigger button
+       to show. -->
+  <section
+    v-if="failureClassificationVisible || canRequestAnalysis"
+    class="stroke-light mb-6 flex flex-col rounded-2xl border border-solid bg-white p-6 max-md:px-5"
+  >
+    <h3 class="mb-4 text-sm font-medium text-black">Failure analysis</h3>
+    <div class="space-y-2">
+      <div v-if="failureClassificationVisible" class="flex items-center gap-3">
+        <span
+          class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium"
+          :class="failureOwnerBadgeClass"
+        >
+          Owner: {{ labRun?.FailureOwner }}
+        </span>
+        <span v-if="labRun?.FailureClassifiedBy === 'llm'" class="text-muted text-xs italic">
+          AI-assisted classification — verify before acting
+        </span>
+      </div>
+      <p v-if="labRun?.FailureSummary" class="text-sm text-black">{{ labRun.FailureSummary }}</p>
+      <p v-if="labRun?.FailureAction" class="text-muted text-sm">
+        <span class="font-medium text-black">What to do next:</span>
+        {{ labRun.FailureAction }}
+      </p>
+      <div v-if="canRequestAnalysis" class="mt-3 flex items-center gap-2">
+        <EGButton
+          :label="analysisButtonLabel"
+          :loading="analysisInFlight"
+          :disabled="analysisInFlight"
+          variant="secondary"
+          size="xs"
+          @click="requestAnalysis"
+        />
+        <span v-if="analysisInFlight" class="text-muted text-xs italic">Analysing…</span>
+        <span v-else-if="labRun?.AnalysisStatus === 'Failed'" class="flex flex-col text-xs italic">
+          <span class="text-red-700">{{ analysisErrorMessage(labRun?.AnalysisErrorCode) }}</span>
+          <span v-if="labRun?.AnalysisErrorMessage" class="text-muted">{{ labRun.AnalysisErrorMessage }}</span>
+        </span>
+      </div>
+    </div>
+  </section>
+
   <EGDetailTabs
     :model-value="tabIndex"
     :items="tabItems"
@@ -598,49 +645,6 @@
               </dd>
             </div>
           </dl>
-        </section>
-
-        <!-- Failure classification (owner + summary + suggested action). Populated asynchronously
-             by the classifier Lambda when a run reaches FAILED; absent on older rows or while the
-             classifier is still working. -->
-        <section
-          v-if="failureClassificationVisible || canRequestAnalysis"
-          class="stroke-light flex flex-col rounded-none rounded-b-2xl border border-solid bg-white p-6 max-md:px-5"
-        >
-          <h3 class="mb-4 text-sm font-medium text-black">Failure analysis</h3>
-          <div class="space-y-2">
-            <div v-if="failureClassificationVisible" class="flex items-center gap-3">
-              <span
-                class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium"
-                :class="failureOwnerBadgeClass"
-              >
-                Owner: {{ labRun?.FailureOwner }}
-              </span>
-              <span v-if="labRun?.FailureClassifiedBy === 'llm'" class="text-muted text-xs italic">
-                AI-assisted classification — verify before acting
-              </span>
-            </div>
-            <p v-if="labRun?.FailureSummary" class="text-sm text-black">{{ labRun.FailureSummary }}</p>
-            <p v-if="labRun?.FailureAction" class="text-muted text-sm">
-              <span class="font-medium text-black">What to do next:</span>
-              {{ labRun.FailureAction }}
-            </p>
-            <div v-if="canRequestAnalysis" class="mt-3 flex items-center gap-2">
-              <EGButton
-                :label="analysisButtonLabel"
-                :loading="analysisInFlight"
-                :disabled="analysisInFlight"
-                variant="secondary"
-                size="xs"
-                @click="requestAnalysis"
-              />
-              <span v-if="analysisInFlight" class="text-muted text-xs italic">Analysing…</span>
-              <span v-else-if="labRun?.AnalysisStatus === 'Failed'" class="flex flex-col text-xs italic">
-                <span class="text-red-700">{{ analysisErrorMessage(labRun?.AnalysisErrorCode) }}</span>
-                <span v-if="labRun?.AnalysisErrorMessage" class="text-muted">{{ labRun.AnalysisErrorMessage }}</span>
-              </span>
-            </div>
-          </div>
         </section>
       </div>
 
