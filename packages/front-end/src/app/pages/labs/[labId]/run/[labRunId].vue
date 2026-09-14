@@ -263,6 +263,31 @@
     });
   }
 
+  const analysisStatus = computed<string | undefined>(() => labRun.value?.AnalysisStatus);
+  const analysisInFlight = computed<boolean>(
+    () => analysisStatus.value === 'Queued' || analysisStatus.value === 'Running',
+  );
+
+  // A button that can only ever fail is worse than no button, so it appears
+  // only when the lab actually has a provider and model configured.
+  const labHasLlmConfigured = computed<boolean>(() => {
+    if (!lab.value) return false;
+    return isHealthOmics.value
+      ? !!lab.value.HealthOmicsLlmProvider && !!lab.value.HealthOmicsLlmModelId
+      : !!lab.value.SeqeraLlmProvider && !!lab.value.SeqeraLlmModelId;
+  });
+
+  const canRequestAnalysis = computed<boolean>(() => isFailed.value && labHasLlmConfigured.value);
+  const analysisButtonLabel = computed<string>(() =>
+    labRun.value?.FailureOwner ? 'Re-run AI analysis' : 'Run AI analysis',
+  );
+
+  async function requestAnalysis() {
+    await runStore.requestFailureAnalysis(labId, labRunId);
+  }
+
+  onUnmounted(() => runStore.stopAnalysisPolling(labRunId));
+
   const tabItems = computed(() => [
     { key: 'runDetails', label: 'Run Details' },
     { key: 'fileManager', label: 'File Manager' },
@@ -553,12 +578,12 @@
              by the classifier Lambda when a run reaches FAILED; absent on older rows or while the
              classifier is still working. -->
         <section
-          v-if="failureClassificationVisible"
+          v-if="failureClassificationVisible || canRequestAnalysis"
           class="stroke-light flex flex-col rounded-none rounded-b-2xl border border-solid bg-white p-6 max-md:px-5"
         >
           <h3 class="mb-4 text-sm font-medium text-black">Failure analysis</h3>
           <div class="space-y-2">
-            <div class="flex items-center gap-3">
+            <div v-if="failureClassificationVisible" class="flex items-center gap-3">
               <span
                 class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium"
                 :class="failureOwnerBadgeClass"
@@ -574,6 +599,20 @@
               <span class="font-medium text-black">What to do next:</span>
               {{ labRun.FailureAction }}
             </p>
+            <div v-if="canRequestAnalysis" class="mt-3 flex items-center gap-2">
+              <EGButton
+                :label="analysisButtonLabel"
+                :loading="analysisInFlight"
+                :disabled="analysisInFlight"
+                variant="secondary"
+                size="xs"
+                @click="requestAnalysis"
+              />
+              <span v-if="analysisInFlight" class="text-muted text-xs italic">Analysing…</span>
+              <span v-else-if="labRun?.AnalysisStatus === 'Failed'" class="text-xs italic text-red-700">
+                {{ labRun?.AnalysisErrorMessage }}
+              </span>
+            </div>
           </div>
         </section>
       </div>
