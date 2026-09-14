@@ -53,6 +53,10 @@ describe('requestFailureAnalysis', () => {
     await jest.advanceTimersByTimeAsync(6000);
     expect(mockToastSuccess).toHaveBeenCalled();
     expect(store.analysisPolls['run-1']).toBeUndefined();
+
+    const callCountAtTerminal = mockReadLabRun.mock.calls.length;
+    await jest.advanceTimersByTimeAsync(3000);
+    expect(mockReadLabRun).toHaveBeenCalledTimes(callCountAtTerminal);
   });
 
   it('stops polling and toasts the mapped error once the status reaches Failed', async () => {
@@ -65,6 +69,10 @@ describe('requestFailureAnalysis', () => {
     await jest.advanceTimersByTimeAsync(3000);
     expect(mockToastError).toHaveBeenCalledWith(expect.stringContaining('Lab Settings'));
     expect(store.analysisPolls['run-1']).toBeUndefined();
+
+    const callCountAtTerminal = mockReadLabRun.mock.calls.length;
+    await jest.advanceTimersByTimeAsync(3000);
+    expect(mockReadLabRun).toHaveBeenCalledTimes(callCountAtTerminal);
   });
 
   it('gives up after the timeout rather than polling forever', async () => {
@@ -73,6 +81,10 @@ describe('requestFailureAnalysis', () => {
     await jest.advanceTimersByTimeAsync(95_000);
     expect(store.analysisPolls['run-1']).toBeUndefined();
     expect(mockToastError).toHaveBeenCalledWith(expect.stringContaining('taking longer than expected'));
+
+    const toastErrorCallCountAtTerminal = mockToastError.mock.calls.length;
+    await jest.advanceTimersByTimeAsync(3000);
+    expect(mockToastError).toHaveBeenCalledTimes(toastErrorCallCountAtTerminal);
   });
 
   it('stopAnalysisPolling clears an in-flight poll', async () => {
