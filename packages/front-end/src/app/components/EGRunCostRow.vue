@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import type { EstimateRunCostResponse } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
   import type { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
+  import { showRunCostRow } from '@FE/utils/run-cost-row-visibility';
 
   const props = withDefaults(
     defineProps<{
@@ -34,6 +35,15 @@
     if (props.labRun.PreRunCostEstimate) return 'preRun';
     return 'pending';
   });
+
+  /**
+   * A workflow needs a minimum number of successful runs before any estimate exists, so the
+   * whole row stays hidden until there is an actual amount to show. The 'pending' copy below
+   * is only a fallback for states this rule lets through.
+   */
+  const showRow = computed<boolean>(() =>
+    showRunCostRow({ estimate: props.estimate, labRun: props.labRun, loading: props.loading }),
+  );
 
   const isPostRun = computed(() => costSource.value !== 'preLaunch');
   const billed = computed(() => props.labRun?.BilledCost);
@@ -149,7 +159,7 @@
 </script>
 
 <template>
-  <div class="cost-row text-md flex items-center rounded-lg border-b px-4 py-4 last:border-0">
+  <div v-if="showRow" class="cost-row text-md flex items-center rounded-lg border-b px-4 py-4 last:border-0">
     <dt :class="labelClass">{{ rowLabel }}</dt>
     <dd :class="valueClass">
       <div class="flex flex-wrap items-center gap-2">
