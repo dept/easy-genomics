@@ -105,6 +105,7 @@
     SeqeraLlmApiKey: '',
     HealthOmicsLogEnrichmentEnabled: false,
     // Backend kill-switch semantics: absent/undefined means enabled, only `=== false` disables.
+    AutomaticFailureAnalysisEnabled: true,
     NotificationsEnabled: true,
   };
 
@@ -166,8 +167,11 @@
     return { label: active ? 'On' : 'Off', tone: active ? 'positive' : 'neutral' } as const;
   });
   const aiFailureAnalysisBadge = computed(() => {
-    const active = !!state.value.HealthOmicsLlmProvider || !!state.value.SeqeraLlmProvider;
-    return { label: active ? 'Enabled' : 'Disabled', tone: active ? 'positive' : 'neutral' } as const;
+    const configured = !!state.value.HealthOmicsLlmProvider || !!state.value.SeqeraLlmProvider;
+    if (!configured) return { label: 'Disabled', tone: 'neutral' } as const;
+    return state.value.AutomaticFailureAnalysisEnabled
+      ? ({ label: 'Automatic', tone: 'positive' } as const)
+      : ({ label: 'On demand', tone: 'neutral' } as const);
   });
   const runNotificationsBadge = computed(() => {
     const active = !!state.value.NotificationsEnabled;
@@ -365,6 +369,7 @@
     AwsHealthOmicsEnabled: 'Integrations – HealthOmics enabled',
     AwsHealthOmicsNetworkingMode: 'HealthOmics VPC Networking – Networking mode',
     AwsHealthOmicsVpcConfigurationName: 'HealthOmics VPC Networking – VPC configuration name',
+    AutomaticFailureAnalysisEnabled: 'AI Failure Analysis – Automatic AI analysis',
     HealthOmicsLogEnrichmentEnabled: 'AI Failure Analysis (HealthOmics) – Log enrichment enabled',
     HealthOmicsLlmProvider: 'AI Failure Analysis (HealthOmics) – LLM provider',
     HealthOmicsLlmModelId: 'AI Failure Analysis (HealthOmics) – Model ID',
@@ -939,6 +944,7 @@
     'SeqeraLlmModelId',
     'SeqeraLlmApiKey',
     'HealthOmicsLogEnrichmentEnabled',
+    'AutomaticFailureAnalysisEnabled',
     'AwsHealthOmicsNetworkingMode',
     'AwsHealthOmicsVpcConfigurationName',
     'NotificationsEnabled',
@@ -1390,6 +1396,20 @@
           <p v-if="!state.AwsHealthOmicsEnabled && !state.NextFlowTowerEnabled" class="text-muted text-xs">
             Enable HealthOmics or Seqera integration above to configure AI failure analysis for that integration.
           </p>
+
+          <EGFormGroup
+            name="AutomaticFailureAnalysisEnabled"
+            hint="Run AI analysis automatically when a run fails. Turn this off to analyse failures only on demand."
+          >
+            <div class="flex items-center">
+              <span class="text-sm text-black">Automatic AI analysis</span>
+              <UToggle
+                class="ml-2"
+                v-model="state.AutomaticFailureAnalysisEnabled"
+                :disabled="!isEditing || isSubmittingFormData"
+              />
+            </div>
+          </EGFormGroup>
 
           <!-- HealthOmics sub-section -->
           <div v-if="state.AwsHealthOmicsEnabled" class="mb-6 rounded border border-gray-200 p-4">
