@@ -50,6 +50,7 @@ export class AnthropicClassificationProvider implements LLMClassificationProvide
       const parsed = (await response.json()) as any;
       responseText = parsed?.content?.[0]?.text ?? '';
     } catch (error) {
+      console.error('Anthropic classification request failed', error);
       return failed('PROVIDER_UNAVAILABLE', 'The Anthropic request could not be completed.', true);
     }
 

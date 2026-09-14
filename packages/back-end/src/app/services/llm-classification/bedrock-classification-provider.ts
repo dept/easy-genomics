@@ -82,6 +82,7 @@ export class BedrockClassificationProvider implements LLMClassificationProvider 
       const parsed = JSON.parse(new TextDecoder().decode(response.body));
       responseText = parsed?.content?.[0]?.text ?? '';
     } catch (error) {
+      console.error('Bedrock classification request failed', error);
       const mapped = mapBedrockError(error);
       return failed(mapped.code, mapped.message, mapped.retryable);
     }

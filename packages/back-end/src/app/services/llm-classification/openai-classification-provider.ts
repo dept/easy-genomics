@@ -53,6 +53,7 @@ export class OpenAIClassificationProvider implements LLMClassificationProvider {
       const parsed = (await response.json()) as any;
       responseText = parsed?.choices?.[0]?.message?.content ?? '';
     } catch (error) {
+      console.error('OpenAI classification request failed', error);
       return failed('PROVIDER_UNAVAILABLE', 'The OpenAI request could not be completed.', true);
     }
 
