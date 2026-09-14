@@ -113,7 +113,7 @@ export const handler: Handler = async (
       const isOmics = platform === 'AWS HealthOmics';
       const provider = isOmics ? request.HealthOmicsLlmProvider : request.SeqeraLlmProvider;
       const modelId = isOmics ? request.HealthOmicsLlmModelId : request.SeqeraLlmModelId;
-      const apiKey = isOmics ? request.HealthOmicsLlmApiKey : request.SeqeraLlmApiKey;
+      let apiKey = isOmics ? request.HealthOmicsLlmApiKey : request.SeqeraLlmApiKey;
 
       const changed =
         provider !== (isOmics ? existing.HealthOmicsLlmProvider : existing.SeqeraLlmProvider) ||
@@ -121,6 +121,17 @@ export const handler: Handler = async (
         apiKey !== undefined;
 
       if (!changed || !provider || !modelId) continue;
+
+      // The front end normalizes an untouched API-key field to `undefined` before
+      // submitting, so a save that only fixes e.g. a typo'd model ID never resupplies
+      // the key. Without this, probing with no key would reject the whole save as
+      // CONFIG_INCOMPLETE even though a working key is already on file for this platform.
+      if (apiKey === undefined && (provider === 'openai' || provider === 'anthropic')) {
+        const hasExistingKey = isOmics ? existing.HasHealthOmicsLlmApiKey : existing.HasSeqeraLlmApiKey;
+        if (hasExistingKey) {
+          apiKey = await fetchExistingLlmApiKey(existing, isOmics ? 'llm-api-key-healthomics' : 'llm-api-key-seqera');
+        }
+      }
 
       const configError = await llmClassificationService.validateConfig({
         provider,
@@ -244,6 +255,21 @@ export const handler: Handler = async (
     return buildErrorResponse(err, event);
   }
 };
+
+async function fetchExistingLlmApiKey(
+  laboratory: Laboratory,
+  ssmSuffix: 'llm-api-key-healthomics' | 'llm-api-key-seqera',
+): Promise<string | undefined> {
+  try {
+    const param: GetParameterCommandOutput = await ssmService.getParameter({
+      Name: `/easy-genomics/organization/${laboratory.OrganizationId}/laboratory/${laboratory.LaboratoryId}/${ssmSuffix}`,
+      WithDecryption: true,
+    });
+    return param?.Parameter?.Value;
+  } catch {
+    return undefined;
+  }
+}
 
 async function validateExistingNextFlowIntegration(
   laboratory: Laboratory,

@@ -748,5 +748,69 @@ describe('update-laboratory.lambda', () => {
         expect.objectContaining({ provider: 'anthropic', modelId: 'model-a', apiKey: 'rotated-key' }),
       );
     });
+
+    it('probes with the existing key resolved from SSM when only the model id changes and no key is resupplied', async () => {
+      (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+        ...lab,
+        HealthOmicsLlmProvider: 'openai',
+        HasHealthOmicsLlmApiKey: true,
+      });
+      (mockSsmService.prototype.getParameter as jest.Mock).mockResolvedValue({
+        Parameter: { Value: 'stored-key' },
+      });
+      mockValidateConfig.mockResolvedValue(null);
+
+      const result = await handler(
+        createEvent(LAB_ID, {
+          ...updateBody,
+          HealthOmicsLlmProvider: 'openai',
+          HealthOmicsLlmModelId: 'model-b',
+        }),
+        createContext(),
+        () => {},
+      );
+
+      expect(result.statusCode).toBe(200);
+      expect(mockSsmService.prototype.getParameter).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Name: `/easy-genomics/organization/${ORG_ID}/laboratory/${LAB_ID}/llm-api-key-healthomics`,
+        }),
+      );
+      expect(mockValidateConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'openai', modelId: 'model-b', apiKey: 'stored-key' }),
+      );
+      expect(mockLabService.prototype.update).toHaveBeenCalled();
+    });
+
+    it('still rejects as CONFIG_INCOMPLETE when the model id changes and no key exists yet', async () => {
+      (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+        ...lab,
+        HealthOmicsLlmProvider: 'openai',
+        HasHealthOmicsLlmApiKey: false,
+      });
+      mockValidateConfig.mockResolvedValue({
+        code: 'CONFIG_INCOMPLETE',
+        message: 'AI failure analysis is not configured for this laboratory.',
+        retryable: false,
+      });
+
+      const result = await handler(
+        createEvent(LAB_ID, {
+          ...updateBody,
+          HealthOmicsLlmProvider: 'openai',
+          HealthOmicsLlmModelId: 'model-b',
+        }),
+        createContext(),
+        () => {},
+      );
+
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).ErrorCode).toBe('EG-337');
+      expect(mockSsmService.prototype.getParameter).not.toHaveBeenCalled();
+      expect(mockValidateConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'openai', modelId: 'model-b', apiKey: undefined }),
+      );
+      expect(mockLabService.prototype.update).not.toHaveBeenCalled();
+    });
   });
 });
