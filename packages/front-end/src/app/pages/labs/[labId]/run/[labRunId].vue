@@ -16,6 +16,7 @@
     showSeqeraTaskProgressCard,
   } from '@FE/utils/run-progress-card-visibility';
   import { v4 as uuidv4 } from 'uuid';
+  import { analysisErrorMessage } from '@FE/utils/analysis-error-message';
 
   const $route = useRoute();
   const $router = useRouter();
@@ -285,6 +286,24 @@
   async function requestAnalysis() {
     await runStore.requestFailureAnalysis(labId, labRunId);
   }
+
+  // A page load/reload while AnalysisStatus is already Queued/Running has no poll
+  // running for it (e.g. the SQS send failed, or the consumer's message died in a
+  // DLQ) — the button would otherwise stay stuck on "Analysing…" forever. Resume
+  // the existing poll (with its own terminal-status detection and timeout) whenever
+  // the in-flight state is observed and nothing is polling it yet. `labRun` loads
+  // asynchronously after mount, so this is a watcher rather than onMounted logic.
+  watch(
+    labRun,
+    (run) => {
+      if (!run) return;
+      const inFlight = run.AnalysisStatus === 'Queued' || run.AnalysisStatus === 'Running';
+      if (inFlight && !runStore.analysisPolls[labRunId]) {
+        runStore.startAnalysisPolling(labRunId);
+      }
+    },
+    { immediate: true },
+  );
 
   onUnmounted(() => runStore.stopAnalysisPolling(labRunId));
 
@@ -609,8 +628,9 @@
                 @click="requestAnalysis"
               />
               <span v-if="analysisInFlight" class="text-muted text-xs italic">Analysing…</span>
-              <span v-else-if="labRun?.AnalysisStatus === 'Failed'" class="text-xs italic text-red-700">
-                {{ labRun?.AnalysisErrorMessage }}
+              <span v-else-if="labRun?.AnalysisStatus === 'Failed'" class="flex flex-col text-xs italic">
+                <span class="text-red-700">{{ analysisErrorMessage(labRun?.AnalysisErrorCode) }}</span>
+                <span v-if="labRun?.AnalysisErrorMessage" class="text-muted">{{ labRun.AnalysisErrorMessage }}</span>
               </span>
             </div>
           </div>

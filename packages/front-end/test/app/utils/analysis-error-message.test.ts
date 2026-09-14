@@ -28,6 +28,18 @@ describe('analysisErrorMessage', () => {
     }
   });
 
+  it('reads as a complete sentence for AUTH_FAILED with no provider given', () => {
+    const message = analysisErrorMessage('AUTH_FAILED');
+    expect(message).not.toContain('The The');
+    expect(message).toBe('Authentication with the configured provider failed. Update the API key in Lab Settings.');
+  });
+
+  it('reads correctly for AUTH_FAILED when a real provider name is given', () => {
+    expect(analysisErrorMessage('AUTH_FAILED', 'OpenAI')).toBe(
+      'Authentication with OpenAI failed. Update the API key in Lab Settings.',
+    );
+  });
+
   it('falls back to a generic message for an unknown or missing code', () => {
     expect(analysisErrorMessage(undefined)).toBe('AI failure analysis could not be completed. Please try again.');
     expect(analysisErrorMessage('SOMETHING_NEW')).toBe('AI failure analysis could not be completed. Please try again.');
