@@ -7,6 +7,11 @@
   }>();
 
   const emit = defineEmits<{
+    /** Row click — select org and open Labs for that org (org admins) */
+    (event: 'select-org', org: Organization): void;
+    /** Action menu — open org management after switching context */
+    (event: 'manage-org', org: Organization): void;
+    /** @deprecated Use select-org / manage-org; kept for superuser admin list */
     (event: 'click-org', org: Organization): void;
   }>();
 
@@ -15,10 +20,12 @@
 
   const orgsStore = useOrgsStore();
 
+  usePageTitle('Organizations');
+
   onBeforeMount(loadOrgs);
 
   // table data stuff
-  const isLoading = ref(false);
+  const isLoading = ref(true);
   const orgsDisplayList = computed<Organization[]>(() =>
     Object.values(orgsStore.orgs).sort((orgA, orgB) => useSort().stringSortCompare(orgA.Name, orgB.Name)),
   );
@@ -49,7 +56,7 @@
     },
     {
       key: 'actions',
-      label: '',
+      label: 'Actions',
     },
   ];
 
@@ -58,7 +65,7 @@
       [
         {
           label: 'View / Edit',
-          click: async () => viewOrg(org),
+          click: async () => manageOrg(org),
         },
       ],
     ];
@@ -68,6 +75,7 @@
         {
           label: 'Remove',
           class: 'text-alert-danger-dark',
+          isHighlighted: true,
           click: () => {
             orgToRemove.value = org;
             isRemoveOrgDialogOpen.value = true;
@@ -79,8 +87,20 @@
     return items;
   }
 
-  function viewOrg(org: Organization) {
-    emit('click-org', org);
+  function selectOrg(org: Organization) {
+    if (props.superuser) {
+      emit('click-org', org);
+    } else {
+      emit('select-org', org);
+    }
+  }
+
+  function manageOrg(org: Organization) {
+    if (props.superuser) {
+      emit('click-org', org);
+    } else {
+      emit('manage-org', org);
+    }
   }
 
   // delete org stuff
@@ -120,12 +140,13 @@
   </EGPageHeader>
 
   <EGTable
-    :row-click-action="viewOrg"
+    :row-click-action="selectOrg"
     :table-data="orgsDisplayList"
     :columns="tableColumns"
     :is-loading="isLoading"
     :action-items="actionItems"
     :show-pagination="!isLoading"
+    no-results-msg="No organizations found"
   />
 
   <EGDialog

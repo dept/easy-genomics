@@ -5,6 +5,9 @@ jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-run-service');
 jest.mock('../../../../../src/app/services/s3-service');
 jest.mock('../../../../../src/app/utils/auth-utils');
+jest.mock('../../../../../src/app/utils/laboratory-s3-access-utils', () => ({
+  assertLaboratoryHasS3BucketAccess: jest.fn().mockResolvedValue(undefined),
+}));
 
 import { LaboratoryRunService } from '../../../../../src/app/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
@@ -243,6 +246,43 @@ describe('request-top-level-bucket-objects Lambda', () => {
         Bucket: 'another-bucket',
         Prefix: 'custom/output/results/',
         Delimiter: '/',
+      }),
+    );
+  });
+
+  it('allows listing for legacy runs with only InputS3Url when OutputS3Url is missing', async () => {
+    mockValidateOrgAdmin.mockReturnValue(true);
+    mockQueryByLaboratoryId.mockResolvedValue({
+      ...mockLaboratory,
+      S3Bucket: 'current-lab-bucket',
+    });
+    mockGetLaboratoryRun.mockResolvedValue({
+      LaboratoryId: 'test-lab-id',
+      RunId: 'run-legacy',
+      InputS3Url: 's3://original-bucket/test-org-id/test-lab-id/runs/run-legacy/input',
+    });
+    mockListBucketObjectsV2.mockResolvedValue({
+      Contents: [{ Key: 'test-org-id/test-lab-id/runs/run-legacy/input/sample.fq.gz', Size: 1 }],
+      CommonPrefixes: [],
+      IsTruncated: false,
+    });
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'test-lab-id',
+        RunId: 'run-legacy',
+        S3Bucket: 'original-bucket',
+        S3Prefix: 'test-org-id/test-lab-id/runs/run-legacy/input',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockListBucketObjectsV2).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Bucket: 'original-bucket',
+        Prefix: 'test-org-id/test-lab-id/runs/run-legacy/input/',
       }),
     );
   });

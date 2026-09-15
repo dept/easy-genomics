@@ -44,11 +44,11 @@
     ]),
   );
 
-  function doSwitchLab(labId: string): void {
+  function doSwitchLab(targetLabId: string): void {
     // this is flexible enough to work in most different contexts; eg.
     // - normal user: /labs/[labId]
     // - superuser: /orgs/[orgId]/labs/[labId]
-    const newRoute = route.fullPath.replace(/\/labs\/.+/, `/labs/${labId}`);
+    const newRoute = route.fullPath.replace(/\/labs\/.+/, `/labs/${targetLabId}`);
     router.push(newRoute);
   }
 </script>
@@ -56,15 +56,11 @@
 <template>
   <div>
     <UDropdown v-model:open="isOpen" :items="items" :popper="{ placement: 'bottom-start' }">
-      <div class="font-schibsted">
-        <UButton
-          variant="ghost"
-          :trailing-icon="items.length > 0 ? 'i-heroicons-chevron-up-down' : undefined"
-          color="black"
-        >
-          {{ currentLab?.Name }}
-        </UButton>
-      </div>
+      <EGBreadcrumbDropdownTrigger
+        :label="currentLab?.Name ?? ''"
+        :aria-label="items.length > 0 ? `Lab: ${currentLab?.Name}. Switch lab` : `Lab: ${currentLab?.Name}`"
+        :show-chevron="items.length > 0"
+      />
       <template #item="{ item }">
         <span class="w-full text-left">{{ item.Name }}</span>
       </template>

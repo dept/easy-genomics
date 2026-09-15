@@ -3,12 +3,14 @@ import { handler } from '../../../../../../src/app/controllers/easy-genomics/lab
 
 jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-run-service');
 jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-service');
-jest.mock('../../../../../../src/app/services/sns-service');
+jest.mock('../../../../../../src/app/services/sqs-service');
 jest.mock('../../../../../../src/app/utils/auth-utils');
+
+import { LaboratoryDataTaggingService } from '../../../../../../src/app/services/easy-genomics/laboratory-data-tagging-service';
 
 import { LaboratoryRunService } from '../../../../../../src/app/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '../../../../../../src/app/services/easy-genomics/laboratory-service';
-import { SnsService } from '../../../../../../src/app/services/sns-service';
+import { SqsService } from '../../../../../../src/app/services/sqs-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
@@ -21,7 +23,7 @@ describe('update-laboratory-run.lambda', () => {
 
   let mockRunService: jest.MockedClass<typeof LaboratoryRunService>;
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
-  let mockSnsService: jest.MockedClass<typeof SnsService>;
+  let mockSqsService: jest.MockedClass<typeof SqsService>;
   let mockValidateOrgAdmin: jest.MockedFunction<typeof validateOrganizationAdminAccess>;
   let mockValidateLabManager: jest.MockedFunction<typeof validateLaboratoryManagerAccess>;
   let mockValidateLabTechnician: jest.MockedFunction<typeof validateLaboratoryTechnicianAccess>;
@@ -30,6 +32,7 @@ describe('update-laboratory-run.lambda', () => {
   let mockQueryByLaboratoryId: jest.Mock;
   let mockUpdateRun: jest.Mock;
   let mockPublish: jest.Mock;
+  let propagateExpiresSpy: jest.SpyInstance;
 
   const createEvent = (
     id: string | undefined,
@@ -86,7 +89,7 @@ describe('update-laboratory-run.lambda', () => {
     jest.clearAllMocks();
     mockRunService = LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>;
     mockLabService = LaboratoryService as jest.MockedClass<typeof LaboratoryService>;
-    mockSnsService = SnsService as jest.MockedClass<typeof SnsService>;
+    mockSqsService = SqsService as jest.MockedClass<typeof SqsService>;
     mockValidateOrgAdmin = validateOrganizationAdminAccess as any;
     mockValidateLabManager = validateLaboratoryManagerAccess as any;
     mockValidateLabTechnician = validateLaboratoryTechnicianAccess as any;
@@ -103,7 +106,7 @@ describe('update-laboratory-run.lambda', () => {
     mockRunService.prototype.queryByRunId = mockQueryByRunId;
     mockRunService.prototype.update = mockUpdateRun;
     mockLabService.prototype.queryByLaboratoryId = mockQueryByLaboratoryId;
-    mockSnsService.prototype.publish = mockPublish;
+    mockSqsService.prototype.sendMessage = mockPublish;
 
     mockQueryByLaboratoryId.mockResolvedValue({
       LaboratoryId: LAB_ID,
@@ -111,7 +114,15 @@ describe('update-laboratory-run.lambda', () => {
       RunRetentionMonths: 0,
     });
 
-    process.env.SNS_LABORATORY_RUN_UPDATE_TOPIC = 'arn:aws:sns:region:acct:lab-run-update';
+    process.env.SQS_LABORATORY_RUN_UPDATE_QUEUE_URL = 'arn:aws:sns:region:acct:lab-run-update';
+
+    propagateExpiresSpy = jest
+      .spyOn(LaboratoryDataTaggingService.prototype, 'updateRunUsageExpiresAt')
+      .mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    propagateExpiresSpy.mockRestore();
   });
 
   it('returns 400 when id path parameter is missing', async () => {
@@ -174,8 +185,104 @@ describe('update-laboratory-run.lambda', () => {
     const body = JSON.parse(result.body);
     expect(body.Status).toBe('RUNNING');
     expect(mockRunService.prototype.update).toHaveBeenCalled();
-    expect(mockSnsService.prototype.publish).toHaveBeenCalled();
+    expect(mockSqsService.prototype.sendMessage).toHaveBeenCalled();
     expect(mockUpdateRun).toHaveBeenCalled();
     expect(mockPublish).toHaveBeenCalled();
+  });
+
+  it('propagates ExpiresAt to LaboratoryRunUsages when a terminal transition sets a new TTL', async () => {
+    const orgId = '00000000-0000-0000-0000-000000000001';
+    const inputKey = `${orgId}/${LAB_ID}/input.fq.gz`;
+    mockQueryByLaboratoryId.mockResolvedValue({
+      LaboratoryId: LAB_ID,
+      OrganizationId: orgId,
+      RunRetentionMonths: 6,
+      S3Bucket: 'lab-bucket',
+    });
+    mockQueryByRunId.mockResolvedValue({
+      RunId: RUN_ID,
+      LaboratoryId: LAB_ID,
+      OrganizationId: orgId,
+      Status: 'PENDING',
+      ExpiresAt: undefined,
+      TerminalAt: undefined,
+      CreatedAt: '2024-01-01T00:00:00.000Z',
+      InputFileKeys: [inputKey],
+      Settings: '{}',
+    });
+    mockUpdateRun.mockImplementation(async (run: unknown) => ({ ...(run as object) }));
+
+    const result = await handler(
+      createEvent(RUN_ID, { Status: 'COMPLETED', Settings: { k: 1 } }),
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(propagateExpiresSpy).toHaveBeenCalledTimes(1);
+    const [, bucket, runId, keys, expiresAt] = propagateExpiresSpy.mock.calls[0];
+    expect(bucket).toBe('lab-bucket');
+    expect(runId).toBe(RUN_ID);
+    expect(keys).toEqual([inputKey]);
+    expect(typeof expiresAt).toBe('number');
+  });
+
+  it('does not propagate ExpiresAt when the run already carries TTL metadata', async () => {
+    const orgId = '00000000-0000-0000-0000-000000000001';
+    const inputKey = `${orgId}/${LAB_ID}/input.fq.gz`;
+    mockQueryByLaboratoryId.mockResolvedValue({
+      LaboratoryId: LAB_ID,
+      OrganizationId: orgId,
+      RunRetentionMonths: 6,
+      S3Bucket: 'lab-bucket',
+    });
+    mockQueryByRunId.mockResolvedValue({
+      RunId: RUN_ID,
+      LaboratoryId: LAB_ID,
+      OrganizationId: orgId,
+      Status: 'COMPLETED',
+      ExpiresAt: 1_700_000_000,
+      TerminalAt: '2024-02-01T00:00:00.000Z',
+      InputFileKeys: [inputKey],
+      Settings: '{}',
+    });
+    mockUpdateRun.mockImplementation(async (run: unknown) => ({ ...(run as object) }));
+
+    const result = await handler(
+      createEvent(RUN_ID, { Status: 'COMPLETED', Settings: { k: 2 } }),
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(propagateExpiresSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not propagate ExpiresAt when laboratory retention disables TTL', async () => {
+    const orgId = '00000000-0000-0000-0000-000000000001';
+    const inputKey = `${orgId}/${LAB_ID}/input.fq.gz`;
+    mockQueryByLaboratoryId.mockResolvedValue({
+      LaboratoryId: LAB_ID,
+      OrganizationId: orgId,
+      RunRetentionMonths: 0,
+      S3Bucket: 'lab-bucket',
+    });
+    mockQueryByRunId.mockResolvedValue({
+      RunId: RUN_ID,
+      LaboratoryId: LAB_ID,
+      OrganizationId: orgId,
+      Status: 'PENDING',
+      ExpiresAt: undefined,
+      TerminalAt: undefined,
+      CreatedAt: '2024-01-01T00:00:00.000Z',
+      InputFileKeys: [inputKey],
+      Settings: '{}',
+    });
+    mockUpdateRun.mockImplementation(async (run: unknown) => ({ ...(run as object) }));
+
+    const result = await handler(createEvent(RUN_ID, { Status: 'COMPLETED', Settings: {} }), createContext(), () => {});
+
+    expect(result.statusCode).toBe(200);
+    expect(propagateExpiresSpy).not.toHaveBeenCalled();
   });
 });

@@ -10,6 +10,7 @@
 <template>
   <NuxtLoadingIndicator :color="primaryColHex" />
   <EGOfflineModal :model-value="!isOnline" />
+  <EGConsentBanner />
   <NuxtLayout :key="useUiStore().remountAppKey">
     <NuxtPage />
     <EGBuildInfo v-if="ENV_TYPE !== 'prod'" />

@@ -153,9 +153,30 @@ describe('list-laboratories.lambda', () => {
     expect(body).toEqual([]);
   });
 
+  it('returns laboratories for organization admin when org membership is not Active but OrganizationAdmin is set', async () => {
+    mockValidateSystemAdmin.mockReturnValue(false);
+    mockValidateOrgAccess.mockReturnValue(false);
+    mockValidateOrgAdmin.mockReturnValue(true);
+
+    (mockUserService.prototype.queryByEmail as jest.Mock).mockResolvedValue([
+      { UserId: 'user-1', Email: 'user@example.com' },
+    ]);
+    (mockLabService.prototype.queryByOrganizationId as jest.Mock).mockResolvedValue([
+      { OrganizationId: 'org-1', LaboratoryId: 'lab-1' },
+      { OrganizationId: 'org-1', LaboratoryId: 'lab-2' },
+    ]);
+
+    const result = await handler(createEvent('org-1'), createContext(), () => {});
+
+    expect(result.statusCode).toBe(200);
+    const body = JSON.parse(result.body);
+    expect(body).toHaveLength(2);
+  });
+
   it('returns 403 when user has no organization access', async () => {
     mockValidateSystemAdmin.mockReturnValue(false);
     mockValidateOrgAccess.mockReturnValue(false);
+    mockValidateOrgAdmin.mockReturnValue(false);
 
     (mockUserService.prototype.queryByEmail as jest.Mock).mockResolvedValue([
       { UserId: 'user-1', Email: 'user@example.com' },

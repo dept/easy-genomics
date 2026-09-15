@@ -17,15 +17,18 @@ import {
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
 import { assertLaboratoryHasWorkflowAccess } from '@BE/utils/laboratory-workflow-access-utils';
+import { resolveSharedWorkflowOwnerId } from '@BE/utils/omics-shared-workflow-utils';
 import { AwsHealthOmicsQueryParameters, getAwsHealthOmicsApiQueryParameters } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
-const omicsService = new OmicsService();
 const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
+const omicsService = new OmicsService();
 
 /**
  * This GET /aws-healthomics/workflow/list-workflow-versions?laboratoryId={LaboratoryId}&workflowId={WorkflowId}
- * API queries AWS HealthOmics for workflow versions for a private workflow.
+ * API queries AWS HealthOmics for workflow versions for a private or shared workflow.
+ * workflowOwnerId is always resolved server-side via ListShares. Per-lab access grants
+ * are enforced for workflowId.
  *
  * Required query parameters:
  *  - laboratoryId
@@ -69,9 +72,13 @@ export const handler: Handler = async (
     await assertLaboratoryHasWorkflowAccess(laboratory, 'HEALTH_OMICS', workflowId, laboratoryWorkflowAccessService);
 
     const queryParameters: AwsHealthOmicsQueryParameters = getAwsHealthOmicsApiQueryParameters(event);
+    // Never trust a client-supplied workflowOwnerId — resolve from ACTIVE shares only.
+    const workflowOwnerId = await resolveSharedWorkflowOwnerId(omicsService, workflowId);
+
     const response = await omicsService.listWorkflowVersions(<ListWorkflowVersionsCommandInput>{
       workflowId,
       type: 'PRIVATE',
+      ...(workflowOwnerId ? { workflowOwnerId } : {}),
       ...queryParameters,
     });
 

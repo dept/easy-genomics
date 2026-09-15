@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 
-type PendingRequest =
+export type PendingRequest =
   | 'signIn'
   | 'forgotPassword'
   | 'resetPassword'
@@ -44,13 +44,24 @@ type PendingRequest =
   | 'generateSampleSheet'
   | 'downloadSampleSheet'
   | `downloadHtmlFileButton-${string}`
-  | 'switchOrg';
+  | 'switchOrg'
+  | 'dataCollectionsList'
+  | 'dataCollectionsTags'
+  | 'dataCollectionsMutate'
+  | 'dataCollectionsSamples'
+  | 'dataCollectionsRunSequenceCollections'
+  | 'runFromCollectionsWorkflows'
+  | 'loadWorkflowRunPresets'
+  | 'saveWorkflowRunPreset';
 
 interface UiStoreState {
   pendingRequests: Set<string>;
   previousPageRoute: string;
   remountAppKey: number;
   hasSidebar: boolean;
+  sidebarCollapsed: boolean;
+  /** True while an intentional logout is in progress; suppresses auth/lab error toasts. */
+  isLoggingOut: boolean;
 }
 
 const initialState = (): UiStoreState => ({
@@ -58,6 +69,8 @@ const initialState = (): UiStoreState => ({
   previousPageRoute: '',
   remountAppKey: 0,
   hasSidebar: false,
+  sidebarCollapsed: false,
+  isLoggingOut: false,
 });
 
 const useUiStore = defineStore('uiStore', {
@@ -77,7 +90,14 @@ const useUiStore = defineStore('uiStore', {
 
   actions: {
     reset() {
+      // Preserve across store wipes so in-flight logout requests still skip error toasts.
+      const { isLoggingOut } = this;
       Object.assign(this, initialState());
+      this.isLoggingOut = isLoggingOut;
+    },
+
+    setLoggingOut(loggingOut: boolean): void {
+      this.isLoggingOut = loggingOut;
     },
 
     setRequestPending(val: PendingRequest): void {
@@ -98,10 +118,18 @@ const useUiStore = defineStore('uiStore', {
     setSidebarVisible(visible: boolean) {
       this.hasSidebar = visible;
     },
+
+    toggleSidebarCollapsed() {
+      this.sidebarCollapsed = !this.sidebarCollapsed;
+    },
+
+    setSidebarCollapsed(collapsed: boolean) {
+      this.sidebarCollapsed = collapsed;
+    },
   },
 
   persist: {
-    pick: ['previousPageRoute'],
+    pick: ['previousPageRoute', 'sidebarCollapsed'],
   },
 });
 

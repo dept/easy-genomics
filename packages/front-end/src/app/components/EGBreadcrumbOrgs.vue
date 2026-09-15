@@ -44,15 +44,15 @@
 <template>
   <div>
     <UDropdown v-model:open="isOpen" :items="items" :popper="{ placement: 'bottom-start' }">
-      <div class="font-schibsted">
-        <UButton
-          variant="ghost"
-          :trailing-icon="items.length > 0 ? 'i-heroicons-chevron-up-down' : undefined"
-          color="black"
-        >
-          {{ currentOrg?.Name }}
-        </UButton>
-      </div>
+      <EGBreadcrumbDropdownTrigger
+        :label="currentOrg?.Name ?? ''"
+        :aria-label="
+          items.length > 0
+            ? `Organization: ${currentOrg?.Name}. Switch organization`
+            : `Organization: ${currentOrg?.Name}`
+        "
+        :show-chevron="items.length > 0"
+      />
       <template #item="{ item }">
         <span class="w-full text-left">{{ item.Name }}</span>
       </template>

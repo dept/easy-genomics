@@ -6,6 +6,7 @@ import archiver from 'archiver';
 import { APIGatewayProxyResult, Handler } from 'aws-lambda';
 import { SQSEvent } from 'aws-lambda/trigger/sqs';
 import { S3Service } from '@BE/services/s3-service';
+import { parseSqsJsonBody } from '@BE/utils/sqs-json-body';
 
 const s3Service = new S3Service();
 const MULTIPART_PART_SIZE_BYTES = 8 * 1024 * 1024; // 8MB
@@ -53,11 +54,8 @@ const writeStatus = async (input: {
   });
 };
 
-const parseSnsWrappedMessage = (body: string): FolderDownloadJobMessage => {
-  const parsedBody = JSON.parse(body);
-  const messageBody = parsedBody?.Message ? parsedBody.Message : body;
-  return JSON.parse(messageBody) as FolderDownloadJobMessage;
-};
+const parseSnsWrappedMessage = (body: string): FolderDownloadJobMessage =>
+  parseSqsJsonBody<FolderDownloadJobMessage>(body);
 
 const uploadZipMultipart = async (job: FolderDownloadJobMessage, zipStream: PassThrough): Promise<void> => {
   const s3Client: S3Client = s3Service.getClient();

@@ -4,7 +4,7 @@ import {
   LaboratoryNotFoundError,
   RequiredIdNotFoundError,
   UnauthorizedAccessError,
-  MissingAWSHealthOmicsAccessError,
+ MissingAWSHealthOmicsAccessError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';

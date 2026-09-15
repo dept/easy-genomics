@@ -1,6 +1,9 @@
-// eslint-disable-next-line import/named
 import { CancelRunCommandOutput, StartRunCommandOutput } from '@aws-sdk/client-omics';
-import { ListRuns, ReadRun } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
+import {
+  ListRuns,
+  ReadRun,
+  ReadRunTasks,
+} from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
 import HttpFactory from '@FE/repository/factory';
 
 class OmicsRunsModule extends HttpFactory {
@@ -24,12 +27,25 @@ class OmicsRunsModule extends HttpFactory {
     return res;
   }
 
+  async getRunProgress(labId: string, omicsRunId: string): Promise<ReadRunTasks> {
+    const res = await this.callOmics<ReadRunTasks>('GET', `/run/read-run-tasks/${omicsRunId}?laboratoryId=${labId}`);
+
+    if (!res) {
+      throw new Error('Failed to retrieve omics run task progress');
+    }
+
+    return res;
+  }
+
   async createExecution(
     labId: string,
     workflowId: string,
     name: string,
     params: object,
     workflowVersionName?: string,
+    workflowOwnerId?: string,
+    /** Easy Genomics LaboratoryRun.RunId — tagged on StartRun for Cost Explorer attribution. */
+    requestId?: string,
   ): Promise<StartRunCommandOutput> {
     const payload: Record<string, string> = {
       workflowId,
@@ -38,6 +54,12 @@ class OmicsRunsModule extends HttpFactory {
     };
     if (workflowVersionName) {
       payload.workflowVersionName = workflowVersionName;
+    }
+    if (workflowOwnerId) {
+      payload.workflowOwnerId = workflowOwnerId;
+    }
+    if (requestId) {
+      payload.requestId = requestId;
     }
     const res = await this.callOmics<StartRunCommandOutput>(
       'POST',

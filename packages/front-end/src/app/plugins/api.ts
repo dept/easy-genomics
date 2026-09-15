@@ -1,21 +1,27 @@
 import { defineNuxtPlugin } from '#app';
+import DataCollectionsModule from '@FE/repository/modules/data-collections';
 import FileModule from '@FE/repository/modules/file';
 import InfraModules from '@FE/repository/modules/infra';
 import LabsModule from '@FE/repository/modules/labs';
 import OmicsRunsModule from '@FE/repository/modules/omics-runs';
 import OmicsWorkflowsModule from '@FE/repository/modules/omics-workflows';
+import OrganizationEmailBrandingModule from '@FE/repository/modules/organization-email-branding';
 import OrgsModule from '@FE/repository/modules/orgs';
+import S3AccessModule from '@FE/repository/modules/s3-access';
 import SeqeraPipelinesModule from '@FE/repository/modules/seqera-pipelines';
 import SeqeraRunsModules from '@FE/repository/modules/seqera-runs';
 import UploadsModule from '@FE/repository/modules/uploads';
 import UsersModule from '@FE/repository/modules/users';
 import WorkflowAccessModule from '@FE/repository/modules/workflow-access';
+import WorkflowRunPresetsModule from '@FE/repository/modules/workflow-run-presets';
 
 interface IApiInstance {
+  dataCollections: DataCollectionsModule;
   file: FileModule;
   infra: InfraModules;
   labs: LabsModule;
   orgs: OrgsModule;
+  organizationEmailBranding: OrganizationEmailBrandingModule;
   seqeraPipelines: SeqeraPipelinesModule;
   seqeraRuns: SeqeraRunsModules;
   omicsWorkflows: OmicsWorkflowsModule;
@@ -23,6 +29,8 @@ interface IApiInstance {
   uploads: UploadsModule;
   users: UsersModule;
   workflowAccess: WorkflowAccessModule;
+  s3Access: S3AccessModule;
+  workflowRunPresets: WorkflowRunPresetsModule;
 }
 
 interface FetchOptions {
@@ -34,10 +42,12 @@ const createFetchOptions = (nuxtApp): FetchOptions => ({
 });
 
 const createApiInstance = (apiFetcher: any): IApiInstance => ({
+  dataCollections: new DataCollectionsModule(apiFetcher),
   file: new FileModule(apiFetcher),
   infra: new InfraModules(apiFetcher),
   labs: new LabsModule(apiFetcher),
   orgs: new OrgsModule(apiFetcher),
+  organizationEmailBranding: new OrganizationEmailBrandingModule(apiFetcher),
   seqeraPipelines: new SeqeraPipelinesModule(apiFetcher),
   seqeraRuns: new SeqeraRunsModules(apiFetcher),
   omicsWorkflows: new OmicsWorkflowsModule(apiFetcher),
@@ -45,6 +55,8 @@ const createApiInstance = (apiFetcher: any): IApiInstance => ({
   uploads: new UploadsModule(apiFetcher),
   users: new UsersModule(apiFetcher),
   workflowAccess: new WorkflowAccessModule(apiFetcher),
+  s3Access: new S3AccessModule(apiFetcher),
+  workflowRunPresets: new WorkflowRunPresetsModule(apiFetcher),
 });
 
 export default defineNuxtPlugin((nuxtApp) => {

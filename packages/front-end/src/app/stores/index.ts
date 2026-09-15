@@ -1,3 +1,4 @@
+import useAnalyticsStore from './analytics';
 import useLabsStore from './labs';
 import useOmicsWorkflowsStore from './omicsWorkflows';
 import useOrgsStore from './orgs';
@@ -6,6 +7,7 @@ import useSeqeraPipelinesStore from './seqeraPipelines';
 import useToastStore from './toast';
 import useUiStore from './ui';
 import useUserStore from './user';
+import useWorkflowRunPresetsStore from './workflowRunPresets';
 
 function resetStores() {
   useLabsStore().reset();
@@ -15,9 +17,11 @@ function resetStores() {
   useOmicsWorkflowsStore().reset();
   useUiStore().reset();
   useUserStore().reset();
+  useWorkflowRunPresetsStore().reset();
 }
 export {
   resetStores,
+  useAnalyticsStore,
   useOrgsStore,
   useToastStore,
   useUserStore,
@@ -26,4 +30,5 @@ export {
   useRunStore,
   useSeqeraPipelinesStore,
   useOmicsWorkflowsStore,
+  useWorkflowRunPresetsStore,
 };

@@ -35,20 +35,54 @@
    * e.g. User enters 'community-showcase' and the following name is generated,
    * viralrecon-illumina_community-showcase_20240712_5686910e783b4b2
    */
-  const MAX_RUN_NAME_LENGTH = 50;
-  const runNameSchema = z
-    .string()
-    .trim()
-    .min(1, 'Pipeline run name must be at least 1 character')
-    .max(MAX_RUN_NAME_LENGTH, `Pipeline run name must be ${MAX_RUN_NAME_LENGTH} characters or less`);
+  const MAX_RUN_NAME_LENGTH_SEQERA = 50;
+  const MAX_RUN_NAME_LENGTH_AWS_HEALTH_OMICS = 124;
 
-  const formStateSchema = z.object({
-    runName: runNameSchema,
-  });
-  type FormState = z.infer<typeof formStateSchema>;
+  const isAwsHealthOmics = computed<boolean>(() => props.platform === 'AWS HealthOmics');
+
+  const maxRunNameLength = computed<number>(() =>
+    isAwsHealthOmics.value ? MAX_RUN_NAME_LENGTH_AWS_HEALTH_OMICS : MAX_RUN_NAME_LENGTH_SEQERA,
+  );
+
+  const runNameHint = computed<string>(() =>
+    isAwsHealthOmics.value
+      ? 'AWS HealthOmics run names can include symbols and numbers, but cannot start with a space.'
+      : '(Only alphanumeric characters, hyphens, and underscores. First character must be a letter.)',
+  );
+
+  function getRunNameSchema() {
+    if (isAwsHealthOmics.value) {
+      return z
+        .string()
+        .min(1, 'Run name must be at least 1 character')
+        .max(
+          MAX_RUN_NAME_LENGTH_AWS_HEALTH_OMICS,
+          `Run name must be ${MAX_RUN_NAME_LENGTH_AWS_HEALTH_OMICS} characters or less`,
+        )
+        .refine((value) => !value.startsWith(' '), 'Run name cannot start with a space');
+    }
+
+    return z
+      .string()
+      .trim()
+      .min(1, 'Pipeline run name must be at least 1 character')
+      .max(MAX_RUN_NAME_LENGTH_SEQERA, `Pipeline run name must be ${MAX_RUN_NAME_LENGTH_SEQERA} characters or less`);
+  }
+
+  const formStateSchema = computed(() =>
+    z.object({
+      runName: getRunNameSchema(),
+      description: z.string().max(500, 'Run description must be 500 characters or less').optional(),
+    }),
+  );
+  type FormState = {
+    runName: string;
+    description: string;
+  };
 
   const formState = reactive<FormState>({
     runName: '',
+    description: '',
   });
 
   const selectedWorkflowVersion = ref<string>(OMICS_VERSION_DEFAULT);
@@ -68,8 +102,11 @@
   const canProceed = ref(false);
 
   const runNameCharCount = computed(() => formState.runName.length);
+  const descriptionCharCount = computed(() => formState.description.length);
 
   const pipelineOrWorkflow = computed<string>(() => platformToPipelineOrWorkflow(props.platform));
+
+  const pipelineOrWorkflowDescriptionLabel = computed<string>(() => `${pipelineOrWorkflow.value} description`);
 
   const wipRunUpdateFunction = computed<Function>(() => platformToWipRunUpdateFunction(props.platform));
 
@@ -89,11 +126,16 @@
     return selectValue;
   }
 
-  // when the wipRun is loaded and has a runName value, fill it into the box
+  // Restore form from WIP run on mount / store changes; skip when already in sync.
   watch(
     wipRun,
     (val) => {
-      if (val.runName) formState.runName = val.runName;
+      if (val.runName != null && val.runName !== formState.runName) {
+        formState.runName = val.runName;
+      }
+      if ((val.description ?? '') !== formState.description) {
+        formState.description = val.description ?? '';
+      }
       selectedWorkflowVersion.value = workflowVersionToSelectValue(val.workflowVersionName);
       validate(formState);
     },
@@ -126,7 +168,13 @@
   function validate(currentState: FormState): FormError[] {
     const errors: FormError[] = [];
 
-    maybeAddFieldValidationErrors(errors, runNameSchema, 'runName', currentState.runName);
+    maybeAddFieldValidationErrors(errors, getRunNameSchema(), 'runName', currentState.runName);
+    maybeAddFieldValidationErrors(
+      errors,
+      z.string().max(500, 'Run description must be 500 characters or less'),
+      'description',
+      currentState.description,
+    );
 
     canProceed.value = errors.length === 0;
 
@@ -153,12 +201,20 @@
       .replace(/^[^a-zA-Z]+/, '');
   }
 
-  function onRunNameInput(_event: InputEvent) {
-    // satinize name in-place in the text box
-    formState.runName = getSupportedRunName(formState.runName);
-    // write to wipRun
-    wipRunUpdateFunction.value(props.wipRunTempId, { runName: formState.runName });
+  // Use the emitted value — native @input can run before v-model and persist a truncated name.
+  function onRunNameUpdate(value: string | number) {
+    const rawValue = String(value ?? '');
+    const nextRunName = isAwsHealthOmics.value ? rawValue : getSupportedRunName(rawValue);
+    formState.runName = nextRunName;
+    wipRunUpdateFunction.value(props.wipRunTempId, { runName: nextRunName });
   }
+
+  watch(
+    () => formState.description,
+    (nextDescription) => {
+      wipRunUpdateFunction.value(props.wipRunTempId, { description: nextDescription });
+    },
+  );
 
   function onSubmit() {
     emit('next-step');
@@ -172,8 +228,8 @@
 <template>
   <UForm :schema="formStateSchema" :state="formState" :validate="validate" @submit="onSubmit">
     <EGCard>
-      <EGText tag="small" class="mb-4">Step 01</EGText>
-      <EGText tag="h4" class="mb-0">Run Details</EGText>
+      <p class="text-muted mb-1 text-sm">Step 1 of 4</p>
+      <h2 class="text-heading mb-0 text-lg font-medium">Run Details</h2>
       <UDivider class="py-4" />
       <EGFormGroup :label="pipelineOrWorkflow" name="pipelineName">
         <EGInput :model-value="props.pipelineOrWorkflowName" :disabled="true" />
@@ -204,23 +260,22 @@
         />
       </EGFormGroup>
 
-      <EGFormGroup
-        label="Run Name"
-        hint="(Only alphanumeric characters, hyphens, and underscores. First character must be a letter.)"
-        name="runName"
-        eager-validation
-        required
-      >
+      <EGFormGroup label="Run Name" :hint="runNameHint" name="runName" eager-validation required>
         <EGInput
-          v-model="formState.runName"
+          :model-value="formState.runName"
           placeholder="Enter a name to identify this pipeline run"
-          @input.prevent="onRunNameInput"
           autofocus
+          @update:model-value="onRunNameUpdate"
         />
-        <EGCharacterCounter :value="runNameCharCount" :max="MAX_RUN_NAME_LENGTH" />
+        <EGCharacterCounter :value="runNameCharCount" :max="maxRunNameLength" />
       </EGFormGroup>
 
-      <EGFormGroup label="Description" name="pipelineDescription">
+      <EGFormGroup label="Run description" name="description" hint="Optional. Visible on the run list and run details.">
+        <EGTextArea v-model="formState.description" placeholder="Add an optional description for this run" />
+        <EGCharacterCounter :value="descriptionCharCount" :max="500" />
+      </EGFormGroup>
+
+      <EGFormGroup :label="pipelineOrWorkflowDescriptionLabel" name="pipelineDescription">
         <EGTextArea :model-value="props.pipelineOrWorkflowDescription" :disabled="true" />
       </EGFormGroup>
     </EGCard>

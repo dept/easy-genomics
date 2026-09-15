@@ -2,6 +2,7 @@ const mockFetch = jest.fn() as jest.MockedFunction<typeof fetch>;
 global.fetch = mockFetch;
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
+jest.mock('../../../../../src/app/services/easy-genomics/laboratory-workflow-access-service');
 jest.mock('../../../../../src/app/services/omics-service');
 jest.mock('../../../../../src/app/services/secrets-manager-service');
 jest.mock('../../../../../src/app/services/aws-healthomics/workflow-schema-service');
@@ -11,6 +12,7 @@ import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { handler } from '../../../../../src/app/controllers/aws-healthomics/workflow/read-workflow-schema.lambda';
 import { WorkflowSchemaService } from '../../../../../src/app/services/aws-healthomics/workflow-schema-service';
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
+import { LaboratoryWorkflowAccessService } from '../../../../../src/app/services/easy-genomics/laboratory-workflow-access-service';
 import { OmicsService } from '../../../../../src/app/services/omics-service';
 import { SecretsManagerService } from '../../../../../src/app/services/secrets-manager-service';
 import {
@@ -39,6 +41,7 @@ describe('read-workflow-schema.lambda', () => {
   };
 
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
+  let mockAccessService: jest.MockedClass<typeof LaboratoryWorkflowAccessService>;
   let mockOmicsService: jest.MockedClass<typeof OmicsService>;
   let mockSecretsManagerService: jest.MockedClass<typeof SecretsManagerService>;
   let mockWorkflowSchemaService: jest.MockedClass<typeof WorkflowSchemaService>;
@@ -98,6 +101,7 @@ describe('read-workflow-schema.lambda', () => {
     process.env.GITHUB_PAT_SECRET_NAME = SECRET_NAME;
 
     mockLabService = LaboratoryService as jest.MockedClass<typeof LaboratoryService>;
+    mockAccessService = LaboratoryWorkflowAccessService as jest.MockedClass<typeof LaboratoryWorkflowAccessService>;
     mockOmicsService = OmicsService as jest.MockedClass<typeof OmicsService>;
     mockSecretsManagerService = SecretsManagerService as jest.MockedClass<typeof SecretsManagerService>;
     mockWorkflowSchemaService = WorkflowSchemaService as jest.MockedClass<typeof WorkflowSchemaService>;
@@ -108,11 +112,14 @@ describe('read-workflow-schema.lambda', () => {
     mockLabService.prototype.queryByLaboratoryId = jest.fn().mockResolvedValue({
       OrganizationId: ORG_ID,
       LaboratoryId: LAB_ID,
+      EnableNewWorkflowsByDefault: true,
     });
 
+    mockAccessService.prototype.listByLaboratoryId = jest.fn().mockResolvedValue([]);
     mockWorkflowSchemaService.prototype.getSchema = jest.fn().mockResolvedValue(savedSchema);
     mockWorkflowSchemaService.prototype.saveSchema = jest.fn().mockResolvedValue({});
     mockOmicsService.prototype.getWorkflow = jest.fn();
+    mockOmicsService.prototype.listSharedWorkflows = jest.fn().mockResolvedValue({ shares: [] });
     mockSecretsManagerService.prototype.getSecretValue = jest.fn();
 
     mockValidateOrgAdmin.mockReturnValue(true);
@@ -212,6 +219,20 @@ describe('read-workflow-schema.lambda', () => {
     mockValidateLabTechnician.mockReturnValue(false);
 
     const result = await handler(createEvent('wf-no-access', LAB_ID), createContext(), () => {});
+
+    expect(result.statusCode).toBe(403);
+    expect(mockWorkflowSchemaService.prototype.getSchema).not.toHaveBeenCalled();
+  });
+
+  it('denies when laboratory workflow access grant is missing (strict default)', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      EnableNewWorkflowsByDefault: false,
+    });
+    (mockAccessService.prototype.listByLaboratoryId as jest.Mock).mockResolvedValue([]);
+
+    const result = await handler(createEvent('wf-not-granted', LAB_ID), createContext(), () => {});
 
     expect(result.statusCode).toBe(403);
     expect(mockWorkflowSchemaService.prototype.getSchema).not.toHaveBeenCalled();

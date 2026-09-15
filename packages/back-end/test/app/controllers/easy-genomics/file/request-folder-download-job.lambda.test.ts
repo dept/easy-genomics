@@ -3,12 +3,15 @@ import { handler } from '../../../../../src/app/controllers/easy-genomics/file/r
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../src/app/services/s3-service');
-jest.mock('../../../../../src/app/services/sns-service');
+jest.mock('../../../../../src/app/services/sqs-service');
 jest.mock('../../../../../src/app/utils/auth-utils');
+jest.mock('../../../../../src/app/utils/laboratory-s3-access-utils', () => ({
+  assertLaboratoryHasS3BucketAccess: jest.fn().mockResolvedValue(undefined),
+}));
 
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
 import { S3Service } from '../../../../../src/app/services/s3-service';
-import { SnsService } from '../../../../../src/app/services/sns-service';
+import { SqsService } from '../../../../../src/app/services/sqs-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
@@ -69,7 +72,7 @@ describe('request-folder-download-job Lambda', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    process.env.SNS_FOLDER_DOWNLOAD_TOPIC = 'arn:aws:sns:us-east-1:123:folder-download-topic.fifo';
+    process.env.SQS_FOLDER_DOWNLOAD_QUEUE_URL = 'arn:aws:sns:us-east-1:123:folder-download-topic.fifo';
 
     mockValidateOrgAdmin = validateOrganizationAdminAccess as jest.MockedFunction<
       typeof validateOrganizationAdminAccess
@@ -111,9 +114,9 @@ describe('request-folder-download-job Lambda', () => {
       });
     });
 
-    const mockSnsServiceInstance = SnsService as jest.MockedClass<typeof SnsService>;
+    const mockSqsServiceInstance = SqsService as jest.MockedClass<typeof SqsService>;
     mockPublish = jest.fn();
-    mockSnsServiceInstance.prototype.publish = mockPublish;
+    mockSqsServiceInstance.prototype.sendMessage = mockPublish;
   });
 
   it('creates a folder download job when user is authorized', async () => {
@@ -203,7 +206,7 @@ describe('request-folder-download-job Lambda', () => {
   });
 
   it('returns an error when SNS topic env is missing', async () => {
-    delete process.env.SNS_FOLDER_DOWNLOAD_TOPIC;
+    delete process.env.SQS_FOLDER_DOWNLOAD_QUEUE_URL;
     mockValidateOrgAdmin.mockReturnValue(true);
     mockQueryByLaboratoryId.mockResolvedValue(mockLaboratory);
     mockPutObject.mockResolvedValue({});

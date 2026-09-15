@@ -1,4 +1,5 @@
 import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
+import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
   InvalidRequestError,
   LaboratoryUserAlreadyExistsError,
@@ -9,7 +10,6 @@ import { AddLaboratoryUserSchema } from '@easy-genomics/shared-lib/src/app/schem
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { LaboratoryUserService } from '@BE/services/easy-genomics/laboratory-user-service';

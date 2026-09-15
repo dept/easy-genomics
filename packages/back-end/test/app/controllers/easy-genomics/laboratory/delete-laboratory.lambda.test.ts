@@ -6,13 +6,13 @@ jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-user-service');
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-run-service');
 jest.mock('../../../../../src/app/services/ssm-service');
-jest.mock('../../../../../src/app/services/sns-service');
+jest.mock('../../../../../src/app/services/sqs-service');
 jest.mock('../../../../../src/app/utils/auth-utils');
 
 import { LaboratoryRunService } from '../../../../../src/app/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
 import { LaboratoryUserService } from '../../../../../src/app/services/easy-genomics/laboratory-user-service';
-import { SnsService } from '../../../../../src/app/services/sns-service';
+import { SqsService } from '../../../../../src/app/services/sqs-service';
 import { SsmService } from '../../../../../src/app/services/ssm-service';
 import { validateOrganizationAdminAccess } from '../../../../../src/app/utils/auth-utils';
 
@@ -21,7 +21,7 @@ describe('delete-laboratory.lambda', () => {
   let mockLabUserService: jest.MockedClass<typeof LaboratoryUserService>;
   let mockLabRunService: jest.MockedClass<typeof LaboratoryRunService>;
   let mockSsmService: jest.MockedClass<typeof SsmService>;
-  let mockSnsService: jest.MockedClass<typeof SnsService>;
+  let mockSqsService: jest.MockedClass<typeof SqsService>;
   let mockValidateOrgAdmin: jest.MockedFunction<typeof validateOrganizationAdminAccess>;
 
   const createEvent = (id: string | undefined, overrides: Partial<APIGatewayProxyWithCognitoAuthorizerEvent> = {}) =>
@@ -71,17 +71,17 @@ describe('delete-laboratory.lambda', () => {
     mockLabUserService = LaboratoryUserService as jest.MockedClass<typeof LaboratoryUserService>;
     mockLabRunService = LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>;
     mockSsmService = SsmService as jest.MockedClass<typeof SsmService>;
-    mockSnsService = SnsService as jest.MockedClass<typeof SnsService>;
+    mockSqsService = SqsService as jest.MockedClass<typeof SqsService>;
     mockValidateOrgAdmin = validateOrganizationAdminAccess as any;
 
     mockValidateOrgAdmin.mockReturnValue(true);
-    process.env.SNS_LABORATORY_DELETION_TOPIC = 'arn:aws:sns:region:acct:lab-deletion';
+    process.env.SQS_LABORATORY_DELETION_QUEUE_URL = 'arn:aws:sns:region:acct:lab-deletion';
 
     mockLabService.prototype.queryByLaboratoryId = jest.fn();
     mockLabService.prototype.delete = jest.fn();
     mockLabUserService.prototype.queryByLaboratoryId = jest.fn();
     mockLabRunService.prototype.queryByLaboratoryId = jest.fn();
-    mockSnsService.prototype.publish = jest.fn();
+    mockSqsService.prototype.sendMessage = jest.fn();
     mockSsmService.prototype.deleteParameter = jest.fn();
   });
 
@@ -115,7 +115,7 @@ describe('delete-laboratory.lambda', () => {
     (mockLabRunService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue([
       { LaboratoryId: 'lab-1', RunId: 'run-1' },
     ]);
-    (mockSnsService.prototype.publish as jest.Mock).mockResolvedValue({});
+    (mockSqsService.prototype.sendMessage as jest.Mock).mockResolvedValue({});
     (mockLabService.prototype.delete as jest.Mock).mockResolvedValue(true);
     (mockSsmService.prototype.deleteParameter as jest.Mock).mockResolvedValue({});
 
@@ -124,7 +124,7 @@ describe('delete-laboratory.lambda', () => {
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
     expect(body.Status).toBe('Success');
-    expect(mockSnsService.prototype.publish).toHaveBeenCalled();
+    expect(mockSqsService.prototype.sendMessage).toHaveBeenCalled();
     expect(mockLabService.prototype.delete).toHaveBeenCalled();
     expect(mockSsmService.prototype.deleteParameter).toHaveBeenCalled();
   });

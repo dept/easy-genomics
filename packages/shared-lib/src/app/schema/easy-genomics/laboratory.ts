@@ -12,12 +12,51 @@ export const LaboratorySchema = z
     NextFlowTowerEnabled: z.boolean().optional(),
     NextFlowTowerApiBaseUrl: z.string().optional(),
     NextFlowTowerWorkspaceId: z.string().optional(),
+    // omitted ⇒ RESTRICTED (i.e. today's exact behaviour — no migration needed for existing labs)
+    AwsHealthOmicsNetworkingMode: z.enum(['RESTRICTED', 'VPC']).optional(),
+    // name of an existing HealthOmics Configuration resource; AWS caps the name at 50 chars
+    AwsHealthOmicsVpcConfigurationName: z.string().max(50).optional(),
     /**
      * Laboratory-wide run retention policy, in months, applied after a run reaches a terminal state.
      * - 0 means "never delete run records" (no TTL expiration).
      */
     RunRetentionMonths: z.number().int().min(0).optional(),
+    RunListStatusPollIntervalSeconds: z.number().int().min(30).max(1800).optional(),
+    RunDetailProgressPollIntervalSeconds: z.number().int().min(10).max(300).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
+    EnableNewBucketsByDefault: z.boolean().optional(),
+    /**
+     * Lab-manager kill switch for run-completion email notifications. Defaults to `true`
+     * (enabled) at the application layer when absent. Does not itself subscribe anyone —
+     * individual opt-in still gates whether any email is actually sent.
+     */
+    NotificationsEnabled: z.boolean().optional(),
+    /**
+     * BYOK provider selection per integration. Setting a provider IS the enable
+     * signal — when set, ambiguous HealthOmics failures (WORKFLOW_RUN_FAILED,
+     * generic RUN_TASK_FAILED) and free-text Seqera errors are sent to the
+     * configured LLM for owner attribution. The deterministic HealthOmics
+     * lookup table runs regardless. Bedrock uses the platform Lambda IAM;
+     * OpenAI / Anthropic need a key stored separately in SSM SecureString.
+     */
+    HealthOmicsLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+    HealthOmicsLlmModelId: z.string().optional(),
+    SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+    SeqeraLlmModelId: z.string().optional(),
+    /**
+     * When true, the failure classifier fetches the failed HealthOmics run's
+     * CloudWatch engine log, redacts PII + secrets, and sends a bounded excerpt
+     * to the configured LLM for deeper diagnosis. Requires a HealthOmics LLM
+     * provider. Off/omitted preserves the lighter behaviour (deterministic
+     * lookup + LLM on failureReason only).
+     */
+    HealthOmicsLogEnrichmentEnabled: z.boolean().optional(),
+    /**
+     * AWS HealthOmics run cache id (call caching / "resume"). Lazily provisioned on the first
+     * HealthOmics run and reused for all subsequent runs so failed runs can resume from their
+     * last completed task. Managed internally; not set via the create/update Laboratory APIs.
+     */
+    HealthOmicsRunCacheId: z.string().optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
@@ -36,11 +75,37 @@ export const CreateLaboratorySchema = z
     NextFlowTowerEnabled: z.boolean().optional(),
     NextFlowTowerApiBaseUrl: z.string().optional(),
     NextFlowTowerAccessToken: z.string().optional(),
+    GitHubAccessToken: z.string().optional(),
     NextFlowTowerWorkspaceId: z.string().optional(),
+    // omitted ⇒ RESTRICTED (i.e. today's exact behaviour — no migration needed for existing labs)
+    AwsHealthOmicsNetworkingMode: z.enum(['RESTRICTED', 'VPC']).optional(),
+    // name of an existing HealthOmics Configuration resource; AWS caps the name at 50 chars
+    AwsHealthOmicsVpcConfigurationName: z.string().max(50).optional(),
     RunRetentionMonths: z.number().int().min(0).optional(),
+    RunListStatusPollIntervalSeconds: z.number().int().min(30).max(1800).optional(),
+    RunDetailProgressPollIntervalSeconds: z.number().int().min(10).max(300).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
+    NotificationsEnabled: z.boolean().optional(),
+    EnableNewBucketsByDefault: z.boolean().optional(),
+    HealthOmicsLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+    HealthOmicsLlmModelId: z.string().optional(),
+    SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+    SeqeraLlmModelId: z.string().optional(),
+    HealthOmicsLogEnrichmentEnabled: z.boolean().optional(),
+    /** Write-only on Create / Update. Persisted to SSM SecureString, never echoed back. */
+    HealthOmicsLlmApiKey: z.string().optional(),
+    SeqeraLlmApiKey: z.string().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((data, ctx) => {
+    if (data.AwsHealthOmicsNetworkingMode === 'VPC' && !data.AwsHealthOmicsVpcConfigurationName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'AwsHealthOmicsVpcConfigurationName is required when AwsHealthOmicsNetworkingMode is VPC',
+        path: ['AwsHealthOmicsVpcConfigurationName'],
+      });
+    }
+  });
 export type CreateLaboratory = z.infer<typeof CreateLaboratorySchema>;
 
 export const ReadLaboratorySchema = z
@@ -55,9 +120,27 @@ export const ReadLaboratorySchema = z
     NextFlowTowerEnabled: z.boolean().optional(),
     NextFlowTowerApiBaseUrl: z.string().optional(),
     NextFlowTowerWorkspaceId: z.string().optional(),
+    // omitted ⇒ RESTRICTED (i.e. today's exact behaviour — no migration needed for existing labs)
+    AwsHealthOmicsNetworkingMode: z.enum(['RESTRICTED', 'VPC']).optional(),
+    // name of an existing HealthOmics Configuration resource; AWS caps the name at 50 chars
+    AwsHealthOmicsVpcConfigurationName: z.string().max(50).optional(),
     HasNextFlowTowerAccessToken: z.boolean().optional(), // Return boolean indicator instead of actual NextFlowTowerAccessToken
+    HasGitHubAccessToken: z.boolean().optional(), // Return boolean indicator instead of actual GitHubAccessToken
     RunRetentionMonths: z.number().int().min(0).optional(),
+    RunListStatusPollIntervalSeconds: z.number().int().min(30).max(1800).optional(),
+    RunDetailProgressPollIntervalSeconds: z.number().int().min(10).max(300).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
+    NotificationsEnabled: z.boolean().optional(),
+    EnableNewBucketsByDefault: z.boolean().optional(),
+    HealthOmicsLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+    HealthOmicsLlmModelId: z.string().optional(),
+    SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+    SeqeraLlmModelId: z.string().optional(),
+    HealthOmicsLogEnrichmentEnabled: z.boolean().optional(),
+    /** Boolean indicators. The actual keys live in SSM and are never returned. */
+    HasHealthOmicsLlmApiKey: z.boolean().optional(),
+    HasSeqeraLlmApiKey: z.boolean().optional(),
+    HealthOmicsRunCacheId: z.string().optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
@@ -73,17 +156,44 @@ export const RequestLaboratorySchema = z
   })
   .strict();
 
-export const UpdateLaboratorySchema = z.object({
-  Name: z.string(),
-  Description: z.string().optional(),
-  S3Bucket: z.string().optional(),
-  Status: z.enum(['Active', 'Inactive']),
-  AwsHealthOmicsEnabled: z.boolean().optional(),
-  NextFlowTowerEnabled: z.boolean().optional(),
-  NextFlowTowerApiBaseUrl: z.string().optional(),
-  NextFlowTowerAccessToken: z.string().optional(),
-  NextFlowTowerWorkspaceId: z.string().optional(),
-  RunRetentionMonths: z.number().int().min(0).optional(),
-  EnableNewWorkflowsByDefault: z.boolean().optional(),
-});
+export const UpdateLaboratorySchema = z
+  .object({
+    Name: z.string(),
+    Description: z.string().optional(),
+    S3Bucket: z.string().optional(),
+    Status: z.enum(['Active', 'Inactive']),
+    AwsHealthOmicsEnabled: z.boolean().optional(),
+    NextFlowTowerEnabled: z.boolean().optional(),
+    NextFlowTowerApiBaseUrl: z.string().optional(),
+    NextFlowTowerAccessToken: z.string().optional(),
+    GitHubAccessToken: z.string().optional(),
+    NextFlowTowerWorkspaceId: z.string().optional(),
+    // omitted ⇒ RESTRICTED (i.e. today's exact behaviour — no migration needed for existing labs)
+    AwsHealthOmicsNetworkingMode: z.enum(['RESTRICTED', 'VPC']).optional(),
+    // name of an existing HealthOmics Configuration resource; AWS caps the name at 50 chars
+    AwsHealthOmicsVpcConfigurationName: z.string().max(50).optional(),
+    RunRetentionMonths: z.number().int().min(0).optional(),
+    RunListStatusPollIntervalSeconds: z.number().int().min(30).max(1800).optional(),
+    RunDetailProgressPollIntervalSeconds: z.number().int().min(10).max(300).optional(),
+    EnableNewWorkflowsByDefault: z.boolean().optional(),
+    NotificationsEnabled: z.boolean().optional(),
+    EnableNewBucketsByDefault: z.boolean().optional(),
+    HealthOmicsLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+    HealthOmicsLlmModelId: z.string().optional(),
+    SeqeraLlmProvider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+    SeqeraLlmModelId: z.string().optional(),
+    HealthOmicsLogEnrichmentEnabled: z.boolean().optional(),
+    /** Write-only on Update. Persisted to SSM SecureString. */
+    HealthOmicsLlmApiKey: z.string().optional(),
+    SeqeraLlmApiKey: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.AwsHealthOmicsNetworkingMode === 'VPC' && !data.AwsHealthOmicsVpcConfigurationName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'AwsHealthOmicsVpcConfigurationName is required when AwsHealthOmicsNetworkingMode is VPC',
+        path: ['AwsHealthOmicsVpcConfigurationName'],
+      });
+    }
+  });
 export type UpdateLaboratory = z.infer<typeof UpdateLaboratorySchema>;

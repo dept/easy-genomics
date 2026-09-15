@@ -26,6 +26,60 @@ const ssmService = new SsmService();
 const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
 
 /**
+ * Retrieves every Seqera pipeline across all pages (preserving any caller-supplied
+ * search / workspaceId params) so the workflow-access filter is applied to the full
+ * set rather than a single page.
+ */
+async function listAllPipelines(
+  seqeraApiBaseUrl: string,
+  apiQueryParameters: string,
+  accessToken: string,
+): Promise<ListPipelinesResponse> {
+  const pipelines: NonNullable<ListPipelinesResponse['pipelines']> = [];
+  const seen = new Set<string>();
+  let firstResponse: ListPipelinesResponse | undefined;
+  let offset = 0;
+  const max = 100;
+
+  for (;;) {
+    const params = new URLSearchParams(apiQueryParameters);
+    params.set('max', String(max));
+    params.set('offset', String(offset));
+
+    const response: ListPipelinesResponse = await httpRequest<ListPipelinesResponse>(
+      `${seqeraApiBaseUrl}/pipelines?${params.toString()}`,
+      REST_API_METHOD.GET,
+      { Authorization: `Bearer ${accessToken}` },
+    );
+    if (!firstResponse) {
+      firstResponse = response;
+    }
+
+    const page = response.pipelines ?? [];
+    if (!page.length) {
+      break;
+    }
+    for (const p of page) {
+      const id = p.pipelineId != null ? String(p.pipelineId) : undefined;
+      if (id != null && seen.has(id)) {
+        continue;
+      }
+      if (id != null) {
+        seen.add(id);
+      }
+      pipelines.push(p);
+    }
+
+    offset += page.length;
+    if (page.length < max || (response.totalSize != null && offset >= response.totalSize)) {
+      break;
+    }
+  }
+
+  return { ...(firstResponse ?? {}), pipelines, totalSize: pipelines.length };
+}
+
+/**
  * This GET /nf-tower/pipeline/list-pipelines?laboratoryId={LaboratoryId} API
  * queries the NextFlow Tower GET /pipelines?workspaceId={WorkspaceId} API for a
  * list of Pipelines, and it expects:
@@ -90,20 +144,21 @@ export const handler: Handler = async (
 
     // Get Seqera API Base URL for Laboratory or default to platform-wide configured Seqera API Base URL
     const seqeraApiBaseUrl: string = laboratory.NextFlowTowerApiBaseUrl || process.env.SEQERA_API_BASE_URL;
-    // Get Query Parameters for Seqera Cloud / NextFlow Tower APIs
+    // Get Query Parameters for Seqera Cloud / NextFlow Tower APIs (preserves search + workspaceId)
     const apiQueryParameters: string = getNextFlowApiQueryParameters(event, laboratory.NextFlowTowerWorkspaceId);
-    const response: ListPipelinesResponse = await httpRequest<ListPipelinesResponse>(
-      `${seqeraApiBaseUrl}/pipelines?${apiQueryParameters}`,
-      REST_API_METHOD.GET,
-      { Authorization: `Bearer ${accessToken}` },
-    );
+
+    // Fetch every page of pipelines before applying the workflow-access filter.
+    // Filtering only the first page would hide any granted pipeline beyond that
+    // page from every user, even though it appears in the (fully paginated)
+    // admin workflow catalog.
+    const response: ListPipelinesResponse = await listAllPipelines(seqeraApiBaseUrl, apiQueryParameters, accessToken);
 
     const accessRows = await laboratoryWorkflowAccessService.listByLaboratoryId(laboratoryId);
     const pipelines = (response.pipelines ?? []).filter(
       (p) => p.pipelineId != null && isWorkflowAccessAllowed(laboratory, accessRows, 'SEQERA', String(p.pipelineId)),
     );
 
-    return buildResponse(200, JSON.stringify({ ...response, pipelines }), event);
+    return buildResponse(200, JSON.stringify({ ...response, pipelines, totalSize: pipelines.length }), event);
   } catch (err: any) {
     console.error(err);
     return buildErrorResponse(err, event);

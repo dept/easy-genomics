@@ -5,7 +5,7 @@ import { RequestFolderDownloadJobStatusSchema } from '@easy-genomics/shared-lib/
 import {
   FolderDownloadJobStatusResponse,
   RequestFolderDownloadJobStatus,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-folder-download-job-status';
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
@@ -14,6 +14,7 @@ import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
+  validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -75,6 +76,7 @@ export const handler: Handler = async (
 
     if (
       !(
+        validateSystemAdminAccess(event) ||
         validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
         validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
         validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)

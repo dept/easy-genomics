@@ -27,6 +27,7 @@
       v-if="initials"
       class="bg-primary flex h-8 w-8 items-center justify-center rounded-full text-xs text-white"
       :class="avatarColour"
+      aria-hidden="true"
     >
       {{ initials }}
     </div>

@@ -1,7 +1,21 @@
 <script setup lang="ts">
   import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
   import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+  import {
+    WorkflowProgressResponse,
+    Workflow,
+  } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
+  import { getRunDetailProgressPollIntervalMs } from '@easy-genomics/shared-lib/src/app/utils/laboratory-run-progress-polling';
+  import { ReadRunTasks } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
+  import { TaskListItem, GetRunResponse } from '@aws-sdk/client-omics';
   import { useLabsStore, useRunStore, useUiStore } from '@FE/stores';
+  import { ensureLabInActiveOrg } from '@FE/utils/ensure-lab-in-active-org';
+  import {
+    isTerminalRunStatus,
+    showOmicsTaskProgressCard,
+    showSeqeraTaskProgressCard,
+  } from '@FE/utils/run-progress-card-visibility';
+  import { v4 as uuidv4 } from 'uuid';
 
   const $route = useRoute();
   const $router = useRouter();
@@ -12,11 +26,16 @@
   const labsStore = useLabsStore();
   const runStore = useRunStore();
   const uiStore = useUiStore();
+  useInitialPendingRequests('loadLabRuns');
 
   const labId = $route.params.labId as string;
   const labRunId = $route.params.labRunId as string;
+  const { labTab } = useLabBreadcrumbs(labId);
 
   const lab = computed<Laboratory | null>(() => labsStore.labs[labId] ?? null);
+  const detailProgressPollIntervalMs = computed<number>(() =>
+    getRunDetailProgressPollIntervalMs(lab.value?.RunDetailProgressPollIntervalSeconds),
+  );
   const labRun = computed<LaboratoryRun | null>(() => runStore.labRuns[labRunId] ?? null);
   // Prefer OutputS3Url as the authoritative reference for the File Manager root when available (supports custom output dirs).
   // Fall back to InputS3Url for legacy runs where OutputS3Url was not set.
@@ -69,17 +88,179 @@
     $router.push('/labs');
   }
 
+  // Task-level progress for FAILED/RUNNING Seqera runs
+  const seqeraProgress = ref<WorkflowProgressResponse | null>(null);
+  // Full workflow detail for FAILED Seqera runs (errorMessage, errorReport)
+  const seqeraRunDetail = ref<Workflow | null>(null);
+  // Live Omics task progress (RUNNING / FAILED)
+  const omicsProgress = ref<ReadRunTasks | null>(null);
+  // Task-level data for FAILED Omics runs
+  const omicsFailedTasks = ref<TaskListItem[]>([]);
+  // Full run detail for FAILED Omics runs (failureReason, statusMessage)
+  const omicsRunDetail = ref<GetRunResponse | null>(null);
+
+  let progressPollTimeoutId: number | undefined;
+  // Guard so an in-flight poll's `finally` cannot reschedule after unmount.
+  let progressPollActive = false;
+
   onBeforeMount(async () => {
+    if (await ensureLabInActiveOrg({ labId, forceReload: true })) {
+      uiStore.setRequestComplete('loadLabRuns');
+      return;
+    }
+    if (!labsStore.labs[labId]) {
+      await labsStore.loadLab(labId);
+    }
     await fetchLabRuns();
+    progressPollActive = true;
+    scheduleProgressPoll();
+  });
+
+  onBeforeUnmount(() => {
+    progressPollActive = false;
+    if (progressPollTimeoutId != null) {
+      window.clearTimeout(progressPollTimeoutId);
+      progressPollTimeoutId = undefined;
+    }
   });
 
   async function fetchLabRuns() {
     uiStore.setRequestPending('loadLabRuns');
     try {
       await runStore.loadLabRunsForLab(labId);
+      await fetchTaskProgress();
     } finally {
       uiStore.setRequestComplete('loadLabRuns');
     }
+  }
+
+  function scheduleProgressPoll() {
+    if (!progressPollActive) return;
+    if (progressPollTimeoutId != null) {
+      window.clearTimeout(progressPollTimeoutId);
+    }
+    const run = runStore.labRuns[labRunId];
+    if (!run || isTerminalRunStatus(run.Status)) return;
+
+    progressPollTimeoutId = window.setTimeout(async () => {
+      if (!progressPollActive) return;
+      try {
+        await runStore.loadLabRunsForLab(labId);
+        await fetchTaskProgress({ silent: true });
+      } catch (error) {
+        console.error('Failed to poll run progress:', error);
+      } finally {
+        if (progressPollActive) {
+          scheduleProgressPoll();
+        }
+      }
+    }, detailProgressPollIntervalMs.value);
+  }
+
+  watch(detailProgressPollIntervalMs, (next, prev) => {
+    if (!progressPollActive || next === prev) return;
+    scheduleProgressPoll();
+  });
+
+  async function fetchTaskProgress(options: { silent?: boolean } = {}) {
+    const run = runStore.labRuns[labRunId];
+    if (!run?.ExternalRunId) return;
+
+    if (run.Platform === 'Seqera Cloud' && ['FAILED', 'RUNNING'].includes(run.Status)) {
+      try {
+        seqeraProgress.value = await $api.seqeraRuns.getWorkflowProgress(labId, run.ExternalRunId);
+      } catch (error) {
+        console.error('Failed to fetch Seqera workflow progress:', error);
+        if (!options.silent) {
+          useToastStore().error('Could not load Seqera task progress for this run.');
+        }
+      }
+      if (run.Status === 'FAILED') {
+        try {
+          seqeraRunDetail.value = await $api.seqeraRuns.get(labId, run.ExternalRunId);
+        } catch (error) {
+          console.error('Failed to fetch Seqera workflow detail:', error);
+          if (!options.silent) {
+            useToastStore().error('Could not load Seqera failure details for this run.');
+          }
+        }
+      }
+    }
+
+    if (
+      run.Platform === 'AWS HealthOmics' &&
+      ['FAILED', 'RUNNING', 'STARTING', 'PENDING', 'STOPPING'].includes(run.Status)
+    ) {
+      try {
+        const progressResponse = await $api.omicsRuns.getRunProgress(labId, run.ExternalRunId);
+        omicsProgress.value = progressResponse;
+        if (run.Status === 'FAILED') {
+          omicsFailedTasks.value = (progressResponse.tasks ?? []).filter((t) => t.status === 'FAILED');
+        }
+      } catch (error) {
+        console.error('Failed to fetch Omics run task progress:', error);
+        if (!options.silent) {
+          useToastStore().error('Could not load HealthOmics task progress for this run.');
+        }
+      }
+      if (run.Status === 'FAILED') {
+        try {
+          omicsRunDetail.value = await $api.omicsRuns.get(labId, run.ExternalRunId);
+        } catch (error) {
+          console.error('Failed to fetch Omics run details:', error);
+          if (!options.silent) {
+            useToastStore().error('Could not load HealthOmics failure details for this run.');
+          }
+        }
+      }
+    }
+  }
+
+  const omicsFailureReason = computed<string | null>(
+    () =>
+      omicsRunDetail.value?.failureReason ?? omicsRunDetail.value?.statusMessage ?? labRun.value?.FailureReason ?? null,
+  );
+
+  const seqeraFailureReason = computed<string | null>(
+    () => seqeraRunDetail.value?.errorMessage ?? labRun.value?.FailureReason ?? null,
+  );
+
+  const seqeraErrorReport = computed<string | null>(() => seqeraRunDetail.value?.errorReport ?? null);
+
+  // Classification block surfaces FailureOwner / FailureSummary / FailureAction populated by the
+  // backend classifier (deterministic lookup for documented HealthOmics codes, LLM for ambiguous
+  // ones and all Seqera errors). Shown above the platform-specific failure-reason banner.
+  const failureClassificationVisible = computed<boolean>(() => !!labRun.value?.FailureOwner);
+  const failureOwnerBadgeClass = computed<string>(() => {
+    switch (labRun.value?.FailureOwner) {
+      case 'Lab':
+        return 'bg-amber-100 text-amber-900 border-amber-200';
+      case 'Bioinformatician':
+        return 'bg-red-100 text-red-900 border-red-200';
+      case 'AWS':
+        return 'bg-blue-100 text-blue-900 border-blue-200';
+      case 'Ambiguous':
+      default:
+        return 'bg-gray-100 text-gray-900 border-gray-200';
+    }
+  });
+
+  const isHealthOmics = computed<boolean>(() => labRun.value?.Platform === 'AWS HealthOmics');
+  const isFailed = computed<boolean>(() => labRun.value?.Status?.toUpperCase() === 'FAILED');
+
+  // Retry is HealthOmics-only and relaunches the wizard pre-filled from this run. The workflow id
+  // comes from the GetRun response loaded for failed runs (it isn't stored on the LaboratoryRun).
+  const retryWorkflowId = computed<string | null>(() => omicsRunDetail.value?.workflowId ?? null);
+  const canRetry = computed<boolean>(() => isHealthOmics.value && isFailed.value && !!retryWorkflowId.value);
+
+  function retryRun() {
+    const workflowId = retryWorkflowId.value;
+    if (!workflowId) return;
+
+    $router.push({
+      path: `/labs/${labId}/run-workflow/${workflowId}`,
+      query: { omicsRunTempId: uuidv4(), retryFromRunId: labRunId },
+    });
   }
 
   const tabItems = computed(() => [
@@ -108,6 +289,8 @@
     !labRun.value?.Platform ? null : platformToPipelineOrWorkflow(labRun.value.Platform),
   );
 
+  usePageTitle(() => (labRun.value?.RunName ? labRun.value.RunName : 'Run details'));
+
   async function downloadSampleSheet(): Promise<void> {
     const sampleSheetUrl = labRun.value?.SampleSheetS3Url;
     if (!sampleSheetUrl) {
@@ -127,34 +310,23 @@
   }
 
   const rowStyle = 'flex border-b p-6 text-sm';
-  const rowLabelStyle = 'w-[200px] font-medium text-black';
-  const rowContentStyle = 'text-muted text-left';
+  const rowLabelStyle = 'w-[200px] shrink-0 font-medium text-black';
+  const rowContentStyle = 'min-w-0 flex-1 break-words text-muted text-left';
 
-  // Note: the UTabs :ui attribute has to be defined locally in this file - if it is imported from another file,
-  //  Tailwind won't pick up and include the classes used and styles will be missing.
-  // To keep the tab styling consistent throughout the app, any changes made here need to be duplicated to all other
-  //  UTabs that use an "EGTabsStyles" as input to the :ui attribute.
-  const EGTabsStyles = {
-    base: 'focus:outline-none',
-    list: {
-      base: '!flex rounded-none mb-6 mt-0',
-      padding: 'p-0',
-      height: 'h-14',
-      marker: {
-        background: '',
-        shadow: '',
-      },
-      tab: {
-        base: 'font-serif w-auto mr-3 rounded-xl border border-solid',
-        background: '',
-        active: 'text-white bg-primary border-primary',
-        inactive: 'font-serif text-text-body border-background-dark-grey',
-        height: '',
-        padding: 'px-5 py-2',
-        size: 'text-sm',
-      },
-    },
-  };
+  const showSeqeraProgressCard = computed<boolean>(() =>
+    showSeqeraTaskProgressCard(labRun.value, {
+      failureReason: seqeraFailureReason.value,
+      hasProgress: !!seqeraProgress.value?.progress,
+    }),
+  );
+
+  const showOmicsProgressCard = computed<boolean>(() =>
+    showOmicsTaskProgressCard(labRun.value, {
+      failureReason: omicsFailureReason.value,
+      failedTaskCount: omicsFailedTasks.value.length,
+      hasProgress: !!omicsProgress.value?.progress,
+    }),
+  );
 </script>
 
 <template>
@@ -162,26 +334,151 @@
     :title="labRun?.RunName || ''"
     :description="labRun?.WorkflowName || ''"
     :show-back="true"
-    :back-action="() => $router.push(`/labs/${labId}?tab=Lab Runs`)"
+    :back-action="() => $router.push(labTab('Lab Runs'))"
     :is-loading="isLoading"
     :skeleton-config="{ titleLines: 2, descriptionLines: 1 }"
     show-org-breadcrumb
     show-lab-breadcrumb
-    :breadcrumbs="[labRun?.RunName]"
+    :breadcrumbs="[{ label: 'Lab Runs', to: labTab('Lab Runs') }, labRun?.RunName || '']"
   />
 
-  <UTabs :ui="EGTabsStyles" v-model="tabIndex" :items="tabItems" @update:model-value="handleTabChange">
-    <template #item="{ item }">
+  <div v-if="showSeqeraProgressCard || showOmicsProgressCard" class="mb-6 space-y-3">
+    <!-- Seqera task-level progress for FAILED or RUNNING runs -->
+    <section
+      v-if="showSeqeraProgressCard"
+      class="stroke-light flex flex-col rounded-2xl border border-solid bg-white p-6 max-md:px-5"
+    >
+      <h3 class="mb-4 text-sm font-medium text-black">Task Breakdown</h3>
+      <div v-if="seqeraFailureReason" class="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm">
+        <p class="font-medium text-red-800">Failure reason</p>
+        <p class="text-red-700">{{ seqeraFailureReason }}</p>
+        <details v-if="seqeraErrorReport" class="mt-2">
+          <summary class="cursor-pointer text-xs text-red-600">Show full error report</summary>
+          <pre class="mt-2 whitespace-pre-wrap break-all text-xs text-red-600">{{ seqeraErrorReport }}</pre>
+        </details>
+      </div>
+      <template v-if="seqeraProgress?.progress">
+        <ul class="mb-4 flex flex-wrap gap-6 text-sm" aria-label="Task counts by status">
+          <li>
+            <span class="font-medium text-green-700">Succeeded:</span>
+            {{ seqeraProgress.progress.workflowProgress?.succeedCountFmt ?? '0' }}
+          </li>
+          <li>
+            <span class="font-medium text-red-700">Failed:</span>
+            {{ seqeraProgress.progress.workflowProgress?.failedCountFmt ?? '0' }}
+          </li>
+          <li>
+            <span class="text-body font-medium">Running:</span>
+            {{ seqeraProgress.progress.workflowProgress?.runningCountFmt ?? '0' }}
+          </li>
+        </ul>
+        <div v-if="seqeraProgress.progress.processesProgress?.length" class="space-y-2">
+          <div
+            v-for="proc in seqeraProgress.progress.processesProgress?.filter((p) => p.failed > 0)"
+            :key="proc.process"
+            class="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm"
+          >
+            <p class="font-medium text-red-800">
+              <span class="sr-only">Failed process:</span>
+              {{ proc.process }}
+            </p>
+            <p class="text-red-600">{{ proc.failed }} task(s) failed</p>
+          </div>
+        </div>
+      </template>
+    </section>
+
+    <!-- Omics task progress + failures -->
+    <section
+      v-if="showOmicsProgressCard"
+      class="stroke-light flex flex-col rounded-2xl border border-solid bg-white p-6 max-md:px-5"
+    >
+      <h3 class="mb-4 text-sm font-medium text-black">
+        {{ labRun.Status === 'FAILED' ? 'Failed Tasks' : 'Task Progress' }}
+      </h3>
+      <div v-if="omicsProgress?.progress && !isTerminalRunStatus(labRun.Status)" class="mb-4">
+        <EGProgressBar
+          :percent="omicsProgress.progress.percent"
+          :completed="omicsProgress.progress.tasksCompleted"
+          :total="omicsProgress.progress.tasksTotal"
+        />
+        <ul class="mt-3 flex flex-wrap gap-6 text-sm" aria-label="Task counts by status">
+          <li>
+            <span class="font-medium text-green-700">Completed:</span>
+            {{ omicsProgress.progress.tasksCompleted }}
+          </li>
+          <li>
+            <span class="text-body font-medium">Running:</span>
+            {{ omicsProgress.progress.tasksRunning }}
+          </li>
+          <li>
+            <span class="font-medium text-red-700">Failed:</span>
+            {{ omicsProgress.progress.tasksFailed }}
+          </li>
+          <li>
+            <span class="text-muted font-medium">Total known:</span>
+            {{ omicsProgress.progress.tasksTotal }}
+          </li>
+        </ul>
+      </div>
+      <div v-if="omicsFailureReason" class="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm">
+        <p class="font-medium text-red-800">Failure reason</p>
+        <p class="text-red-700">{{ omicsFailureReason }}</p>
+      </div>
+      <div class="space-y-2">
+        <div
+          v-for="task in omicsFailedTasks"
+          :key="task.taskId"
+          class="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm"
+        >
+          <p class="font-medium text-red-800">
+            <span class="sr-only">Failed task:</span>
+            Task {{ task.taskId }} — {{ task.name }}
+          </p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <EGDetailTabs
+    :model-value="tabIndex"
+    :items="tabItems"
+    aria-label="Laboratory run sections"
+    @update:model-value="handleTabChange"
+  >
+    <template #default="{ item }">
       <!-- Run Details -->
       <div v-if="item.key === 'runDetails'" class="space-y-3">
+        <!-- Retry action for failed HealthOmics runs. Relaunches the wizard pre-filled from this
+             run; unchanged completed tasks are reused via the run cache on retry. -->
+        <section
+          v-if="canRetry"
+          class="stroke-light flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-solid bg-white p-6 max-md:px-5"
+        >
+          <div class="flex flex-col gap-1">
+            <h3 class="text-sm font-medium text-black">Retry this run</h3>
+            <p class="text-muted text-sm">
+              Relaunch pre-filled from this run. Completed steps are reused where the sample data and their inputs are
+              unchanged; changing the sample data re-runs from the start.
+            </p>
+          </div>
+          <EGButton icon="i-heroicons-arrow-path" label="Retry Run" size="sm" @click="retryRun" />
+        </section>
+
         <section
           v-if="labRun"
           class="stroke-light flex flex-col rounded-none rounded-b-2xl border border-solid bg-white p-6 pt-0 max-md:px-5"
         >
+          <h2 class="sr-only">Run details</h2>
           <dl class="mt-4 space-y-0">
             <div :class="rowStyle">
               <dt :class="rowLabelStyle">Run Name</dt>
               <dd :class="rowContentStyle">{{ labRun.RunName }}</dd>
+            </div>
+
+            <div v-if="labRun.Description" :class="rowStyle">
+              <dt :class="rowLabelStyle">Description</dt>
+              <dd :class="[rowContentStyle, 'whitespace-pre-wrap']">{{ labRun.Description }}</dd>
             </div>
 
             <div :class="rowStyle">
@@ -205,6 +502,8 @@
               <dt :class="rowLabelStyle">Platform</dt>
               <dd :class="rowContentStyle">{{ labRun.Platform }}</dd>
             </div>
+
+            <EGRunCostRow :lab-run="labRun" :label-class="rowLabelStyle" :value-class="rowContentStyle" />
 
             <div :class="rowStyle">
               <dt :class="rowLabelStyle">Owner</dt>
@@ -249,18 +548,50 @@
             </div>
           </dl>
         </section>
+
+        <!-- Failure classification (owner + summary + suggested action). Populated asynchronously
+             by the classifier Lambda when a run reaches FAILED; absent on older rows or while the
+             classifier is still working. -->
+        <section
+          v-if="failureClassificationVisible"
+          class="stroke-light flex flex-col rounded-none rounded-b-2xl border border-solid bg-white p-6 max-md:px-5"
+        >
+          <h3 class="mb-4 text-sm font-medium text-black">Failure analysis</h3>
+          <div class="space-y-2">
+            <div class="flex items-center gap-3">
+              <span
+                class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium"
+                :class="failureOwnerBadgeClass"
+              >
+                Owner: {{ labRun?.FailureOwner }}
+              </span>
+              <span v-if="labRun?.FailureClassifiedBy === 'llm'" class="text-muted text-xs italic">
+                AI-assisted classification — verify before acting
+              </span>
+            </div>
+            <p v-if="labRun?.FailureSummary" class="text-sm text-black">{{ labRun.FailureSummary }}</p>
+            <p v-if="labRun?.FailureAction" class="text-muted text-sm">
+              <span class="font-medium text-black">What to do next:</span>
+              {{ labRun.FailureAction }}
+            </p>
+          </div>
+        </section>
       </div>
 
       <!-- File Manager -->
       <div v-if="item.key === 'fileManager'" class="space-y-3">
         <EGFileExplorer
+          v-if="s3Bucket && s3Prefix"
           :lab-id="labId"
           :run-id="labRunId"
           :s3-bucket="s3Bucket"
           :s3-prefix="s3Prefix"
           :start-path="outputPath"
         />
+        <p v-else-if="labRun && !isLoading" class="text-muted rounded-lg border border-dashed p-6 text-center text-sm">
+          No S3 location is recorded for this run, so files cannot be listed.
+        </p>
       </div>
     </template>
-  </UTabs>
+  </EGDetailTabs>
 </template>

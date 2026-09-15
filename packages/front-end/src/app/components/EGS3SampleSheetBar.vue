@@ -67,6 +67,13 @@
     window.open(baseUrl + url.href, '_blank');
   };
 
+  function onCopyKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      copy();
+    }
+  }
+
   const download = () => {
     clickedAction.value = 'Downloading Sample Sheet';
     isClicked.value = true;
@@ -89,11 +96,13 @@
       class="border-r-1 bg-primary-muted mb-4 flex items-center justify-between rounded p-4"
     >
       <div
-        class="text-primary hover:text-primary-900 relative cursor-pointer text-xs"
-        @click="copy"
+        class="text-primary hover:text-primary-900 focus-visible:outline-primary-500 relative cursor-pointer text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
         role="button"
         tabindex="0"
-        :aria-label="`Copy URL: ${url}`"
+        :aria-label="url ? `Copy URL: ${url}` : 'Sample sheet URL loading'"
+        :aria-disabled="!url || disabled"
+        @click="url && !disabled && copy()"
+        @keydown="onCopyKeydown"
       >
         <div v-if="url">{{ url }}</div>
         <div v-else class="flex flex-col">
@@ -113,11 +122,12 @@
 
       <div class="ml-2 flex items-center gap-4" role="group" aria-label="URL Actions">
         <button
+          type="button"
           @click="open"
-          class="cursor-pointer"
+          class="focus-visible:outline-primary-500 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           :class="{ 'opacity-50': !url }"
-          aria-label="Open in new tab"
-          :disabled="isClicked"
+          aria-label="Open sample sheet in new tab"
+          :disabled="isClicked || !url || disabled"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="25" viewBox="0 0 24 25" fill="none">
             <path
@@ -132,11 +142,12 @@
         </button>
 
         <button
+          type="button"
           @click="copy"
-          class="cursor-pointer"
+          class="focus-visible:outline-primary-500 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           :class="{ 'opacity-50': !url }"
-          aria-label="Copy to clipboard"
-          :disabled="isClicked"
+          aria-label="Copy sample sheet URL to clipboard"
+          :disabled="isClicked || !url || disabled"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="25" viewBox="0 0 24 25" fill="none">
             <path
@@ -149,11 +160,12 @@
         </button>
 
         <button
+          type="button"
           @click="download"
-          class="cursor-pointer"
+          class="focus-visible:outline-primary-500 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           :class="{ 'opacity-50': !url }"
           aria-label="Download sample sheet"
-          :disabled="isClicked"
+          :disabled="isClicked || !url || disabled"
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <rect width="24" height="24" />

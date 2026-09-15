@@ -10,7 +10,7 @@ import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handl
 import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { SnsService } from '@BE/services/sns-service';
+import { SqsService } from '@BE/services/sqs-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
@@ -19,7 +19,7 @@ import {
 
 const laboratoryRunService = new LaboratoryRunService();
 const laboratoryService = new LaboratoryService();
-const snsService = new SnsService();
+const sqsService = new SqsService();
 
 const TERMINAL_STATUSES = ['FAILED', 'SUCCEEDED', 'CANCELLED', 'COMPLETED', 'DELETED'];
 
@@ -89,9 +89,9 @@ export const handler: Handler = async (
         Type: 'LaboratoryRun',
         Record: run,
       };
-      return snsService.publish({
-        TopicArn: process.env.SNS_LABORATORY_RUN_UPDATE_TOPIC,
-        Message: JSON.stringify(record),
+      return sqsService.sendMessage({
+        QueueUrl: process.env.SQS_LABORATORY_RUN_UPDATE_QUEUE_URL,
+        MessageBody: JSON.stringify(record),
         MessageGroupId: `update-laboratory-run-${run.RunId}`,
         MessageDeduplicationId: uuidv4(),
       });

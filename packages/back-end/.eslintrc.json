@@ -7,8 +7,7 @@
   "root": true,
   "plugins": [
     "@typescript-eslint",
-    "import",
-    "prettier"
+    "import"
   ],
   "parser": "@typescript-eslint/parser",
   "parserOptions": {
@@ -17,7 +16,8 @@
     "project": "./tsconfig.dev.json"
   },
   "extends": [
-    "plugin:import/typescript"
+    "plugin:import/typescript",
+    "prettier"
   ],
   "settings": {
     "import/parsers": {
@@ -229,7 +229,8 @@
     "no-empty": "error",
     "prettier/prettier": "off",
     "require-await": "off",
-    "array-callback-return": "error"
+    "array-callback-return": "error",
+    "import/named": "off"
   },
   "overrides": []
 }

@@ -25,7 +25,7 @@
     "stripInternal": true,
     "target": "ES2022",
     "baseUrl": ".",
-    "rootDir": "src",
+    "rootDir": ".",
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "paths": {

@@ -6,15 +6,15 @@ import { OrganizationUserService } from '@BE/services/easy-genomics/organization
 import { PlatformUserService } from '@BE/services/easy-genomics/platform-user-service';
 import { SesService } from '@BE/services/ses-service';
 
-const cognitoIdpService = new CognitoIdpService({ userPoolId: process.env.COGNITO_USER_POOL_ID });
+const cognitoIdpService = new CognitoIdpService({ userPoolId: process.env.COGNITO_USER_POOL_ID! });
 const organizationUserService = new OrganizationUserService();
 const platformUserService = new PlatformUserService();
 const sesService = new SesService({
-  accountId: process.env.ACCOUNT_ID,
-  region: process.env.REGION,
-  domainName: process.env.DOMAIN_NAME,
-  envType: process.env.ENV_TYPE,
-  envName: process.env.ENV_NAME,
+  accountId: process.env.ACCOUNT_ID!,
+  region: process.env.REGION!,
+  domainName: process.env.DOMAIN_NAME!,
+  envType: process.env.ENV_TYPE!,
+  envName: process.env.ENV_NAME!,
 });
 
 export class UserInviteService {
@@ -31,6 +31,8 @@ export class UserInviteService {
       email.toLowerCase(),
       organization.OrganizationId,
       organization.Name,
+      false,
+      { logoUrl: organization.EmailBrandingLogoUrl },
     );
 
     // Attempt to add the new User record, and add the Organization-User access mapping in one transaction
@@ -67,7 +69,9 @@ export class UserInviteService {
       .catch(() => {});
 
     // Attempt to re-trigger Cognito process-custom-email-sender to send SES email template
-    await cognitoIdpService.adminCreateUser(user.Email, organization.OrganizationId, organization.Name, true);
+    await cognitoIdpService.adminCreateUser(user.Email, organization.OrganizationId, organization.Name, true, {
+      logoUrl: organization.EmailBrandingLogoUrl,
+    });
 
     if (!existingOrganizationUser) {
       // Attempt to update the existing User record, and add the Organization-User access mapping in one transaction
@@ -124,7 +128,9 @@ export class UserInviteService {
         };
 
     // Send out courtesy notification email to advise user they have been added to an Organization
-    await sesService.sendExistingUserCourtesyEmail(user.Email, organization.Name);
+    await sesService.sendExistingUserCourtesyEmail(user.Email, organization.Name, {
+      logoUrl: organization.EmailBrandingLogoUrl,
+    });
 
     // Attempt to update the existing User record, and add the Organization-User access mapping in one transaction
     await platformUserService.addExistingUserToOrganization(

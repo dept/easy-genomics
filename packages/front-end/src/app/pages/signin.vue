@@ -25,6 +25,7 @@
    */
   onBeforeMount(() => {
     resetStores();
+    useUiStore().setLoggingOut(false);
   });
 
   watchEffect(() => {

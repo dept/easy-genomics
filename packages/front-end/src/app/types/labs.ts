@@ -15,6 +15,7 @@ const LabDescriptionSchema = z.string().trim().max(500, 'Description must be no 
  * for edit mode when the token value may or may not be updated by the user.
  */
 const NextFlowTowerAccessTokenSchema = z.string().trim().min(1, 'Seqera access token is required');
+const GitHubAccessTokenSchema = z.string().trim().min(1, 'GitHub token is required');
 
 const NextFlowTowerWorkspaceIdSchema = z.string().trim().max(128, 'Workspace ID must be no more than 128 characters');
 
@@ -32,17 +33,67 @@ const RunRetentionMonthsSchema = z
   .min(0, 'Run retention must be 0 or greater')
   .max(120, 'Run retention must be 120 months or less');
 
+const RunListStatusPollIntervalSecondsSchema = z
+  .number({ invalid_type_error: 'Runs list polling interval must be a number' })
+  .int('Runs list polling interval must be a whole number')
+  .min(30, 'Runs list polling interval must be between 30 and 1800 seconds')
+  .max(1800, 'Runs list polling interval must be between 30 and 1800 seconds');
+
+const RunDetailProgressPollIntervalSecondsSchema = z
+  .number({ invalid_type_error: 'Run detail polling interval must be a number' })
+  .int('Run detail polling interval must be a whole number')
+  .min(10, 'Run detail polling interval must be between 10 and 300 seconds')
+  .max(300, 'Run detail polling interval must be between 10 and 300 seconds');
+
+const LlmProviderSchema = z.enum(['bedrock', 'openai', 'anthropic']);
+const LlmModelIdSchema = z
+  .string()
+  .trim()
+  .min(1, 'Model ID is required')
+  .max(256, 'Model ID must be no more than 256 characters');
+const LlmApiKeySchema = z.string().trim().min(1, 'API key cannot be empty');
+
+const NetworkingModeSchema = z.enum(['RESTRICTED', 'VPC']);
+const VpcConfigurationNameSchema = z
+  .string()
+  .trim()
+  .min(1, 'VPC configuration name is required')
+  .max(50, 'VPC configuration name must be no more than 50 characters');
+
 // Just the fields required for read-only display
 const LabDetailsSchema = z.object({
   Name: LabNameSchema,
   Description: LabDescriptionSchema,
   S3Bucket: S3BucketSchema,
   RunRetentionMonths: RunRetentionMonthsSchema,
+  RunListStatusPollIntervalSeconds: RunListStatusPollIntervalSecondsSchema,
+  RunDetailProgressPollIntervalSeconds: RunDetailProgressPollIntervalSecondsSchema,
   NextFlowTowerEnabled: z.boolean(),
   NextFlowTowerAccessToken: NextFlowTowerAccessTokenSchema,
+  GitHubAccessToken: GitHubAccessTokenSchema.optional(),
   NextFlowTowerWorkspaceId: NextFlowTowerWorkspaceIdSchema,
   NextFlowTowerApiBaseUrl: NextFlowTowerApiBaseUrlSchema,
   AwsHealthOmicsEnabled: z.boolean(),
+  AwsHealthOmicsNetworkingMode: NetworkingModeSchema.optional(),
+  AwsHealthOmicsVpcConfigurationName: VpcConfigurationNameSchema.optional(),
+  // BYOK provider selection per integration. Setting a provider IS the enable
+  // signal — there is no separate toggle. HealthOmics and Seqera can use
+  // different providers/models/keys (e.g. cheap model for Seqera, accurate
+  // model for HealthOmics ambiguous cases).
+  HealthOmicsLlmProvider: LlmProviderSchema.optional(),
+  HealthOmicsLlmModelId: LlmModelIdSchema.optional(),
+  HealthOmicsLlmApiKey: LlmApiKeySchema.optional(),
+  SeqeraLlmProvider: LlmProviderSchema.optional(),
+  SeqeraLlmModelId: LlmModelIdSchema.optional(),
+  SeqeraLlmApiKey: LlmApiKeySchema.optional(),
+  // When enabled, the failure classifier fetches the failed HealthOmics run's
+  // CloudWatch engine log, redacts PII + secrets, and sends a bounded excerpt to
+  // the configured LLM.
+  HealthOmicsLogEnrichmentEnabled: z.boolean().optional(),
+  // Lab-wide kill switch for run notification emails. Independent of the
+  // per-user NotifyOnOwnRuns / NotifyOnLabRuns opt-ins, which control who gets
+  // notified once this is on.
+  NotificationsEnabled: z.boolean().optional(),
 });
 type LabDetails = z.infer<typeof LabDetailsSchema>;
 
@@ -60,11 +111,19 @@ export {
   LabDetailsFormModes,
   LabDetailsSchema,
   LabNameSchema,
+  LlmApiKeySchema,
+  LlmModelIdSchema,
+  LlmProviderSchema,
+  NetworkingModeSchema,
   NextFlowTowerApiBaseUrlSchema,
   NextFlowTowerAccessTokenSchema,
+  GitHubAccessTokenSchema,
   NextFlowTowerWorkspaceIdSchema,
+  RunDetailProgressPollIntervalSecondsSchema,
+  RunListStatusPollIntervalSecondsSchema,
   RunRetentionMonthsSchema,
   S3BucketSchema,
+  VpcConfigurationNameSchema,
   type LabDetails,
   type LabDetailsFormMode,
 };

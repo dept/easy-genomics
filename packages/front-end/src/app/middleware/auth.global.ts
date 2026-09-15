@@ -49,6 +49,9 @@ export default defineNuxtRouteMiddleware(async (to) => {
       }
     } catch (e) {
       if (to.fullPath !== '/signin') {
+        if (!useUiStore().isLoggingOut) {
+          useToastStore().error('Session error. You have been signed out.');
+        }
         return navigateTo('/signin');
       }
     }

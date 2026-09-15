@@ -1,7 +1,7 @@
 import { CognitoUserSession, CognitoRefreshToken } from 'amazon-cognito-identity-js';
 import { Auth } from 'aws-amplify';
 import { VALIDATION_MESSAGES } from '@FE/constants/validation';
-import { useToastStore, useUiStore } from '@FE/stores';
+import { resetStores, useToastStore, useUiStore } from '@FE/stores';
 
 export default function useAuth() {
   async function isAuthed() {
@@ -21,7 +21,13 @@ export default function useAuth() {
       if (user) {
         await useUser().setCurrentUserDataFromToken();
         await useOrgsStore().loadOrgs();
+        // Navigate into the app before emitting analytics so events fire on a
+        // non-sensitive route (auth routes like /signin can carry an email in
+        // the query string).
         await navigateTo('/');
+        const analytics = useAnalytics();
+        await analytics.identify(useUserStore().currentUserDetails.id);
+        analytics.track('signed_in', { method: 'password' });
       }
     } catch (error: any) {
       if (error.code === 'NotAuthorizedException') {
@@ -71,20 +77,42 @@ export default function useAuth() {
     }
   }
 
-  async function signOut() {
+  /**
+   * Clears Cognito session, analytics, and the user store.
+   * Pass `keepLoggingOutFlag: true` when a redirect follows so in-flight lab
+   * requests and auth middleware still suppress spurious error toasts.
+   */
+  async function signOut(options: { keepLoggingOutFlag?: boolean } = {}) {
+    const uiStore = useUiStore();
     try {
+      uiStore.setLoggingOut(true);
+      const analytics = useAnalytics();
+      analytics.track('signed_out', {});
+      analytics.reset();
+      // Clear device consent so the next account on this browser is not opted in
+      // by default. Server-side consent is restored on next login via JWT sync.
+      useAnalyticsStore().reset();
       await Auth.signOut();
+      // Reset user after Cognito clear. Lab watchers no-op when currentOrgId is
+      // null or isLoggingOut is set, so this is safe while still on a lab page.
       useUserStore().reset();
+      if (!options.keepLoggingOutFlag) {
+        uiStore.setLoggingOut(false);
+      }
     } catch (error) {
+      uiStore.setLoggingOut(false);
       console.error('Error occurred during sign out.', error);
       throw error;
     }
   }
 
   async function signOutAndRedirect() {
-    await signOut();
+    await signOut({ keepLoggingOutFlag: true });
     useToastStore().success('You have been signed out.');
     await navigateTo('/signin');
+    // Lab views are unmounted; wipe remaining stores. isLoggingOut is preserved
+    // across uiStore.reset and cleared on the sign-in page mount.
+    resetStores();
   }
 
   return {

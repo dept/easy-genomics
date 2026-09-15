@@ -16,14 +16,21 @@ import {
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { migrateS3AccessOnDefaultModeChange } from '@BE/services/easy-genomics/laboratory-s3-access-default-migration';
+import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { migrateWorkflowAccessOnDefaultModeChange } from '@BE/services/easy-genomics/laboratory-workflow-access-default-migration';
+import { OmicsService } from '@BE/services/omics-service';
 import { SsmService } from '@BE/services/ssm-service';
 import { validateOrganizationAdminAccess } from '@BE/utils/auth-utils';
+import { assertHealthOmicsVpcConfigurationIsActive } from '@BE/utils/laboratory-omics-vpc-utils';
+import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
 import { httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
 const ssmService = new SsmService();
+const omicsService = new OmicsService();
+const s3AccessService = new LaboratoryS3AccessService();
 
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -62,6 +69,40 @@ export const handler: Handler = async (
       throw new LaboratorySeqeraCredentialsIncorrectError();
     }
 
+    // A saved API key is scoped to whichever provider it was entered for. If the admin
+    // switches HealthOmics LLM provider to one that requires a key (openai/anthropic),
+    // the previously-saved key belongs to the old provider and must not be silently reused.
+    if (
+      (request.HealthOmicsLlmProvider === 'openai' || request.HealthOmicsLlmProvider === 'anthropic') &&
+      request.HealthOmicsLlmProvider !== existing.HealthOmicsLlmProvider &&
+      !request.HealthOmicsLlmApiKey
+    ) {
+      throw new InvalidRequestError('A new API key is required when changing the AI Failure Analysis provider.');
+    }
+
+    // Re-validated on every save while mode stays VPC, even for edits unrelated to networking
+    // (e.g. renaming a disabled lab). If ops deletes the referenced Configuration, such a lab
+    // becomes un-editable until an admin switches mode back to RESTRICTED — an accepted tradeoff
+    // of always validating against the live AWS state rather than trusting the last-known status.
+    if (request.AwsHealthOmicsNetworkingMode === 'VPC') {
+      await assertHealthOmicsVpcConfigurationIsActive(request.AwsHealthOmicsVpcConfigurationName!, omicsService);
+    }
+
+    // Only enforce when the lab's configured bucket is changing. The S3 access UI
+    // re-sends the existing S3Bucket when toggling EnableNewBucketsByDefault; asserting
+    // against the *new* default mode would fail before migration rewrites ALLOW/DENY rows
+    // (e.g. default-on → strict: current bucket often has no ALLOW row yet).
+    if (request.S3Bucket && request.S3Bucket !== existing.S3Bucket) {
+      await assertLaboratoryHasS3BucketAccess(
+        {
+          ...existing,
+          EnableNewBucketsByDefault: request.EnableNewBucketsByDefault ?? existing.EnableNewBucketsByDefault,
+        },
+        request.S3Bucket,
+        s3AccessService,
+      );
+    }
+
     const response = await laboratoryService
       .update(
         {
@@ -71,11 +112,27 @@ export const handler: Handler = async (
           Status: 'Active',
           S3Bucket: request.S3Bucket, // S3 Bucket Full Name
           AwsHealthOmicsEnabled: request.AwsHealthOmicsEnabled,
+          AwsHealthOmicsNetworkingMode: request.AwsHealthOmicsNetworkingMode,
+          AwsHealthOmicsVpcConfigurationName: request.AwsHealthOmicsVpcConfigurationName,
           NextFlowTowerEnabled: request.NextFlowTowerEnabled,
           NextFlowTowerApiBaseUrl: request.NextFlowTowerApiBaseUrl,
           NextFlowTowerWorkspaceId: request.NextFlowTowerWorkspaceId,
           RunRetentionMonths: request.RunRetentionMonths,
+          RunListStatusPollIntervalSeconds:
+            request.RunListStatusPollIntervalSeconds ?? existing.RunListStatusPollIntervalSeconds,
+          RunDetailProgressPollIntervalSeconds:
+            request.RunDetailProgressPollIntervalSeconds ?? existing.RunDetailProgressPollIntervalSeconds,
           EnableNewWorkflowsByDefault: request.EnableNewWorkflowsByDefault ?? existing.EnableNewWorkflowsByDefault,
+          EnableNewBucketsByDefault: request.EnableNewBucketsByDefault ?? existing.EnableNewBucketsByDefault,
+          // Map LLM settings directly from the request (not `?? existing`) so selecting
+          // "None" (sent as undefined) clears the field via the full-item PUT overwrite.
+          HealthOmicsLlmProvider: request.HealthOmicsLlmProvider,
+          HealthOmicsLlmModelId: request.HealthOmicsLlmModelId,
+          SeqeraLlmProvider: request.SeqeraLlmProvider,
+          SeqeraLlmModelId: request.SeqeraLlmModelId,
+          // Same direct-mapping rationale: an unchecked toggle (undefined) clears the flag.
+          HealthOmicsLogEnrichmentEnabled: request.HealthOmicsLogEnrichmentEnabled,
+          NotificationsEnabled: request.NotificationsEnabled,
           ModifiedAt: new Date().toISOString(),
           ModifiedBy: userId,
         },
@@ -100,12 +157,54 @@ export const handler: Handler = async (
       });
     }
 
+    const previousBucketsDefaultOn = existing.EnableNewBucketsByDefault === true;
+    const nextBucketsDefaultOn = response.EnableNewBucketsByDefault === true;
+    if (previousBucketsDefaultOn !== nextBucketsDefaultOn) {
+      await migrateS3AccessOnDefaultModeChange({
+        organizationId: existing.OrganizationId,
+        laboratoryId: existing.LaboratoryId,
+        previousDefaultOn: previousBucketsDefaultOn,
+        nextDefaultOn: nextBucketsDefaultOn,
+      });
+    }
+
     // Update NextFlow AccessToken in SSM if new value supplied
     if (request.NextFlowTowerAccessToken) {
       await ssmService.putParameter({
         Name: `/easy-genomics/organization/${existing.OrganizationId}/laboratory/${existing.LaboratoryId}/nf-access-token`,
         Description: `Easy Genomics Laboratory ${existing.LaboratoryId} NF AccessToken`,
         Value: request.NextFlowTowerAccessToken,
+        Type: 'SecureString',
+        Overwrite: true,
+      });
+    }
+
+    if (request.GitHubAccessToken) {
+      await ssmService.putParameter({
+        Name: `/easy-genomics/organization/${existing.OrganizationId}/laboratory/${existing.LaboratoryId}/github-access-token`,
+        Description: `Easy Genomics Laboratory ${existing.LaboratoryId} GitHub AccessToken`,
+        Value: request.GitHubAccessToken,
+        Type: 'SecureString',
+        Overwrite: true,
+      });
+    }
+
+    // Update BYOK LLM API keys per integration if new values were supplied.
+    // Absent on requests that only flip toggles, so existing keys are preserved.
+    if (request.HealthOmicsLlmApiKey) {
+      await ssmService.putParameter({
+        Name: `/easy-genomics/organization/${existing.OrganizationId}/laboratory/${existing.LaboratoryId}/llm-api-key-healthomics`,
+        Description: `Easy Genomics Laboratory ${existing.LaboratoryId} HealthOmics BYOK LLM API key`,
+        Value: request.HealthOmicsLlmApiKey,
+        Type: 'SecureString',
+        Overwrite: true,
+      });
+    }
+    if (request.SeqeraLlmApiKey) {
+      await ssmService.putParameter({
+        Name: `/easy-genomics/organization/${existing.OrganizationId}/laboratory/${existing.LaboratoryId}/llm-api-key-seqera`,
+        Description: `Easy Genomics Laboratory ${existing.LaboratoryId} Seqera BYOK LLM API key`,
+        Value: request.SeqeraLlmApiKey,
         Type: 'SecureString',
         Overwrite: true,
       });

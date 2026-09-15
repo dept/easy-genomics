@@ -1,8 +1,17 @@
+import { CreateWorkflowCommandInput } from '@aws-sdk/client-omics';
 import {
+  CreateWorkflow,
   ListWorkflows,
   ReadWorkflow,
 } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
 import HttpFactory from '@FE/repository/factory';
+
+export type CreateOmicsWorkflowRequest = CreateWorkflowCommandInput & {
+  githubRepoUrl?: string;
+  githubRef?: string;
+  /** GitHub blob or raw URL to the workflow JSON schema file; stored as HealthOmics tag github-schema-url. */
+  githubSchemaUrl?: string;
+};
 
 type ListWorkflowVersionsResponse = {
   items?: Array<{
@@ -15,12 +24,19 @@ type ListWorkflowVersionsResponse = {
   nextToken?: string;
 };
 
-export interface WorkflowSchemaResponse {
-  WorkflowId: string;
-  Version: string;
-  Schema: object; // Parsed nextflow_schema.json blob
-  UpdatedAt: string;
-}
+type CreateWorkflowUploadRequest = {
+  fileName: string;
+  size: number;
+  requestId?: string;
+};
+
+type CreateWorkflowUploadResponse = {
+  requestId: string;
+  bucket: string;
+  key: string;
+  s3Uri: string;
+  uploadUrl: string;
+};
 
 class OmicsWorkflowsModule extends HttpFactory {
   async list(labId: string): Promise<ListWorkflows> {
@@ -33,10 +49,56 @@ class OmicsWorkflowsModule extends HttpFactory {
     return res;
   }
 
-  async get(labId: string, workflowId: string): Promise<ReadWorkflow> {
+  async listShared(labId: string): Promise<{
+    items?: Array<{ id?: string; name?: string; source?: 'SHARED'; ownerAccountId?: string }>;
+  }> {
+    const res = await this.callOmics<{
+      items?: Array<{ id?: string; name?: string; source?: 'SHARED'; ownerAccountId?: string }>;
+    }>('GET', `/workflow/list-shared-workflows?laboratoryId=${labId}`);
+
+    if (!res) {
+      throw new Error('Failed to retrieve shared omics workflows');
+    }
+
+    return res;
+  }
+
+  async create(labId: string, payload: CreateOmicsWorkflowRequest): Promise<CreateWorkflow> {
+    const res = await this.callOmics<CreateWorkflow>(
+      'POST',
+      `/workflow/create-private-workflow?laboratoryId=${labId}`,
+      payload,
+    );
+
+    if (!res) {
+      throw new Error('Failed to create omics workflow');
+    }
+
+    return res;
+  }
+
+  async createUploadRequest(
+    labId: string,
+    payload: CreateWorkflowUploadRequest,
+  ): Promise<CreateWorkflowUploadResponse> {
+    const res = await this.callOmics<CreateWorkflowUploadResponse>(
+      'POST',
+      `/workflow/create-workflow-upload-request?laboratoryId=${labId}`,
+      payload,
+    );
+
+    if (!res) {
+      throw new Error('Failed to create workflow upload request');
+    }
+
+    return res;
+  }
+
+  async get(labId: string, workflowId: string, workflowOwnerId?: string): Promise<ReadWorkflow> {
+    const ownerQuery = workflowOwnerId ? `&workflowOwnerId=${encodeURIComponent(workflowOwnerId)}` : '';
     const res = await this.callOmics<ReadWorkflow>(
       'GET',
-      `/workflow/read-private-workflow/${workflowId}?laboratoryId=${labId}`,
+      `/workflow/read-private-workflow/${workflowId}?laboratoryId=${labId}${ownerQuery}`,
     );
 
     if (!res) {
@@ -46,10 +108,15 @@ class OmicsWorkflowsModule extends HttpFactory {
     return res;
   }
 
-  async listVersions(labId: string, workflowId: string): Promise<ListWorkflowVersionsResponse> {
+  async listVersions(
+    labId: string,
+    workflowId: string,
+    workflowOwnerId?: string,
+  ): Promise<ListWorkflowVersionsResponse> {
+    const ownerQuery = workflowOwnerId ? `&workflowOwnerId=${encodeURIComponent(workflowOwnerId)}` : '';
     const res = await this.callOmics<ListWorkflowVersionsResponse>(
       'GET',
-      `/workflow/list-workflow-versions?laboratoryId=${labId}&workflowId=${encodeURIComponent(workflowId)}`,
+      `/workflow/list-workflow-versions?laboratoryId=${labId}&workflowId=${encodeURIComponent(workflowId)}${ownerQuery}`,
     );
 
     if (!res) {
@@ -58,15 +125,5 @@ class OmicsWorkflowsModule extends HttpFactory {
 
     return res;
   }
-
-  async getSchema(labId: string, workflowId: string): Promise<WorkflowSchemaResponse | null> {
-    const res = await this.callOmics<WorkflowSchemaResponse>(
-      'GET',
-      `/workflow/read-workflow-schema/${workflowId}?laboratoryId=${labId}`,
-    );
-
-    return res ?? null;
-  }
 }
-
 export default OmicsWorkflowsModule;

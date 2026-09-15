@@ -5,13 +5,15 @@
   const orgId = $route.params.orgId as string;
   const userId = $route.params.userId as string;
 
-  if (!useUserStore().canManageOrg(orgId)) {
-    $router.push({ path: '/' });
-  }
+  onBeforeMount(() => {
+    if (!useUserStore().canManageOrg(orgId)) {
+      $router.replace({ path: '/' });
+    } else {
+      $router.replace({ path: `/orgs/${orgId}`, query: { openUser: userId } });
+    }
+  });
 </script>
 
-<template>
-  <EGUserAccess :org-id="orgId" :user-id="userId" />
-</template>
+<template></template>
 
 <style scoped></style>

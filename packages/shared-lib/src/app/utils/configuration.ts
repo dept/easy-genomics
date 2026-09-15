@@ -1,8 +1,19 @@
 import { readFileSync } from 'fs';
-import { ConfigService } from '@nestjs/config';
 import * as yaml from 'js-yaml';
 import { ConfigurationSettingsSchema } from '../schema/configuration';
 import { Configuration, ConfigurationSettings } from '../types/configuration';
+
+function getNestedProperty<T>(obj: Record<string, unknown>, path: string): T | undefined {
+  const keys = path.split('.');
+  let current: unknown = obj;
+  for (const key of keys) {
+    if (current === null || current === undefined || typeof current !== 'object') {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current as T | undefined;
+}
 
 /**
  * Shared function to read the command line argument: --stack {env-name}
@@ -25,10 +36,10 @@ export function getStackEnvName(): string | undefined {
  */
 export function loadConfigurations(filePath: string): { [p: string]: ConfigurationSettings }[] {
   const yamlConfigs: Record<string, any> = loadYamlConfigFile(filePath);
-  const configService = new ConfigService(yamlConfigs);
-
-  const configurations: Configuration[] | undefined =
-    configService.get<Configuration[]>('easy-genomics.configurations');
+  const configurations: Configuration[] | undefined = getNestedProperty<Configuration[]>(
+    yamlConfigs as Record<string, unknown>,
+    'easy-genomics.configurations',
+  );
   if (!configurations) {
     throw new Error('Easy Genomics Configuration(s) missing / invalid, please update: easy-genomics.yaml');
   }
@@ -53,6 +64,42 @@ export function findConfiguration(
     throw new Error(`Easy Genomics Configuration Settings for "${envName}" stack not found`);
   }
   return configuration;
+}
+
+/**
+ * Shared function to resolve the single applicable configuration from the loaded
+ * configurations list. Centralises the selection logic previously duplicated across
+ * the deployment entry-point scripts:
+ *
+ *  - 0 configurations  -> throws (configuration file missing / invalid).
+ *  - 1 configuration   -> returns it directly (envName is ignored).
+ *  - >1 configurations -> requires envName and returns the matching entry
+ *                         (throws if envName is missing, or via findConfiguration
+ *                         if it does not match any configuration).
+ *
+ * @param configurations
+ * @param envName
+ */
+export function resolveConfiguration(
+  configurations: { [p: string]: ConfigurationSettings }[],
+  envName?: string,
+): { [p: string]: ConfigurationSettings } {
+  if (configurations.length === 0) {
+    throw new Error('Easy Genomics Configuration(s) missing / invalid, please update: easy-genomics.yaml');
+  }
+
+  if (configurations.length === 1) {
+    return configurations[0];
+  }
+
+  if (!envName) {
+    throw new Error(
+      'Multiple configurations found in easy-genomics.yaml; a target environment name is required but was not ' +
+        'provided. Set the ENV_NAME environment variable or pass the environment name argument for this command.',
+    );
+  }
+
+  return findConfiguration(envName, configurations);
 }
 
 /**

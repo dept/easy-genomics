@@ -6,7 +6,16 @@ easy-genomics:
         aws-region: # e.g. 'us-east-1'
         env-type: # 'dev' | 'pre-prod' | 'prod'; only 'dev' and 'pre-prod' can have AWS CloudFormation resources destroyed
         app-domain-name: # e.g. 'demo.easy-genomics.myinstitution.org'
+        # Optional: override for the Easy Genomics API URL used by the Front-End when the back-end
+        # splits easy-genomics into its own stack. If set, the UI will route easy-genomics calls to
+        # this URL directly (instead of `${AWS_API_GATEWAY_URL}/easy-genomics`).
+        #
+        # Typical value during/after migration: the `EasyGenomicsApiUrl` output of
+        # `${envType}-${envName}-easy-genomics-api-stack` (no trailing slash).
+        aws-easy-genomics-api-url: # e.g. 'https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/prod'
         ## The following Front-End Infrastructure settings will need to be pre-configured in AWS and defined when 'env-type' is 'pre-prod' or 'prod'.
+        # aws-hosted-zone-id also drives SES email sending setup (domain identity, DKIM, MAIL FROM) —
+        # see docs/deployment/production.md Section 3 for the full SES + org-email-assets-bucket setup.
         aws-hosted-zone-id: # Not required when env-type: 'dev', but must exist for the same app-domain-name if configured
         aws-certificate-arn: # Not required when env-type: 'dev', but must exist for the same app-domain-name if configured
         google-client-id: # Google Cloud Client ID for Google Sign in integration, if left empty no Google SSO will be implemented
@@ -35,3 +44,42 @@ easy-genomics:
             #test-access-token: 'dummy-access-token-example-donotuse-1234567890'
             #test-s3-url: '123456789012-dev-example-lab-bucket'
             #test-invite-email: 'your-test-email@your-domain.org'
+            ## Failure classification (AI Failure Analysis) is configured per-Laboratory in
+            ## the UI under Lab Settings → AI Failure Analysis. Each lab brings its own
+            ## provider (Bedrock / OpenAI / Anthropic), model id, and (for OpenAI /
+            ## Anthropic) API key. No operator-level YAML configuration is required.
+
+        ## Optional: Privacy-safe upstream usage analytics. OFF by default.
+        ##
+        ## When enabled, this deployment opts in to sending ANONYMOUS usage events to the
+        ## Easy Genomics project's central analytics, to help improve the open-source product.
+        ## This is a DOUBLE opt-in: each end user must also accept the in-app consent banner
+        ## before any event is sent. No emails, names, file names, sample data, run parameters,
+        ## IP addresses, account ids, domains or hostnames are ever sent.
+        ##
+        ## Turning this on does NOT provision analytics services in your account beyond a random
+        ## anonymous per-deployment identifier (AWS Secrets Manager). Events are sent directly to
+        ## PostHog from the browser.
+        ##
+        ## By default analytics is disabled when env-type is 'dev' (to protect local development).
+        ## Set 'allow-dev: true' to opt a 'dev' env-type deployment in anyway (e.g. a hosted demo).
+        ##
+        ## HIPAA: this analytics is NOT designed for environments handling PHI. Institutions
+        ## handling PHI should leave it disabled.
+        analytics:
+            enabled: false # true to opt in
+            allow-dev: false # true to also allow analytics when env-type is 'dev'
+
+        ## Optional: AWS Cost Explorer billed per-run cost sync. OFF by default.
+        ##
+        ## When enabled, Easy Genomics deploys a daily Lambda that reads billed
+        ## spend from Cost Explorer (grouped by RunId tag) and the UI shows
+        ## billed-cost pending / 24–48h messaging. Pre-run and platform post-run
+        ## estimates work regardless of this flag.
+        ##
+        ## Enabling this flag does NOT enable Cost Explorer in AWS. Operators must
+        ## still Launch Cost Explorer and activate cost allocation tags in the
+        ## Billing console (see docs/deployment/production.md §8), then set
+        ## enabled: true and redeploy back-end + rebuild front-end.
+        cost-explorer:
+            enabled: false # true after Launch Cost Explorer + cost allocation tags

@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import { useRunStore, useToastStore, useLabsStore } from '@FE/stores';
   import { ButtonSizeEnum } from '@FE/types/buttons';
+  import type { EstimateRunCostResponse } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
 
   const props = defineProps<{
     schema: object;
@@ -16,14 +17,19 @@
     workflowName: string;
     /** When set, passed to Omics StartRun and stored on the laboratory run */
     workflowVersionName?: string;
+    /** Owner account for SHARED HealthOmics workflows (StartRun workflowOwnerId) */
+    workflowOwnerId?: string;
   }>();
 
   const { $api } = useNuxtApp();
 
   const runStore = useRunStore();
+  const wipOmicsRun = computed(() => runStore.wipOmicsRuns[props.omicsRunTempId]);
 
-  const labName = useLabsStore().labs[props.labId].Name;
+  const labName = useLabsStore().labs[props.labId]?.Name ?? '';
   const isLaunchingRun = ref(false);
+  const costEstimate = ref<EstimateRunCostResponse | null>(null);
+  const costEstimateLoading = ref(false);
   const emit = defineEmits(['submit-launch-request', 'submit-launch-request-error', 'has-launched', 'previous-tab']);
 
   const schema = JSON.parse(JSON.stringify(props.schema));
@@ -40,40 +46,72 @@
     return r;
   }
 
+  onMounted(async () => {
+    costEstimateLoading.value = true;
+    try {
+      costEstimate.value = await $api.labs.estimateRunCost(props.labId, {
+        platform: 'AWS HealthOmics',
+        workflowExternalId: props.workflowId,
+        workflowVersionName: props.workflowVersionName,
+        inputFileKeys: wipOmicsRun.value?.inputFileKeys,
+        sampleSheetS3Url: (props.params as any)?.input,
+        settings: withoutEmptyFields(props.params),
+      });
+    } catch (error) {
+      console.warn('Pre-run cost estimate unavailable:', error);
+      costEstimate.value = null;
+    } finally {
+      costEstimateLoading.value = false;
+    }
+  });
+
   async function launchRun() {
     emit('submit-launch-request');
+    isLaunchingRun.value = true;
+
+    // Tracked separately so the createLabRun catch can reference it even after
+    // the external run has already been submitted successfully.
+    let externalRunId: string | undefined;
 
     try {
-      isLaunchingRun.value = true;
       if (props.workflowId === undefined) {
-        throw new Error('pipeline id not found in wip run config');
+        throw new Error('workflow id not found in wip run config');
       }
 
-      const startOmicsRes = await $api.omicsRuns.createExecution(
-        props.labId,
-        props.workflowId,
-        props.runName,
-        withoutEmptyFields(props.params),
-        props.workflowVersionName,
-      );
-
-      if (!startOmicsRes) {
-        throw new Error('Failed to create workflow run. Response is empty.');
-      }
-
-      if (!startOmicsRes.id) {
-        throw new Error('Workflow Run ID is missing in the response');
+      let startOmicsRes;
+      try {
+        startOmicsRes = await $api.omicsRuns.createExecution(
+          props.labId,
+          props.workflowId,
+          props.runName,
+          withoutEmptyFields(props.params),
+          props.workflowVersionName,
+          props.workflowOwnerId,
+          props.transactionId,
+        );
+        if (!startOmicsRes?.id) throw new Error('Workflow Run ID is missing in the response');
+        externalRunId = startOmicsRes.id;
+      } catch (error) {
+        console.error('Error submitting run to AWS HealthOmics:', error);
+        useToastStore().error('Failed to submit run to AWS HealthOmics. Please try again.');
+        emit('submit-launch-request-error');
+        return;
       }
 
       try {
+        const inputFileKeys = wipOmicsRun.value?.inputFileKeys ?? [];
+        const description = wipOmicsRun.value?.description?.trim();
         const labRunRequest = {
           'LaboratoryId': props.labId,
           'RunId': props.transactionId,
           'RunName': props.runName,
+          ...(description ? { Description: description } : {}),
           'Platform': 'AWS HealthOmics',
           'Status': 'SUBMITTED',
           'WorkflowName': props.workflowName,
           ...(props.workflowVersionName ? { WorkflowVersionName: props.workflowVersionName } : {}),
+          'WorkflowExternalId': props.workflowId,
+          ...(inputFileKeys.length ? { InputFileKeys: inputFileKeys } : {}),
           'ExternalRunId': startOmicsRes.id,
           'InputS3Url': props.params.input.substring(0, props.params.input.lastIndexOf('/')),
           'OutputS3Url': props.params.outdir,
@@ -82,15 +120,19 @@
         };
         await $api.labs.createLabRun(labRunRequest);
       } catch (error) {
-        console.error('Error launching workflow:', error);
-        throw error;
+        console.error('Error recording lab run after successful Omics submission:', error);
+        useToastStore().error(
+          `Your run was submitted but could not be recorded. Contact support with run ID: ${externalRunId}.`,
+        );
+        emit('submit-launch-request-error');
+        return;
       }
 
       delete runStore.wipOmicsRuns[props.omicsRunTempId];
       emit('has-launched');
     } catch (error) {
-      useToastStore().error('Error launching run: ' + error);
-      console.error('Error launching workflow:', error);
+      console.error('Unexpected error launching run:', error);
+      useToastStore().error('An unexpected error occurred while launching the run. Please try again.');
       emit('submit-launch-request-error');
     } finally {
       isLaunchingRun.value = false;
@@ -100,32 +142,41 @@
 
 <template>
   <EGCard class="mb-6">
-    <EGText tag="small" class="mb-4">Step 04</EGText>
-    <EGText tag="h4" class="mb-0">Run Details</EGText>
+    <p class="text-muted mb-1 text-sm">Step 4 of 4</p>
+    <h2 class="text-heading mb-0 text-lg font-medium">Review and launch</h2>
     <UDivider class="py-4" />
     <section class="stroke-light flex flex-col bg-white">
       <dl>
         <div class="text-md flex border-b px-4 py-4">
-          <dt class="w-48 text-black">Workflow</dt>
-          <dd class="text-muted text-left">{{ props.workflowName }}</dd>
+          <dt class="w-48 shrink-0 text-black">Workflow</dt>
+          <dd class="text-muted min-w-0 flex-1 break-words text-left">{{ props.workflowName }}</dd>
         </div>
         <div class="text-md flex border-b px-4 py-4">
-          <dt class="w-48 text-black">Workflow version</dt>
-          <dd class="text-muted text-left">{{ props.workflowVersionName || 'Default version' }}</dd>
+          <dt class="w-48 shrink-0 text-black">Workflow version</dt>
+          <dd class="text-muted min-w-0 flex-1 break-words text-left">
+            {{ props.workflowVersionName || 'Default version' }}
+          </dd>
         </div>
         <div class="text-md flex border-b px-4 py-4">
-          <dt class="w-48 text-black">Laboratory</dt>
-          <dd class="text-muted text-left">{{ labName }}</dd>
+          <dt class="w-48 shrink-0 text-black">Laboratory</dt>
+          <dd class="text-muted min-w-0 flex-1 break-words text-left">{{ labName }}</dd>
         </div>
-        <div class="text-md flex px-4 py-4">
-          <dt class="w-48 text-black">Run Name</dt>
-          <dd class="text-muted text-left">{{ props.runName }}</dd>
+        <div class="text-md flex border-b px-4 py-4">
+          <dt class="w-48 shrink-0 text-black">Run Name</dt>
+          <dd class="text-muted min-w-0 flex-1 break-words text-left">{{ props.runName }}</dd>
         </div>
+        <div v-if="wipOmicsRun?.description?.trim()" class="text-md flex border-b px-4 py-4">
+          <dt class="w-48 shrink-0 text-black">Description</dt>
+          <dd class="text-muted min-w-0 flex-1 whitespace-pre-wrap break-words text-left">
+            {{ wipOmicsRun.description }}
+          </dd>
+        </div>
+        <EGRunCostRow :estimate="costEstimate" :loading="costEstimateLoading" class="border-b" />
       </dl>
     </section>
   </EGCard>
   <EGCard>
-    <EGText tag="h4" class="text-muted">Selected Workflow Parameters</EGText>
+    <h3 class="text-muted text-base font-medium">Selected Workflow Parameters</h3>
     <section class="stroke-light flex flex-col bg-white text-left">
       <dl>
         <div

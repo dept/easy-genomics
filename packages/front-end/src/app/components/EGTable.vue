@@ -17,9 +17,10 @@
       noResultsMsg?: string;
       canSelect?: boolean;
       rowClasses?: (row: any) => string;
+      labelledBy?: string;
       /**
-       * Name + Description columns share remaining width; Run and Favourite (last two) stay narrow.
-       * Use when columns are [Name, Description, run, favourite] in that order.
+       * Flexible leading columns; Favourite and Run (last two) stay narrow and centered.
+       * Use when columns end with [favourite, run] in that order.
        */
       narrowRunAndFavouriteColumns?: boolean;
     }>(),
@@ -29,6 +30,20 @@
       narrowRunAndFavouriteColumns: false,
     },
   );
+
+  function onRowKeydown(event: KeyboardEvent, row: any) {
+    if (!props.rowClickAction) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      props.rowClickAction(row);
+    }
+  }
+
+  function rowAriaLabel(row: any): string | undefined {
+    if (!props.rowClickAction) return undefined;
+    const name = row?.RunName ?? row?.WorkflowName ?? row?.name;
+    return name ? `View details for ${name}` : 'View details';
+  }
 
   const sort = defineModel<TableSort>('sort');
 
@@ -75,8 +90,11 @@
     class="rounded-2xl border-none shadow-none"
     :class="{ 'eg-table--narrow-run-favourite': narrowRunAndFavouriteColumns }"
     :ui="{ body: 'p-0' }"
+    :aria-busy="isLoading"
   >
+    <div v-if="isLoading" class="sr-only" role="status">Loading table data…</div>
     <UTable
+      :aria-labelledby="labelledBy"
       :ui="{
         tr: {
           active: ` ${rowClickAction ? 'hover:bg-gray-50 cursor-pointer' : 'hover:bg-white cursor-default'}`,
@@ -98,7 +116,18 @@
       </template>
 
       <template #default="{ row }">
-        <tr :class="props.rowClasses ? props.rowClasses(row) : ''">
+        <tr
+          :class="[
+            props.rowClasses ? props.rowClasses(row) : '',
+            rowClickAction
+              ? 'focus-visible:outline-primary-500 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px]'
+              : '',
+          ]"
+          :tabindex="rowClickAction ? 0 : undefined"
+          :role="rowClickAction ? 'button' : undefined"
+          :aria-label="rowAriaLabel(row)"
+          @keydown="rowClickAction ? onRowKeydown($event, row) : undefined"
+        >
           <td v-for="(column, index) in columns" :key="index">
             <slot :name="column.key + '-data'" :row="row">{{ row[column.key] }}</slot>
           </td>
@@ -171,7 +200,7 @@
 
     tbody tr td:not(:first-child) {
       font-size: 12px;
-      color: #818181;
+      color: #666666;
       white-space: normal;
     }
 
@@ -183,7 +212,7 @@
   }
 
   /*
-   * Name + Description flexible; Run + Favourite narrow and centered.
+   * Leading columns flexible; Favourite + Run (last two) narrow and centered.
    * Do NOT use display:flex on th/td — it breaks table layout and stacks columns.
    */
   .eg-table--narrow-run-favourite :deep(table) {
@@ -191,22 +220,21 @@
     width: 100%;
 
     thead tr th:first-child {
-      width: 34%;
+      width: 28%;
       min-width: 0;
       padding-left: 40px;
       text-align: left;
     }
 
-    thead tr th:nth-child(2) {
-      width: auto;
+    thead tr th:not(:nth-last-child(-n + 2)) {
       min-width: 0;
       text-align: left;
     }
 
-    thead tr th:nth-child(3),
-    thead tr th:nth-child(4),
-    tbody tr td:nth-child(3),
-    tbody tr td:nth-child(4) {
+    thead tr th:nth-last-child(2),
+    thead tr th:nth-last-child(1),
+    tbody tr td:nth-last-child(2),
+    tbody tr td:nth-last-child(1) {
       text-align: center !important;
       vertical-align: middle;
       padding-top: 0.875rem;
@@ -216,40 +244,40 @@
       box-sizing: border-box;
     }
 
-    thead tr th:nth-child(3),
-    tbody tr td:nth-child(3) {
-      width: 5.5rem;
-    }
-
-    thead tr th:nth-child(4),
-    tbody tr td:nth-child(4) {
+    thead tr th:nth-last-child(2),
+    tbody tr td:nth-last-child(2) {
       width: 9.5rem;
-      white-space: nowrap;
     }
 
-    thead tr th:nth-child(3) button,
-    thead tr th:nth-child(4) button {
+    thead tr th:nth-last-child(1),
+    tbody tr td:nth-last-child(1) {
+      width: 5.5rem;
+      white-space: nowrap;
+      padding-right: 0.75rem;
+    }
+
+    thead tr th:nth-last-child(2) button,
+    thead tr th:nth-last-child(1) button {
       margin-left: auto;
       margin-right: auto;
     }
 
-    tbody tr td:nth-child(1) {
-      width: 34%;
+    tbody tr td:first-child {
+      width: 28%;
       min-width: 0;
       overflow-wrap: anywhere;
       word-break: break-word;
     }
 
-    tbody tr td:nth-child(2) {
-      width: auto;
+    tbody tr td:not(:nth-last-child(-n + 2)) {
       min-width: 0;
       overflow-wrap: anywhere;
       word-break: break-word;
     }
 
-    /* Icon buttons in body: block + auto margins centers under the header text */
-    tbody tr td:nth-child(3) button,
-    tbody tr td:nth-child(4) button {
+    /* Icon buttons in body: inline-flex + auto margins centers under the header text */
+    tbody tr td:nth-last-child(2) button,
+    tbody tr td:nth-last-child(1) button {
       display: inline-flex;
       margin-left: auto;
       margin-right: auto;

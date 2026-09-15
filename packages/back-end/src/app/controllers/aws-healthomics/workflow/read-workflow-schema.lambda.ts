@@ -3,8 +3,11 @@ import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomic
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
 import { RequiredIdNotFoundError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { fetchGitHubSchemaJsonFile } from '@BE/services/aws-healthomics/fetch-github-schema-json';
+import { GITHUB_SCHEMA_URL_TAG, parseGitHubSchemaFileUrl } from '@BE/services/aws-healthomics/parse-github-schema-url';
 import { WorkflowSchema, WorkflowSchemaService } from '@BE/services/aws-healthomics/workflow-schema-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
+import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
 import { OmicsService } from '@BE/services/omics-service';
 import { SecretsManagerService } from '@BE/services/secrets-manager-service';
 import {
@@ -12,15 +15,17 @@ import {
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
+import { assertLaboratoryHasWorkflowAccess } from '@BE/utils/laboratory-workflow-access-utils';
+import { resolveSharedWorkflowOwnerId } from '@BE/utils/omics-shared-workflow-utils';
 
 const laboratoryService = new LaboratoryService();
+const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
 const omicsService = new OmicsService();
 const secretsManagerService = new SecretsManagerService();
 const workflowSchemaService = new WorkflowSchemaService();
 
 const SCHEMA_FILE_PATH = 'nextflow_schema.json';
 const SCHEMA_VERSION = '1';
-const MAX_RETRIES = 3;
 
 // Module-level cache for warm Lambda invocations (key: workflowId#version)
 const schemaCache = new Map<string, { schema: WorkflowSchema; cachedAt: number }>();
@@ -34,56 +39,37 @@ function parseGitHubRepoUrl(url: string): { owner: string; repo: string } {
   return { owner: match[1], repo: match[2] };
 }
 
-async function fetchGitHubSchema(owner: string, repo: string, token: string, attempt = 0): Promise<object | null> {
-  const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${SCHEMA_FILE_PATH}`;
-  const headers: Record<string, string> = {
-    'Accept': 'application/vnd.github+json',
-    'Authorization': `Bearer ${token}`,
-    'X-GitHub-Api-Version': '2022-11-28',
-    'User-Agent': 'easy-genomics-schema-fetcher',
-  };
-
-  let response: Response;
-  try {
-    response = await fetch(apiUrl, { headers });
-  } catch (networkError) {
-    if (attempt < MAX_RETRIES - 1) {
-      await new Promise((resolve) => setTimeout(resolve, Math.pow(2, attempt) * 1000));
-      return fetchGitHubSchema(owner, repo, token, attempt + 1);
-    }
-    throw networkError;
-  }
-
-  if (response.status === 404) return null;
-
-  if (response.status >= 500 && attempt < MAX_RETRIES - 1) {
-    await new Promise((resolve) => setTimeout(resolve, Math.pow(2, attempt) * 1000));
-    return fetchGitHubSchema(owner, repo, token, attempt + 1);
-  }
-
-  if (!response.ok) {
-    throw new Error(`GitHub API error ${response.status}: ${await response.text()}`);
-  }
-
-  const data = (await response.json()) as { content: string; encoding: string };
-  if (data.encoding !== 'base64') {
-    throw new Error(`Unexpected encoding from GitHub Contents API: ${data.encoding}`);
-  }
-  return JSON.parse(Buffer.from(data.content, 'base64').toString('utf-8'));
-}
-
 /**
  * Fetches the GitHub PAT and falls back to fetching the schema directly from GitHub.
  * Used when DynamoDB has no cached schema (EventBridge trigger may have failed).
  */
 async function fetchSchemaFromGitHub(workflowId: string): Promise<WorkflowSchema | null> {
+  const workflowOwnerId = await resolveSharedWorkflowOwnerId(omicsService, workflowId);
   const workflow = await omicsService.getWorkflow(<GetWorkflowCommandInput>{
     id: workflowId,
     type: 'PRIVATE',
+    ...(workflowOwnerId ? { workflowOwnerId } : {}),
   });
 
+  const githubSchemaUrlTag = workflow.tags?.[GITHUB_SCHEMA_URL_TAG];
   const githubRepoUrl = workflow.tags?.['github-repo-url'];
-  if (!githubRepoUrl) {
+
+  let owner: string;
+  let repo: string;
+  let filePath: string;
+  let gitRef: string | undefined;
+
+  if (githubSchemaUrlTag) {
+    const parsed = parseGitHubSchemaFileUrl(githubSchemaUrlTag);
+    if (!parsed) {
+      return null;
+    }
+    ({ owner, repo, ref: gitRef, path: filePath } = parsed);
+  } else if (githubRepoUrl) {
+    ({ owner, repo } = parseGitHubRepoUrl(githubRepoUrl));
+    filePath = SCHEMA_FILE_PATH;
+    gitRef = undefined;
+  } else {
     return null;
   }
 
@@ -94,8 +80,7 @@ async function fetchSchemaFromGitHub(workflowId: string): Promise<WorkflowSchema
   const githubToken = secretResponse.SecretString;
   if (!githubToken) return null;
 
-  const { owner, repo } = parseGitHubRepoUrl(githubRepoUrl);
-  const schema = await fetchGitHubSchema(owner, repo, githubToken);
+  const schema = await fetchGitHubSchemaJsonFile(owner, repo, filePath, githubToken, gitRef);
   if (!schema) return null;
 
   return {
@@ -148,6 +133,8 @@ export const handler: Handler = async (
     ) {
       throw new UnauthorizedAccessError();
     }
+
+    await assertLaboratoryHasWorkflowAccess(laboratory, 'HEALTH_OMICS', workflowId, laboratoryWorkflowAccessService);
 
     // 1. In-memory cache check
     const cacheKey = `${workflowId}#${SCHEMA_VERSION}`;

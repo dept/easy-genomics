@@ -3,6 +3,7 @@
   import EGAccordion from '@FE/components/EGAccordion.vue';
   import { ButtonSizeEnum } from '@FE/types/buttons';
   import { Pipeline as SeqeraPipeline } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
+  import type { EstimateRunCostResponse } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
 
   const props = defineProps<{
     schema: object;
@@ -18,9 +19,11 @@
   const seqeraPipelineStore = useSeqeraPipelinesStore();
   const labsStore = useLabsStore();
 
-  const labName = labsStore.labs[props.labId].Name;
-  const labNextFlowTowerApiBaseUrl = labsStore.labs[props.labId].NextFlowTowerApiBaseUrl;
+  const labName = labsStore.labs[props.labId]?.Name ?? '';
+  const labNextFlowTowerApiBaseUrl = labsStore.labs[props.labId]?.NextFlowTowerApiBaseUrl ?? '';
   const isLaunchingRun = ref(false);
+  const costEstimate = ref<EstimateRunCostResponse | null>(null);
+  const costEstimateLoading = ref(false);
   const emit = defineEmits(['submit-launch-request', 'submit-launch-request-error', 'has-launched', 'previous-tab']);
 
   const remountAccordionKey = ref(0);
@@ -44,16 +47,46 @@
 
   const schemaDefinitions = schema.$defs || schema.definitions;
 
+  onMounted(async () => {
+    costEstimateLoading.value = true;
+    try {
+      costEstimate.value = await $api.labs.estimateRunCost(props.labId, {
+        platform: 'Seqera Cloud',
+        workflowExternalId: props.pipelineId,
+        inputFileKeys: wipSeqeraRun.value?.inputFileKeys,
+        sampleSheetS3Url: (props.params as any)?.input,
+        settings: paramsFiltered,
+      });
+    } catch (error) {
+      console.warn('Pre-run cost estimate unavailable:', error);
+      costEstimate.value = null;
+    } finally {
+      costEstimateLoading.value = false;
+    }
+  });
+
   async function launchRun() {
     emit('submit-launch-request');
+    isLaunchingRun.value = true;
+
+    // Tracked separately so the createLabRun catch can reference it even after
+    // the external run has already been submitted successfully.
+    let externalRunId: string | undefined;
 
     try {
-      isLaunchingRun.value = true;
       if (props.pipelineId === undefined) {
         throw new Error('pipeline id not found in wip run config');
       }
 
-      const launchDetails = await $api.seqeraPipelines.readPipelineLaunchDetails(props.pipelineId, props.labId);
+      let launchDetails;
+      try {
+        launchDetails = await $api.seqeraPipelines.readPipelineLaunchDetails(props.pipelineId, props.labId);
+      } catch (error) {
+        console.error('Error fetching pipeline launch details:', error);
+        useToastStore().error('Unable to load launch configuration. Check lab Seqera settings and try again.');
+        emit('submit-launch-request-error');
+        return;
+      }
 
       const workDir: string = `s3://${wipSeqeraRun.value?.s3Bucket}/${wipSeqeraRun.value?.s3Path}/work`;
       const launchRequest: CreateWorkflowLaunchRequest = {
@@ -68,25 +101,32 @@
         },
       };
 
-      const res = await $api.seqeraRuns.createPipelineRun(props.labId, props.pipelineId, launchRequest);
-
-      if (!res) {
-        throw new Error('Failed to create pipeline run. Response is empty.');
-      }
-
-      if (!res.workflowId) {
-        throw new Error('Workflow ID is missing in the response');
+      let res;
+      try {
+        res = await $api.seqeraRuns.createPipelineRun(props.labId, props.pipelineId, launchRequest);
+        if (!res?.workflowId) throw new Error('Workflow ID is missing in the response');
+        externalRunId = res.workflowId;
+      } catch (error) {
+        console.error('Error submitting run to Seqera:', error);
+        useToastStore().error('Failed to submit run to Seqera. Please try again.');
+        emit('submit-launch-request-error');
+        return;
       }
 
       try {
+        const inputFileKeys = wipSeqeraRun.value?.inputFileKeys ?? [];
+        const description = wipSeqeraRun.value?.description?.trim();
         const labRunRequest = {
           'LaboratoryId': props.labId,
           'RunId': wipSeqeraRun.value?.transactionId,
           'RunName': wipSeqeraRun.value?.runName,
+          ...(description ? { Description: description } : {}),
           'Platform': 'Seqera Cloud',
           'PlatformApiBaseUrl': labNextFlowTowerApiBaseUrl,
           'Status': 'SUBMITTED',
           'WorkflowName': pipeline.value?.name,
+          'WorkflowExternalId': props.pipelineId,
+          ...(inputFileKeys.length ? { InputFileKeys: inputFileKeys } : {}),
           'ExternalRunId': res.workflowId,
           'InputS3Url': props.params.input.substring(0, props.params.input.lastIndexOf('/')),
           'OutputS3Url': props.params.outdir,
@@ -95,15 +135,19 @@
         };
         await $api.labs.createLabRun(labRunRequest);
       } catch (error) {
-        console.error('Error launching workflow:', error);
-        throw error;
+        console.error('Error recording lab run after successful Seqera submission:', error);
+        useToastStore().error(
+          `Your run was submitted but could not be recorded. Contact support with run ID: ${externalRunId}.`,
+        );
+        emit('submit-launch-request-error');
+        return;
       }
 
       delete runStore.wipSeqeraRuns[props.seqeraRunTempId];
       emit('has-launched');
     } catch (error) {
-      useToastStore().error('Error launching run: ' + error);
-      console.error('Error launching workflow:', error);
+      console.error('Unexpected error launching run:', error);
+      useToastStore().error('An unexpected error occurred while launching the run. Please try again.');
       emit('submit-launch-request-error');
     } finally {
       isLaunchingRun.value = false;
@@ -141,29 +185,36 @@
 
 <template>
   <EGCard class="mb-6">
-    <EGText tag="small" class="mb-4">Step 04</EGText>
-    <EGText tag="h4" class="mb-0">Run Details</EGText>
+    <p class="text-muted mb-1 text-sm">Step 4 of 4</p>
+    <h2 class="text-heading mb-0 text-lg font-medium">Review and launch</h2>
     <UDivider class="py-4" />
     <section class="stroke-light flex flex-col bg-white">
       <dl>
         <div class="text-md flex border-b px-4 py-4">
-          <dt class="w-48 text-black">Pipeline</dt>
-          <dd class="text-muted text-left">{{ pipeline?.name }}</dd>
+          <dt class="w-48 shrink-0 text-black">Pipeline</dt>
+          <dd class="text-muted min-w-0 flex-1 break-words text-left">{{ pipeline?.name }}</dd>
         </div>
         <div class="text-md flex border-b px-4 py-4">
-          <dt class="w-48 text-black">Laboratory</dt>
-          <dd class="text-muted text-left">{{ labName }}</dd>
+          <dt class="w-48 shrink-0 text-black">Laboratory</dt>
+          <dd class="text-muted min-w-0 flex-1 break-words text-left">{{ labName }}</dd>
         </div>
-        <div class="text-md flex px-4 py-4">
-          <dt class="w-48 text-black">Run Name</dt>
-          <dd class="text-muted text-left">{{ wipSeqeraRun?.runName }}</dd>
+        <div class="text-md flex border-b px-4 py-4">
+          <dt class="w-48 shrink-0 text-black">Run Name</dt>
+          <dd class="text-muted min-w-0 flex-1 break-words text-left">{{ wipSeqeraRun?.runName }}</dd>
         </div>
+        <div v-if="wipSeqeraRun?.description?.trim()" class="text-md flex border-b px-4 py-4">
+          <dt class="w-48 shrink-0 text-black">Description</dt>
+          <dd class="text-muted min-w-0 flex-1 whitespace-pre-wrap break-words text-left">
+            {{ wipSeqeraRun.description }}
+          </dd>
+        </div>
+        <EGRunCostRow :estimate="costEstimate" :loading="costEstimateLoading" class="border-b" />
       </dl>
     </section>
   </EGCard>
   <EGCard>
     <div class="mb-4 flex items-center justify-between">
-      <EGText tag="h4" class="text-muted">Selected Workflow Parameters</EGText>
+      <h3 class="text-muted text-base font-medium">Selected Workflow Parameters</h3>
       <EGButton
         variant="secondary"
         :label="areAccordionsOpen ? 'Collapse All' : 'Expand All'"

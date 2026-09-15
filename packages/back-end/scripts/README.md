@@ -4,10 +4,57 @@ Utility scripts for one-off data or AWS resource fixes. Run them from the `packa
 otherwise. They expect a `.env.local` file (or equivalent environment variables) and default AWS credentials where
 applicable.
 
+## Deploy-gated migrations
+
+Most scripts in this directory are manual (see below). A small subset are **registered** in
+`deploy-migrations/registry.ts` and run automatically, at most once per environment, as part of `pnpm run deploy` /
+`build-and-deploy` (and therefore also in CI, since `cicd-build-deploy-back-end` runs the same back-end `deploy` task).
+Only routine, idempotent, low-blast-radius scripts should be registered — expensive backfills (Cost Explorer syncs,
+history rebuilds) and anything Tier-3 / irreversible stay manual.
+
+**How it works:** before touching AWS, the CLI loads `.env.local` and reconciles `REGION`/`AWS_REGION`
+(`lib/load-env.ts`'s `loadDotEnvAndReconcileRegion()`) — the AWS SDK only recognizes `AWS_REGION`, but `.env.local`
+conventionally only sets `REGION`, so this must run before `resolveNamePrefix()` or any AWS client is constructed. It
+then filters the registry by `--phase` (`pre` runs before `cdk deploy`, `post` runs after), skips any id already
+recorded in the SSM ledger at `/${NAME_PREFIX}/deploy-migrations/applied`, and calls each pending entry's exported
+`main()` directly — no shell spawn. A failure stops the run immediately (fail-fast) and is not written to the ledger,
+which fails the deploy non-zero.
+
+**To add a migration:**
+
+1. Give the script an exported `async function main(): Promise<void>` that throws on failure (never calls
+   `process.exit`), and guard its own standalone invocation with `if (require.main === module) { main().catch(...) }` so
+   importing it has no side effect.
+2. Add an entry to `DEPLOY_MIGRATIONS` in `deploy-migrations/registry.ts`: a stable `id` (once deployed anywhere, never
+   reuse or change it — the ledger keys on it), a `phase` (`pre` if later code depends on the migrated data, `post` if
+   the migration depends on tables/GSIs that only exist after `cdk deploy`), and `main`.
+3. Keep the script's own standalone `pnpm run <script-name>` entry in `package.json` for manual re-runs — registering a
+   script for auto-run doesn't remove its manual entry point.
+4. A `pre`-phase migration must tolerate its target tables not existing yet: greenfield deploys run `pre`-phase
+   migrations before `cdk deploy` creates any tables, so a scan/list against a not-yet-created table must catch
+   `ResourceNotFoundException`, log, and return rather than throw (see `backfill-laboratory-run-attributes.ts` and
+   `migrate-laboratory-s3-access-seed.ts` for the pattern).
+5. A registered `main()` runs in the same process as the `run-deploy-migrations` CLI and shares its `process.argv` —
+   don't read flags beyond ones the script defines for its own standalone use, since the runner's own flags (`--phase`,
+   `--dry-run`, `--force`) will also be present on `argv` during an auto-run.
+
+**Flags:**
+
+- `--phase pre|post` (required)
+- `--dry-run` — logs which ids are pending vs. already applied; makes no SSM write and calls no registered `main()`.
+- `--force <id>` — re-runs one specific id (which must be registered under the `--phase` given) regardless of ledger
+  state, and updates its `appliedAt` on success.
+
+```bash
+pnpm run run-deploy-migrations -- --phase=pre --dry-run
+pnpm run run-deploy-migrations -- --phase=post --force 2026-08-migrate-laboratory-s3-access-seed
+```
+
 ## `backfill-omics-run-tags.ts`
 
 **Purpose:** Adds tags to existing AWS HealthOmics runs so they match the tags applied when new run executions are
-created. The laboratory run table is the source of truth; `WorkflowId` is taken from each row’s `ExternalRunId`.
+created. The laboratory run table is the source of truth; `WorkflowId` is taken from each row’s `WorkflowExternalId`,
+and `RunId` is the Easy Genomics run UUID (for Cost Explorer attribution).
 
 **When to use:** After a change to tagging behavior or for legacy runs that were never tagged.
 
@@ -21,6 +68,196 @@ pnpm run backfill-omics-run-tags:dry-run
 - `--dry-run` — log what would be tagged without calling the Omics API.
 
 **Environment:** `NAME_PREFIX`, `ACCOUNT_ID`, `REGION` (see script header for IAM expectations).
+
+## `backfill-run-input-profiles.ts`
+
+**Purpose:** Populates `RunInputProfile` (sample count, input bytes, parameter hash) on existing laboratory runs for the
+pre-run cost estimator.
+
+```bash
+pnpm run backfill-run-input-profiles
+pnpm run backfill-run-input-profiles:dry-run
+```
+
+## `backfill-run-cost-outcomes.ts`
+
+**Purpose:** Re-queries HealthOmics `ListRunTasks` / Seqera Tower progress for terminal runs still on the platform and
+writes `RunCostOutcome`.
+
+```bash
+pnpm run backfill-run-cost-outcomes
+pnpm run backfill-run-cost-outcomes:dry-run
+```
+
+## `backfill-billed-costs.ts`
+
+**Purpose:** One-time batched Cost Explorer sync for runs with `RunId` tags (prefer the daily `process-sync-run-costs`
+Lambda for ongoing sync).
+
+```bash
+pnpm run backfill-billed-costs
+pnpm run backfill-billed-costs:dry-run -- --max-age-days=90
+```
+
+## `backfill-workflow-run-history-and-usages.ts`
+
+**Purpose:** Retroactively populates per-file run usage (`LaboratoryRunUsages`) **and** workflow→file tag links for
+laboratory runs created before the file-history feature was tracking `InputFileKeys` and `WorkflowExternalId`
+automatically. For each candidate row the script infers `InputFileKeys` (from the row, the `SampleSheetS3Url` object in
+whatever bucket that URL references, or `s3://` URLs found in `Settings.input` / `parameters.input`), resolves
+`WorkflowExternalId` / `WorkflowVersionName` via the platform when missing (Omics `GetRun`, Seqera
+`GET /workflow/{id}`), optionally writes the inferred fields back to the run row, then invokes
+`associateInputsWithWorkflowTag` — the same hook `create-laboratory-run` uses — so the tagging table receives the
+canonical writes. Sample-sheet bodies are read from the URL's bucket; only cells that reference the **laboratory data
+bucket** (`Laboratory.S3Bucket`) are turned into `InputFileKeys`.
+
+This script supersedes the earlier usage-only backfill that replayed `LaboratoryRunUsages` from rows that already had
+`InputFileKeys` but did not infer keys, update run rows, or apply workflow tags. Use `--force-reassociate` when you only
+need to re-apply tagging from existing keys without re-inferring them.
+
+**When to use:** Once after deploying the workflow-history feature against an environment with legacy runs, or to retry
+partially-tagged runs after import / restore.
+
+**Usage:**
+
+```bash
+pnpm run backfill-workflow-run-history-and-usages
+pnpm run backfill-workflow-run-history-and-usages:dry-run
+pnpm run backfill-workflow-run-history-and-usages -- --lab <laboratoryId>
+pnpm run backfill-workflow-run-history-and-usages -- --platform "AWS HealthOmics" --limit 50
+pnpm run backfill-workflow-run-history-and-usages -- --omics-use-default-credentials
+```
+
+- `--dry-run` — log what would change without writing to DynamoDB / S3 / platforms.
+- `--lab <laboratoryId>` — limit the backfill to a single laboratory.
+- `--platform <name>` — filter by `LaboratoryRun.Platform` (`AWS HealthOmics` or `Seqera Cloud`).
+- `--limit <n>` — process at most N runs (useful for staged rollouts).
+- `--force-reassociate` — re-run tagging for rows that already have keys (safe; tagging writes are idempotent).
+- `--skip-run-table-update` — only update the tagging table; don't write inferred fields back to the run row.
+- `--list-input-prefix` — opt in to a guarded `ListObjectsV2` fallback when no sample sheet is available but
+  `Settings.input` resolves to a lab-scoped prefix. Off by default because shared prefixes lead to false positives.
+- `--max-list-keys <n>` — cap on listed keys when `--list-input-prefix` is on (default `200`).
+- `--omics-use-default-credentials` — call Omics `GetRun` with your ambient AWS credentials instead of STS AssumeRole
+  into `${NAME_PREFIX}-easy-genomics-omics-access-role`. Typical for local runs where `ACCOUNT_ID` is set but your SSO
+  user cannot `sts:AssumeRole` that role, **or** when you omit `ACCOUNT_ID` and still have account-wide `omics:GetRun`.
+
+**Known gaps (best-effort by design):** runs whose sample sheet has been deleted, whose CSV contains no `s3://`
+references, or whose `Settings` does not point at a lab-scoped S3 object cannot be reconstructed from EG data alone.
+Seqera's describe-workflow response does not expose the platform `pipelineId` we store as `WorkflowExternalId`, so for
+Seqera runs missing that field the script records run usage without a workflow tag and logs a note.
+
+**Environment:** `NAME_PREFIX`, `REGION`, `ACCOUNT_ID` when Omics workflow lookup uses STS AssumeRole (same as deployed
+Lambdas). If `ACCOUNT_ID` is missing, the role ARN is invalid (`arn:aws:iam::undefined/...`). Either set `ACCOUNT_ID` or
+use `--omics-use-default-credentials`. Set `SEQERA_API_BASE_URL` when Seqera runs in labs without
+`NextFlowTowerApiBaseUrl`.
+
+**IAM:** DynamoDB `Scan` / `UpdateItem` on `laboratory-run-table`; DynamoDB `Query` on `laboratory-table` (and
+`laboratory-data-tagging-table`); S3 `GetObject` on the **laboratory data bucket** and on **any bucket** referenced by
+`SampleSheetS3Url` / `Settings` (provisioning buckets are common); `ListBucket` if `--list-input-prefix`; `omics:GetRun`
+via STS AssumeRole into `${NAME_PREFIX}-easy-genomics-omics-access-role` **or** default credentials when
+`--omics-use-default-credentials` is set; SSM `GetParameter` (with decryption) for Seqera labs' access token. Your
+operator principal may need `sts:AssumeRole` on the Omics access role when not using `--omics-use-default-credentials`.
+
+## `seed-workflow-tagging-test-runs.ts`
+
+**Purpose:** Creates twelve synthetic `LaboratoryRun` rows (no Omics or Seqera launch) and applies the same
+workflow→file tagging logic as `create-laboratory-run`, so you can exercise Data Collections workflow filters without
+platform charges.
+
+**When to use:** Local or non-prod environments when you want realistic workflow tag diversity on existing bucket
+objects.
+
+**Usage:**
+
+```bash
+pnpm run seed-workflow-tagging-test-runs -- --laboratoryId <uuid>
+pnpm run seed-workflow-tagging-test-runs -- --laboratoryId <uuid> --reset
+pnpm run seed-workflow-tagging-test-runs:dry-run -- --laboratoryId <uuid>
+pnpm run seed-workflow-tagging-test-runs:dry-run -- --laboratoryId <uuid> --reset
+```
+
+- `--reset` — Deletes laboratory runs created by this script for that lab (matched by `Settings.seededBy` or a `RunName`
+  prefix of `[seed] `), removes each distinct seed workflow tag via `deleteTag` (clears `FILE#` / `MAP#` links), then
+  proceeds with a fresh seed as usual. Combine with `--dry-run` to print what would be removed.
+- `--keys-file path.json` — JSON array of full S3 keys (must start with `OrganizationId/LaboratoryId/`). Use when the
+  bucket is empty under the lab prefix or you want specific files only.
+- `--user-id` / `--owner` — optional overrides for `UserId` (must be a UUID) and `Owner` on each run row.
+
+**Environment:** `NAME_PREFIX`, `REGION`. Optional `SEQERA_PLATFORM_API_BASE_URL` if the lab has no
+`NextFlowTowerApiBaseUrl` but you still want Seqera-style runs to carry a base URL.
+
+**IAM:** DynamoDB `PutItem` / `DeleteItem` on `laboratory-run-table`; DynamoDB read/write (including `DeleteItem` and
+GSI queries) on `laboratory-data-tagging-table` (+ indexes); `s3:ListBucket` (and `ListBucket` on the lab bucket) when
+discovering keys. No Omics or Tower API calls.
+
+## `migrate-laboratory-s3-access-seed.ts`
+
+**Purpose:** Idempotent one-time seed of `ALLOW` rows in `laboratory-s3-access-table` for each laboratory's configured
+`S3Bucket`. Required so existing labs are not locked out by the new S3 access gates (strict mode denies when there are
+zero access rows).
+
+**When it runs:** Automatically after `cdk deploy` via the back-end `deploy` / `build-and-deploy` scripts. Safe to
+re-run manually. A runtime fallback in `isS3BucketAccessAllowed` also allows a lab's configured `S3Bucket` when it has
+zero access rows, covering the brief window before this script finishes.
+
+**Usage:**
+
+```bash
+cd packages/back-end
+pnpm run migrate-laboratory-s3-access-seed
+```
+
+**Environment:** `NAME_PREFIX` (or the same `easy-genomics.yaml` / `CI_CD` + `ENV_NAME` / `ENV_TYPE` setup as
+`preflight-deletion-protection`), plus AWS credentials with DynamoDB read on `laboratory-table` and read/write on
+`laboratory-s3-access-table`.
+
+## `deploy-dynamodb-gsi-waves.ts`
+
+**Purpose:** Works around DynamoDB's one-GSI-per-`UpdateTable` limit so a single `pnpm run deploy` can still land
+multiple new (or removed) global secondary indexes on an **existing** table. CloudFormation otherwise fails with
+`Cannot perform more than one GSI creation or deletion in a single update` — the UAT staging failure when
+`laboratory-run-table` gained both `PollStatus_Index` and `WorkflowExternalId_Index` in one merge.
+
+The script compares cdk.out (desired indexes, including nested-stack templates) with the currently deployed
+CloudFormation templates, then `UpdateStack`s those live templates one GSI at a time. Intermediate updates do **not**
+deploy cdk.out, so new Lambda code cannot go live against a table that is still missing a later index. The caller's
+final `cdk deploy` applies remaining app changes plus at most one leftover GSI. Tables that do not exist yet are left
+alone (`CreateTable` may define many GSIs). Environments whose indexes already match cdk.out are a no-op.
+
+**When to use:** Wired into `pnpm run deploy` (after `preflight-deletion-protection`, before the final `cdk deploy`).
+You do not need to run it by hand unless you are debugging a GSI rollout.
+
+```bash
+cd packages/back-end
+pnpm run deploy-dynamodb-gsi-waves -- --dry-run
+```
+
+**Environment:** Same `easy-genomics.yaml` / `CI_CD` + `ENV_NAME` / `ENV_TYPE` / `AWS_REGION` setup as
+`preflight-deletion-protection`, plus CloudFormation `GetTemplate` / `UpdateStack` / `ListStackResources` and
+`s3:PutObject` on the CDK bootstrap assets bucket.
+
+## `migrate-samples-and-sequence-collections.ts`
+
+**Purpose:** Rewrites DynamoDB rows in `laboratory-data-tagging-table` after the sequence-set → sample and
+data-collection → sequence-collection rename (sort-key prefixes and attribute names). Does not delete lab data; rows
+with changed sort keys are deleted and re-written under the new key.
+
+**When to use:** Once per environment after deploying the renamed application code, if that environment already had
+sequence sets / data collections stored under the old `SEQUENCE_SET#` / `DATA_COLLECTION#` prefixes.
+
+**Usage:**
+
+```bash
+cd packages/back-end
+pnpm tsx scripts/migrate-samples-and-sequence-collections.ts --dry-run
+pnpm tsx scripts/migrate-samples-and-sequence-collections.ts
+```
+
+**Environment:** `NAME_PREFIX`, `REGION` in `.env.local` (or exported). Uses the AWS SDK default credential chain — see
+script header. Temporary console/SSO credentials (`ASIA…` access keys) require a valid `AWS_SESSION_TOKEN` and expire;
+refresh with `aws sso login` or new console credentials before running. Verify with `aws sts get-caller-identity`.
+
+**IAM:** `dynamodb:Scan`, `dynamodb:PutItem`, `dynamodb:DeleteItem` on `${NAME_PREFIX}-laboratory-data-tagging-table`.
 
 ## `recompute-laboratory-run-retention.ts`
 
@@ -44,3 +281,36 @@ LAB_ID=<uuid> RETENTION_MONTHS=<int> pnpm run recompute-laboratory-run-retention
 ```
 
 **Environment:** `NAME_PREFIX`, `REGION`.
+
+## `build-import-mapping.ts`
+
+**Purpose:** Generates the `--resource-mapping` JSON file consumed by `cdk import` during the easy-genomics split-stack
+migration (`docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md`, Phase 3.1). Reads
+`cdk.out/${namePrefix}-easy-genomics-api-stack.template.json` (produced by `pnpm cdk synth`), discovers every
+`AWS::DynamoDB::Table` resource, and writes a `LogicalResourceId → { TableName }` map. Fails closed if any of the eight
+expected easy-genomics tables are missing from the synthesized template, so an incomplete or wrong-stack mapping cannot
+silently slip through into a `cdk import` run.
+
+**When to use:** Phase 3.1 of the migration runbook only. The generated file is consumed by:
+
+```bash
+pnpm cdk import "${NEW_STACK}" \
+  --resource-mapping "cdk.out/${NEW_STACK}.import-mapping.json" \
+  --require-approval any-change
+```
+
+**Usage:**
+
+```bash
+pnpm cdk synth --quiet
+pnpm tsx scripts/build-import-mapping.ts --print
+```
+
+- `--stack <name>` — override the stack name to read from `cdk.out` (default: `${namePrefix}-easy-genomics-api-stack`).
+- `--cdk-out <dir>` — override the cloud assembly directory (default: `packages/back-end/cdk.out`).
+- `--output <path>` — override where the mapping JSON is written (default: `cdk.out/${stack}.import-mapping.json`).
+- `--print` — also dump the resulting JSON to stdout for review before running `cdk import`.
+
+**Environment:** No AWS credentials needed (this script does not call AWS APIs). It does need the same
+`config/easy-genomics.yaml` / `CI_CD` env-var setup that `main.ts` and the preflight script use, in order to derive the
+`${namePrefix}` value used to validate the synthesized template.

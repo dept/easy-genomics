@@ -1,18 +1,26 @@
 <script setup lang="ts">
   import axios from 'axios';
+  import { toSizeBucket } from '@easy-genomics/shared-lib/src/app/utils/analytics-buckets';
   import { ButtonSizeEnum } from '@FE/types/buttons';
-  import {
+  import type {
     FileUploadInfo,
     FileUploadManifest,
     FileUploadRequest,
-  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/upload/s3-file-upload-manifest';
-  import {
     SampleSheetRequest,
     SampleSheetResponse,
     UploadedFileInfo,
     UploadedFilePairInfo,
-  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/upload/s3-file-upload-sample-sheet';
-  import { validateSampleSheetFile } from '@FE/utils/sample-sheet-utils';
+  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
+  import {
+    buildSampleSheetFileName,
+    extractS3KeysFromCsv,
+    validateSampleSheetFile,
+  } from '@FE/utils/sample-sheet-utils';
+  import {
+    analyzeUploadFileAlerts,
+    UPLOAD_ALERT_BANNER_LEAD,
+    type UploadFileAlertAnalysis,
+  } from '@FE/utils/run-upload-file-alerts';
   import { useToastStore } from '@FE/stores';
   import { useNetwork } from '@vueuse/core';
   import { RunType } from '@easy-genomics/shared-lib/src/app/types/base-entity';
@@ -113,11 +121,35 @@
 
   const hasSampleSheetUrl = computed<boolean>(() => !!wipRun.value.sampleSheetS3Url);
 
+  /** Files were selected on Data Collections; sample sheet was generated without browser upload. */
+  const isFromSequenceCollections = computed<boolean>(() => {
+    const hasPreSeededSheet = !!wipRun.value.sampleSheetS3Url;
+    const hasInputKeys = (wipRun.value.inputFileKeys?.length ?? 0) > 0;
+    const noUploadedFiles = !wipRun.value.files?.length;
+    return hasPreSeededSheet && hasInputKeys && noUploadedFiles;
+  });
+
+  const dataCollectionsFileBasenames = computed<string[]>(() =>
+    (wipRun.value.inputFileKeys ?? []).map((key) => key.split('/').pop() || key).sort((a, b) => a.localeCompare(b)),
+  );
+
   const haveUnmatchedFiles = computed<boolean>(() =>
     filePairs.value.some((filePair) => !filePair.r1File || !filePair.r2File),
   );
   const haveMatchedFiles = computed<boolean>(() =>
     filePairs.value.some((filePair) => filePair.r1File && filePair.r2File),
+  );
+
+  const isHealthOmics = computed(() => props.platform === 'AWS HealthOmics');
+
+  const uploadFileAlerts = computed<UploadFileAlertAnalysis>(() =>
+    analyzeUploadFileAlerts(
+      filePairs.value.map((pair) => ({
+        sampleId: pair.sampleId,
+        hasR1: !!pair.r1File,
+        hasR2: !!pair.r2File,
+      })),
+    ),
   );
 
   const areAllFilesUploaded = computed(() => filesNotUploaded.value.length === 0);
@@ -127,10 +159,10 @@
   });
 
   const canProceedToNextStep = computed<boolean>(() => {
-    // Check both conditions:
-    // 1. All existing files are uploaded successfully
-    // 2. All pairs are complete (have both R1 and R2)
-    return areAllFilesUploaded.value && areAllPairsComplete.value && hasSampleSheetUrl.value;
+    // HealthOmics: warn-only for pairing issues — only require uploads + sample sheet.
+    // Seqera: keep requiring every sample to have an R1 (existing behavior).
+    const pairingOk = isHealthOmics.value || areAllPairsComplete.value;
+    return areAllFilesUploaded.value && pairingOk && hasSampleSheetUrl.value;
   });
 
   // overall upload status for all files
@@ -149,20 +181,23 @@
   const showGenerateSampleSheetButton = computed<boolean>(
     () =>
       uploadStatus.value === 'success' && // everything uploaded
-      filesProblemAlertMessage.value === null && // no file problems
+      (isHealthOmics.value || filesProblemAlertMessage.value === null) && // Seqera still blocks on file problems
       !wipRun.value.sampleSheetS3Url, // no sample sheet yet
   );
 
   const filesForTable = computed(() => {
-    const files: { sampleId: string; fileName: string; progress: number; error?: string }[] = [];
+    const files: { sampleId: string; fileName: string; progress: number; error?: string; showAlert: boolean }[] = [];
+    const flagged = uploadFileAlerts.value.flaggedSampleIds;
 
     filePairs.value.forEach((filePair: FilePair) => {
+      const showAlert = isHealthOmics.value && flagged.has(filePair.sampleId);
       if (filePair.r1File) {
         files.push({
           sampleId: filePair.sampleId,
           fileName: filePair.r1File.name,
           progress: filePair.r1File.progress || 0,
           error: filePair.r1File.error,
+          showAlert,
         });
       }
       if (filePair.r2File) {
@@ -171,6 +206,7 @@
           fileName: filePair.r2File.name,
           progress: filePair.r2File.progress || 0,
           error: filePair.r2File.error,
+          showAlert,
         });
       }
     });
@@ -181,6 +217,7 @@
   const isDropzoneEnabled = computed(() => uploadStatus.value !== 'uploading');
 
   const filesProblemAlertMessage = computed<string | null>(() => {
+    // Seqera (and non-HealthOmics): keep existing hard-error copy used to block upload.
     // don't need internet connection message because the modal takes care of it
     // don't need no files uploaded message because there will visibly be nothing there which should be self explanatory
     if (!areAllPairsComplete.value) return 'There is an R2 file with no matching R1 file.';
@@ -194,10 +231,15 @@
   const isUploadButtonDisabled = computed(() => {
     const noInternet = !isOnline.value;
     const noFiles = filesNotUploaded.value.length === 0;
-    const hasIncompletePairs = !areAllPairsComplete.value;
-    const hasBothSinglesAndPairs = haveMatchedFiles.value && haveUnmatchedFiles.value;
     const isUploading = uploadStatus.value === 'uploading';
 
+    // HealthOmics: warn-only for pairing — only gate on connectivity / work left / in-flight upload.
+    if (isHealthOmics.value) {
+      return noInternet || noFiles || isUploading;
+    }
+
+    const hasIncompletePairs = !areAllPairsComplete.value;
+    const hasBothSinglesAndPairs = haveMatchedFiles.value && haveUnmatchedFiles.value;
     return noInternet || noFiles || hasIncompletePairs || hasBothSinglesAndPairs || isUploading;
   });
 
@@ -504,7 +546,10 @@
       const uploadManifest = await getUploadFilesManifest(filesNotUploaded.value);
       addUploadUrls(uploadManifest);
     } catch (error: any) {
-      applyErrorToFiles(filesNotUploaded.value, error.message);
+      applyErrorToFiles(filesNotUploaded.value, 'Upload could not start — please try again.');
+      toastStore.error(
+        'Unable to start upload — could not generate upload URLs. Check lab S3 configuration or try again.',
+      );
       return;
     }
 
@@ -533,10 +578,17 @@
       // save to wip run
       const { S3Url, Bucket, Path } = sampleSheetResponse.SampleSheetInfo;
 
+      // Track every uploaded input file key so we can record file -> workflow associations
+      // when this run is launched. R1/R2 may be undefined for single-end pairs.
+      const inputFileKeys: string[] = uploadedFilePairs
+        .flatMap((pair) => [pair.R1?.Key, pair.R2?.Key])
+        .filter((k): k is string => typeof k === 'string' && k.length > 0);
+
       wipRunUpdateFunction.value(props.wipRunTempId, {
         sampleSheetS3Url: S3Url,
         s3Bucket: Bucket,
         s3Path: Path,
+        inputFileKeys,
       });
       wipRunUpdateParamsFunction.value(props.wipRunTempId, {
         input: S3Url,
@@ -609,9 +661,7 @@
   async function getSampleSheetCsv(uploadedFilePairs: UploadedFilePairInfo[]): Promise<SampleSheetResponse> {
     if (!wipRun.value.transactionId) throw new Error('no transaction id on wip run');
 
-    const sampleSheetName: string = wipRun.value.runName
-      ? `samplesheet-${wipRun.value.runName}.csv`
-      : 'samplesheet.csv';
+    const sampleSheetName: string = buildSampleSheetFileName(wipRun.value.runName);
 
     const request: SampleSheetRequest = {
       SampleSheetName: sampleSheetName,
@@ -668,7 +718,7 @@
         uploadFile(fileDetails)
           .then(() => null)
           .catch((error) => ({
-            fileName: fileDetails.fileName,
+            fileName: fileDetails.name,
             error: error.message,
           })),
       );
@@ -685,6 +735,15 @@
         } else {
           toastStore.error(`Upload failed for ${errors.length} files`);
         }
+        // Analytics: file upload failure (no file names; size bucketed).
+        const failedBytes = errors.reduce((sum, e) => {
+          const match = files.value.find((f) => f.name === e.fileName);
+          return sum + (match?.size || 0);
+        }, 0);
+        useAnalytics().track('file_upload_failed', {
+          error_code: 'upload_failed',
+          size_bucket: toSizeBucket(failedBytes),
+        });
       }
 
       return errors;
@@ -734,6 +793,7 @@
         if (!online) {
           // Immediately abort the upload and show error
           fileDetails.error = 'Network connection lost. Upload aborted.';
+          toastStore.error('Network connection lost — upload paused. Reconnect and retry.');
           controller.abort();
           unwatch();
         }
@@ -849,8 +909,9 @@
     // If the file isn't in error state, can't retry
     if (!row.error) return false;
 
-    // if there's a problem with the selected files, that needs to be addressed before uploading
-    if (filesProblemAlertMessage.value !== null) return false;
+    // Seqera: if there's a problem with the selected files, that needs to be addressed before uploading.
+    // HealthOmics: warn-only — allow retry even when alerts are present.
+    if (!isHealthOmics.value && filesProblemAlertMessage.value !== null) return false;
 
     return true;
   };
@@ -870,7 +931,12 @@
   async function uploadCustomSampleSheet(file: File) {
     const { valid, error } = await validateSampleSheetFile(file);
     sampleSheetValidationError.value = error ?? null;
-    if (!valid) return;
+    if (!valid) {
+      toastStore.error('Sample sheet validation failed — check the required format.');
+      // Analytics: sample sheet validation failure (error type only, no content).
+      useAnalytics().track('sample_sheet_validation_failed', { error_type: error ? 'invalid_format' : 'unknown' });
+      return;
+    }
 
     if (!wipRun.value.transactionId) {
       toastStore.error('Run is not initialised yet. Please try again.');
@@ -899,10 +965,23 @@
       const s3Uri = `s3://${fileInfo.Bucket}/${fileInfo.Key}`;
       const s3Path = fileInfo.Key.substring(0, fileInfo.Key.lastIndexOf('/'));
 
+      // Best-effort: parse the CSV client-side to find any s3:// references that point at
+      // this lab's bucket. Used to associate the inputs with a workflow tag on launch.
+      // Failure here is non-fatal — empty inputFileKeys just means the data tagging system
+      // won't know about these inputs (the run still launches normally).
+      let inputFileKeys: string[] = [];
+      try {
+        const csvText = await file.text();
+        inputFileKeys = extractS3KeysFromCsv(csvText, fileInfo.Bucket);
+      } catch (parseErr) {
+        console.warn('Could not parse custom sample sheet for input file keys:', parseErr);
+      }
+
       wipRunUpdateFunction.value(props.wipRunTempId, {
         sampleSheetS3Url: s3Uri,
         s3Bucket: fileInfo.Bucket,
         s3Path,
+        inputFileKeys,
       });
       wipRunUpdateParamsFunction.value(props.wipRunTempId, {
         input: s3Uri,
@@ -926,170 +1005,257 @@
 
 <template>
   <EGCard>
-    <EGText tag="small" class="mb-4">Step 02</EGText>
-    <EGText tag="h4" class="mb-4">Upload Data</EGText>
-    <p class="text-muted mt-1 text-xs font-normal tracking-tight">
-      Any similar files with the suffix _R1 or _R2 will be combined as paired-end data samples. Max file size is 5GB.
-      <button
-        type="button"
-        class="text-primary ml-1 underline hover:opacity-80"
-        @click="showAdvancedOptions = !showAdvancedOptions"
-      >
-        {{ showAdvancedOptions ? 'Collapse advanced options' : 'View advanced options' }}
-      </button>
-    </p>
+    <p class="text-muted mb-1 text-sm">Step 2 of 4</p>
+    <h2 class="text-heading mb-4 text-lg font-medium">Upload Data</h2>
 
-    <div v-if="showAdvancedOptions" class="mt-4">
-      <UDivider />
-      <label class="text-body mb-1 mt-4 block text-sm font-medium">Sample ID split pattern</label>
-      <UInput v-model="sampleIdSplitPattern" class="w-64" />
-      <p class="text-muted mb-4 mt-1 text-xs">
-        Enter the character or pattern that appears after the Sample ID in your file names (e.g. _S, _L001, etc.).
+    <template v-if="isFromSequenceCollections">
+      <p class="text-muted mb-4 text-sm">
+        {{ dataCollectionsFileBasenames.length }} file(s) from Data Collections are included in this run. A sample sheet
+        has already been generated.
       </p>
-    </div>
+      <div class="mb-4 max-h-48 overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+        <ul class="space-y-1 text-sm">
+          <li v-for="name in dataCollectionsFileBasenames" :key="name" class="truncate font-mono text-xs">
+            {{ name }}
+          </li>
+        </ul>
+      </div>
+      <UDivider class="py-4" />
+    </template>
 
-    <UDivider class="py-4" />
-    <div
-      class="py-4"
-      @drop.prevent="handleDroppedFiles"
-      :class="{ 'pointer-events-none opacity-50': !isDropzoneEnabled }"
-    >
+    <template v-else>
+      <p class="text-muted mt-1 text-xs font-normal tracking-tight">
+        Any similar files with the suffix _R1 or _R2 will be combined as paired-end data samples. Max file size is 5GB.
+        <button
+          type="button"
+          class="text-primary focus-visible:outline-primary-500 ml-1 underline hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+          :aria-expanded="showAdvancedOptions"
+          aria-controls="upload-advanced-options"
+          @click="showAdvancedOptions = !showAdvancedOptions"
+        >
+          {{ showAdvancedOptions ? 'Collapse advanced options' : 'View advanced options' }}
+        </button>
+      </p>
+
+      <div v-if="showAdvancedOptions" id="upload-advanced-options" class="mt-4">
+        <UDivider />
+        <label for="sample-id-split-pattern" class="text-body mb-1 mt-4 block text-sm font-medium">
+          Sample ID split pattern
+        </label>
+        <UInput id="sample-id-split-pattern" v-model="sampleIdSplitPattern" class="w-64" />
+        <p class="text-muted mb-4 mt-1 text-xs">
+          Enter the character or pattern that appears after the Sample ID in your file names (e.g. _S, _L001, etc.).
+        </p>
+      </div>
+
+      <UDivider class="py-4" />
       <div
-        id="dropzone"
-        @dragenter.prevent="setDropzoneActive(true)"
-        @dragleave.prevent="setDropzoneActive(false)"
-        @dragover.prevent
-        @drop.prevent="setDropzoneActive(false)"
+        class="py-4"
+        @drop.prevent="handleDroppedFiles"
+        :class="{ 'pointer-events-none opacity-50': !isDropzoneEnabled }"
       >
+        <label id="dropzone-label" class="sr-only">Upload sequencing files (.fastq, .gz)</label>
         <div
-          :class="
-            cn(
-              'ring-primary-500 text-body flex w-full items-center justify-center rounded-lg py-8 ring-2 ring-offset-1 transition-colors duration-200',
-              {
-                'bg-alert-success-muted ring-alert-success font-semibold ring-offset-2': isDropzoneActive,
-              },
-            )
-          "
+          id="dropzone"
+          role="region"
+          aria-labelledby="dropzone-label"
+          @dragenter.prevent="setDropzoneActive(true)"
+          @dragleave.prevent="setDropzoneActive(false)"
+          @dragover.prevent
+          @drop.prevent="setDropzoneActive(false)"
         >
-          <div class="flex items-center justify-center">
-            <div>
-              <span :class="cn('visible', { 'invisible': isDropzoneActive })">Drag and&nbsp;</span>
-              <span v-if="isDropzoneActive">Drop</span>
-              <span v-else>drop</span>
-              your files
-              <span :class="cn('visible', { 'invisible': isDropzoneActive })">here or</span>
-            </div>
-            <input
-              accept=".gz,.fastq"
-              ref="chooseFilesButton"
-              type="file"
-              id="dropzoneFiles"
-              @change="handleFileInputChange"
-              hidden
-              multiple
-            />
-            <EGButton
-              :disabled="!isDropzoneEnabled"
-              :class="cn('visible ml-4', { 'invisible': isDropzoneActive })"
-              @click="chooseFiles"
-              label="Choose Files"
-              size="sm"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Hidden CSV file input for custom sample sheet -->
-    <input ref="sampleSheetFileInput" type="file" accept=".csv" hidden @change="handleSampleSheetFileChange" />
-
-    <div class="files-list mb-6" v-if="filesForTable.length > 0">
-      <div class="files-list-header text-body mb-4 border-b border-[#d9d9d9]">
-        <div class="file-cell sample-id flex w-[30%] min-w-[240px]">Sample ID</div>
-        <div class="file-cell flex w-[60%] min-w-[320px]">Sample File</div>
-        <div class="file-cell flex w-[10%] min-w-[70px]"></div>
-      </div>
-      <div class="files-list-body">
-        <div
-          v-for="(row, index) in filesForTable"
-          :key="row.fileName"
-          class="file-row"
-          :style="{
-            background: row.error
-              ? '#FFF2F0'
-              : row.progress === 100
-                ? '#E2FBE8'
-                : row.progress !== undefined && row.progress > 0
-                  ? `linear-gradient(to right, #E2FBE8 ${row.progress}%, transparent ${Math.min(row.progress + 10, 100)}%), #f7f7f7`
-                  : '#f7f7f7',
-          }"
-        >
-          <div class="file-cell sample-id text-body flex w-[30%] min-w-[240px] items-center">
-            <div v-if="!row.error" class="truncate">{{ row.sampleId }}</div>
-            <div v-else class="text-alert-danger-dark mr-1 truncate font-medium">(Upload Failed)</div>
-          </div>
           <div
-            class="file-cell flex w-[60%] min-w-[320px] items-center"
-            :style="{ color: row.progress === 100 && !row.error ? '#306239' : 'inherit' }"
+            :class="
+              cn(
+                'ring-primary-500 text-body flex w-full items-center justify-center rounded-lg py-8 ring-2 ring-offset-1 transition-colors duration-200',
+                {
+                  'bg-alert-success-muted ring-alert-success font-semibold ring-offset-2': isDropzoneActive,
+                },
+              )
+            "
           >
-            <template v-if="row.error">
-              <UIcon name="i-heroicons-exclamation-triangle" class="text-alert-danger-dark mr-2" size="20" />
-            </template>
-            <div class="truncate">{{ row.fileName }}</div>
-          </div>
-
-          <div class="file-cell flex w-[10%] min-w-[70px] items-center justify-end gap-4">
-            <!-- retry button -->
-            <button
-              v-if="row.error"
-              class="flex items-center"
-              :class="[canRetryUpload(row) ? 'text-gray-900 hover:text-gray-700' : 'cursor-not-allowed text-gray-400']"
-              @click="retryUpload(row)"
-              :disabled="!isOnline || !canRetryUpload(row)"
-            >
-              <UIcon name="i-heroicons-arrow-path" size="20" />
-            </button>
-
-            <!-- complete check -->
-            <UIcon
-              v-if="!row.error && row.progress === 100"
-              size="20"
-              name="i-heroicons-check"
-              class="text-alert-success-text"
-            />
-
-            <!-- cancel upload button -->
-            <button
-              v-if="!row.error && row.progress && row.progress < 100"
-              class="flex items-center text-gray-500 hover:text-gray-700"
-              @click="cancelUpload(row.fileName)"
-            >
-              <UIcon name="i-heroicons-x-mark" size="20" />
-            </button>
-
-            <!-- delete button -->
-            <button
-              class="flex items-center"
-              :disabled="!isOnline || uploadStatus === 'uploading'"
-              :class="[
-                isOnline && uploadStatus !== 'uploading'
-                  ? 'text-alert-danger hover:text-alert-danger-dark'
-                  : 'cursor-not-allowed text-gray-400',
-              ]"
-              @click="removeFile(row)"
-            >
-              <UIcon name="i-heroicons-trash" size="20" />
-            </button>
+            <div class="flex items-center justify-center">
+              <div>
+                <span :class="cn('visible', { 'invisible': isDropzoneActive })">Drag and&nbsp;</span>
+                <span v-if="isDropzoneActive">Drop</span>
+                <span v-else>drop</span>
+                your files
+                <span :class="cn('visible', { 'invisible': isDropzoneActive })">here or</span>
+              </div>
+              <input
+                accept=".gz,.fastq"
+                ref="chooseFilesButton"
+                type="file"
+                id="dropzoneFiles"
+                aria-labelledby="dropzone-label"
+                @change="handleFileInputChange"
+                hidden
+                multiple
+              />
+              <EGButton
+                :disabled="!isDropzoneEnabled"
+                :class="cn('visible ml-4', { 'invisible': isDropzoneActive })"
+                @click="chooseFiles"
+                label="Choose Files"
+                size="sm"
+              />
+            </div>
           </div>
         </div>
       </div>
+
+      <!-- Hidden CSV file input for custom sample sheet -->
+      <label for="sample-sheet-csv-input" class="sr-only">Upload custom sample sheet CSV</label>
+      <input
+        id="sample-sheet-csv-input"
+        ref="sampleSheetFileInput"
+        type="file"
+        accept=".csv"
+        hidden
+        @change="handleSampleSheetFileChange"
+      />
+
+      <div
+        class="files-list mb-6"
+        v-if="filesForTable.length > 0"
+        role="region"
+        aria-label="Uploaded files"
+        aria-live="polite"
+      >
+        <div v-if="isHealthOmics" class="text-muted mb-3 flex items-center justify-between text-sm">
+          <span>{{ files.length }} files • {{ filePairs.length }} samples</span>
+          <span v-if="uploadFileAlerts.flaggedFileCount > 0">
+            {{ uploadFileAlerts.flaggedFileCount }}
+            {{ uploadFileAlerts.flaggedFileCount === 1 ? 'file' : 'files' }} flagged
+          </span>
+        </div>
+        <div class="files-list-header text-body mb-4 border-b border-[#d9d9d9]" role="row">
+          <div class="file-cell sample-id flex w-[30%] min-w-[240px]">Sample ID</div>
+          <div class="file-cell flex w-[60%] min-w-[320px]">Sample File</div>
+          <div class="file-cell flex w-[10%] min-w-[70px]"></div>
+        </div>
+        <div class="files-list-body">
+          <div
+            v-for="(row, index) in filesForTable"
+            :key="row.fileName"
+            class="file-row"
+            :style="{
+              background: row.error
+                ? '#FFF2F0'
+                : row.progress === 100
+                  ? '#E2FBE8'
+                  : row.progress !== undefined && row.progress > 0
+                    ? `linear-gradient(to right, #E2FBE8 ${row.progress}%, transparent ${Math.min(row.progress + 10, 100)}%), #f7f7f7`
+                    : '#f7f7f7',
+            }"
+          >
+            <div class="file-cell sample-id text-body flex w-[30%] min-w-[240px] items-center">
+              <div v-if="!row.error" class="truncate">{{ row.sampleId }}</div>
+              <div v-else class="text-alert-danger-dark mr-1 truncate font-medium">
+                <span class="sr-only">Upload failed:</span>
+                (Upload Failed)
+              </div>
+            </div>
+            <div
+              class="file-cell flex w-[60%] min-w-[320px] items-center gap-2"
+              :style="{ color: row.progress === 100 && !row.error ? '#306239' : 'inherit' }"
+            >
+              <template v-if="row.error">
+                <UIcon
+                  name="i-heroicons-exclamation-triangle"
+                  class="text-alert-danger-dark mr-2 shrink-0"
+                  size="20"
+                  aria-hidden="true"
+                />
+              </template>
+              <div class="min-w-0 flex-1 truncate">{{ row.fileName }}</div>
+              <span
+                v-if="row.showAlert && !row.error"
+                class="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full bg-[#FAF2DE] px-2.5 py-0.5 text-xs font-semibold leading-5 text-[#835C24]"
+              >
+                <UIcon name="i-heroicons-exclamation-triangle" class="shrink-0" size="14" aria-hidden="true" />
+                Alert
+              </span>
+            </div>
+
+            <div class="file-cell flex w-[10%] min-w-[70px] items-center justify-end gap-4">
+              <!-- retry button -->
+              <button
+                v-if="row.error"
+                type="button"
+                class="focus-visible:outline-primary-500 flex items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                :class="[
+                  canRetryUpload(row) ? 'text-gray-900 hover:text-gray-700' : 'cursor-not-allowed text-gray-400',
+                ]"
+                :aria-label="`Retry upload for ${row.fileName}`"
+                @click="retryUpload(row)"
+                :disabled="!isOnline || !canRetryUpload(row)"
+              >
+                <UIcon name="i-heroicons-arrow-path" size="20" aria-hidden="true" />
+              </button>
+
+              <!-- complete check -->
+              <span v-if="!row.error && row.progress === 100" class="sr-only">Upload complete</span>
+              <UIcon
+                v-if="!row.error && row.progress === 100"
+                size="20"
+                name="i-heroicons-check"
+                class="text-alert-success-text"
+                aria-hidden="true"
+              />
+
+              <!-- cancel upload button -->
+              <button
+                v-if="!row.error && row.progress && row.progress < 100"
+                type="button"
+                class="focus-visible:outline-primary-500 flex items-center text-gray-500 hover:text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                :aria-label="`Cancel upload for ${row.fileName}`"
+                @click="cancelUpload(row.fileName)"
+              >
+                <UIcon name="i-heroicons-x-mark" size="20" aria-hidden="true" />
+              </button>
+
+              <!-- delete button -->
+              <button
+                type="button"
+                class="focus-visible:outline-primary-500 flex items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                :disabled="!isOnline || uploadStatus === 'uploading'"
+                :class="[
+                  isOnline && uploadStatus !== 'uploading'
+                    ? 'text-alert-danger hover:text-alert-danger-dark'
+                    : 'cursor-not-allowed text-gray-400',
+                ]"
+                :aria-label="`Remove ${row.fileName}`"
+                @click="removeFile(row)"
+              >
+                <UIcon name="i-heroicons-trash" size="20" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- HealthOmics: caution-style warn-only banner -->
+    <div
+      v-if="isHealthOmics && !isFromSequenceCollections && uploadFileAlerts.bannerDetail"
+      role="alert"
+      class="bg-alert-caution-muted text-alert-caution border-alert-caution/30 my-10 flex items-start gap-3 rounded-lg border p-6"
+    >
+      <UIcon class="mt-0.5 shrink-0 text-2xl" name="i-heroicons-exclamation-triangle" aria-hidden="true" />
+      <div class="text-sm text-gray-800">
+        <span class="font-semibold">{{ UPLOAD_ALERT_BANNER_LEAD }}</span>
+        {{ ' ' }}{{ uploadFileAlerts.bannerDetail }}
+      </div>
     </div>
 
+    <!-- Seqera / other: existing blocking danger banner -->
     <div
-      v-if="filesProblemAlertMessage"
+      v-else-if="!isFromSequenceCollections && filesProblemAlertMessage"
+      role="alert"
       class="bg-alert-danger-muted text-alert-danger my-10 flex items-center gap-2 rounded-lg p-6"
     >
-      <UIcon class="text-2xl" name="i-heroicons-exclamation-triangle" />
+      <UIcon class="text-2xl" name="i-heroicons-exclamation-triangle" aria-hidden="true" />
       <div>{{ filesProblemAlertMessage }}</div>
     </div>
 
@@ -1105,7 +1271,7 @@
       :display-label="true"
     />
 
-    <div class="flex items-center justify-between pt-4">
+    <div v-if="!isFromSequenceCollections" class="flex items-center justify-between pt-4">
       <EGButton
         variant="secondary"
         label="Upload Sample Sheet"

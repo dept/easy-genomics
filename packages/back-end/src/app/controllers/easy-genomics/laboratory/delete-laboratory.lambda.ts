@@ -13,14 +13,14 @@ import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { LaboratoryUserService } from '@BE/services/easy-genomics/laboratory-user-service';
-import { SnsService } from '@BE/services/sns-service';
+import { SqsService } from '@BE/services/sqs-service';
 import { SsmService } from '@BE/services/ssm-service';
 import { validateOrganizationAdminAccess } from '@BE/utils/auth-utils';
 
 const laboratoryService = new LaboratoryService();
 const laboratoryUserService = new LaboratoryUserService();
 const laboratoryRunService = new LaboratoryRunService();
-const snsService = new SnsService();
+const sqsService = new SqsService();
 const ssmService = new SsmService();
 
 export const handler: Handler = async (
@@ -54,6 +54,16 @@ export const handler: Handler = async (
         Name: `/easy-genomics/organization/${existingLaboratory.OrganizationId}/laboratory/${existingLaboratory.LaboratoryId}/nf-access-token`,
       })
       .catch(() => {});
+    await ssmService
+      .deleteParameter({
+        Name: `/easy-genomics/organization/${existingLaboratory.OrganizationId}/laboratory/${existingLaboratory.LaboratoryId}/llm-api-key-healthomics`,
+      })
+      .catch(() => {});
+    await ssmService
+      .deleteParameter({
+        Name: `/easy-genomics/organization/${existingLaboratory.OrganizationId}/laboratory/${existingLaboratory.LaboratoryId}/llm-api-key-seqera`,
+      })
+      .catch(() => {});
 
     return buildResponse(200, JSON.stringify({ Status: 'Success' }), event);
   } catch (err: any) {
@@ -76,9 +86,9 @@ async function publishDeleteLaboratoryUsers(laboratoryId: string): Promise<void>
         Type: 'LaboratoryUser',
         Record: laboratoryUser,
       };
-      return snsService.publish({
-        TopicArn: process.env.SNS_LABORATORY_DELETION_TOPIC,
-        Message: JSON.stringify(record),
+      return sqsService.sendMessage({
+        QueueUrl: process.env.SQS_LABORATORY_DELETION_QUEUE_URL,
+        MessageBody: JSON.stringify(record),
         MessageGroupId: `delete-laboratory-${laboratoryId}`,
         MessageDeduplicationId: uuidv4(),
       });
@@ -100,9 +110,9 @@ async function publishDeleteLaboratoryRuns(laboratoryId: string): Promise<void> 
         Type: 'LaboratoryRun',
         Record: laboratoryRun,
       };
-      return snsService.publish({
-        TopicArn: process.env.SNS_LABORATORY_DELETION_TOPIC,
-        Message: JSON.stringify(record),
+      return sqsService.sendMessage({
+        QueueUrl: process.env.SQS_LABORATORY_DELETION_QUEUE_URL,
+        MessageBody: JSON.stringify(record),
         MessageGroupId: `delete-laboratory-${laboratoryId}`,
         MessageDeduplicationId: uuidv4(),
       });

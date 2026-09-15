@@ -17,6 +17,11 @@ interface UserStoreState {
   };
   currentUserDetails: {
     id: string | null;
+    // The app's internal User.UserId, from the JWT's custom 'UserId' claim. Equal to `id`
+    // (the Cognito username) for normally-onboarded users, but can diverge for seeded/test
+    // accounts — use this, not `id`, when matching against LaboratoryUser/OrganizationUser
+    // records, which are always keyed by the internal UserId.
+    internalId: string | null;
     firstName: string | null;
     lastName: string | null;
     preferredName: string | null;
@@ -38,6 +43,7 @@ const initialState = (): UserStoreState => ({
   },
   currentUserDetails: {
     id: null,
+    internalId: null,
     firstName: null,
     lastName: null,
     preferredName: null,

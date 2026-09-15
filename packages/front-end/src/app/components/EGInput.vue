@@ -1,7 +1,12 @@
 <script setup lang="ts">
+  defineOptions({ inheritAttrs: false });
+
   withDefaults(
     defineProps<{
       modelValue?: string | number;
+      id?: string;
+      name?: string;
+      type?: string;
       placeholder?: string;
       disabled?: boolean;
       clearable?: boolean;
@@ -11,8 +16,11 @@
       placeholder: '',
       disabled: false,
       autocomplete: '',
+      type: 'text',
     },
   );
+
+  const attrs = useAttrs();
 
   function clear() {
     emit('update:modelValue', '');
@@ -23,10 +31,13 @@
 
 <template>
   <UInput
+    v-bind="attrs"
+    :id="id"
+    :name="name"
+    :type="type"
     :autocomplete="autocomplete"
-    :value="modelValue"
-    @input="emit('update:modelValue', $event.target.value)"
-    name="q"
+    :model-value="modelValue"
+    @update:model-value="emit('update:modelValue', $event)"
     :disabled="disabled"
     :ui="{
       icon: { trailing: { pointer: '' } },
@@ -46,6 +57,7 @@
         variant="link"
         icon="i-heroicons-x-mark-20-solid"
         :padded="false"
+        aria-label="Clear input"
         @click="clear"
       />
     </template>

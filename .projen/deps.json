@@ -54,6 +54,11 @@
       "type": "build"
     },
     {
+      "name": "@useoptic/optic",
+      "version": "^1.0.9",
+      "type": "build"
+    },
+    {
       "name": "aws-sdk-client-mock",
       "type": "build"
     },

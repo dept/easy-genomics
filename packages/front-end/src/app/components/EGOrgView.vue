@@ -6,7 +6,7 @@
   import { ButtonVariantEnum } from '@FE/types/buttons';
   import { DeletedResponse } from '@FE/types/api';
   import type { FormSubmitEvent } from '#ui/types';
-  import { OrgDetailsForm } from '@FE/types/forms';
+  import { OrgDetailsForm, OrgEmailBrandingForm } from '@FE/types/forms';
   import { VALIDATION_MESSAGES } from '@FE/constants/validation';
 
   const props = defineProps<{
@@ -24,15 +24,20 @@
   const buttonRequestPending = ref<Record<number, boolean>>({});
   const orgUsersDetailsData = ref<OrgUser[]>([]);
   const showInviteModule = ref(false);
+  const openUserId = computed<string | null>(() => (route.query.openUser as string) || null);
 
   const resetFormKey = ref(0);
 
   const hasNoData = computed<boolean>(() => orgUsersDetailsData.value.length === 0);
   const isLoading = computed<boolean>(() => useUiStore().anyRequestPending(['fetchOrgData', 'editOrg']));
+  const isFetchingOrg = computed<boolean>(() => useUiStore().isRequestPending('fetchOrgData'));
+
+  useInitialPendingRequests('fetchOrgData');
 
   // Dynamic remove user dialog values
   const isRemoveUserModalOpen = ref(false);
   const removeUserModalPrimaryMessage = ref('');
+  const removeUserModalActionLabel = ref('Remove User');
   const userToRemoveId = ref('');
   const isRemovingUser = ref(false);
 
@@ -40,32 +45,46 @@
   const searchOutput = ref('');
 
   const showWorkflowAccessTab = computed(() => props.superuser || props.orgAdmin);
+  const showS3AccessTab = computed(() => props.superuser || props.orgAdmin);
 
-  const tabItems = computed(() => {
-    const items: { key: string; label: string }[] = [];
+  const tabItems = computed<{ key: string; label: string; icon: string }[]>(() => {
+    const items: { key: string; label: string; icon: string }[] = [];
     if (props.superuser) {
-      items.push({ key: 'labs', label: 'All Labs' });
+      items.push({ key: 'labs', label: 'All Labs', icon: 'i-heroicons-beaker' });
     }
-    items.push({ key: 'users', label: 'All users' });
+    items.push({ key: 'users', label: 'All users', icon: 'i-heroicons-users' });
     if (showWorkflowAccessTab.value) {
-      items.push({ key: 'workflow-access', label: 'Workflow access' });
+      items.push({ key: 'workflow-access', label: 'Workflow access', icon: 'i-heroicons-key' });
     }
-    items.push({ key: 'details', label: 'Settings' });
+    if (showS3AccessTab.value) {
+      items.push({ key: 's3-access', label: 'S3 access', icon: 'i-heroicons-circle-stack' });
+    }
+    items.push({ key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth' });
+    items.push({ key: 'email-branding', label: 'Email Branding', icon: 'i-heroicons-envelope' });
     return items;
   });
 
   /** Mount workflow access panel once opened (or via ?tab=) so data loads lazily; stay mounted to keep unsaved edits. */
   const workflowAccessPanelMounted = ref(false);
+  const s3AccessPanelMounted = ref(false);
   const tabIndex = ref(0);
 
-  function syncWorkflowAccessTabFromQuery() {
-    if (String(route.query.tab) !== 'workflow-access' || !showWorkflowAccessTab.value) {
+  function syncAdminTabsFromQuery() {
+    const tab = String(route.query.tab);
+    if (tab === 'workflow-access' && showWorkflowAccessTab.value) {
+      const idx = tabItems.value.findIndex((t) => t.key === 'workflow-access');
+      if (idx >= 0) {
+        tabIndex.value = idx;
+        workflowAccessPanelMounted.value = true;
+      }
       return;
     }
-    const idx = tabItems.value.findIndex((t) => t.key === 'workflow-access');
-    if (idx >= 0) {
-      tabIndex.value = idx;
-      workflowAccessPanelMounted.value = true;
+    if (tab === 's3-access' && showS3AccessTab.value) {
+      const idx = tabItems.value.findIndex((t) => t.key === 's3-access');
+      if (idx >= 0) {
+        tabIndex.value = idx;
+        s3AccessPanelMounted.value = true;
+      }
     }
   }
 
@@ -86,15 +105,18 @@
     if (item?.key === 'workflow-access') {
       workflowAccessPanelMounted.value = true;
     }
+    if (item?.key === 's3-access') {
+      s3AccessPanelMounted.value = true;
+    }
   });
 
   watch(
     () => route.query.tab,
-    () => syncWorkflowAccessTabFromQuery(),
+    () => syncAdminTabsFromQuery(),
   );
 
   onBeforeMount(() => {
-    syncWorkflowAccessTabFromQuery();
+    syncAdminTabsFromQuery();
   });
 
   const tableColumns = [
@@ -119,7 +141,12 @@
   ];
 
   function editUser(userId: string) {
-    router.push({ path: `/orgs/${props.orgId}/edit-user/${userId}` });
+    router.push({ query: { ...route.query, openUser: userId } });
+  }
+
+  function closeUserAccessDrawer() {
+    const { openUser: _openUser, ...remainingQuery } = route.query;
+    router.push({ query: remainingQuery });
   }
 
   function onRowClicked(row: OrgUser) {
@@ -137,13 +164,18 @@
     ];
 
     if (props.superuser || props.orgAdmin) {
+      const invited = isInvited(user.OrganizationUserStatus);
       items.push([
         {
-          label: 'Remove From Org',
+          label: invited ? 'Revoke invite' : 'Remove From Org',
           class: 'text-alert-danger-dark',
+          isHighlighted: true,
           click: () => {
             userToRemoveId.value = user.UserId;
-            removeUserModalPrimaryMessage.value = `Are you sure you want to remove ${user.displayName} from ${org.value.Name}?`;
+            removeUserModalPrimaryMessage.value = invited
+              ? `Are you sure you want to revoke the invitation for ${user.UserEmail}?`
+              : `Are you sure you want to remove ${user.displayName} from ${org.value.Name}?`;
+            removeUserModalActionLabel.value = invited ? 'Revoke Invite' : 'Remove User';
             isRemoveUserModalOpen.value = true;
           },
         },
@@ -159,7 +191,7 @@
   const filteredTableData = computed(() => {
     let data = orgUsersDetailsData.value;
 
-    if (searchOutput.value || hasNoData.value) {
+    if (searchOutput.value) {
       data = data.filter((user: OrgUser) => {
         const fullName = user.displayName.toLowerCase();
         const email = String(user.UserEmail).toLowerCase();
@@ -172,6 +204,26 @@
   });
 
   const lowerCasedSearch = computed(() => searchOutput.value.toLowerCase());
+
+  const usersSearchStatusMessage = computed(() => {
+    const q = searchOutput.value.trim();
+    if (!q || hasNoData.value) return '';
+    const count = filteredTableData.value.length;
+    if (count === 0) return `No users match "${q}"`;
+    const noun = count === 1 ? 'user' : 'users';
+    return `${count} ${noun} match "${q}"`;
+  });
+
+  watch(showInviteModule, (isOpen) => {
+    if (!isOpen) return;
+    nextTick(() => {
+      const panel = document.getElementById(invitePanelId);
+      const focusable = panel?.querySelector<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      focusable?.focus();
+    });
+  });
 
   onBeforeMount(async () => {
     await fetchOrgData();
@@ -186,11 +238,11 @@
   });
 
   async function handleRemoveOrgUser() {
-    isRemoveUserModalOpen.value = false;
     isRemovingUser.value = true;
 
     const userToRemove = orgUsersDetailsData.value.find((user) => user.UserId === userToRemoveId.value);
     const displayName = userToRemove?.displayName;
+    const wasInvited = userToRemove ? isInvited(userToRemove.OrganizationUserStatus) : false;
 
     try {
       if (!userToRemoveId.value) {
@@ -200,13 +252,21 @@
       const res: DeletedResponse = await $api.orgs.removeUser(props.orgId, userToRemoveId.value);
 
       if (res?.Status === 'Success') {
-        useToastStore().success(`${displayName} has been removed from ${org.value.Name}`);
+        useToastStore().success(
+          wasInvited
+            ? `Invitation for ${userToRemove?.UserEmail} has been revoked`
+            : `${displayName} has been removed from ${org.value.Name}`,
+        );
         await fetchOrgData(false);
       } else {
         throw new Error('User not removed from Organization');
       }
     } catch (error) {
-      useToastStore().error(`Failed to remove ${displayName} from  ${org.value.Name}`);
+      useToastStore().error(
+        wasInvited
+          ? `Failed to revoke the invitation for ${userToRemove?.UserEmail}`
+          : `Failed to remove ${displayName} from  ${org.value.Name}`,
+      );
       throw error;
     } finally {
       userToRemoveId.value = '';
@@ -254,6 +314,13 @@
 
   // must be declared after store is set in fetchOrgData()
   const org = computed(() => useOrgsStore().orgs[props.orgId] || {});
+
+  const invitePanelId = 'org-invite-users-panel';
+  const usersHeadingId = 'org-users-heading';
+  const workflowAccessHeadingId = 'org-workflow-access-heading';
+  const s3AccessHeadingId = 'org-s3-access-heading';
+
+  usePageTitle(() => (org.value.Name ? `${org.value.Name}` : 'Organization'));
 
   async function resend(userDetails: OrgUser, index: number) {
     const { OrganizationId, UserEmail } = userDetails;
@@ -331,10 +398,35 @@
       useUiStore().setRequestComplete('editOrg');
     }
   }
+
+  async function onSubmitEmailBranding(event: FormSubmitEvent<OrgEmailBrandingForm>) {
+    try {
+      useUiStore().setRequestPending('editOrg');
+      const { EmailBrandingLogoUrl } = event.data;
+      await $api.orgs.update(props.orgId, {
+        Name: org.value.Name,
+        EmailBrandingLogoUrl,
+      });
+      await fetchOrgData();
+      useToastStore().success('Organization updated');
+    } catch (error) {
+      useToastStore().error(VALIDATION_MESSAGES.network);
+    } finally {
+      useUiStore().setRequestComplete('editOrg');
+    }
+  }
 </script>
 
 <template>
-  <EGSidebarNav :items="tabItems" :model-value="tabIndex" @update:model-value="handleTabChange" />
+  <EGSidebarNav
+    aria-label="Organization sections"
+    variant="dark"
+    callout-title="Admin view"
+    callout-description="You're managing organization-level settings, not a single lab."
+    :items="tabItems"
+    :model-value="tabIndex"
+    @update:model-value="handleTabChange"
+  />
 
   <EGPageHeader
     :title="org.Name"
@@ -347,17 +439,28 @@
   >
     <EGButton
       v-if="activeTabKey === 'users'"
+      u-button-type="button"
       label="Invite users"
+      :aria-expanded="showInviteModule"
+      :aria-controls="invitePanelId"
       @click="() => (showInviteModule = !showInviteModule)"
     />
-    <div class="mt-2 w-[500px]" v-if="showInviteModule && activeTabKey === 'users'">
+    <div
+      :id="invitePanelId"
+      class="mt-2 w-[500px]"
+      v-if="showInviteModule && activeTabKey === 'users'"
+      role="region"
+      aria-label="Invite users by email"
+    >
       <EGInviteModule @invite-success="refreshUserList($event)" :org-id="props.orgId" />
     </div>
   </EGPageHeader>
 
   <!-- Settings tab -->
-  <div v-if="activeTabKey === 'details'">
+  <div v-if="activeTabKey === 'details'" role="tabpanel" id="panel-details" aria-labelledby="tab-details" tabindex="0">
+    <h2 class="sr-only">Organization settings</h2>
     <EGFormOrgDetails
+      v-if="!isFetchingOrg"
       :key="resetFormKey"
       @submit-form-org-details="onSubmit($event)"
       :name="org.Name"
@@ -366,88 +469,173 @@
     />
   </div>
 
+  <!-- Email Branding tab -->
+  <div
+    v-if="activeTabKey === 'email-branding'"
+    role="tabpanel"
+    id="panel-email-branding"
+    aria-labelledby="tab-email-branding"
+    tabindex="0"
+  >
+    <h2 class="sr-only">Email branding</h2>
+    <EGFormOrgEmailBranding
+      v-if="!isFetchingOrg"
+      :key="resetFormKey"
+      :org-id="props.orgId"
+      :email-branding-logo-url="org.EmailBrandingLogoUrl"
+      @submit-form-org-email-branding="onSubmitEmailBranding($event)"
+    />
+  </div>
+
   <!-- All Labs tab (superuser) -->
-  <div v-if="activeTabKey === 'labs' && props.superuser">
+  <div
+    v-if="activeTabKey === 'labs' && props.superuser"
+    role="tabpanel"
+    id="panel-labs"
+    aria-labelledby="tab-labs"
+    tabindex="0"
+  >
+    <h2 class="sr-only">All labs</h2>
     <EGLabsList superuser :org-id="props.orgId" />
   </div>
 
-  <div v-if="activeTabKey === 'workflow-access' && showWorkflowAccessTab">
-    <EGWorkflowLabAccessPage v-if="workflowAccessPanelMounted" :org-id="props.orgId" embedded />
+  <div
+    v-if="activeTabKey === 'workflow-access' && showWorkflowAccessTab"
+    role="tabpanel"
+    id="panel-workflow-access"
+    aria-labelledby="tab-workflow-access"
+    tabindex="0"
+    class="outline-none focus:outline-none"
+  >
+    <EGWorkflowLabAccessPage
+      v-if="workflowAccessPanelMounted"
+      :org-id="props.orgId"
+      embedded
+      :heading-id="workflowAccessHeadingId"
+    />
+  </div>
+
+  <div
+    v-if="activeTabKey === 's3-access' && showS3AccessTab"
+    role="tabpanel"
+    id="panel-s3-access"
+    aria-labelledby="tab-s3-access"
+    tabindex="0"
+    class="outline-none focus:outline-none"
+  >
+    <EGS3LabAccessPage v-if="s3AccessPanelMounted" :org-id="props.orgId" embedded :heading-id="s3AccessHeadingId" />
   </div>
 
   <!-- All users tab -->
-  <div v-if="activeTabKey === 'users'">
-    <EGEmptyDataCTA
-      v-if="!isLoading && hasNoData"
-      message="You don't have any users in this organization yet."
-      img-src="/images/empty-state-user.jpg"
-    />
+  <div
+    v-if="activeTabKey === 'users'"
+    role="tabpanel"
+    id="panel-users"
+    aria-labelledby="tab-users"
+    tabindex="0"
+    class="outline-none focus:outline-none"
+    :aria-busy="isLoading || isRemovingUser"
+  >
+    <section :aria-labelledby="usersHeadingId">
+      <EGText :id="usersHeadingId" tag="h2" class="sr-only">Organization users</EGText>
 
-    <template v-if="!hasNoData">
-      <EGSearchInput
-        @input-event="updateSearchOutput"
-        placeholder="Search user"
-        class="my-6 w-[408px]"
-        :disabled="isLoading"
+      <EGEmptyDataCTA
+        v-if="!isLoading && hasNoData"
+        message="You don't have any users in this organization yet."
+        img-src="/images/empty-state-user.jpg"
       />
 
-      <EGDialog
-        actionLabel="Remove User"
-        :actionVariant="ButtonVariantEnum.enum.destructive"
-        cancelLabel="Cancel"
-        :cancelVariant="ButtonVariantEnum.enum.secondary"
-        @action-triggered="handleRemoveOrgUser"
-        :primaryMessage="removeUserModalPrimaryMessage"
-        v-model="isRemoveUserModalOpen"
-      />
+      <template v-if="!hasNoData">
+        <EGSearchInput
+          @input-event="updateSearchOutput"
+          label="Search users"
+          placeholder="Search user"
+          class="my-6 w-[408px]"
+          :disabled="isLoading"
+        />
+        <p class="sr-only" aria-live="polite" aria-atomic="true">{{ usersSearchStatusMessage }}</p>
 
-      <EGTable
-        :table-data="filteredTableData"
-        :columns="tableColumns"
-        :is-loading="isLoading"
-        :action-items="actionItems"
-        :show-pagination="!isLoading"
-        :row-click-action="onRowClicked"
-      >
-        <template #displayName-data="{ row }">
-          <div class="flex items-center">
-            <EGUserDisplay
-              class="mr-4"
-              :name="row.displayName"
-              :email="row.UserEmail"
-              :inactive="row.OrganizationUserStatus !== 'Active'"
-            />
-          </div>
-        </template>
-        <template #status-data="{ row }">
-          <span class="text-muted">{{ (row as OrgUser).OrganizationUserStatus }}</span>
-        </template>
-        <template #labs-data="{ row }">
-          <span class="text-muted">{{ labsCount(row) }}</span>
-        </template>
-        <template #actions-data="{ row, index }">
-          <div class="flex items-center justify-end">
-            <EGButton
-              class="relative z-10"
-              size="sm"
-              variant="secondary"
-              label="Resend Invite"
-              v-if="isInvited((row as OrgUser).OrganizationUserStatus)"
-              @click="
-                $event.stopPropagation();
-                resend(row as OrgUser, index);
-              "
-              :disabled="isButtonDisabled(index) || isButtonRequestPending(index)"
-              :loading="isButtonRequestPending(index)"
-            />
-            <EGActionButton @click="$event.stopPropagation()" :items="actionItems(row)" class="ml-2" />
-          </div>
-        </template>
-      </EGTable>
+        <EGDialog
+          :action-label="removeUserModalActionLabel"
+          :action-variant="ButtonVariantEnum.enum.destructive"
+          cancel-label="Cancel"
+          :cancel-variant="ButtonVariantEnum.enum.secondary"
+          @action-triggered="handleRemoveOrgUser"
+          :primary-message="removeUserModalPrimaryMessage"
+          :loading="isRemovingUser"
+          v-model="isRemoveUserModalOpen"
+        />
 
-      <div class="text-muted my-6 text-center text-xs">
-        This organization can only be removed by contacting your System administrator at: [System admin email]
-      </div>
-    </template>
+        <EGUserAccessDrawer
+          :model-value="!!openUserId"
+          :org-id="props.orgId"
+          :user-id="openUserId || ''"
+          @update:model-value="
+            (open) => {
+              if (!open) closeUserAccessDrawer();
+            }
+          "
+        />
+
+        <EGTable
+          :table-data="filteredTableData"
+          :columns="tableColumns"
+          :is-loading="isLoading"
+          :action-items="actionItems"
+          :show-pagination="!isLoading"
+          :row-click-action="onRowClicked"
+          :labelled-by="usersHeadingId"
+        >
+          <template #displayName-data="{ row }">
+            <div class="flex items-center">
+              <EGUserDisplay
+                class="mr-4"
+                :name="row.displayName"
+                :email="row.UserEmail"
+                :inactive="row.OrganizationUserStatus !== 'Active'"
+              />
+            </div>
+          </template>
+          <template #status-data="{ row }">
+            <EGUserStatusChip :status="(row as OrgUser).OrganizationUserStatus" />
+          </template>
+          <template #labs-data="{ row }">
+            <span class="text-muted">
+              <span class="sr-only">Labs:</span>
+              {{ labsCount(row) }}
+            </span>
+          </template>
+          <template #actions-data="{ row, index }">
+            <div class="flex items-center justify-end">
+              <EGButton
+                class="relative z-10"
+                u-button-type="button"
+                size="sm"
+                variant="secondary"
+                label="Resend Invite"
+                v-if="isInvited((row as OrgUser).OrganizationUserStatus) && (props.superuser || props.orgAdmin)"
+                :aria-label="`Resend invite to ${(row as OrgUser).displayName}`"
+                @click="
+                  $event.stopPropagation();
+                  resend(row as OrgUser, index);
+                "
+                :disabled="isButtonDisabled(index) || isButtonRequestPending(index)"
+                :loading="isButtonRequestPending(index)"
+              />
+              <EGActionButton
+                :menu-label="`Actions for ${(row as OrgUser).displayName}`"
+                @click="$event.stopPropagation()"
+                :items="actionItems(row)"
+                class="ml-2"
+              />
+            </div>
+          </template>
+        </EGTable>
+
+        <div class="text-muted my-6 text-center text-xs" role="note">
+          This organization can only be removed by contacting your System administrator at: [System admin email]
+        </div>
+      </template>
+    </section>
   </div>
 </template>

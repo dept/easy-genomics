@@ -35,6 +35,7 @@ export const handler: Handler = async (
           ['DefaultLaboratory']: user.DefaultLaboratory || '', // User last accessed Laboratory
           ['OrganizationAccess']: JSON.stringify(user.OrganizationAccess),
           ['SampleIdSplitPattern']: user.SampleIdSplitPattern || '',
+          ['AnalyticsConsent']: user.AnalyticsConsent || 'unset',
         },
       },
     };

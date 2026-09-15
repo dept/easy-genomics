@@ -9,11 +9,11 @@ import { SesService } from '../../services/ses-service';
 import { generateJwt } from '../../utils/jwt-utils';
 
 const sesService = new SesService({
-  accountId: process.env.ACCOUNT_ID,
-  domainName: process.env.DOMAIN_NAME,
-  region: process.env.REGION,
-  envType: process.env.ENV_TYPE,
-  envName: process.env.ENV_NAME,
+  accountId: process.env.ACCOUNT_ID!,
+  domainName: process.env.DOMAIN_NAME!,
+  region: process.env.REGION!,
+  envType: process.env.ENV_TYPE!,
+  envName: process.env.ENV_NAME!,
 });
 
 /**
@@ -33,9 +33,12 @@ export const handler: Handler = async (
     const temporaryPassword: string = event.request.code || ''; // Auto encrypted by Cognito
     const organizationId: string = event.request.clientMetadata ? event.request.clientMetadata.OrganizationId : '';
     const organizationName: string = event.request.clientMetadata ? event.request.clientMetadata.OrganizationName : '';
+    const emailBrandingLogoUrl: string | undefined = event.request.clientMetadata?.EmailBrandingLogoUrl;
 
     const newUserInvitationJwt: string = generateNewUserInvitationJwt(email, userId, organizationId, temporaryPassword);
-    await sesService.sendNewUserInvitationEmail(email, organizationName, newUserInvitationJwt);
+    await sesService.sendNewUserInvitationEmail(email, organizationName, newUserInvitationJwt, {
+      logoUrl: emailBrandingLogoUrl,
+    });
   } else if (event.triggerSource === 'CustomEmailSender_ForgotPassword') {
     const email: string = event.request.userAttributes.email;
     const userId: string = event.request.userAttributes.sub;
@@ -67,7 +70,7 @@ function generateNewUserInvitationJwt(
   const createdAt: number = Date.now(); // Salt
   const userInvitationJwt: UserInvitationJwt = {
     RequestType: 'NewUserInvitation',
-    Verification: createHmac('sha256', process.env.JWT_SECRET_KEY + createdAt)
+    Verification: createHmac('sha256', process.env.JWT_SECRET_KEY! + createdAt)
       .update(userId + organizationId)
       .digest('hex'),
     Email: email,
@@ -75,7 +78,7 @@ function generateNewUserInvitationJwt(
     TemporaryPassword: temporaryPassword, // Encrypted
     CreatedAt: createdAt,
   };
-  return generateJwt(userInvitationJwt, process.env.JWT_SECRET_KEY, '7 d');
+  return generateJwt(userInvitationJwt, process.env.JWT_SECRET_KEY!, '7 d');
 }
 
 /**
@@ -92,12 +95,12 @@ function generateUserForgotPasswordJwt(email: string, username: string, code: st
   const createdAt: number = Date.now(); // Salt
   const userForgotPasswordJwt: UserForgotPasswordJwt = {
     RequestType: 'UserForgotPassword',
-    Verification: createHmac('sha256', process.env.JWT_SECRET_KEY + createdAt)
+    Verification: createHmac('sha256', process.env.JWT_SECRET_KEY! + createdAt)
       .update(username + code)
       .digest('hex'),
     Email: email,
     Code: code, // Encrypted
     CreatedAt: createdAt,
   };
-  return generateJwt(userForgotPasswordJwt, process.env.JWT_SECRET_KEY, '1 h');
+  return generateJwt(userForgotPasswordJwt, process.env.JWT_SECRET_KEY!, '1 h');
 }

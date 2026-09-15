@@ -9,6 +9,7 @@ import { APIGatewayProxyResult, Handler, SQSRecord } from 'aws-lambda';
 import { SQSEvent } from 'aws-lambda/trigger/sqs';
 import { LaboratoryUserService } from '@BE/services/easy-genomics/laboratory-user-service';
 import { OrganizationUserService } from '@BE/services/easy-genomics/organization-user-service';
+import { parseSqsJsonBody } from '@BE/utils/sqs-json-body';
 
 const laboratoryUserService = new LaboratoryUserService();
 const organizationUserService = new OrganizationUserService();
@@ -18,8 +19,7 @@ export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxy
   try {
     const sqsRecords: SQSRecord[] = event.Records;
     for (const sqsRecord of sqsRecords) {
-      const body = JSON.parse(sqsRecord.body);
-      const snsEvent: SnsProcessingEvent = <SnsProcessingEvent>JSON.parse(body.Message);
+      const snsEvent: SnsProcessingEvent = parseSqsJsonBody<SnsProcessingEvent>(sqsRecord.body);
 
       switch (snsEvent.Type) {
         case 'LaboratoryUser':

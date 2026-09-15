@@ -15,12 +15,27 @@
 
   const emit = defineEmits(['action-triggered', 'update:modelValue']);
 
+  const titleId = useId();
+
+  const isLocked = computed(() => Boolean(props.buttonsDisabled || props.loading));
+
   function handleCancel() {
+    if (isLocked.value) {
+      return;
+    }
     emit('update:modelValue', false);
   }
 
   function handleClick() {
     emit('action-triggered');
+  }
+
+  function onModelValueUpdate(value: boolean) {
+    // Allow Escape / overlay dismiss when the dialog is not mid-action; keep locked while loading.
+    if (value === false && isLocked.value) {
+      return;
+    }
+    emit('update:modelValue', value);
   }
 </script>
 
@@ -32,10 +47,14 @@
         background: 'bg-gray-800/30',
       },
       rounded: 'rounded-3xl',
+      width: 'sm:max-w-2xl',
     }"
     :modelValue="modelValue"
-    @update:modelValue="(value) => emit('update:modelValue', value)"
-    prevent-close
+    @update:modelValue="onModelValueUpdate"
+    :prevent-close="isLocked"
+    role="dialog"
+    aria-modal="true"
+    :aria-labelledby="titleId"
   >
     <UCard
       :ui="{
@@ -48,31 +67,32 @@
     >
       <template #header>
         <div class="flex flex-col">
-          <div class="flex">
-            <EGText tag="h3" class="mb-6">{{ primaryMessage }}</EGText>
-            <div>
+          <div class="flex items-start gap-2">
+            <EGText :id="titleId" tag="h2" class="mb-6 min-w-0 flex-1 break-words">{{ primaryMessage }}</EGText>
+            <div class="shrink-0">
               <UButton
                 @click="handleCancel"
                 icon="i-heroicons-x-mark"
-                class="hover:bg-background-dark-grey ml-2"
+                class="hover:bg-background-dark-grey focus-visible:outline-primary-500 ml-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                 color="black"
                 variant="ghost"
                 :ui="{ rounded: 'rounded-full' }"
-                :disabled="buttonsDisabled || loading"
+                :disabled="isLocked"
+                aria-label="Close dialog"
               />
             </div>
           </div>
           <div v-if="secondaryMessage">
-            <EGText tag="p" class="mb-6 whitespace-pre-line">{{ secondaryMessage }}</EGText>
+            <EGText tag="p" class="mb-6 whitespace-pre-line break-words">{{ secondaryMessage }}</EGText>
           </div>
-          <div class="flex justify-end gap-4">
+          <div class="flex flex-wrap justify-end gap-4">
             <div v-if="cancelLabel">
               <EGButton
                 @click="handleCancel"
                 :label="cancelLabel"
                 :variant="ButtonVariantEnum.enum.secondary"
                 :size="ButtonSizeEnum.enum.sm"
-                :disabled="buttonsDisabled || loading"
+                :disabled="isLocked"
               />
             </div>
             <EGButton
@@ -80,7 +100,7 @@
               :label="actionLabel"
               :size="ButtonSizeEnum.enum.sm"
               :variant="actionVariant"
-              :disabled="buttonsDisabled || loading"
+              :disabled="isLocked"
               :loading="loading"
               autofocus
             />

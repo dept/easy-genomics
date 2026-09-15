@@ -1,7 +1,7 @@
 /**
  * One-off script to add tags to existing AWS HealthOmics runs using the
  * laboratory-run table as the source of truth. Tags match those set by
- * create-run-execution; WorkflowId is set from the table’s ExternalRunId column.
+ * create-run-execution (WorkflowId = WorkflowExternalId, RunId = EG RunId).
  *
  * Run from packages/back-end:
  *   pnpm run backfill-omics-run-tags [-- --dry-run]
@@ -37,11 +37,11 @@ function loadEnv(): void {
   }
 }
 
-function getRunArn(runId: string): string {
+function getRunArn(externalRunId: string): string {
   const account = process.env.ACCOUNT_ID;
   const region = process.env.REGION;
   if (!account || !region) throw new Error('ACCOUNT_ID and REGION must be set');
-  return `arn:aws:omics:${region}:${account}:run/${runId}`;
+  return `arn:aws:omics:${region}:${account}:run/${externalRunId}`;
 }
 
 async function main(): Promise<void> {
@@ -69,13 +69,15 @@ async function main(): Promise<void> {
   let errors = 0;
 
   for (const run of toTag) {
-    const runId = run.ExternalRunId!;
-    const resourceArn = getRunArn(runId);
+    const externalRunId = run.ExternalRunId!;
+    const resourceArn = getRunArn(externalRunId);
     const tags: Record<string, string> = {
       LaboratoryId: run.LaboratoryId,
       OrganizationId: run.OrganizationId,
-      WorkflowId: run.ExternalRunId || '',
+      // Align with create-run-execution: WorkflowId is the Omics workflow ID, not the run ID.
+      WorkflowId: run.WorkflowExternalId || '',
       RunName: run.RunName,
+      RunId: run.RunId,
       ...(run.UserId && { UserId: run.UserId }),
       ...(run.Owner && { UserEmail: run.Owner }),
       Application: 'easy-genomics',
@@ -83,7 +85,7 @@ async function main(): Promise<void> {
     };
 
     if (dryRun) {
-      console.log(`[dry-run] Would tag run ${runId}:`, tags);
+      console.log(`[dry-run] Would tag run ${externalRunId}:`, tags);
       tagged++;
       continue;
     }
@@ -93,14 +95,14 @@ async function main(): Promise<void> {
         resourceArn,
         tags,
       });
-      console.log(`Tagged run ${runId}:`, Object.keys(tags).join(', '));
+      console.log(`Tagged run ${externalRunId}:`, Object.keys(tags).join(', '));
       tagged++;
     } catch (err: any) {
       if (err.name === 'ResourceNotFoundException' || err.$metadata?.httpStatusCode === 404) {
-        console.warn(`Skip (run not found in Omics): ${runId}`);
+        console.warn(`Skip (run not found in Omics): ${externalRunId}`);
         skipped++;
       } else {
-        console.error(`Error tagging run ${runId}:`, err.message ?? err);
+        console.error(`Error tagging run ${externalRunId}:`, err.message ?? err);
         errors++;
       }
     }

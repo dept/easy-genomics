@@ -3,20 +3,18 @@
   import { useDebounceFn } from '@vueuse/core';
   import { format } from 'date-fns';
   import type { TableSort } from './EGTable.vue';
-  import {
+  import type {
     S3Object,
     S3Response,
-  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-list-bucket-objects';
-  import {
     S3TopLevelResponse,
     S3Prefix,
-  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-top-level-bucket-objects';
-  import { RequestTopLevelBucketObjects } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-top-level-bucket-objects';
-  import {
+    RequestTopLevelBucketObjects,
     RequestSearchBucketObjects,
-    S3Prefix as S3SearchPrefix,
     S3SearchResponse,
-  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-search-bucket-objects';
+  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
+  import { isS3BucketAccessDeniedError } from '@FE/utils/laboratory-s3';
+
+  type S3SearchPrefix = S3Prefix;
 
   interface FileTreeNode {
     type?: string;
@@ -65,7 +63,7 @@
 
   const hasOpenedStartPath = ref(false);
 
-  const isRootLoading = ref(false);
+  const isRootLoading = ref(true);
 
   // Cache for loaded directory contents to avoid re-fetching
   const loadedDirectories = ref<Map<string, FileTreeNode[]>>(new Map());
@@ -125,7 +123,7 @@
             .then((childResponse: S3TopLevelResponse) => {
               loadedDirectories.value.set(childCacheKey, transformS3Response(childResponse));
             })
-            .catch(() => {}); // silently ignore pre-fetch errors
+            .catch((error) => console.error('Pre-fetch failed for', childPrefix, error));
         }
       });
   };
@@ -153,7 +151,11 @@
       return children;
     } catch (error) {
       console.error('Error loading directory children:', error);
-      useToastStore().error('Failed to load folder contents');
+      useToastStore().error(
+        isS3BucketAccessDeniedError(error)
+          ? 'Access to this S3 bucket was revoked. Ask an organization admin to grant access, or set a new default bucket in lab settings.'
+          : 'Failed to load folder contents',
+      );
       return [];
     }
   };
@@ -428,6 +430,23 @@
     return !isNaN(d.getTime());
   }
 
+  const searchStatusMessage = computed(() => {
+    const q = searchQuery.value.trim();
+    if (!q) return '';
+    if (isSearchLoading.value) return `Searching for "${q}"…`;
+    const n = searchResults.value.length;
+    if (n === 0) return `No results for "${q}"`;
+    const noun = n === 1 ? 'result' : 'results';
+    return `${n} search ${noun} for "${q}"`;
+  });
+
+  function onDirectoryKeydown(e: KeyboardEvent, row: FileTreeNode): void {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onRowClicked(row);
+    }
+  }
+
   const onRowClicked = useDebounceFn((item: FileTreeNode) => {
     if (searchQuery.value.trim()) {
       if (item.type === 'directory' && item.isSearchResult) {
@@ -466,6 +485,9 @@
 
   async function navigateToSearchDirectory(node: FileTreeNode): Promise<void> {
     if (!node.s3Key) return;
+
+    // Analytics: file browser navigation.
+    useAnalytics().track('file_browser_action', { action: 'navigate' });
 
     const relativePath = node.s3Key.startsWith(normalizedRootPrefix.value)
       ? node.s3Key.slice(normalizedRootPrefix.value.length)
@@ -576,7 +598,11 @@
     } catch (error) {
       if (requestId !== searchRequestSeq.value) return;
       console.error('Error searching files in bucket:', error);
-      useToastStore().error('Failed to search files');
+      useToastStore().error(
+        isS3BucketAccessDeniedError(error)
+          ? 'Access to this S3 bucket was revoked. Ask an organization admin to grant access, or set a new default bucket in lab settings.'
+          : 'Failed to search files',
+      );
       searchResults.value = [];
     } finally {
       if (requestId === searchRequestSeq.value) {
@@ -638,6 +664,11 @@
 
     useToastStore().success('Your files have begun downloading');
 
+    // Analytics: file browser action (file vs folder download).
+    useAnalytics().track('file_browser_action', {
+      action: node.type === 'file' ? 'download_file' : 'download_folder',
+    });
+
     try {
       if (node.type === 'file') {
         const fileName = node.s3Key?.split('/').pop() || node.name!;
@@ -672,27 +703,34 @@
 </script>
 
 <template>
-  <div>
-    <!-- Search input -->
+  <section aria-label="File explorer">
     <EGSearchInput
+      label="Search files in bucket"
       @input-event="(event: string) => (searchQuery = event)"
       placeholder="Search all files in bucket"
       class="mb-6 w-[408px]"
     />
 
-    <!-- Breadcrumbs -->
-    <div class="mb-6 flex min-h-[24px] flex-wrap">
-      <span
-        v-for="(crumb, index) in breadcrumbs"
-        :key="index"
-        @click="navigateTo(index)"
-        class="breadcrumb-item text-sm"
-        :class="{ 'text-black': index === breadcrumbs.length - 1, 'text-gray-500': index !== breadcrumbs.length - 1 }"
-      >
-        {{ crumb.name }}
-        <i v-if="index < breadcrumbs.length - 1" class="separator">/</i>
-      </span>
-    </div>
+    <p class="sr-only" aria-live="polite" aria-atomic="true">{{ searchStatusMessage }}</p>
+
+    <nav class="mb-6 min-h-[24px]" aria-label="Folder path">
+      <ol class="flex flex-wrap items-center gap-0">
+        <li v-for="(crumb, index) in breadcrumbs" :key="index" class="flex items-center text-sm">
+          <button
+            v-if="index < breadcrumbs.length - 1"
+            type="button"
+            class="focus-visible:ring-primary-500 text-gray-500 hover:text-gray-900 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+            @click="navigateTo(index)"
+          >
+            {{ crumb.name }}
+          </button>
+          <span v-else class="font-medium text-black" aria-current="page">{{ crumb.name }}</span>
+          <span v-if="index < breadcrumbs.length - 1" class="separator mx-1 text-gray-400" aria-hidden="true">/</span>
+        </li>
+      </ol>
+    </nav>
+
+    <div v-if="isRootLoading" class="sr-only" role="status" aria-live="polite">Loading folder contents…</div>
 
     <EGTable
       :row-click-action="onRowClicked"
@@ -704,17 +742,20 @@
     >
       <template #name-data="{ row }">
         <div class="flex items-center gap-2">
-          <span
+          <button
             v-if="row.type === 'directory' && (!searchQuery.trim() || row.isSearchResult)"
-            class="underline hover:no-underline"
-            @click="onRowClicked(row)"
+            type="button"
+            class="focus-visible:ring-primary-500 text-left underline hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+            :aria-label="`Open folder ${row.name}`"
+            @click.stop="onRowClicked(row)"
+            @keydown="onDirectoryKeydown($event, row)"
           >
             {{ row.name }}/
-          </span>
+          </button>
           <span v-else>
             {{ row.type === 'directory' ? `${row.name}/` : row.name }}
           </span>
-          <span v-if="row.isLoading" class="text-xs text-gray-500">(loading...)</span>
+          <span v-if="row.isLoading" class="text-xs text-gray-500" role="status">(loading…)</span>
         </div>
         <div v-if="row.isSearchResult && row.directoryPath" class="text-xs text-gray-500">{{ row.directoryPath }}/</div>
       </template>
@@ -773,22 +814,5 @@
         </div>
       </template>
     </EGTable>
-  </div>
+  </section>
 </template>
-
-<style scoped>
-  .breadcrumb-item {
-    cursor: pointer;
-    margin-right: 5px;
-    display: flex;
-    align-items: center;
-
-    &:last-child {
-      cursor: default;
-    }
-
-    .separator {
-      margin: 0 2px 0 3px;
-    }
-  }
-</style>

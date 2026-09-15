@@ -15,16 +15,25 @@ import {
   CreateLaboratorySchema,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
 import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization';
+import {
+  DEFAULT_RUN_DETAIL_PROGRESS_POLL_INTERVAL_SECONDS,
+  DEFAULT_RUN_LIST_STATUS_POLL_INTERVAL_SECONDS,
+} from '@easy-genomics/shared-lib/src/app/utils/laboratory-run-progress-polling';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { OrganizationService } from '@BE/services/easy-genomics/organization-service';
+import { OmicsService } from '@BE/services/omics-service';
 import { SsmService } from '@BE/services/ssm-service';
 import { validateOrganizationAdminAccess } from '@BE/utils/auth-utils';
+import { assertHealthOmicsVpcConfigurationIsActive } from '@BE/utils/laboratory-omics-vpc-utils';
 import { httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
 const organizationService = new OrganizationService();
 const laboratoryService = new LaboratoryService();
+const s3AccessService = new LaboratoryS3AccessService();
 const ssmService = new SsmService();
+const omicsService = new OmicsService();
 
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -61,6 +70,10 @@ export const handler: Handler = async (
       throw new LaboratorySeqeraCredentialsIncorrectError();
     }
 
+    if (request.AwsHealthOmicsNetworkingMode === 'VPC') {
+      await assertHealthOmicsVpcConfigurationIsActive(request.AwsHealthOmicsVpcConfigurationName!, omicsService);
+    }
+
     // Automatically create an S3 Bucket for this Lab based on the LaboratoryId, and must be less than 63
     const laboratoryId: string = crypto.randomUUID().toLowerCase();
 
@@ -73,9 +86,20 @@ export const handler: Handler = async (
         Status: 'Active',
         S3Bucket: request.S3Bucket, // S3 Bucket Full Name
         AwsHealthOmicsEnabled: request.AwsHealthOmicsEnabled ?? organization.AwsHealthOmicsEnabled ?? false,
+        AwsHealthOmicsNetworkingMode: request.AwsHealthOmicsNetworkingMode,
+        AwsHealthOmicsVpcConfigurationName: request.AwsHealthOmicsVpcConfigurationName,
         NextFlowTowerEnabled: request.NextFlowTowerEnabled ?? organization.NextFlowTowerEnabled ?? false,
         NextFlowTowerApiBaseUrl: request.NextFlowTowerApiBaseUrl,
         NextFlowTowerWorkspaceId: request.NextFlowTowerWorkspaceId,
+        RunListStatusPollIntervalSeconds:
+          request.RunListStatusPollIntervalSeconds ?? DEFAULT_RUN_LIST_STATUS_POLL_INTERVAL_SECONDS,
+        RunDetailProgressPollIntervalSeconds:
+          request.RunDetailProgressPollIntervalSeconds ?? DEFAULT_RUN_DETAIL_PROGRESS_POLL_INTERVAL_SECONDS,
+        HealthOmicsLlmProvider: request.HealthOmicsLlmProvider,
+        HealthOmicsLlmModelId: request.HealthOmicsLlmModelId,
+        SeqeraLlmProvider: request.SeqeraLlmProvider,
+        SeqeraLlmModelId: request.SeqeraLlmModelId,
+        HealthOmicsLogEnrichmentEnabled: request.HealthOmicsLogEnrichmentEnabled,
         CreatedAt: new Date().toISOString(),
         CreatedBy: currentUserId,
       })
@@ -89,12 +113,55 @@ export const handler: Handler = async (
         }
       });
 
+    // Seed ALLOW for the lab's configured default bucket (strict mode otherwise blocks S3 APIs).
+    const s3Bucket = request.S3Bucket?.trim();
+    if (s3Bucket) {
+      await s3AccessService.upsert({
+        LaboratoryId: laboratoryId,
+        BucketName: s3Bucket,
+        OrganizationId: organization.OrganizationId,
+        Effect: 'ALLOW',
+      });
+    }
+
     // Store NextFlow AccessToken in SSM if value supplied
     if (request.NextFlowTowerAccessToken) {
       await ssmService.putParameter({
         Name: `/easy-genomics/organization/${organization.OrganizationId}/laboratory/${laboratoryId}/nf-access-token`,
         Description: `Easy Genomics Laboratory ${laboratoryId} NF AccessToken`,
         Value: request.NextFlowTowerAccessToken,
+        Type: 'SecureString',
+        Overwrite: false,
+      });
+    }
+
+    // Store BYOK LLM API keys in SSM per integration. Bedrock doesn't need a key
+    // (uses platform Lambda IAM); openai / anthropic do. HealthOmics and Seqera
+    // use independent keys so a lab can mix providers across integrations.
+    if (request.HealthOmicsLlmApiKey) {
+      await ssmService.putParameter({
+        Name: `/easy-genomics/organization/${organization.OrganizationId}/laboratory/${laboratoryId}/llm-api-key-healthomics`,
+        Description: `Easy Genomics Laboratory ${laboratoryId} HealthOmics BYOK LLM API key`,
+        Value: request.HealthOmicsLlmApiKey,
+        Type: 'SecureString',
+        Overwrite: false,
+      });
+    }
+    if (request.SeqeraLlmApiKey) {
+      await ssmService.putParameter({
+        Name: `/easy-genomics/organization/${organization.OrganizationId}/laboratory/${laboratoryId}/llm-api-key-seqera`,
+        Description: `Easy Genomics Laboratory ${laboratoryId} Seqera BYOK LLM API key`,
+        Value: request.SeqeraLlmApiKey,
+        Type: 'SecureString',
+        Overwrite: false,
+      });
+    }
+
+    if (request.GitHubAccessToken) {
+      await ssmService.putParameter({
+        Name: `/easy-genomics/organization/${organization.OrganizationId}/laboratory/${laboratoryId}/github-access-token`,
+        Description: `Easy Genomics Laboratory ${laboratoryId} GitHub AccessToken`,
+        Value: request.GitHubAccessToken,
         Type: 'SecureString',
         Overwrite: false,
       });

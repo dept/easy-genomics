@@ -7,6 +7,9 @@ export type ListWorkflowsResponse = components['schemas']['ListWorkflowsResponse
 /** GET /workflow/{workflowId}/progress **/
 export type WorkflowProgressQuery = operations['DescribeWorkflowProgress']['parameters']['query'];
 export type WorkflowProgressResponse = components['schemas']['GetProgressResponse'];
+export type ProgressData = components['schemas']['ProgressData'];
+export type ProcessLoad = components['schemas']['ProcessLoad'];
+export type WorkflowLoad = components['schemas']['WorkflowLoad'];
 
 /** GET /workflow/{workflowId} **/
 export type DescribeWorkflowQuery = operations['DescribeWorkflow']['parameters']['query'];

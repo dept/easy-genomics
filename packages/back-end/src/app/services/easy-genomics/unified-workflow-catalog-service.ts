@@ -1,5 +1,5 @@
 import type { WorkflowListItem } from '@aws-sdk/client-omics';
-import { ListSharesCommandInput, ListWorkflowsCommandInput } from '@aws-sdk/client-omics';
+import { ListWorkflowsCommandInput } from '@aws-sdk/client-omics';
 import { GetParameterCommandOutput, ParameterNotFound } from '@aws-sdk/client-ssm';
 import type { ListPipelinesResponse } from '@easy-genomics/shared-lib/lib/app/types/nf-tower/nextflow-tower-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
@@ -7,7 +7,7 @@ import type { UnifiedWorkflowCatalogEntry } from '@easy-genomics/shared-lib/src/
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { OmicsService } from '@BE/services/omics-service';
 import { SsmService } from '@BE/services/ssm-service';
-import { workflowIdFromOmicsShare } from '@BE/utils/laboratory-workflow-access-utils';
+import { listAllSharedWorkflowSummaries } from '@BE/utils/omics-shared-workflow-utils';
 import { getNextFlowApiQueryParameters, httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -30,28 +30,6 @@ async function listAllPrivateWorkflows(): Promise<WorkflowListItem[]> {
     nextToken = page.nextToken;
   } while (nextToken);
   return items;
-}
-
-async function listAllSharedWorkflowSummaries(): Promise<{ id: string; name: string }[]> {
-  const out: { id: string; name: string }[] = [];
-  let nextToken: string | undefined;
-  do {
-    const page = await omicsService.listSharedWorkflows(<ListSharesCommandInput>{
-      resourceOwner: 'OTHER',
-      maxResults: 100,
-      nextToken,
-    });
-    for (const share of page.shares ?? []) {
-      const id = workflowIdFromOmicsShare(share);
-      if (!id) {
-        continue;
-      }
-      const name = share.shareName ?? id;
-      out.push({ id, name });
-    }
-    nextToken = page.nextToken;
-  } while (nextToken);
-  return out;
 }
 
 async function fetchSeqeraPipelinesForLab(laboratory: Laboratory): Promise<UnifiedWorkflowCatalogEntry[]> {
@@ -135,7 +113,7 @@ export async function buildUnifiedWorkflowCatalogForOrganization(
   if (anyOmics) {
     const [privateWf, sharedSummaries] = await Promise.all([
       listAllPrivateWorkflows(),
-      listAllSharedWorkflowSummaries(),
+      listAllSharedWorkflowSummaries(omicsService),
     ]);
     for (const w of privateWf) {
       if (!w.id) {
@@ -150,6 +128,7 @@ export async function buildUnifiedWorkflowCatalogForOrganization(
         platform: 'HealthOmics',
         workflowId: w.id,
         name: w.name ?? w.id,
+        source: 'PRIVATE',
       });
     }
     for (const s of sharedSummaries) {
@@ -162,6 +141,8 @@ export async function buildUnifiedWorkflowCatalogForOrganization(
         platform: 'HealthOmics',
         workflowId: s.id,
         name: s.name,
+        source: 'SHARED',
+        ...(s.ownerAccountId ? { ownerAccountId: s.ownerAccountId } : {}),
       });
     }
   }

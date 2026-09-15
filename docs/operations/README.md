@@ -1,0 +1,15 @@
+# Operations
+
+Day-2 operational guides: troubleshooting and migration runbooks.
+
+| Doc                                                              | What it covers                                                                    | Status       |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------ |
+| [troubleshooting.md](./troubleshooting.md)                       | Common deploy/auth/run/Data Collections failures and the EG-xxx error-code lookup | ✅ Available |
+| [migration-runbooks/](./migration-runbooks/)                     | Environment migration runbooks                                                    | ✅ Available |
+| [healthomics-vpc-networking.md](./healthomics-vpc-networking.md) | Per-lab HealthOmics VPC networking: CLI/Console setup + design rationale          | ✅ Available |
+
+## migration-runbooks/
+
+| Runbook                                                                                 | What it covers                                                                                     |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [EASY_GENOMICS_PROD_MIGRATION.md](./migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md) | Per-environment retain-bridge → detach → `cdk import` migration for the multi-stack back-end split |

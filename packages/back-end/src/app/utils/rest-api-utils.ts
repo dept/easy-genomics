@@ -151,7 +151,8 @@ export function getFilterResults<T>(results: T[], filters: [string, string][]): 
   const filterResults = results.filter((r: T) => {
     // https://stackoverflow.com/a/3561711 - this escape function is the same as this answer EXCEPT the * is removed
     const regexEscapedInput = filterVal.replace(/[/\-\\^$+?.()|[\]{}]/g, '\\$&');
-    const regex = new RegExp('^' + regexEscapedInput.replace(/\*/g, '.*') + '$');
+    // Case-insensitive so Owner email filters match regardless of claim casing
+    const regex = new RegExp('^' + regexEscapedInput.replace(/\*/g, '.*') + '$', 'i');
     const value = (r as Record<string, unknown>)[filterKey];
     return regex.test(String(value ?? ''));
   });

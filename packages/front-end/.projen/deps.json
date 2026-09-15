@@ -36,7 +36,7 @@
     },
     {
       "name": "aws-cdk",
-      "version": "^2.176.0",
+      "version": "^2.260.0",
       "type": "build"
     },
     {
@@ -104,7 +104,7 @@
     },
     {
       "name": "@aws-sdk/client-omics",
-      "version": "^3.1019.0",
+      "version": "^3.1090.0",
       "type": "runtime"
     },
     {
@@ -131,6 +131,10 @@
     {
       "name": "@iconify-json/logos",
       "version": "1.2.10",
+      "type": "runtime"
+    },
+    {
+      "name": "@iconify-json/lucide",
       "type": "runtime"
     },
     {
@@ -177,11 +181,12 @@
     },
     {
       "name": "aws-cdk-lib",
-      "version": "^2.176.0",
+      "version": "^2.260.0",
       "type": "runtime"
     },
     {
       "name": "axios",
+      "version": "^1.18.1",
       "type": "runtime"
     },
     {
@@ -223,6 +228,7 @@
     },
     {
       "name": "nuxt",
+      "version": "3.21.2",
       "type": "runtime"
     },
     {
@@ -243,6 +249,10 @@
     },
     {
       "name": "playwright-slack-report",
+      "type": "runtime"
+    },
+    {
+      "name": "posthog-js",
       "type": "runtime"
     },
     {

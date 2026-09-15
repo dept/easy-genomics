@@ -2,21 +2,25 @@ import { ListObjectsV2CommandOutput } from '@aws-sdk/client-s3';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { RequestTopLevelBucketObjectsSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-top-level-bucket-objects';
-import { RequestTopLevelBucketObjects } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-top-level-bucket-objects';
+import { RequestTopLevelBucketObjects } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
+import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { S3Service } from '@BE/services/s3-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
+  validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
+import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
 
 const laboratoryService = new LaboratoryService();
 const laboratoryRunService = new LaboratoryRunService();
 const s3Service = new S3Service();
+const s3AccessService = new LaboratoryS3AccessService();
 
 const parseS3Uri = (value: string): { bucket: string; prefix: string } | null => {
   if (!value.startsWith('s3://')) return null;
@@ -75,6 +79,7 @@ export const handler: Handler = async (
     // Only Organisation Admins and Laboratory Members are allowed to access file listings
     if (
       !(
+        validateSystemAdminAccess(event) ||
         validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
         validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
         validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
@@ -93,18 +98,20 @@ export const handler: Handler = async (
       throw new InvalidRequestError('S3 bucket mismatch between S3Bucket and S3Prefix URI');
     }
 
-    // If a RunId is provided, authorize the requested S3 prefix against the run OutputS3Url (supports custom output dirs).
+    // If a RunId is provided, authorize against the run's stored S3 root (OutputS3Url, or InputS3Url for
+    // legacy runs). Mirrors the run detail File Manager, which prefers OutputS3Url then InputS3Url.
     // Otherwise, fall back to the original lab-owned prefix constraint.
     let normalizedPrefix = s3Prefix.endsWith('/') ? s3Prefix : `${s3Prefix}/`;
     if (request.RunId) {
       const run = await laboratoryRunService.get(laboratoryId, request.RunId);
-      const outputFromUri = run.OutputS3Url ? parseS3Uri(run.OutputS3Url) : null;
-      const outputBucket = outputFromUri?.bucket || laboratory.S3Bucket || requestBucket;
-      const outputPrefix = outputFromUri?.prefix || run.OutputS3Url || '';
+      const effectiveRunRootUrl = run.OutputS3Url || run.InputS3Url;
+      const rootFromUri = effectiveRunRootUrl ? parseS3Uri(effectiveRunRootUrl) : null;
+      const outputBucket = rootFromUri?.bucket || requestBucket || laboratory.S3Bucket || '';
+      const outputPrefix = rootFromUri?.prefix ?? '';
       const normalizedOutputPrefix = outputPrefix.endsWith('/') ? outputPrefix : `${outputPrefix}/`;
 
       if (!normalizedOutputPrefix || normalizedOutputPrefix === '/') {
-        throw new InvalidRequestError('Invalid OutputS3Url for run');
+        throw new InvalidRequestError('Invalid S3 location for run');
       }
 
       // Bucket must match the run output bucket
@@ -129,9 +136,7 @@ export const handler: Handler = async (
         throw new UnauthorizedAccessError();
       }
     } else {
-      if (laboratory.S3Bucket && s3Bucket !== laboratory.S3Bucket) {
-        throw new UnauthorizedAccessError();
-      }
+      await assertLaboratoryHasS3BucketAccess(laboratory, s3Bucket, s3AccessService);
 
       const laboratoryOwnedPrefix = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
       if (!normalizedPrefix.startsWith(laboratoryOwnedPrefix)) {

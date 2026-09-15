@@ -1,9 +1,13 @@
+import { S3BucketAccessDeniedError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { handler } from '../../../../../src/app/controllers/easy-genomics/file/request-file-download-url.lambda';
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../src/app/services/s3-service');
 jest.mock('../../../../../src/app/utils/auth-utils');
+jest.mock('../../../../../src/app/utils/laboratory-s3-access-utils', () => ({
+  assertLaboratoryHasS3BucketAccess: jest.fn().mockResolvedValue(undefined),
+}));
 
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
 import { S3Service } from '../../../../../src/app/services/s3-service';
@@ -12,6 +16,7 @@ import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
 } from '../../../../../src/app/utils/auth-utils';
+import { assertLaboratoryHasS3BucketAccess } from '../../../../../src/app/utils/laboratory-s3-access-utils';
 
 describe('request-file-download-url Lambda', () => {
   let mockValidateOrgAdmin: jest.MockedFunction<typeof validateOrganizationAdminAccess>;
@@ -124,10 +129,35 @@ describe('request-file-download-url Lambda', () => {
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
     expect(body.DownloadUrl).toBe('https://signed-url.example.com/download');
+    expect(assertLaboratoryHasS3BucketAccess).toHaveBeenCalledWith(
+      mockLaboratory,
+      mockLaboratory.S3Bucket,
+      expect.anything(),
+    );
     expect(mockGetPreSignedDownloadUrl).toHaveBeenCalledWith({
       Bucket: mockLaboratory.S3Bucket,
       Key: expect.stringContaining('test-lab-id'),
     });
+  });
+
+  it('should return 403 when laboratory does not have S3 bucket access', async () => {
+    mockValidateOrgAdmin.mockReturnValue(true);
+    mockQueryByLaboratoryId.mockResolvedValue(mockLaboratory);
+    (assertLaboratoryHasS3BucketAccess as jest.Mock).mockRejectedValueOnce(new S3BucketAccessDeniedError());
+
+    const s3Uri =
+      's3://dev-demo-main-back-end-st-devdemodataprovisionings-irwxbkv1fp0r/61c86013-74f2-4d30-916a-70b03a97ba14/test-lab-id/apparel.csv';
+
+    const event = createMockEvent({
+      LaboratoryId: 'test-lab-id',
+      S3Uri: s3Uri,
+    });
+    const context = createMockContext();
+
+    const result = await handler(event, context, () => {});
+
+    expect(result.statusCode).toBe(403);
+    expect(mockGetPreSignedDownloadUrl).not.toHaveBeenCalled();
   });
 
   it('should return 403 when S3 key does not contain the laboratoryId as a path segment', async () => {

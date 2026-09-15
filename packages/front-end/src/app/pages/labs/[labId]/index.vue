@@ -2,11 +2,11 @@
   const $route = useRoute();
   const $router = useRouter();
 
-  const labId = $route.params.labId as string;
-  const initialTab = $route.query.tab as string;
+  const labId = computed(() => $route.params.labId as string);
+  const initialTab = computed(() => ($route.query.tab as string | undefined) ?? undefined);
 
   // check permissions to be on this page
-  if (!useUserStore().canViewLab(labId)) {
+  if (!useUserStore().canViewLab(labId.value)) {
     $router.push('/labs');
   }
 </script>

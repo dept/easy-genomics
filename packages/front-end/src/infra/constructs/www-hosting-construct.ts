@@ -207,7 +207,7 @@ export class WwwHostingConstruct extends Construct {
       domainNames,
       minimumProtocolVersion: SecurityPolicyProtocol.TLS_V1_2_2021,
       webAclId: this.props.webAclId, // Optional AWS WAF web ACL
-      geoRestriction: GeoRestriction.allowlist(...['AU', 'US']),
+      geoRestriction: GeoRestriction.allowlist(...['AR', 'AU', 'US']),
       enableLogging: this.props.envType !== 'dev',
       logBucket:
         this.props.envType !== 'dev'
@@ -233,13 +233,16 @@ export class WwwHostingConstruct extends Construct {
           httpStatus: 403,
           responseHttpStatus: 200,
           responsePagePath: '/index.html',
-          ttl: this.props.indexCacheDuration,
+          // Short TTL so SPA deep-link / cold-start 403s are not stuck on a blank
+          // error response for minutes after a fresh deploy (see CloudFront console
+          // "Minimum TTL" on custom error responses).
+          ttl: Duration.seconds(10),
         },
         {
           httpStatus: 404,
           responseHttpStatus: 200,
           responsePagePath: '/index.html',
-          ttl: this.props.indexCacheDuration,
+          ttl: Duration.seconds(10),
         },
       ],
     };

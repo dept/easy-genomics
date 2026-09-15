@@ -15,12 +15,12 @@ import { CognitoIdpService } from '@BE/services/cognito-idp-service';
 import { LaboratoryUserService } from '@BE/services/easy-genomics/laboratory-user-service';
 import { OrganizationUserService } from '@BE/services/easy-genomics/organization-user-service';
 import { UserService } from '@BE/services/easy-genomics/user-service';
-import { SnsService } from '@BE/services/sns-service';
+import { SqsService } from '@BE/services/sqs-service';
 import { validateSystemAdminAccess } from '@BE/utils/auth-utils';
 
 const cognitoIdpService = new CognitoIdpService({ userPoolId: process.env.COGNITO_USER_POOL_ID });
 const userService: UserService = new UserService();
-const snsService: SnsService = new SnsService();
+const sqsService: SqsService = new SqsService();
 const laboratoryUserService: LaboratoryUserService = new LaboratoryUserService();
 const organizationUserService: OrganizationUserService = new OrganizationUserService();
 
@@ -80,9 +80,9 @@ async function publishDeleteLaboratoryUsers(userId: string): Promise<void> {
         Type: 'LaboratoryUser',
         Record: laboratoryUser,
       };
-      return snsService.publish({
-        TopicArn: process.env.SNS_USER_DELETION_TOPIC,
-        Message: JSON.stringify(record),
+      return sqsService.sendMessage({
+        QueueUrl: process.env.SQS_USER_DELETION_QUEUE_URL,
+        MessageBody: JSON.stringify(record),
         MessageGroupId: `delete-user-${userId}`,
         MessageDeduplicationId: uuidv4(),
       });
@@ -104,9 +104,9 @@ async function publishDeleteOrganizationUsers(userId: string): Promise<void> {
         Type: 'OrganizationUser',
         Record: organizationUser,
       };
-      return snsService.publish({
-        TopicArn: process.env.SNS_USER_DELETION_TOPIC,
-        Message: JSON.stringify(record),
+      return sqsService.sendMessage({
+        QueueUrl: process.env.SQS_USER_DELETION_QUEUE_URL,
+        MessageBody: JSON.stringify(record),
         MessageGroupId: `delete-user-${userId}`,
         MessageDeduplicationId: uuidv4(),
       });

@@ -2,10 +2,11 @@ import {
   GetItemCommandOutput,
   PutItemCommandOutput,
   QueryCommandOutput,
+  ScanCommandOutput,
   TransactWriteItemsCommandOutput,
 } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
-import { LaboratoryNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { InvalidRequestError, LaboratoryNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { LaboratorySchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { Service } from '../../types/service';
@@ -24,7 +25,7 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
     console.info(logRequestMessage);
 
     // Data validation safety check
-    if (!LaboratorySchema.safeParse(laboratory).success) throw new Error('Invalid request');
+    if (!LaboratorySchema.safeParse(laboratory).success) throw new InvalidRequestError();
 
     const response = await this.transactWriteItems({
       TransactItems: [
@@ -120,6 +121,27 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
     }
   };
 
+  /**
+   * Scans the entire laboratory table and returns all laboratory records. Used by maintenance
+   * lambdas/scripts (e.g. the scheduled S3 data-retention cleanup) that need to iterate every
+   * lab without a per-organization fan-out. Not intended for hot read paths.
+   */
+  public listAllLaboratories = async (): Promise<Laboratory[]> => {
+    const results: Laboratory[] = [];
+    let lastKey: Record<string, any> | undefined;
+    do {
+      const response: ScanCommandOutput = await this.findAll({
+        TableName: this.LABORATORY_TABLE_NAME,
+        ...(lastKey ? { ExclusiveStartKey: lastKey } : {}),
+      });
+      for (const item of response.Items || []) {
+        results.push(unmarshall(item) as Laboratory);
+      }
+      lastKey = response.LastEvaluatedKey as Record<string, any> | undefined;
+    } while (lastKey);
+    return results;
+  };
+
   public queryByOrganizationId = async (organizationId: string): Promise<Laboratory[]> => {
     const logRequestMessage = `Query Laboratory by OrganizationId=${organizationId} request`;
     console.info(logRequestMessage);
@@ -152,7 +174,7 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
     console.info(logRequestMessage);
 
     // Data validation safety check
-    if (!LaboratorySchema.safeParse(laboratory).success) throw new Error('Invalid request');
+    if (!LaboratorySchema.safeParse(laboratory).success) throw new InvalidRequestError();
 
     // Check if Laboratory Name is unchanged
     if (laboratory.Name === existing.Name) {

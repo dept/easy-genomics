@@ -11,18 +11,36 @@ import {
   CreateUserForgotPasswordRequestSchema,
   ConfirmUserForgotPasswordRequestSchema,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user-password';
-import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
-import {
-  ConfirmUserInvitationRequest,
-  CreateUserInvitationRequest,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-invitation';
 import {
   ConfirmUserForgotPasswordRequest,
+  ConfirmUserInvitationRequest,
   CreateUserForgotPasswordRequest,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-password';
+  CreateUserInvitationRequest,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
+import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
 import HttpFactory from '@FE/repository/factory';
+import { decodeJwt } from '@FE/utils/jwt-utils';
 
 class UsersModule extends HttpFactory {
+  /**
+   * update-user* Lambdas authorize path id against cognito:username.
+   * currentUserDetails.id prefers DynamoDB UserId (for run ownership filters), which can
+   * differ for seeded Cognito users — always resolve the Cognito username from the JWT here.
+   */
+  private async resolveSelfUpdatePathUserId(fallbackUserId?: string | null): Promise<string> {
+    const { getToken } = useAuth();
+    const token = await getToken();
+    const decodedToken: Record<string, unknown> = decodeJwt(token);
+    const cognitoUsername = decodedToken['cognito:username'];
+    if (typeof cognitoUsername === 'string' && cognitoUsername !== '') {
+      return cognitoUsername;
+    }
+    if (typeof fallbackUserId === 'string' && fallbackUserId !== '') {
+      return fallbackUserId;
+    }
+    throw new Error('Unable to resolve Cognito username for user update');
+  }
+
   async list(): Promise<User | undefined> {
     const res = await this.call<User>('GET', '/user/list-users');
 
@@ -139,6 +157,9 @@ class UsersModule extends HttpFactory {
         Platform: 'Seqera Cloud' | 'AWS HealthOmics';
         LaboratoryId: string;
       }>;
+      AnalyticsConsent?: 'unset' | 'granted' | 'denied';
+      NotifyOnOwnRuns?: boolean;
+      NotificationEventFilter?: 'all_terminal' | 'failures_only' | 'successes_only';
     },
   ) {
     const parseResult = UpdateUserSchema.safeParse(data);
@@ -147,7 +168,8 @@ class UsersModule extends HttpFactory {
       throw new Error(`Error; updateUser; safe parse failed; parseResult: ${JSON.stringify(parseResult, null, 2)}`);
     }
 
-    const res = await this.call<User>('PUT', `/user/update-user-request/${userId}`, data);
+    const pathUserId = await this.resolveSelfUpdatePathUserId(userId);
+    const res = await this.call<User>('PUT', `/user/update-user-request/${pathUserId}`, data);
 
     if (!res) {
       throw new Error('Error updating user details');
@@ -168,8 +190,8 @@ class UsersModule extends HttpFactory {
 
   async updateUserLastAccessInfo(userId: string, organizationId?: string, laboratoryId?: string) {
     const data: UpdateUserLastAccessedInfo = {
-      OrganizationId: organizationId,
-      LaboratoryId: laboratoryId,
+      ...(organizationId != null && organizationId !== '' ? { OrganizationId: organizationId } : {}),
+      ...(laboratoryId != null && laboratoryId !== '' ? { LaboratoryId: laboratoryId } : {}),
     };
     const parseResult = UpdateUserLastAccessedInfoSchema.safeParse(data);
     if (!parseResult.success) {
@@ -179,7 +201,8 @@ class UsersModule extends HttpFactory {
       );
     }
 
-    const res = await this.call<{}>('PUT', `/user/update-user-last-accessed-info/${userId}`, data);
+    const pathUserId = await this.resolveSelfUpdatePathUserId(userId);
+    const res = await this.call<{}>('PUT', `/user/update-user-last-accessed-info/${pathUserId}`, data);
     if (!res) {
       throw new Error('Error updating user last accessed info');
     }

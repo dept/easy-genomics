@@ -6,43 +6,43 @@ import {
   SNSServiceException,
 } from '@aws-sdk/client-sns';
 
-export enum SnsCommand {
-  PUBLISH = 'publish',
-}
+/** Region segment in `arn:aws:sns:<region>:...` */
+const SNS_TOPIC_ARN_REGION = /^arn:aws:sns:([a-z0-9-]+):/;
 
 export class SnsService {
-  private readonly snsClient;
+  private readonly clientsByRegion = new Map<string, SNSClient>();
+  private readonly fallbackRegion = process.env.AWS_REGION ?? process.env.REGION;
 
-  public constructor() {
-    this.snsClient = new SNSClient();
+  /**
+   * SNS Publish must target the topic's region. Using the default client region
+   * while `TopicArn` points elsewhere yields InvalidParameter errors locally
+   * when REGION and copied topic ARNs disagree.
+   */
+  private clientForTopicArn(topicArn: string | undefined): SNSClient {
+    const m = topicArn?.match(SNS_TOPIC_ARN_REGION);
+    const region = m?.[1] ?? this.fallbackRegion;
+    if (!region) {
+      return new SNSClient();
+    }
+    let client = this.clientsByRegion.get(region);
+    if (!client) {
+      client = new SNSClient({ region });
+      this.clientsByRegion.set(region, client);
+    }
+    return client;
   }
 
   public publish = async (publishCommandInput: PublishCommandInput): Promise<PublishCommandOutput> => {
-    return this.snsRequest<PublishCommandInput, PublishCommandOutput>(SnsCommand.PUBLISH, publishCommandInput);
-  };
-
-  private snsRequest = async <RequestType, ResponseType>(
-    command: SnsCommand,
-    data?: RequestType,
-  ): Promise<ResponseType> => {
     try {
-      return (await this.snsClient.send(this.getSnsCommand(command, data))) as ResponseType;
+      const client = this.clientForTopicArn(publishCommandInput.TopicArn);
+      return await client.send(new PublishCommand(publishCommandInput));
     } catch (error: any) {
-      console.error(`[sns-service : snsRequest] command: ${command} exception encountered:`, error);
+      console.error('[sns-service : publish] exception encountered:', error);
       throw this.handleError(error);
     }
   };
 
   private handleError = (error: any): SNSServiceException => {
     return error as SNSServiceException; // Base Exception
-  };
-
-  private getSnsCommand = (command: SnsCommand, data: unknown): any => {
-    switch (command) {
-      case SnsCommand.PUBLISH:
-        return new PublishCommand(data as PublishCommandInput);
-      default:
-        throw new Error(`Unsupported SNS Management Command '${command}'`);
-    }
   };
 }

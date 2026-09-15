@@ -16,3 +16,4 @@ export const OrganizationUserDetailsSchema = z
     OrganizationAccess: OrganizationAccessSchema.optional(),
   })
   .strict();
+export type OrganizationUserDetails = z.infer<typeof OrganizationUserDetailsSchema>;

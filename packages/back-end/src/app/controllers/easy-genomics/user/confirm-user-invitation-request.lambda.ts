@@ -9,9 +9,9 @@ import {
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { ERROR_MESSAGES } from '@easy-genomics/shared-lib/src/app/constants/errorMessages';
 import { ConfirmUpdateUserInvitationRequestSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user-invitation';
+import { ConfirmUserInvitationRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { OrganizationUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization-user';
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
-import { ConfirmUserInvitationRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-invitation';
 import { UserInvitationJwt } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-verification-jwt';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Handler } from 'aws-lambda';
 import { toByteArray } from 'base64-js';

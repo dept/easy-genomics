@@ -1,5 +1,9 @@
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
-import { OrganizationDeleteFailedError, RequiredIdNotFoundError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import {
+  OrganizationDeleteFailedError,
+  RequiredIdNotFoundError,
+  UnauthorizedAccessError,
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization';
 import { OrganizationUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization-user';
@@ -9,13 +13,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { OrganizationService } from '@BE/services/easy-genomics/organization-service';
 import { OrganizationUserService } from '@BE/services/easy-genomics/organization-user-service';
-import { SnsService } from '@BE/services/sns-service';
+import { SqsService } from '@BE/services/sqs-service';
 import { validateSystemAdminAccess } from '@BE/utils/auth-utils';
 
 const organizationService = new OrganizationService();
 const organizationUserService = new OrganizationUserService();
 const laboratoryService = new LaboratoryService();
-const snsService = new SnsService();
+const sqsService = new SqsService();
 
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -62,9 +66,9 @@ async function publishDeleteOrganizationUsers(organizationId: string): Promise<v
         Type: 'OrganizationUser',
         Record: organizationUser,
       };
-      return snsService.publish({
-        TopicArn: process.env.SNS_ORGANIZATION_DELETION_TOPIC,
-        Message: JSON.stringify(record),
+      return sqsService.sendMessage({
+        QueueUrl: process.env.SQS_ORGANIZATION_DELETION_QUEUE_URL,
+        MessageBody: JSON.stringify(record),
         MessageGroupId: `delete-organization-${organizationId}`,
         MessageDeduplicationId: uuidv4(),
       });
@@ -86,9 +90,9 @@ async function publishDeleteOrganizationLabs(organizationId: string): Promise<vo
         Type: 'Laboratory',
         Record: laboratory,
       };
-      return snsService.publish({
-        TopicArn: process.env.SNS_ORGANIZATION_DELETION_TOPIC,
-        Message: JSON.stringify(record),
+      return sqsService.sendMessage({
+        QueueUrl: process.env.SQS_ORGANIZATION_DELETION_QUEUE_URL,
+        MessageBody: JSON.stringify(record),
         MessageGroupId: `delete-organization-${organizationId}`,
         MessageDeduplicationId: uuidv4(),
       });

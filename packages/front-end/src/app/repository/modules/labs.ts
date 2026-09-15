@@ -1,13 +1,21 @@
 import { CreateLaboratory, UpdateLaboratory } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
 import { LaboratoryRunSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run';
-import { RemoveLaboratoryUserSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-user';
+import {
+  EstimateRunCostRequest,
+  EstimateRunCostResponse,
+} from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
+import {
+  RemoveLaboratoryUserSchema,
+  UpdateLaboratoryUserNotificationPreference,
+  UpdateLaboratoryUserNotificationPreferenceSchema,
+} from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-user';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
 import { LaboratoryUserDetails } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user-details';
 import { z } from 'zod';
 import HttpFactory from '@FE/repository/factory';
-import { DeletedResponse, EditUserResponse } from '@FE/types/api';
+import { DeletedResponse, EditUserResponse, LaboratoryUserBulkResult } from '@FE/types/api';
 import { validateApiResponse } from '@FE/utils/api-utils';
 
 class LabsModule extends HttpFactory {
@@ -137,6 +145,29 @@ class LabsModule extends HttpFactory {
   }
 
   /**
+   * Add multiple existing org users to a laboratory with one role, atomically per user
+   * @param labId
+   * @param userIds
+   * @param isLabManager
+   */
+  async addBulkLabUsers(labId: string, userIds: string[], isLabManager: boolean): Promise<LaboratoryUserBulkResult[]> {
+    const res = await this.call<LaboratoryUserBulkResult[]>('POST', '/laboratory/user/add-bulk-laboratory-users', {
+      LaboratoryId: labId,
+      Users: userIds.map((userId) => ({
+        UserId: userId,
+        LabManager: isLabManager,
+        LabTechnician: !isLabManager,
+      })),
+    });
+
+    if (!res) {
+      throw new Error('Failed to add users to Laboratory');
+    }
+
+    return res;
+  }
+
+  /**
    * Edit a user's access in a laboratory
    * @param labId
    * @param userId
@@ -176,6 +207,46 @@ class LabsModule extends HttpFactory {
   }
 
   /**
+   * Update the calling user's own notification preference for a Laboratory.
+   * Self-service only: the backend resolves the caller's UserId from their auth token,
+   * so this can never be used to change another user's preference.
+   * @param labId
+   * @param notifyOnLabRuns
+   * @param additionalEmails Extra addresses to CC when NotifyOnLabRuns fires. Omit to leave the
+   *   caller's existing list untouched; pass an array (including []) to replace it.
+   */
+  async updateMyLabNotificationPreference(
+    labId: string,
+    notifyOnLabRuns: boolean,
+    additionalEmails?: string[],
+  ): Promise<LaboratoryUser> {
+    const data: UpdateLaboratoryUserNotificationPreference = {
+      NotifyOnLabRuns: notifyOnLabRuns,
+      ...(additionalEmails !== undefined ? { NotifyOnLabRunsAdditionalEmails: additionalEmails } : {}),
+    };
+
+    const parseResult = UpdateLaboratoryUserNotificationPreferenceSchema.safeParse(data);
+    if (!parseResult.success) {
+      console.error('Error; updateMyLabNotificationPreference; safe parse failed; parseResult: ', parseResult);
+      throw new Error(
+        `Error; updateMyLabNotificationPreference; safe parse failed; parseResult: ${JSON.stringify(parseResult, null, 2)}`,
+      );
+    }
+
+    const res = await this.call<LaboratoryUser>(
+      'PUT',
+      `/laboratory/user/update-laboratory-user-notification-preference/${labId}`,
+      data,
+    );
+
+    if (!res) {
+      throw new Error('Failed to update Laboratory notification preference');
+    }
+
+    return res;
+  }
+
+  /**
    * List all Laboratories for a user
    * @param userId
    */
@@ -203,7 +274,7 @@ class LabsModule extends HttpFactory {
     try {
       RemoveLaboratoryUserSchema.parse(input);
     } catch (error) {
-      throw new Error(`Validation failed: ${error}`);
+      throw new Error('Invalid request data. Please check your input and try again.');
     }
 
     const res = await this.call<DeletedResponse>('POST', '/laboratory/user/remove-laboratory-user', {
@@ -236,9 +307,11 @@ class LabsModule extends HttpFactory {
   }
 
   async listLabRuns(labId: string, filters: object = {}): Promise<LaboratoryRun[]> {
-    let queryUrl = `/laboratory/run/list-laboratory-runs?LaboratoryId=${labId}`;
+    let queryUrl = `/laboratory/run/list-laboratory-runs?LaboratoryId=${encodeURIComponent(labId)}`;
 
-    for (const [filterKey, filterVal] of Object.entries(filters)) queryUrl += `&${filterKey}=${filterVal}`;
+    for (const [filterKey, filterVal] of Object.entries(filters)) {
+      queryUrl += `&${encodeURIComponent(filterKey)}=${encodeURIComponent(String(filterVal))}`;
+    }
 
     const res = await this.call<LaboratoryRun[]>('GET', queryUrl);
 
@@ -259,6 +332,21 @@ class LabsModule extends HttpFactory {
     }
 
     validateApiResponse(LaboratoryRunSchema, res);
+    return res;
+  }
+
+  /**
+   * Pre-run historical compute cost estimate (no Cost Explorer calls).
+   */
+  async estimateRunCost(laboratoryId: string, body: EstimateRunCostRequest): Promise<EstimateRunCostResponse> {
+    const res = await this.call<any>(
+      'POST',
+      `/laboratory/run/request-estimate-run-cost?laboratoryId=${laboratoryId}`,
+      body,
+    );
+    if (!res) {
+      throw new Error('Failed to estimate run cost');
+    }
     return res;
   }
 

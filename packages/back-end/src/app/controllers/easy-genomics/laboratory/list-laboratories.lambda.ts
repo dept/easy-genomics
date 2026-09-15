@@ -50,8 +50,8 @@ export const handler: Handler = async (
       }
     }
 
-    // Only the SystemAdmin or any User with access to the Organization is allowed access to this API
-    if (!(isSystemAdmin || validateOrganizationAccess(event, organizationId))) {
+    // System admins, active org members, or org admins (who may create labs before org Status is Active) may list
+    if (!(isSystemAdmin || validateOrganizationAccess(event, organizationId) || isOrgAdmin)) {
       throw new UnauthorizedAccessError();
     }
 

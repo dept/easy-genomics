@@ -29,6 +29,10 @@
       "type": "build"
     },
     {
+      "name": "@types/swagger-ui-dist",
+      "type": "build"
+    },
+    {
       "name": "@types/uuid",
       "type": "build"
     },
@@ -44,7 +48,7 @@
     },
     {
       "name": "aws-cdk",
-      "version": "^2.176.0",
+      "version": "^2.260.0",
       "type": "build"
     },
     {
@@ -122,7 +126,27 @@
       "type": "runtime"
     },
     {
+      "name": "@aws-sdk/client-bedrock-runtime",
+      "version": "3.782.0",
+      "type": "runtime"
+    },
+    {
+      "name": "@aws-sdk/client-cloudformation",
+      "version": "^3.786.0",
+      "type": "runtime"
+    },
+    {
+      "name": "@aws-sdk/client-cloudwatch-logs",
+      "version": "3.782.0",
+      "type": "runtime"
+    },
+    {
       "name": "@aws-sdk/client-cognito-identity-provider",
+      "type": "runtime"
+    },
+    {
+      "name": "@aws-sdk/client-cost-explorer",
+      "version": "3.782.0",
       "type": "runtime"
     },
     {
@@ -131,7 +155,7 @@
     },
     {
       "name": "@aws-sdk/client-omics",
-      "version": "^3.1019.0",
+      "version": "^3.1090.0",
       "type": "runtime"
     },
     {
@@ -140,6 +164,7 @@
     },
     {
       "name": "@aws-sdk/client-secrets-manager",
+      "version": "^3.782.0",
       "type": "runtime"
     },
     {
@@ -197,7 +222,7 @@
     },
     {
       "name": "aws-cdk-lib",
-      "version": "^2.176.0",
+      "version": "^2.260.0",
       "type": "runtime"
     },
     {
@@ -223,6 +248,11 @@
     },
     {
       "name": "jsonwebtoken",
+      "type": "runtime"
+    },
+    {
+      "name": "swagger-ui-dist",
+      "version": "^5.17.14",
       "type": "runtime"
     },
     {

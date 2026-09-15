@@ -1,7 +1,19 @@
 import {
+  CreateWorkflowCommand,
+  CreateWorkflowCommandInput,
+  CreateWorkflowCommandOutput,
   CancelRunCommand,
   CancelRunCommandInput,
   CancelRunCommandOutput,
+  CreateRunCacheCommand,
+  CreateRunCacheCommandInput,
+  CreateRunCacheCommandOutput,
+  GetConfigurationCommand,
+  GetConfigurationCommandInput,
+  GetConfigurationCommandOutput,
+  GetRunCacheCommand,
+  GetRunCacheCommandInput,
+  GetRunCacheCommandOutput,
   GetRunCommand,
   GetRunCommandInput,
   GetRunCommandOutput,
@@ -20,6 +32,9 @@ import {
   ListSharesCommand,
   ListSharesCommandInput,
   ListSharesCommandOutput,
+  ListRunTasksCommand,
+  ListRunTasksCommandInput,
+  ListRunTasksCommandOutput,
   OmicsClient,
   OmicsServiceException,
   StartRunCommand,
@@ -32,10 +47,15 @@ import {
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
 
 export enum OmicsCommand {
+  CREATE_WORKFLOW = 'create-workflow',
   CANCEL_RUN = 'cancel-run',
+  CREATE_RUN_CACHE = 'create-run-cache',
+  GET_CONFIGURATION = 'get-configuration',
+  GET_RUN_CACHE = 'get-run-cache',
   GET_RUN = 'get-run',
   GET_WORKFLOW = 'get-workflow',
   LIST_RUNS = 'list-runs',
+  LIST_RUN_TASKS = 'list-run-tasks',
   LIST_WORKFLOWS = 'list-workflows',
   LIST_WORKFLOW_VERSIONS = 'list-workflow-versions',
   LIST_SHARED_WORKFLOWS = 'list-shared-workflows',
@@ -62,6 +82,40 @@ export class OmicsService {
     );
   };
 
+  public createWorkflow = async (
+    createWorkflowCommandInput: CreateWorkflowCommandInput,
+  ): Promise<CreateWorkflowCommandOutput> => {
+    return this.omicsRequest<CreateWorkflowCommandInput, CreateWorkflowCommandOutput>(
+      OmicsCommand.CREATE_WORKFLOW,
+      createWorkflowCommandInput,
+    );
+  };
+
+  public createRunCache = async (
+    createRunCacheCommandInput: CreateRunCacheCommandInput,
+  ): Promise<CreateRunCacheCommandOutput> => {
+    return this.omicsRequest<CreateRunCacheCommandInput, CreateRunCacheCommandOutput>(
+      OmicsCommand.CREATE_RUN_CACHE,
+      createRunCacheCommandInput,
+    );
+  };
+
+  public getConfiguration = async (
+    getConfigurationCommandInput: GetConfigurationCommandInput,
+  ): Promise<GetConfigurationCommandOutput> => {
+    return this.omicsRequest<GetConfigurationCommandInput, GetConfigurationCommandOutput>(
+      OmicsCommand.GET_CONFIGURATION,
+      getConfigurationCommandInput,
+    );
+  };
+
+  public getRunCache = async (getRunCacheCommandInput: GetRunCacheCommandInput): Promise<GetRunCacheCommandOutput> => {
+    return this.omicsRequest<GetRunCacheCommandInput, GetRunCacheCommandOutput>(
+      OmicsCommand.GET_RUN_CACHE,
+      getRunCacheCommandInput,
+    );
+  };
+
   public getRun = async (getRunCommandInput: GetRunCommandInput): Promise<GetRunCommandOutput> => {
     return this.omicsRequest<GetRunCommandInput, GetRunCommandOutput>(OmicsCommand.GET_RUN, getRunCommandInput);
   };
@@ -75,6 +129,30 @@ export class OmicsService {
 
   public listRuns = async (listRunsCommandInput: ListRunsCommandInput): Promise<ListRunsCommandOutput> => {
     return this.omicsRequest<ListRunsCommandInput, ListRunsCommandOutput>(OmicsCommand.LIST_RUNS, listRunsCommandInput);
+  };
+
+  public listRunTasks = async (
+    listRunTasksCommandInput: ListRunTasksCommandInput,
+  ): Promise<ListRunTasksCommandOutput> => {
+    return this.omicsRequest<ListRunTasksCommandInput, ListRunTasksCommandOutput>(
+      OmicsCommand.LIST_RUN_TASKS,
+      listRunTasksCommandInput,
+    );
+  };
+
+  /**
+   * Paginate ListRunTasks until exhausted. Used for post-run cost estimation
+   * and in-progress task progress aggregation.
+   */
+  public listAllRunTasks = async (runId: string): Promise<NonNullable<ListRunTasksCommandOutput['items']>> => {
+    const items: NonNullable<ListRunTasksCommandOutput['items']> = [];
+    let nextToken: string | undefined;
+    do {
+      const page = await this.listRunTasks({ id: runId, maxResults: 100, startingToken: nextToken });
+      if (page.items?.length) items.push(...page.items);
+      nextToken = page.nextToken;
+    } while (nextToken);
+    return items;
   };
 
   public listWorkflows = async (
@@ -133,14 +211,24 @@ export class OmicsService {
 
   private getOmicsCommand = (command: OmicsCommand, data: unknown): any => {
     switch (command) {
+      case OmicsCommand.CREATE_WORKFLOW:
+        return new CreateWorkflowCommand(data as CreateWorkflowCommandInput);
       case OmicsCommand.CANCEL_RUN:
         return new CancelRunCommand(data as CancelRunCommandInput);
+      case OmicsCommand.CREATE_RUN_CACHE:
+        return new CreateRunCacheCommand(data as CreateRunCacheCommandInput);
+      case OmicsCommand.GET_CONFIGURATION:
+        return new GetConfigurationCommand(data as GetConfigurationCommandInput);
+      case OmicsCommand.GET_RUN_CACHE:
+        return new GetRunCacheCommand(data as GetRunCacheCommandInput);
       case OmicsCommand.GET_RUN:
         return new GetRunCommand(data as GetRunCommandInput);
       case OmicsCommand.GET_WORKFLOW:
         return new GetWorkflowCommand(data as GetWorkflowCommandInput);
       case OmicsCommand.LIST_RUNS:
         return new ListRunsCommand(data as ListRunsCommandInput);
+      case OmicsCommand.LIST_RUN_TASKS:
+        return new ListRunTasksCommand(data as ListRunTasksCommandInput);
       case OmicsCommand.LIST_WORKFLOWS:
         return new ListWorkflowsCommand(data as ListWorkflowsCommandInput);
       case OmicsCommand.LIST_WORKFLOW_VERSIONS:

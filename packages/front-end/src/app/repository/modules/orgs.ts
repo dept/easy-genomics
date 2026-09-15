@@ -81,7 +81,7 @@ class OrgsModule extends HttpFactory {
     try {
       await EditOrganizationUserSchema.parse(input);
     } catch (error) {
-      throw new Error(`Validation failed: ${error}`);
+      throw new Error('Invalid request data. Please check your input and try again.');
     }
 
     const res = this.call<OrganizationUserDetails>('POST', '/organization/user/edit-organization-user', input);
@@ -102,7 +102,7 @@ class OrgsModule extends HttpFactory {
     try {
       RemoveOrganizationUserSchema.parse(input);
     } catch (error) {
-      throw new Error(`Validation failed: ${error}`);
+      throw new Error('Invalid request data. Please check your input and try again.');
     }
 
     const res = await this.call<DeletedResponse>('POST', '/organization/user/remove-organization-user', {
@@ -121,7 +121,7 @@ class OrgsModule extends HttpFactory {
     try {
       UpdateOrganizationSchema.parse(body);
     } catch (error) {
-      throw new Error(`Validation failed: ${error}`);
+      throw new Error('Invalid request data. Please check your input and try again.');
     }
     const res = await this.call<Organization>('PUT', `/organization/update-organization/${orgId}`, body);
 

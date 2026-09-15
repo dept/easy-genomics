@@ -1,7 +1,7 @@
 <script setup lang="ts"></script>
 
 <template>
-  <main class="mx-auto flex flex-col justify-center px-4">
+  <main id="main-content" class="mx-auto flex flex-col justify-center px-4">
     <div class="mt-4 flex rounded-lg bg-white">
       <slot />
     </div>

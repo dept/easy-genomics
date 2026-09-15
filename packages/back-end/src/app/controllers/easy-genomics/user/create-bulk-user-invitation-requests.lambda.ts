@@ -1,20 +1,20 @@
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
-import { UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { CreateBulkUserInvitationRequestSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/user-invitation';
-import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization';
-import { SnsProcessingEvent } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
 import {
   CreateBulkUserInvitationRequest,
   QueuedUserInvitationRequest,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-invitation';
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
+import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization';
+import { SnsProcessingEvent } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { v4 as uuidv4 } from 'uuid';
 import { OrganizationService } from '@BE/services/easy-genomics/organization-service';
-import { SnsService } from '@BE/services/sns-service';
+import { SqsService } from '@BE/services/sqs-service';
 import { validateOrganizationAdminAccess, validateSystemAdminAccess } from '@BE/utils/auth-utils';
 
 const organizationService = new OrganizationService();
-const snsService = new SnsService();
+const sqsService = new SqsService();
 
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -28,7 +28,7 @@ export const handler: Handler = async (
       : JSON.parse(event.body!);
 
     // Data validation safety check
-    if (!CreateBulkUserInvitationRequestSchema.safeParse(request).success) throw new Error('Invalid request');
+    if (!CreateBulkUserInvitationRequestSchema.safeParse(request).success) throw new InvalidRequestError();
 
     // Only the SystemAdmin or any User with access to the Organization is allowed access to this API
     if (!(validateSystemAdminAccess(event) || validateOrganizationAdminAccess(event, request.OrganizationId))) {
@@ -49,9 +49,9 @@ export const handler: Handler = async (
             CreatedBy: currentUserId,
           },
         };
-        return snsService.publish({
-          TopicArn: process.env.SNS_USER_INVITE_TOPIC,
-          Message: JSON.stringify(record),
+        return sqsService.sendMessage({
+          QueueUrl: process.env.SQS_USER_INVITE_QUEUE_URL,
+          MessageBody: JSON.stringify(record),
           MessageGroupId: `create-user-invite-${organization.OrganizationId}`,
           MessageDeduplicationId: uuidv4(),
         });

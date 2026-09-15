@@ -1,12 +1,19 @@
 import { randomUUID } from 'crypto';
 import { join } from 'path';
 import { ConfigurationSettings } from '@easy-genomics/shared-lib/src/app/types/configuration';
-import { loadConfigurations } from '@easy-genomics/shared-lib/src/app/utils/configuration';
+import {
+  getStackEnvName,
+  loadConfigurations,
+  resolveConfiguration,
+} from '@easy-genomics/shared-lib/src/app/utils/configuration';
 import { TestUserDetails, VpcPeering } from '@easy-genomics/shared-lib/src/infra/types/main-stack';
 import { App, Aspects } from 'aws-cdk-lib';
 import { AwsSolutionsChecks } from 'cdk-nag';
 import { cognitoPasswordRegex } from './infra/constants/cognito';
+import { checkStackResourceBudget } from './infra/guardrails/stack-resource-budget';
+import { ApiDomainStack } from './infra/stacks/api-domain-stack';
 import { BackEndStack } from './infra/stacks/back-end-stack';
+import { EasyGenomicsApiStack } from './infra/stacks/easy-genomics-api-stack';
 
 const SEQERA_API_BASE_URL = 'https://api.cloud.seqera.io';
 const app = new App();
@@ -35,6 +42,16 @@ let labTechnicianPassword: string | undefined;
 let seqeraApiBaseUrl: string;
 let githubPatSecretName: string | undefined;
 let vpcPeering: VpcPeering | undefined;
+let analyticsEnabled: boolean = false;
+let costExplorerEnabled: boolean = false;
+
+// Optional: shared public API domain wiring. When both `apiDomainName` and
+// `awsApiCertificateArn` are provided AND `awsHostedZoneId` is available, we
+// provision a small `ApiDomainStack` that fronts the split REST APIs with
+// one public base URL and path-based routing (prod use case). If unset, the
+// front-end configuration must consume per-stack `*ApiUrl` outputs instead.
+let apiDomainName: string | undefined;
+let awsApiCertificateArn: string | undefined;
 
 if (process.env.CI_CD === 'true') {
   console.log('Loading Back-End environment settings for CI/CD Pipeline...');
@@ -68,6 +85,10 @@ if (process.env.CI_CD === 'true') {
 
   seqeraApiBaseUrl = process.env.SEQERA_API_BASE_URL || SEQERA_API_BASE_URL;
   githubPatSecretName = process.env.GITHUB_PAT_SECRET_NAME;
+  analyticsEnabled = process.env.ANALYTICS_ENABLED === 'true';
+  costExplorerEnabled = process.env.COST_EXPLORER_ENABLED === 'true';
+  apiDomainName = process.env.API_DOMAIN_NAME;
+  awsApiCertificateArn = process.env.AWS_API_CERTIFICATE_ARN;
 
   if (
     process.env.EXTERNAL_VPC_ID &&
@@ -137,18 +158,9 @@ if (process.env.CI_CD === 'true') {
   const configurations: { [p: string]: ConfigurationSettings }[] = loadConfigurations(
     join(__dirname, '../../../config/easy-genomics.yaml'),
   );
-  if (configurations.length === 0) {
-    throw new Error('Easy Genomics Configuration missing / invalid, please update: easy-genomics.yaml');
-  } else if (configurations.length > 1) {
-    throw new Error('Too many Easy Genomics Configurations found, please update: easy-genomics.yaml');
-  } else {
-    const configuration: { [p: string]: ConfigurationSettings } | undefined = configurations.shift();
-
-    if (configuration) {
-      envName = Object.keys(configuration).shift();
-      configSettings = Object.values(configuration).shift();
-    }
-  }
+  const configuration = resolveConfiguration(configurations, getStackEnvName() ?? process.env.ENV_NAME);
+  envName = Object.keys(configuration).shift();
+  configSettings = Object.values(configuration).shift();
 
   if (!envName || !configSettings) {
     throw new Error('Easy Genomics Configuration missing / invalid, please check the easy-genomics.yaml configuration');
@@ -183,6 +195,8 @@ if (process.env.CI_CD === 'true') {
 
   seqeraApiBaseUrl = configSettings['back-end']['seqera-api-base-url'] || SEQERA_API_BASE_URL;
   githubPatSecretName = configSettings['back-end']['github-pat-secret-name'] || undefined;
+  analyticsEnabled = configSettings.analytics?.enabled === true;
+  costExplorerEnabled = configSettings['cost-explorer']?.enabled === true;
 
   const vpcPeeringSettings = configSettings['back-end']['vpc-peering'];
   if (vpcPeeringSettings) {
@@ -286,8 +300,7 @@ if (!sysAdminEmail || !sysAdminPassword) {
   );
 }
 
-// Setups Back-End Stack which initiates the nested stacks for Auth, Easy Genomics, AWS HealthOmics and NextFlow Tower
-new BackEndStack(app, `${namePrefix}-main-back-end-stack`, {
+const sharedStackProps = {
   env: {
     account: awsAccountId,
     region: awsRegion,
@@ -311,11 +324,65 @@ new BackEndStack(app, `${namePrefix}-main-back-end-stack`, {
   cognitoDomainPrefix,
   callbackUrls,
   logoutUrls,
+  analyticsEnabled,
+  costExplorerEnabled,
+};
+
+// Shared platform stack: VPC, KMS, Auth, AWS HealthOmics and NF-Tower (sharing one API Gateway).
+const backEndStack = new BackEndStack(app, `${namePrefix}-main-back-end-stack`, sharedStackProps);
+
+// Dedicated Easy Genomics API stack: owns its own REST API so the route-heavy
+// easy-genomics domain no longer pushes the shared back-end stack past the
+// 500-resource CloudFormation limit. Cognito, VPC and KMS are passed as
+// cross-stack references; CDK will add the required exports/imports and
+// deploy `main-back-end-stack` first.
+const easyGenomicsApiStack = new EasyGenomicsApiStack(app, `${namePrefix}-easy-genomics-api-stack`, {
+  ...sharedStackProps,
+  userPool: backEndStack.userPool,
+  userPoolClient: backEndStack.userPoolClient,
+  userPoolSystemAdminGroupName: backEndStack.userPoolSystemAdminGroupName,
+  cognitoIdpKmsKey: backEndStack.cognitoIdpKmsKey,
+  vpc: backEndStack.vpc,
 });
+
+// Optional public API custom-domain layer. Only activates when the operator
+// supplied a pre-provisioned ACM cert, a hosted zone, and a target FQDN
+// (typically prod).
+//
+// Topology: single REST API mapped at the ROOT path (no base-path stripping).
+// We front the route-heavy easy-genomics API with the custom domain and leave
+// the smaller AWS HealthOmics + NF-Tower API on its invoke URL. The front-end
+// repository layer already routes by path prefix, so it only needs two env
+// vars instead of one:
+//   - `BASE_API_URL` (existing)       → fallback for all calls
+//   - `AWS_EASY_GENOMICS_API_URL`     → overrides easy-genomics calls when set
+//
+// A true "single public URL for all APIs" requires either (a) a CloudFront
+// distribution with path-based behaviors, or (b) restructuring every easy-genomics
+// controller route to drop the `/easy-genomics` prefix so that a base-path
+// mapping would work. Both are tracked as follow-ups in the split plan.
+if (apiDomainName && awsApiCertificateArn && awsHostedZoneId) {
+  new ApiDomainStack(app, `${namePrefix}-api-domain-stack`, {
+    ...sharedStackProps,
+    apiDomainName: apiDomainName,
+    awsApiCertificateArn: awsApiCertificateArn,
+    awsHostedZoneId: awsHostedZoneId,
+    basePathMappings: [
+      // Root mapping: no base path stripping, so existing `/easy-genomics/...`
+      // routes keep working unchanged behind the custom domain.
+      { basePath: '', restApi: easyGenomicsApiStack.apiGateway.restApi },
+    ],
+  });
+}
 
 if (process.env.CDK_AUDIT === 'true') {
   // Perform AWS Security check on FE CDK infrastructure
   Aspects.of(app).add(new AwsSolutionsChecks({ verbose: false }));
 }
+
+// Synth-time guardrail: fail the build if any stack approaches the
+// CloudFormation 500-resource hard limit. See stack-resource-budget.ts for
+// the threshold and opt-out controls.
+checkStackResourceBudget(app);
 
 app.synth();

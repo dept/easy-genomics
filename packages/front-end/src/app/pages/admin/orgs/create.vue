@@ -9,6 +9,8 @@
 
   const $router = useRouter();
 
+  usePageTitle('Create organization');
+
   async function onSubmit(event: FormSubmitEvent<OrgDetailsForm>) {
     try {
       useUiStore().setRequestPending('createOrg');

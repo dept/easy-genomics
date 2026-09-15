@@ -46,12 +46,19 @@ export const OrgDescriptionSchema = z
     message: `${ORG_DESCRIPTION_MAX_LENGTH} ${getCharacterText(ORG_DESCRIPTION_MAX_LENGTH)} max`,
   });
 
+export const OrgEmailBrandingLogoUrlSchema = z.string().url().optional().or(z.literal(''));
+
 export const OrgDetailsFormSchema = z.object({
   Name: OrgNameSchema,
   Description: OrgDescriptionSchema,
   NextFlowTowerApiBaseUrl: z.string().min(0),
 });
 export type OrgDetailsForm = z.infer<typeof OrgDetailsFormSchema>;
+
+export const OrgEmailBrandingFormSchema = z.object({
+  EmailBrandingLogoUrl: OrgEmailBrandingLogoUrlSchema,
+});
+export type OrgEmailBrandingForm = z.infer<typeof OrgEmailBrandingFormSchema>;
 
 const AutoCompleteOptions = {
   On: 'on',

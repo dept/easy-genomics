@@ -1,4 +1,5 @@
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import { Auth } from 'aws-amplify';
 import { defineStore } from 'pinia';
 
 interface LabsStoreState {
@@ -12,6 +13,19 @@ const initialState = (): LabsStoreState => ({
   labs: {},
   labIdsByOrg: {},
 });
+
+async function shouldSuppressLabLoadErrorToast(): Promise<boolean> {
+  if (useUiStore().isLoggingOut) {
+    return true;
+  }
+  try {
+    await Auth.currentAuthenticatedUser();
+    return false;
+  } catch {
+    // No session (logout or expiry) — lab fetch failures are expected.
+    return true;
+  }
+}
 
 const useLabsStore = defineStore('labsStore', {
   state: initialState,
@@ -30,20 +44,34 @@ const useLabsStore = defineStore('labsStore', {
 
     async loadLab(labId: string): Promise<void> {
       const { $api } = useNuxtApp();
-      const lab = await $api.labs.labDetails(labId);
 
-      this.labs[lab.LaboratoryId] = lab;
+      try {
+        const lab = await $api.labs.labDetails(labId);
+        this.labs[lab.LaboratoryId] = lab;
+      } catch (error) {
+        console.error('Failed to load lab:', error);
+        if (!(await shouldSuppressLabLoadErrorToast())) {
+          useToastStore().error('Failed to load lab details. Please refresh.');
+        }
+      }
     },
 
     async loadLabsForOrg(orgId: string): Promise<void> {
       const { $api } = useNuxtApp();
-      const labs = await $api.labs.list(orgId);
 
-      this.labIdsByOrg[orgId] = [];
+      try {
+        const labs = await $api.labs.list(orgId);
+        this.labIdsByOrg[orgId] = [];
 
-      for (const lab of labs) {
-        this.labs[lab.LaboratoryId] = lab;
-        this.labIdsByOrg[orgId].push(lab.LaboratoryId);
+        for (const lab of labs) {
+          this.labs[lab.LaboratoryId] = lab;
+          this.labIdsByOrg[orgId].push(lab.LaboratoryId);
+        }
+      } catch (error) {
+        console.error('Failed to load labs:', error);
+        if (!(await shouldSuppressLabLoadErrorToast())) {
+          useToastStore().error('Failed to load labs. Please refresh.');
+        }
       }
     },
   },

@@ -15,8 +15,19 @@ import { APIGatewayProxyEvent } from 'aws-lambda/trigger/api-gateway-proxy';
  * @param event
  */
 export function validateSystemAdminAccess(event: APIGatewayProxyWithCognitoAuthorizerEvent): Boolean {
-  const cognitoGroup: string = event.requestContext.authorizer.claims['cognito:groups'];
-  return cognitoGroup === 'SystemAdmin';
+  const cognitoGroups = event.requestContext.authorizer?.claims?.['cognito:groups'];
+  if (cognitoGroups == null || cognitoGroups === '') {
+    return false;
+  }
+  // Cognito may supply a single group, comma-separated groups, whitespace-separated, or an array
+  if (Array.isArray(cognitoGroups)) {
+    return cognitoGroups.includes('SystemAdmin');
+  }
+  return String(cognitoGroups)
+    .split(/[\s,]+/)
+    .map((g) => g.trim())
+    .filter(Boolean)
+    .includes('SystemAdmin');
 }
 
 /**

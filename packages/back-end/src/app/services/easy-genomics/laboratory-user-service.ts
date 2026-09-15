@@ -12,6 +12,37 @@ import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-gen
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
 
+/**
+ * `NotifyOnLabRunsAdditionalEmails` is stored as a DynamoDB List (L) of strings on a normal write
+ * via `marshall()`, but the generic `update()` path below re-derives attribute types from plain JS
+ * `typeof`/`Array.isArray` checks (see `DynamoDBService.getExpressionAttributeValuesDefinition`),
+ * which marshals an all-string array as a String Set (SS) instead — the same failure mode already
+ * documented for `LaboratoryRun.InputFileKeys` in laboratory-run-service.ts. An SS unmarshalls to a
+ * native `Set`, and `JSON.stringify` turns a `Set` into `{}`, silently dropping the data from any
+ * HTTP response. Coerce every read path to `string[]` before the item is returned or serialized.
+ */
+function coerceNotifyOnLabRunsAdditionalEmails(value: unknown): string[] | undefined {
+  if (value == null) return undefined;
+  if (Array.isArray(value)) {
+    return value.filter((v): v is string => typeof v === 'string');
+  }
+  if (value instanceof Set) {
+    return [...value].filter((v): v is string => typeof v === 'string');
+  }
+  return undefined;
+}
+
+function withCoercedNotifyOnLabRunsAdditionalEmails(laboratoryUser: LaboratoryUser): LaboratoryUser {
+  const next = coerceNotifyOnLabRunsAdditionalEmails(laboratoryUser.NotifyOnLabRunsAdditionalEmails);
+  if (next === undefined && laboratoryUser.NotifyOnLabRunsAdditionalEmails === undefined) return laboratoryUser;
+  if (next === undefined) {
+    const rest = { ...laboratoryUser };
+    delete rest.NotifyOnLabRunsAdditionalEmails;
+    return rest;
+  }
+  return { ...laboratoryUser, NotifyOnLabRunsAdditionalEmails: next };
+}
+
 export class LaboratoryUserService extends DynamoDBService implements Service<LaboratoryUser> {
   readonly LABORATORY_USER_TABLE_NAME: string = `${process.env.NAME_PREFIX}-laboratory-user-table`;
 
@@ -57,7 +88,7 @@ export class LaboratoryUserService extends DynamoDBService implements Service<La
 
     if (response.$metadata.httpStatusCode === 200) {
       if (response.Item) {
-        return <LaboratoryUser>unmarshall(response.Item);
+        return withCoercedNotifyOnLabRunsAdditionalEmails(<LaboratoryUser>unmarshall(response.Item));
       } else {
         throw new LaboratoryUserNotFoundError(laboratoryId, userId);
       }
@@ -84,7 +115,9 @@ export class LaboratoryUserService extends DynamoDBService implements Service<La
 
     if (response.$metadata.httpStatusCode === 200) {
       if (response.Items) {
-        return response.Items.map((item) => <LaboratoryUser>unmarshall(item));
+        return response.Items.map((item) =>
+          withCoercedNotifyOnLabRunsAdditionalEmails(<LaboratoryUser>unmarshall(item)),
+        );
       } else {
         throw new Error(`${logRequestMessage} unsuccessful: Resource not found`);
       }
@@ -112,7 +145,9 @@ export class LaboratoryUserService extends DynamoDBService implements Service<La
 
     if (response.$metadata.httpStatusCode === 200) {
       if (response.Items) {
-        return response.Items.map((item) => <LaboratoryUser>unmarshall(item));
+        return response.Items.map((item) =>
+          withCoercedNotifyOnLabRunsAdditionalEmails(<LaboratoryUser>unmarshall(item)),
+        );
       } else {
         throw new Error(`${logRequestMessage} unsuccessful: Resource not found`);
       }
@@ -140,7 +175,9 @@ export class LaboratoryUserService extends DynamoDBService implements Service<La
 
     if (response.$metadata.httpStatusCode === 200) {
       if (response.Items) {
-        return response.Items.map((item) => <LaboratoryUser>unmarshall(item));
+        return response.Items.map((item) =>
+          withCoercedNotifyOnLabRunsAdditionalEmails(<LaboratoryUser>unmarshall(item)),
+        );
       } else {
         throw new Error(`${logRequestMessage} unsuccessful: Resource not found`);
       }
@@ -182,7 +219,7 @@ export class LaboratoryUserService extends DynamoDBService implements Service<La
 
     if (response.$metadata.httpStatusCode === 200) {
       if (response.Attributes) {
-        return <LaboratoryUser>unmarshall(response.Attributes);
+        return withCoercedNotifyOnLabRunsAdditionalEmails(<LaboratoryUser>unmarshall(response.Attributes));
       } else {
         throw new Error(`${logRequestMessage} unsuccessful: Returned unexpected response`);
       }

@@ -1,16 +1,19 @@
 import { GetWorkflowCommandInput } from '@aws-sdk/client-omics';
 import { Handler } from 'aws-lambda';
+import { fetchGitHubSchemaJsonFile } from '@BE/services/aws-healthomics/fetch-github-schema-json';
+import { GITHUB_SCHEMA_URL_TAG, parseGitHubSchemaFileUrl } from '@BE/services/aws-healthomics/parse-github-schema-url';
 import { WorkflowSchemaService } from '@BE/services/aws-healthomics/workflow-schema-service';
 import { OmicsService } from '@BE/services/omics-service';
 import { SecretsManagerService } from '@BE/services/secrets-manager-service';
+import { SsmService } from '@BE/services/ssm-service';
 
 const omicsService = new OmicsService();
 const secretsManagerService = new SecretsManagerService();
+const ssmService = new SsmService();
 const workflowSchemaService = new WorkflowSchemaService();
 
 const SCHEMA_FILE_PATH = 'nextflow_schema.json';
 const SCHEMA_VERSION = '1';
-const MAX_RETRIES = 3;
 
 interface EventBridgeTagChangeEvent {
   source: string;
@@ -47,65 +50,57 @@ function workflowIdFromArn(arn: string): string {
   return id;
 }
 
-/**
- * Fetches the nextflow_schema.json from the GitHub Contents API with exponential-backoff retry.
- * Returns null if the file is not found (404).
- */
-async function fetchGitHubSchema(owner: string, repo: string, token: string, attempt = 0): Promise<object | null> {
-  const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${SCHEMA_FILE_PATH}`;
-  const headers: Record<string, string> = {
-    'Accept': 'application/vnd.github+json',
-    'Authorization': `Bearer ${token}`,
-    'X-GitHub-Api-Version': '2022-11-28',
-    'User-Agent': 'easy-genomics-schema-fetcher',
-  };
-
-  let response: Response;
-  try {
-    response = await fetch(apiUrl, { headers });
-  } catch (networkError) {
-    if (attempt < MAX_RETRIES - 1) {
-      const backoffMs = Math.pow(2, attempt) * 1000;
+async function resolveGitHubToken(workflowTags?: Record<string, string>): Promise<string> {
+  const organizationId = workflowTags?.OrganizationId?.trim();
+  const laboratoryId = workflowTags?.LaboratoryId?.trim();
+  if (organizationId && laboratoryId) {
+    const tokenParameterName = `/easy-genomics/organization/${organizationId}/laboratory/${laboratoryId}/github-access-token`;
+    try {
+      const parameter = await ssmService.getParameter({
+        Name: tokenParameterName,
+        WithDecryption: true,
+      });
+      const laboratoryGitHubToken = parameter.Parameter?.Value?.trim();
+      if (laboratoryGitHubToken) {
+        return laboratoryGitHubToken;
+      }
       console.warn(
-        `[process-fetch-workflow-schema] Network error fetching schema, retrying in ${backoffMs}ms`,
-        networkError,
+        `[process-fetch-workflow-schema] Empty lab GitHub token at ${tokenParameterName}, falling back to project secret`,
       );
-      await new Promise((resolve) => setTimeout(resolve, backoffMs));
-      return fetchGitHubSchema(owner, repo, token, attempt + 1);
+    } catch (error: any) {
+      if (error?.name !== 'ParameterNotFound') {
+        throw error;
+      }
+      console.info(
+        `[process-fetch-workflow-schema] Lab GitHub token not found at ${tokenParameterName}, falling back to project secret`,
+      );
     }
-    throw networkError;
+  } else {
+    console.info(
+      '[process-fetch-workflow-schema] Missing OrganizationId/LaboratoryId workflow tags, falling back to project secret',
+    );
   }
 
-  if (response.status === 404) {
-    return null;
+  const secretName = process.env.GITHUB_PAT_SECRET_NAME;
+  if (!secretName) {
+    throw new Error('GITHUB_PAT_SECRET_NAME environment variable is not set');
   }
 
-  if (response.status >= 500 && attempt < MAX_RETRIES - 1) {
-    const backoffMs = Math.pow(2, attempt) * 1000;
-    console.warn(`[process-fetch-workflow-schema] GitHub returned ${response.status}, retrying in ${backoffMs}ms`);
-    await new Promise((resolve) => setTimeout(resolve, backoffMs));
-    return fetchGitHubSchema(owner, repo, token, attempt + 1);
+  const secretResponse = await secretsManagerService.getSecretValue({ SecretId: secretName });
+  const githubToken = secretResponse.SecretString?.trim();
+  if (!githubToken) {
+    throw new Error('GitHub PAT secret has no value — set the secret in Secrets Manager after deploy');
   }
 
-  if (!response.ok) {
-    throw new Error(`GitHub API error ${response.status} fetching ${SCHEMA_FILE_PATH}: ${await response.text()}`);
-  }
-
-  const data = (await response.json()) as { content: string; encoding: string };
-
-  if (data.encoding !== 'base64') {
-    throw new Error(`Unexpected encoding from GitHub Contents API: ${data.encoding}`);
-  }
-
-  const decoded = Buffer.from(data.content, 'base64').toString('utf-8');
-  return JSON.parse(decoded);
+  return githubToken;
 }
 
 /**
  * Lambda triggered by EventBridge "Tag Change on Resource" events for HealthOmics workflows.
- * When the github-repo-url tag is set or updated on a workflow, this function:
- *  1. Reads the github-repo-url tag value via omics:GetWorkflow
- *  2. Fetches nextflow_schema.json from the linked GitHub repository
+ * When the github-repo-url or github-schema-url tag is set or updated on a workflow, this function:
+ *  1. Reads tags via omics:GetWorkflow
+ *  2. If github-schema-url is set, fetches that file (blob or raw URL). Else uses github-repo-url
+ *     and fetches nextflow_schema.json at the repository root.
  *  3. Stores the schema in the workflow-schema DynamoDB table
  *
  * The schema is later used by read-workflow-schema to enrich the workflow's
@@ -125,36 +120,46 @@ export const handler: Handler = async (event: EventBridgeTagChangeEvent): Promis
     const workflowId = workflowIdFromArn(workflowArn);
     console.info(`[process-fetch-workflow-schema] Processing workflow ID: ${workflowId}`);
 
-    // Fetch the workflow to confirm the github-repo-url tag is present
     const workflow = await omicsService.getWorkflow(<GetWorkflowCommandInput>{
       id: workflowId,
       type: 'PRIVATE',
     });
 
+    const githubSchemaUrlTag = workflow.tags?.[GITHUB_SCHEMA_URL_TAG];
     const githubRepoUrl = workflow.tags?.['github-repo-url'];
-    if (!githubRepoUrl) {
-      console.warn(`[process-fetch-workflow-schema] Workflow ${workflowId} has no github-repo-url tag, skipping`);
+
+    let owner: string;
+    let repo: string;
+    let filePath: string;
+    let gitRef: string | undefined;
+
+    if (githubSchemaUrlTag) {
+      const parsed = parseGitHubSchemaFileUrl(githubSchemaUrlTag);
+      if (!parsed) {
+        console.warn(
+          `[process-fetch-workflow-schema] Workflow ${workflowId} has invalid ${GITHUB_SCHEMA_URL_TAG} tag, skipping`,
+        );
+        return;
+      }
+      ({ owner, repo, ref: gitRef, path: filePath } = parsed);
+    } else if (githubRepoUrl) {
+      ({ owner, repo } = parseGitHubRepoUrl(githubRepoUrl));
+      filePath = SCHEMA_FILE_PATH;
+      gitRef = undefined;
+    } else {
+      console.warn(
+        `[process-fetch-workflow-schema] Workflow ${workflowId} has no ${GITHUB_SCHEMA_URL_TAG} or github-repo-url tag, skipping`,
+      );
       return;
     }
 
-    // Retrieve GitHub PAT from Secrets Manager
-    const secretName = process.env.GITHUB_PAT_SECRET_NAME;
-    if (!secretName) {
-      throw new Error('GITHUB_PAT_SECRET_NAME environment variable is not set');
-    }
+    const githubToken = await resolveGitHubToken(workflow.tags);
 
-    const secretResponse = await secretsManagerService.getSecretValue({ SecretId: secretName });
-    const githubToken = secretResponse.SecretString;
-    if (!githubToken) {
-      throw new Error('GitHub PAT secret has no value — set the secret in Secrets Manager after deploy');
-    }
+    console.info(`[process-fetch-workflow-schema] Fetching ${filePath} from ${owner}/${repo}`);
 
-    const { owner, repo } = parseGitHubRepoUrl(githubRepoUrl);
-    console.info(`[process-fetch-workflow-schema] Fetching ${SCHEMA_FILE_PATH} from ${owner}/${repo}`);
-
-    const schema = await fetchGitHubSchema(owner, repo, githubToken);
+    const schema = await fetchGitHubSchemaJsonFile(owner, repo, filePath, githubToken, gitRef);
     if (!schema) {
-      console.error(`[process-fetch-workflow-schema] ${SCHEMA_FILE_PATH} not found in ${owner}/${repo}, skipping`);
+      console.error(`[process-fetch-workflow-schema] ${filePath} not found in ${owner}/${repo}, skipping`);
       return;
     }
 

@@ -13,6 +13,7 @@ import {
 import { pathsToModuleNameMapper } from 'ts-jest';
 import { ApacheLicense } from './projenrc/apache-license';
 import { setupProjectFolders } from './projenrc/easy-genomics-project-setup';
+import { GithubActionsApiDiffCheck } from './projenrc/github-actions-api-diff-check';
 import { GithubActionsCICDRelease } from './projenrc/github-actions-cicd-release';
 import { Husky } from './projenrc/husky';
 import { Nx } from './projenrc/nx';
@@ -20,11 +21,13 @@ import { PnpmWorkspace } from './projenrc/pnpm';
 import { VscodeSettings } from './projenrc/vscode';
 
 const defaultReleaseBranch = 'main';
-const cdkVersion = '2.176.0';
-const nodeVersion = '20.15.0';
+const cdkVersion = '2.260.0';
+// nuxt 3.21.8's oxc-parser requires node ^20.19.0 || >=22.12.0; pnpm silently skips its
+// platform-native bindings on older Node at install time, breaking every nuxt CLI command.
+const nodeVersion = '20.20.2';
 const pnpmVersion = '9.15.0';
-const awsSdkClientOmicsVersion = '^3.1019.0';
-const authorName = 'DEPT Agency';
+const awsSdkClientOmicsVersion = '^3.1090.0';
+const authorName = 'DEPT® Agency';
 const copyrightOwner = authorName;
 const copyrightPeriod = `${new Date().getFullYear()}`;
 
@@ -78,6 +81,7 @@ const eslintGlobalRules = {
   'require-await': 'off',
   'array-callback-return': 'error',
   '@typescript-eslint/indent': 'off',
+  'import/named': 'off',
 };
 
 const tsConfigOptions: TypescriptConfigOptions = {
@@ -172,6 +176,7 @@ const root = new typescript.TypeScriptProject({
     '@types/uuid',
     '@typescript-eslint/eslint-plugin@^7',
     '@typescript-eslint/parser@^7',
+    '@useoptic/optic@^1.0.9',
     'aws-sdk-client-mock',
     'aws-sdk-client-mock-jest',
     'cz-conventional-changelog',
@@ -194,34 +199,38 @@ if (root.eslint) {
       'import/no-extraneous-dependencies': 'off',
     },
   });
-  root.eslint.addPlugins('prettier');
-  root.eslint.addExtends('plugin:@typescript-eslint/recommended', 'plugin:prettier/recommended');
+  // Use eslint-config-prettier to disable conflicting rules; avoid eslint-plugin-prettier runtime dependency.
+  root.eslint.addExtends('plugin:@typescript-eslint/recommended', 'prettier');
 }
 root.removeScript('build');
 root.addScripts({
   // Development convenience scripts
   ['build-back-end']:
-    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --verbose=true',
+    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --verbose=true --outputStyle=stream',
   ['build-front-end']:
     'nx reset && pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --verbose=true',
   ['build-and-deploy']:
-    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --verbose=true && ' +
-    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --verbose=true && ' +
-    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --verbose=true && ' +
-    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --verbose=true',
+    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --verbose=true --outputStyle=stream && ' +
+    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --verbose=true --outputStyle=stream && ' +
+    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --verbose=true --outputStyle=stream && ' +
+    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --verbose=true --outputStyle=stream',
   ['prettier']: "prettier --write '{**/*,*}.{js,ts,vue,scss,json,md,html,mdx}'",
   ['upgrade']:
     'pnpm dlx projen upgrade && ' +
     'pnpm nx run-many --targets=upgrade --projects=@easy-genomics/shared-lib,@easy-genomics/back-end,@easy-genomics/front-end',
   // CI/CD convenience scripts
+  // outputStyle=stream (not static): static buffers the whole target output and dumps it
+  // at once on failure; the GitHub runner closes the pipe when the process exits, so the
+  // tail of large dumps — including the Jest summary and the actual failure — gets lost.
+  // Single nx invocation: the deploy target's dependsOn already builds shared-lib and the
+  // app once. A separate build invocation with NX_SKIP_NX_CACHE=true re-ran the ENTIRE
+  // build (jest + cdk synth) a second time inside the deploy invocation (~7.5 min wasted).
   ['cicd-build-deploy-back-end']:
-    'export CI_CD=true && ' +
-    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/back-end --verbose=true && ' +
-    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --verbose=true',
+    'export CI_CD=true NX_SKIP_NX_CACHE=true && ' +
+    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --outputStyle=stream',
   ['cicd-build-deploy-front-end']:
-    'export CI_CD=true && ' +
-    'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --verbose=true && ' +
-    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --verbose=true',
+    'export CI_CD=true NX_SKIP_NX_CACHE=true && ' +
+    'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --outputStyle=stream',
   ['prepare']: 'husky || true', // Enable Husky each time projen is synthesized
   ['projen']: 'nx reset; pnpm exec projen', // Clear NX cache each time projen is synthesized to avoid cache disk-space overconsumption
   ['pre-commit']: 'lint-staged',
@@ -256,22 +265,34 @@ const sharedLib = new typescript.TypeScriptProject({
     '@aws-sdk/client-cognito-identity-provider',
     `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-s3',
-    '@nestjs/config',
-    'aws-cdk',
-    'aws-cdk-lib',
+    '@aws-sdk/client-secrets-manager@^3.782.0',
+    // aws-cdk-lib 2.26x emits cloud-assembly schema v54, which requires CDK CLI >=2.1129.0;
+    // older frozen resolutions (2.1007.0) satisfy ^2.260.0 semver-wise but fail `cdk synth`.
+    'aws-cdk@^2.1129.0',
+    // Pin to the same CDK line as back-end/front-end: an unpinned spec froze at ^2.189.0,
+    // leaving a second aws-cdk-lib instance in the lockfile whose types clash with 2.26x.
+    `aws-cdk-lib@^${cdkVersion}`,
     'aws-lambda',
     'js-yaml',
+    'strnum',
     'uuid',
     'zod',
   ],
-  devDeps: ['@types/aws-lambda', '@types/js-yaml', '@types/uuid', 'aws-cdk-lib', 'openapi-typescript'],
+  devDeps: [
+    '@types/aws-lambda',
+    '@types/js-yaml',
+    '@types/uuid',
+    '@redocly/cli@~1.34.15',
+    `aws-cdk-lib@^${cdkVersion}`,
+    'openapi-typescript',
+    'tsx',
+    'typescript-json-schema',
+    'zod-to-json-schema@~3.24.6',
+  ],
   tsconfig: {
     ...tsConfigOptions,
     compilerOptions: {
       ...tsConfigOptions.compilerOptions,
-      // Emit lib/app/... (not lib/src/app/...) so deep imports like
-      // @easy-genomics/shared-lib/lib/app/utils/common resolve after compile.
-      rootDir: 'src',
       baseUrl: '.',
       paths: {
         '@BE/*': ['../packages/back-end/src/app/*'],
@@ -284,10 +305,22 @@ const sharedLib = new typescript.TypeScriptProject({
 sharedLib.addScripts({
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
 });
+sharedLib.addTask('generate:openapi', { exec: 'tsx src/app/openapi/generate-openapi.ts' });
+sharedLib.addTask('lint:openapi', { exec: 'redocly lint src/app/openapi/easy-genomics-api.yaml' });
+sharedLib.addTask('generate:api-types', {
+  exec: 'openapi-typescript src/app/openapi/easy-genomics-api.yaml -o src/app/types/easy-genomics/generated.d.ts',
+});
+sharedLib.preCompileTask.prependExec('pnpm run generate:api-types');
+
+// Suppress pnpm pack's verbose file listing in CI output
+const sharedLibPackTask = sharedLib.tasks.tryFind('package');
+sharedLibPackTask?.reset('mkdir -p dist/js');
+sharedLibPackTask?.exec('pnpm pack --pack-destination dist/js 2>&1 | tail -5');
 
 if (sharedLib.eslint) {
   sharedLib.eslint.addRules({ ...eslintGlobalRules });
-  sharedLib.eslint.addPlugins('prettier');
+  // Keep ESLint independent from prettier plugin runtime resolution under pnpm.
+  sharedLib.eslint.addExtends('prettier');
 }
 
 // Defines the Easy Genomics 'back-end' subproject
@@ -301,14 +334,23 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
   eslint: true,
   jest: true,
   jestOptions: {
+    // Recycle a worker past this heap as a safety net so no single worker accumulates
+    // unbounded memory across suites.
+    extraCliOptions: ['--workerIdleMemoryLimit=2GB'],
     jestConfig: {
+      // Disable v8 coverage on the build/deploy path. The test/infra/** suites synthesize
+      // full CDK stacks (~1.4GB heap each); collecting coverage over them multiplied worker
+      // memory enough to exceed the 16GB CI runner and OOM-kill the run (exit 1, no Jest
+      // summary). Coverage is not gated or uploaded anywhere, so it is dropped from CI; run
+      // `jest --coverage` locally on demand when a report is needed.
+      collectCoverage: false,
       // Ensure Jest can resolve tsconfig path aliases used by lambda handlers/tests.
       moduleNameMapper: {
         '^@BE/(.*)$': '<rootDir>/src/app/$1',
         '^@SharedLib/(.*)$': '<rootDir>/../shared-lib/src/app/$1',
         '^@FE/(.*)$': '<rootDir>/../front-end/src/app/$1',
+        '^@easy-genomics/shared-lib/lib/app/(.*)$': '<rootDir>/../shared-lib/src/app/$1',
       },
-      collectCoverageFrom: ['<rootDir>/src/app/**/*.ts', '!<rootDir>/src/app/**/*.d.ts'],
     },
   },
   lambdaAutoDiscover: false,
@@ -326,8 +368,12 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
       baseUrl: '.',
       paths: {
         '@BE/*': ['src/app/*'],
-        '@FE/*': ['../packages/front-end/src/app/*'],
-        '@SharedLib/*': ['../packages/shared-lib/src/app/*'],
+        '@FE/*': ['../front-end/src/app/*'],
+        '@SharedLib/*': ['../shared-lib/src/app/*'],
+        // Some packages import shared-lib via its compiled output path.
+        // During tests/ts-jest compilation in a workspace, `lib/` may not exist yet,
+        // so we map those deep imports to the source tree.
+        '@easy-genomics/shared-lib/lib/app/*': ['../shared-lib/src/app/*'],
       },
     },
   },
@@ -335,17 +381,21 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@aws-crypto/client-node',
     '@aws-crypto/decrypt-node',
     '@aws-crypto/encrypt-node',
+    '@aws-sdk/client-bedrock-runtime@3.782.0',
+    '@aws-sdk/client-cloudformation@^3.786.0',
+    '@aws-sdk/client-cloudwatch-logs@3.782.0',
     '@aws-sdk/client-cognito-identity-provider',
+    '@aws-sdk/client-cost-explorer@3.782.0',
     '@aws-sdk/client-dynamodb',
     `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-ses',
     '@aws-sdk/client-sns',
     '@aws-sdk/client-sqs',
-    '@aws-sdk/client-secrets-manager',
     '@aws-sdk/client-ssm',
     '@aws-sdk/client-sso-oidc',
     '@aws-sdk/client-sts',
     '@aws-sdk/client-s3',
+    '@aws-sdk/client-secrets-manager@^3.782.0',
     '@aws-sdk/lib-dynamodb',
     '@aws-sdk/lib-storage',
     '@aws-sdk/s3-request-presigner',
@@ -359,6 +409,7 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
     'cdk-nag',
     'dotenv',
     'jsonwebtoken',
+    'swagger-ui-dist@^5.17.14',
     'uuid',
   ],
   devDeps: [
@@ -368,6 +419,7 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@types/jsonwebtoken',
     '@types/node',
     '@types/archiver',
+    '@types/swagger-ui-dist',
     '@types/uuid',
     'aws-jwt-verify',
     'aws-sdk-client-mock',
@@ -379,8 +431,57 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
 });
 backEndApp.addScripts({
   ['cdk-audit']: 'export CDK_AUDIT=true && pnpm exec projen build',
-  ['build']: 'pnpm exec projen compile && pnpm exec projen test && pnpm exec projen build',
-  ['deploy']: 'pnpm cdk bootstrap && pnpm exec projen deploy',
+  // `projen build` already runs compile + test + synth + package internally; the previous
+  // `projen compile && projen test && projen build` chain executed compile and the full
+  // jest suite twice per build.
+  ['build']: 'pnpm exec projen build',
+  // Pre-deploy safety check. Runs before every `cdk deploy` and, on the
+  // first run against an un-armed environment, automatically takes an
+  // on-demand backup, enables `DeletionProtectionEnabled`, and enables
+  // PITR on every existing easy-genomics DynamoDB table before
+  // CloudFormation gets a chance to issue DeleteTable during the
+  // stack-split migration. Missing tables (fresh / greenfield deploys)
+  // are skipped, so there is no bypass flag; the guard is always on.
+  // See `scripts/preflight-deletion-protection.ts` and
+  // `docs/operations/migration-runbooks/EASY_GENOMICS_PROD_MIGRATION.md`.
+  ['preflight-deletion-protection']: 'tsx scripts/preflight-deletion-protection.ts',
+  // DynamoDB allows only one GSI create or delete per UpdateTable. When cdk.out
+  // would apply two or more GSI mutations to an existing table (the UAT failure
+  // mode when staging lands PollStatus + WorkflowExternalId together), this
+  // script deploys intermediate waves of one mutation each, then the final
+  // `cdk deploy` below applies the last remaining index. No-op when every
+  // existing table already matches cdk.out or only needs one change.
+  ['deploy-dynamodb-gsi-waves']: 'tsx scripts/deploy-dynamodb-gsi-waves.ts',
+  // Idempotent seed of ALLOW rows for each lab's configured S3Bucket. Kept as a standalone
+  // script for manual re-runs; `deploy` now runs it through `run-deploy-migrations` instead
+  // of calling it directly (see below), so it only executes once per environment.
+  ['migrate-laboratory-s3-access-seed']: 'tsx scripts/migrate-laboratory-s3-access-seed.ts',
+  // Deploy-gated, opt-in migration runner. Registered migrations run at most once per
+  // environment, tracked in an SSM ledger at /${NAME_PREFIX}/deploy-migrations/applied. See
+  // `scripts/deploy-migrations/registry.ts` and `scripts/README.md` for the full contract.
+  ['run-deploy-migrations']: 'tsx scripts/run-deploy-migrations.ts',
+  // NOTE: `--all` is required now that the back-end synthesizes multiple
+  // top-level stacks (`*-main-back-end-stack`, `*-easy-genomics-api-stack`,
+  // and optionally `*-api-domain-stack`). Without it, `cdk deploy` refuses to
+  // pick a default and exits with "specify which stacks to use".
+  //
+  // The preflight guard runs AFTER `cdk bootstrap` (which only touches the
+  // CDK toolkit stack, not app resources) and BEFORE any app-stack deploy,
+  // so a failing guard aborts without any destructive CloudFormation call.
+  // `deploy-dynamodb-gsi-waves` then optionally UpdateStacks currently deployed
+  // tables one GSI at a time when an existing table would create/delete more
+  // than one GSI (DynamoDB's UpdateTable limit). `--app cdk.out` reuses the cloud
+  // assembly produced by the build's synth step instead of synthesizing again
+  // (~5 min per synth for this app). Deploy therefore requires a prior `build` —
+  // every flow already guarantees that (nx deploy dependsOn build; the
+  // build-and-deploy scripts chain build first).
+  //
+  // Registered `pre` migrations run after the preflight guard and before any stack
+  // deploys (they may depend on old table shapes that new code will stop reading), and
+  // registered `post` migrations run after stacks deploy (they may depend on
+  // newly-created tables/GSIs, e.g. the laboratory-s3-access-table).
+  ['deploy']:
+    'pnpm cdk bootstrap --app cdk.out && pnpm run preflight-deletion-protection && pnpm run deploy-dynamodb-gsi-waves && pnpm run run-deploy-migrations -- --phase=pre && pnpm exec projen deploy --app cdk.out --all --progress bar --no-color --no-notices && pnpm run run-deploy-migrations -- --phase=post',
   ['build-and-deploy']: 'pnpm -w run build-back-end && pnpm run deploy --require-approval any-change', // Run root build-back-end script to inc shared-lib
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
   ['local-server']: 'tsx src/local-server/index.ts',
@@ -388,8 +489,15 @@ backEndApp.addScripts({
   ['invoke-process-handler']: 'tsx src/local-server/invoke-process-handler.ts',
   ['backfill-omics-run-tags']: 'tsx scripts/backfill-omics-run-tags.ts',
   ['backfill-omics-run-tags:dry-run']: 'tsx scripts/backfill-omics-run-tags.ts --dry-run',
-  ['recompute-laboratory-run-retention']:
-    'tsx scripts/recompute-laboratory-run-retention.ts --laboratoryId $LAB_ID --retentionMonths $RETENTION_MONTHS',
+  ['backfill-workflow-run-history-and-usages']: 'tsx scripts/backfill-workflow-run-history-and-usages.ts',
+  ['backfill-workflow-run-history-and-usages:dry-run']:
+    'tsx scripts/backfill-workflow-run-history-and-usages.ts --dry-run',
+  ['seed-workflow-tagging-test-runs']: 'tsx scripts/seed-workflow-tagging-test-runs.ts',
+  ['seed-workflow-tagging-test-runs:dry-run']: 'tsx scripts/seed-workflow-tagging-test-runs.ts --dry-run',
+  ['seed-dev-environment']: 'tsx scripts/seed-dev-environment.ts',
+  ['seed-dev-environment:dry-run']: 'tsx scripts/seed-dev-environment.ts --dry-run',
+  ['migrate-lab-s3-bucket-refs']: 'tsx scripts/migrate-lab-s3-bucket-refs.ts',
+  ['migrate-lab-s3-bucket-refs:dry-run']: 'tsx scripts/migrate-lab-s3-bucket-refs.ts --dry-run',
 });
 
 if (backEndApp.eslint) {
@@ -406,7 +514,7 @@ if (backEndApp.eslint) {
       },
     ],
   });
-  backEndApp.eslint.addPlugins('prettier');
+  backEndApp.eslint.addExtends('prettier');
 }
 // Defines the Easy Genomics 'front-end' subproject
 const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
@@ -417,6 +525,16 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
   defaultReleaseBranch: defaultReleaseBranch,
   docgen: false,
   eslint: true,
+  jest: true,
+  jestOptions: {
+    jestConfig: {
+      moduleNameMapper: {
+        '^@FE/(.*)$': '<rootDir>/src/app/$1',
+        '^@SharedLib/(.*)$': '<rootDir>/../shared-lib/src/app/$1',
+        '^@BE/(.*)$': '<rootDir>/../back-end/src/app/$1',
+      },
+    },
+  },
   lambdaAutoDiscover: false,
   requireApproval: awscdk.ApprovalLevel.NEVER,
   sampleCode: false,
@@ -435,7 +553,7 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
       baseUrl: '.',
       lib: ['DOM', 'ES2022'],
       sourceMap: true,
-      types: ['vue'],
+      types: ['node', 'vue'],
       verbatimModuleSyntax: false,
       paths: {
         '@/*': ['../../*'],
@@ -456,6 +574,7 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@aws-sdk/util-format-url',
     '@easy-genomics/shared-lib@workspace:*',
     '@iconify-json/heroicons',
+    '@iconify-json/lucide',
     '@iconify-json/logos@1.2.10',
     '@nuxt/ui@2.18.4', // Lock to version 2.18.4 due to input text bug
     '@pinia/nuxt',
@@ -467,7 +586,7 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@vueuse/nuxt',
     'amazon-cognito-identity-js',
     'aws-amplify@5.3.18',
-    'axios',
+    'axios@^1.18.1',
     'cdk-nag',
     'class-variance-authority',
     'clsx',
@@ -476,12 +595,19 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     'esrun',
     'file-saver',
     'jwt-decode',
-    'nuxt',
+    // Pinned to 3.21.2 — the last release where `nuxt dev` works for ssr:false apps.
+    // 3.21.3+ broke the dev-server Vite Node IPC socket for ssr:false (every page
+    // request 500s with "Vite Node IPC socket path not configured"); the 4.x-only fix
+    // (nuxt/nuxt#34959) was never backported to 3.x (nuxt/nuxt#35114, closed as won't-fix).
+    // 3.21.7+ separately crashes `nuxt dev` outright for ssr:false ("No entry found in
+    // rollupOptions.input", nuxt/nuxt#35033) — so no 3.21.x patch above .2 works here.
+    'nuxt@3.21.2',
     'pinia',
     'pinia-plugin-persistedstate',
     'playwright',
     'playwright-core',
     'playwright-slack-report',
+    'posthog-js',
     'prettier-plugin-tailwindcss',
     'sass',
     'tailwind-merge',
@@ -504,13 +630,26 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     'vue-eslint-parser',
   ],
 });
+// Front-end synth must run AFTER `nuxt-generate`: WwwHostingConstruct only includes the
+// site BucketDeployment when `dist/` exists at synth time. The default projen build embeds
+// synth in post-compile — i.e. BEFORE the site is generated — so we remove it from the
+// build task and run it explicitly at the end of the `build` script below. This is what
+// makes `deploy --app cdk.out` safe for the front-end.
+frontEndApp.postCompileTask.reset();
 frontEndApp.addScripts({
-  ['cdk-audit']: 'export CDK_AUDIT=true && pnpm exec projen build',
+  // Synth is no longer part of `projen build` (see postCompileTask.reset above), so the
+  // cdk-nag audit invokes it directly.
+  ['cdk-audit']: 'export CDK_AUDIT=true && pnpm exec projen synth:silent',
+  // `projen build` already runs the jest suite internally; the explicit `projen test`
+  // step before it ran the full front-end suite twice per build. Synth runs LAST so the
+  // assembly includes the generated site (see postCompileTask.reset above).
   ['build']:
-    'pnpm run nuxt-reset && pnpm run nuxt-prepare && pnpm exec projen test && pnpm exec projen build && pnpm run nuxt-load-settings && pnpm run nuxt-generate',
-  ['deploy']: 'pnpm cdk bootstrap && pnpm exec projen deploy',
+    'pnpm run nuxt-reset && pnpm run nuxt-prepare && pnpm exec projen build && pnpm run nuxt-load-settings && pnpm run nuxt-generate && pnpm exec projen synth:silent',
+  // `--app cdk.out` reuses the assembly synthesized at the END of the build script above,
+  // which includes the BucketDeployment because `dist/` exists by then.
+  ['deploy']: 'pnpm cdk bootstrap --app cdk.out && pnpm exec projen deploy --app cdk.out',
   ['build-and-deploy']:
-    'pnpm -w run build-front-end && pnpm cdk bootstrap && pnpm exec projen deploy --require-approval any-change', // Run root build-front-end script to inc shared-lib
+    'pnpm -w run build-front-end && pnpm cdk bootstrap --app cdk.out && pnpm exec projen deploy --app cdk.out --require-approval any-change', // Run root build-front-end script to inc shared-lib
   ['nuxt-dev']: 'pnpm -w run build-front-end && pnpm kill-port 3000 && nuxt dev',
   ['nuxt-load-settings']: 'npx esrun nuxt-load-configuration-settings.ts',
   ['nuxt-generate']: 'nuxt generate',
@@ -518,7 +657,7 @@ frontEndApp.addScripts({
   ['nuxt-preview']: 'nuxt preview',
   ['nuxt-postinstall']: 'nuxt prepare',
   ['test-e2e']:
-    'pnpm run test-e2e:sys-admin || true && pnpm run test-e2e:org-admin || true && pnpm run test-e2e:lab-manager || true && pnpm run test-e2e:lab-technician || true',
+    'pnpm run test-e2e:sys-admin && pnpm run test-e2e:org-admin && pnpm run test-e2e:lab-manager && pnpm run test-e2e:lab-technician',
   ['test-e2e:sys-admin']: 'USER_TYPE=sys-admin npx playwright test --project=sys-admin',
   ['test-e2e:org-admin']: 'USER_TYPE=org-admin npx playwright test --project=org-admin',
   ['test-e2e:lab-manager']: 'USER_TYPE=lab-manager npx playwright test --project=lab-manager',
@@ -536,12 +675,8 @@ frontEndApp.addScripts({
 // Setup Frontend App ESLint configuration
 if (frontEndApp.eslint) {
   frontEndApp.eslint.addRules({ ...eslintGlobalRules });
-  frontEndApp.eslint.addExtends(
-    '@nuxtjs/eslint-config-typescript',
-    'plugin:prettier/recommended',
-    'plugin:vue/vue3-recommended',
-  );
-  frontEndApp.eslint.addPlugins('eslint-plugin-vue', 'prettier', 'vue');
+  frontEndApp.eslint.addExtends('@nuxtjs/eslint-config-typescript', 'prettier', 'plugin:vue/vue3-recommended');
+  frontEndApp.eslint.addPlugins('eslint-plugin-vue', 'vue');
 }
 
 // Apply additional project setup
@@ -553,7 +688,9 @@ new GithubActionsCICDRelease(root, {
   environment: 'quality',
   pnpmVersion: pnpmVersion,
   onPushBranch: 'development',
-  e2e: true,
+  // E2E runs on the UAT pipeline (staging) as the pre-release gate; running the full
+  // Playwright suite on every development merge added ~22 min per push.
+  e2e: false,
 });
 new GithubActionsCICDRelease(root, {
   environment: 'quality-uat',
@@ -561,12 +698,22 @@ new GithubActionsCICDRelease(root, {
   onPushBranch: 'staging',
   e2e: true,
 });
+// Sandbox release pipeline — intended as an isolated dress-rehearsal environment for
+// infrastructure changes before they reach development. Kept manual-dispatch-only because
+// the sandbox AWS environment is NOT provisioned yet; with the previous `infra/*` push
+// trigger every matching branch push produced a guaranteed-failing run (OIDC role assumption
+// fails). To activate: (1) provision a sandbox AWS account, (2) create the
+// GitHub_to_AWS_via_FederatedOIDC role there with a trust policy allowing the GitHub OIDC
+// subject `repo:dept/easy-genomics:environment:sandbox`, (3) set AWS_ACCOUNT_ID/AWS_REGION
+// (+ deploy secrets) on the GitHub `sandbox` environment, then (4) restore
+// `onPushBranch: 'infra/*'` and drop `manualDispatchOnly`.
 new GithubActionsCICDRelease(root, {
   environment: 'sandbox',
   pnpmVersion: pnpmVersion,
-  onPushBranch: 'infra/*',
   e2e: false,
+  manualDispatchOnly: true,
 });
+new GithubActionsApiDiffCheck(root, { pnpmVersion });
 new ApacheLicense(root, licenseOptions);
 new ApacheLicense(backEndApp, licenseOptions);
 new ApacheLicense(frontEndApp, licenseOptions);
@@ -576,6 +723,7 @@ new ApacheLicense(sharedLib, licenseOptions);
 setupProjectFolders(root);
 
 root.package.addField('packageManager', `pnpm@${pnpmVersion}`);
+
 root.gitignore.addPatterns(
   '*.bkp',
   '*.dtmp',
@@ -595,9 +743,147 @@ root.gitignore.addPatterns(
   'packages/front-end/playwright-report',
   'docs/E2E-PLAYWRIGHT.md',
   '.pnpm-store',
+  // Graphify — opt-in via amer-easy-genomics-dev-ai-tools (local graph never committed)
+  'graphify-out/',
+  '.graphifyignore',
+  '.graphifyignore.with-docs',
+  // AI definitions — live in amer-easy-genomics-dev-ai-tools; local symlinks via that repo's setup.sh
+  'CLAUDE.md',
+  'AGENTS.md',
+  '.cursorrules',
+  '.mcp.json',
+  '.cursor/mcp.json',
+  '.cursor/rules/',
+  '.claude/',
 );
 // Exception: Include .env example files (used for local dev setup documentation)
 root.gitignore.addPatterns('!packages/back-end/.env.local.example', '!config/.env.nuxt.local.example');
+
+// Security: force minimum patched versions for transitive deps with active Dependabot alerts.
+// These overrides survive future `pnpm exec projen` runs because they live here, not in package.json.
+root.addFields({
+  pnpm: {
+    overrides: {
+      // CVE-2026-12151 (WebSocket DoS), CVE-2026-9679 (header injection),
+      // CVE-2026-11525 (SameSite downgrade), CVE-2026-6733 (queue poisoning)
+      // Capped at <7: undici 7+ requires Node.js 22; Lambda + CI run Node 20
+      undici: '>=6.27.0 <7.0.0',
+      // CVE-2026-12143 (CRLF injection via multipart field names)
+      // Bare key (no @version selector): pnpm matches selectors against the declared specifier,
+      // not the resolved version. @types/node-fetch declares form-data@^3.0.0 but resolves to
+      // 4.0.4, so @3/@4 selectors don't match. Bare key catches all paths.
+      'form-data': '>=4.0.6',
+      // DOMPurify ALLOWED_ATTR permanent pollution + Trusted Types policy bypass
+      dompurify: '>=3.4.11',
+      // CVE-2026-53655 (file smuggling via PAX size override on intermediary headers)
+      tar: '>=7.5.16',
+      // CVE-2026-54269 (schema-derived names can shadow runtime-significant properties)
+      // Capped at <8: protobufjs 8.x has breaking API changes; all consumers pin ~7
+      protobufjs: '>=7.6.3 <8.0.0',
+      // CVE-2026-53550 (quadratic-complexity DoS in merge key handling via repeated aliases)
+      // Also forces any transitive js-yaml 3.x to resolve to the safe 4.x line
+      // Capped at <5: js-yaml 5.x ESM build drops the default export, which breaks
+      // openapi-typescript@6 (`import yaml from 'js-yaml'`) in shared-lib generate:api-types
+      'js-yaml': '>=4.2.0 <5.0.0',
+
+      // --- PR3: CRITICAL severity ---
+      // CVE-2024-55565: newline injection in quoted shell args (RCE in shell pipelines)
+      'shell-quote': '>=1.8.4',
+      // CVE-2022-24433, CVE-2022-25912, CVE-2024-22012: option-parsing RCE + blockUnsafeOperations bypass
+      'simple-git': '>=3.36.0',
+      // CVE-2025-29244 + 3 others + XMLBuilder comment/CDATA injection: entity expansion / encoding bypass DoS and XSS
+      'fast-xml-parser': '>=5.7.0',
+      // @aws-amplify/storage@5.9.12 declares fast-xml-parser@^4.2.5 (4.x only); 5.x has breaking API changes
+      // that break S3 XML response parsing in the prod frontend bundle. Floor at >=4.5.5 clears all 4.x CVEs.
+      '@aws-amplify/storage>fast-xml-parser': '>=4.5.5 <5.0.0',
+
+      // --- PR3: HIGH severity ---
+      // 9 advisories: ReDoS via repeated wildcards and nested extglobs
+      // Capped at <10: minimatch 10.x is ESM-only and breaks eslint-plugin-import@2.x CJS default import.
+      // eslint-plugin-import declares ^3.1.2 (CJS-compatible); scoped override keeps it on safe 3.x.
+      minimatch: '>=9.0.7 <10.0.0',
+      'eslint-plugin-import>minimatch': '>=3.1.2 <4.0.0',
+      // nx@15 uses minimatch as a CJS default function (old 3.x API: const minimatch = require('minimatch'); minimatch(f, p)).
+      // minimatch 9.x exports a named function, not a default — this breaks nx's hasher and project-graph locators.
+      'nx>minimatch': '>=3.1.4 <4.0.0',
+      // eslint@8 uses the same old CJS default-function pattern and declares ^3.1.2.
+      // The global >=9 override would break eslint's eslint-helpers.js without this scoped pin.
+      'eslint>minimatch': '>=3.1.2 <4.0.0',
+      // test-exclude@6 (jest coverage) uses the old default-function API and declares ^3.0.4.
+      'test-exclude>minimatch': '>=3.1.2 <4.0.0',
+      // 6 advisories: ASN.1 recursion, signature forgery, BigInt DoS, basicConstraints bypass
+      'node-forge': '>=1.4.0',
+      // CVE-2024-37890 + 2 others: memory exhaustion DoS from tiny fragments
+      ws: '>=8.21.0',
+      // CVE-2024-55565 + 3 others: ReDoS via extglob quantifiers + POSIX method injection
+      picomatch: '>=4.0.4',
+
+      // --- PR3: HIGH severity (batch 2) ---
+      // CVE-2025-27152, CVE-2024-55417: prototype pollution + unbounded recursion DoS
+      flatted: '>=3.4.2',
+      // CVE-2024-21501: prototype pollution via __proto__ in defaults merge
+      defu: '>=6.1.5',
+      // CVE-2024-55970: prototype pollution in fromJS()
+      immutable: '>=5.1.5',
+      // CVE-2022-24045: HMAC signature not verified — auth bypass
+      // Capped at <4: jws 4.x is a breaking rewrite; jsonwebtoken@9.0.2 (prod Lambda dep) declares jws@^3.2.2 (3.x only)
+      jws: '>=3.2.3 <4.0.0',
+      // CVE-2023-26136: per-instance prototype hijack via cookie.set()
+      'js-cookie': '>=3.0.7',
+      // CVE-2024-55964: CLI command injection via -c/--cmd flag
+      glob: '>=10.5.0',
+      // CVE-2025-29823 + 1: host header injection + open redirect via Referer
+      koa: '>=2.16.4',
+      // CVE-2025-31136: attribute values with unescaped XML special chars
+      'fast-xml-builder': '>=1.1.7',
+      // GHSA-r9p9-qp4c-cf58: DoS via DOCTYPE entity expansion in SVG (billion laughs variant)
+      svgo: '>=3.3.3',
+      // CVE-2021-23337, CVE-2020-28500, CVE-2019-10744: template injection + prototype pollution
+      lodash: '>=4.17.23',
+      // CVE-2024-55955, CVE-2023-42226: RCE via RegExp.flags + CPU exhaustion DoS
+      'serialize-javascript': '>=7.0.5',
+
+      // --- PR3: MODERATE severity ---
+      // CVE-2024-55892 + 3 others: ReDoS in bracket notation + comma parsing
+      qs: '>=6.15.2',
+      // CVE-2024-55951 + 3 others: ReDoS in zero-step sequence + brace expansion
+      'brace-expansion': '>=2.0.3',
+      // CVE-2024-47764: DoS in BigInt.mod via crafted input
+      'bn.js': '>=5.2.3',
+      // CVE-2025-27105: stack overflow via deeply nested input
+      yaml: '>=2.8.3',
+      // CVE-2022-21676: predictable results from non-integer seed
+      // Capped at <4.0.0: nanoid v4+ is ESM-only, breaks postcss CJS require()
+      nanoid: '>=3.3.8 <4.0.0',
+      // CVE-2023-44270: XSS via unescaped </style> in CSS strings
+      postcss: '>=8.5.10',
+      // CVE-2024-55566: missing bounds check in v3/v5/v6 with buffer offset
+      // Capped at <12: uuid 12+ is ESM-only and breaks jest-junit (CJS consumer)
+      uuid: '>=11.1.1 <12.0.0',
+      // CVE-2024-55951: uncaught RangeError on deeply nested input
+      joi: '>=17.13.4',
+      // CVE-2025-29782: NTLMv2 hash disclosure via UNC path in launch-editor
+      'launch-editor': '>=2.14.1',
+
+      // --- PR3: LOW severity ---
+      // CVE-2023-0842 + 1: DoS in parsePatch() via crafted unified diffs
+      diff: '>=8.0.3',
+      // CVE-2024-47764: cookie name/path/domain not sanitized for special chars
+      cookie: '>=0.7.0',
+      // CVE-2024-55997: response header manipulation via crafted header values
+      'on-headers': '>=1.1.0',
+
+      // --- Dependabot follow-up: transitive copies not covered by direct-dep bumps ---
+      axios: '>=1.18.1', // force nx's transitive axios 1.8.4 up (prototype-pollution + SSRF cluster)
+      'fast-uri': '>=3.1.2', // path traversal + host confusion
+      tmp: '>=0.2.6', // path traversal + symlink write
+      got: '>=11.8.5', // redirect-to-UNIX-socket
+      'follow-redirects': '>=1.16.0', // auth header leak on cross-domain redirect
+      '@opentelemetry/core': '>=2.8.0', // unbounded memory alloc in W3C baggage
+      h3: '>=1.15.9', // request smuggling + path traversal + SSE injection
+    },
+  },
+});
 
 // Synthesize the project
 root.synth();

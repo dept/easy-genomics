@@ -1,11 +1,11 @@
 {
   "name": "@easy-genomics/front-end",
   "scripts": {
-    "build": "pnpm run nuxt-reset && pnpm run nuxt-prepare && pnpm exec projen test && pnpm exec projen build && pnpm run nuxt-load-settings && pnpm run nuxt-generate",
+    "build": "pnpm run nuxt-reset && pnpm run nuxt-prepare && pnpm exec projen build && pnpm run nuxt-load-settings && pnpm run nuxt-generate && pnpm exec projen synth:silent",
     "bundle": "pnpm exec projen bundle",
     "compile": "pnpm exec projen compile",
     "default": "pnpm exec projen default",
-    "deploy": "pnpm cdk bootstrap && pnpm exec projen deploy",
+    "deploy": "pnpm cdk bootstrap --app cdk.out && pnpm exec projen deploy --app cdk.out",
     "destroy": "pnpm exec projen destroy",
     "diff": "pnpm exec projen diff",
     "eslint": "pnpm exec projen eslint",
@@ -20,15 +20,15 @@
     "upgrade": "pnpm exec projen upgrade",
     "watch": "pnpm exec projen watch",
     "projen": "pnpm exec projen",
-    "cdk-audit": "export CDK_AUDIT=true && pnpm exec projen build",
-    "build-and-deploy": "pnpm -w run build-front-end && pnpm cdk bootstrap && pnpm exec projen deploy --require-approval any-change",
+    "cdk-audit": "export CDK_AUDIT=true && pnpm exec projen synth:silent",
+    "build-and-deploy": "pnpm -w run build-front-end && pnpm cdk bootstrap --app cdk.out && pnpm exec projen deploy --app cdk.out --require-approval any-change",
     "nuxt-dev": "pnpm -w run build-front-end && pnpm kill-port 3000 && nuxt dev",
     "nuxt-load-settings": "npx esrun nuxt-load-configuration-settings.ts",
     "nuxt-generate": "nuxt generate",
     "nuxt-prepare": "nuxt prepare",
     "nuxt-preview": "nuxt preview",
     "nuxt-postinstall": "nuxt prepare",
-    "test-e2e": "pnpm run test-e2e:sys-admin || true && pnpm run test-e2e:org-admin || true && pnpm run test-e2e:lab-manager || true && pnpm run test-e2e:lab-technician || true",
+    "test-e2e": "pnpm run test-e2e:sys-admin && pnpm run test-e2e:org-admin && pnpm run test-e2e:lab-manager && pnpm run test-e2e:lab-technician",
     "test-e2e:sys-admin": "USER_TYPE=sys-admin npx playwright test --project=sys-admin",
     "test-e2e:org-admin": "USER_TYPE=org-admin npx playwright test --project=org-admin",
     "test-e2e:lab-manager": "USER_TYPE=lab-manager npx playwright test --project=lab-manager",
@@ -43,7 +43,7 @@
     "local-server": "USE_LOCAL_BACKEND=1 pnpm run nuxt-dev"
   },
   "author": {
-    "name": "DEPT Agency",
+    "name": "DEPT® Agency",
     "organization": true
   },
   "devDependencies": {
@@ -55,7 +55,7 @@
     "@types/uuid": "^9.0.8",
     "@typescript-eslint/eslint-plugin": "^7",
     "@typescript-eslint/parser": "^7",
-    "aws-cdk": "^2.176.0",
+    "aws-cdk": "^2.260.0",
     "esbuild": "^0.24.2",
     "eslint": "^8",
     "eslint-import-resolver-typescript": "^3.10.0",
@@ -73,13 +73,14 @@
   },
   "dependencies": {
     "@aws-amplify/ui-vue": "3.1.30",
-    "@aws-sdk/client-omics": "^3.1019.0",
+    "@aws-sdk/client-omics": "^3.1090.0",
     "@aws-sdk/client-s3": "^3.782.0",
     "@aws-sdk/s3-request-presigner": "^3.782.0",
     "@aws-sdk/util-format-url": "^3.775.0",
     "@easy-genomics/shared-lib": "workspace:*",
     "@iconify-json/heroicons": "^1.2.2",
     "@iconify-json/logos": "1.2.10",
+    "@iconify-json/lucide": "^1.2.2",
     "@nuxt/ui": "2.18.4",
     "@pinia/nuxt": "^0.9.0",
     "@playwright/test": "^1.51.1",
@@ -90,8 +91,8 @@
     "@vueuse/nuxt": "^11.3.0",
     "amazon-cognito-identity-js": "^6.3.15",
     "aws-amplify": "5.3.18",
-    "aws-cdk-lib": "^2.176.0",
-    "axios": "^1.8.4",
+    "aws-cdk-lib": "^2.260.0",
+    "axios": "^1.18.1",
     "cdk-nag": "^2.35.67",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -101,12 +102,13 @@
     "esrun": "^3.2.26",
     "file-saver": "^2.0.5",
     "jwt-decode": "^4.0.0",
-    "nuxt": "3.15.2",
+    "nuxt": "3.21.2",
     "pinia": "^2.3.1",
     "pinia-plugin-persistedstate": "4.2.0",
     "playwright": "^1.51.1",
     "playwright-core": "^1.51.1",
     "playwright-slack-report": "^1.1.89",
+    "posthog-js": "^1.386.7",
     "prettier-plugin-tailwindcss": "^0.6.11",
     "sass": "^1.86.3",
     "tailwind-merge": "^2.6.0",
@@ -116,12 +118,17 @@
     "zod": "^3.24.2"
   },
   "engines": {
-    "node": ">= 20.15.0"
+    "node": ">= 20.20.2"
   },
   "license": "Apache-2.0",
   "version": "0.0.0",
   "jest": {
     "coverageProvider": "v8",
+    "moduleNameMapper": {
+      "^@FE/(.*)$": "<rootDir>/src/app/$1",
+      "^@SharedLib/(.*)$": "<rootDir>/../shared-lib/src/app/$1",
+      "^@BE/(.*)$": "<rootDir>/../back-end/src/app/$1"
+    },
     "testMatch": [
       "<rootDir>/@(src|test)/**/*(*.)@(spec|test).ts?(x)",
       "<rootDir>/@(src|test)/**/__tests__/**/*.ts?(x)"

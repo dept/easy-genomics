@@ -5,6 +5,7 @@ import {
   ListWorkflowsResponse,
   DescribeWorkflowResponse,
   Workflow,
+  WorkflowProgressResponse,
 } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
 import HttpFactory from '@FE/repository/factory';
 import { validateApiResponse } from '@FE/utils/api-utils';
@@ -88,6 +89,17 @@ class SeqeraRunsModule extends HttpFactory {
     }
 
     validateApiResponse(FileDownloadResponseSchema, res);
+    return res;
+  }
+
+  async getWorkflowProgress(labId: string, seqeraRunId: string): Promise<WorkflowProgressResponse> {
+    const res = await this.callSeqera<WorkflowProgressResponse>(
+      'GET',
+      `/workflow/read-workflow-progress/${seqeraRunId}?laboratoryId=${labId}`,
+    );
+    if (!res) {
+      throw new Error('Failed to retrieve workflow progress');
+    }
     return res;
   }
 

@@ -5,29 +5,19 @@ import { S3ResponseSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-
 import { S3SearchResponseSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-search-bucket-objects';
 import { S3TopLevelResponseSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-top-level-bucket-objects';
 import {
-  RequestFileDownloadUrl,
   FileDownloadUrlResponse,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-file-download-url';
-import {
   FolderDownloadJobResponse,
-  RequestFolderDownloadJob,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-folder-download-job';
-import {
   FolderDownloadJobStatusResponse,
+  RequestFileDownloadUrl,
+  RequestFolderDownloadJob,
   RequestFolderDownloadJobStatus,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-folder-download-job-status';
-import {
   RequestListBucketObjects,
-  S3Response,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-list-bucket-objects';
-import {
   RequestSearchBucketObjects,
-  S3SearchResponse,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-search-bucket-objects';
-import {
   RequestTopLevelBucketObjects,
+  S3Response,
+  S3SearchResponse,
   S3TopLevelResponse,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-top-level-bucket-objects';
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { FileDownloadResponse } from '@easy-genomics/shared-lib/src/app/types/nf-tower/file/request-file-download';
 import HttpFactory from '@FE/repository/factory';
 import { validateApiResponse } from '@FE/utils/api-utils';

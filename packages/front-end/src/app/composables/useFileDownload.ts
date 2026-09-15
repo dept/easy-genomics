@@ -1,5 +1,5 @@
 import { FileDownloadResponse } from '@/packages/shared-lib/src/app/types/nf-tower/file/request-file-download';
-import { FolderDownloadJobStatusResponse } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-folder-download-job-status';
+import { FolderDownloadJobStatusResponse } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import axios from 'axios';
 import { saveAs } from 'file-saver';
 import { Ref } from '.nuxt/imports';

@@ -284,6 +284,36 @@ export class LaboratorySeqeraCredentialsIncorrectError extends HttpError {
 }
 
 /**
+ * Laboratory HealthOmics VPC Configuration not found
+ *
+ * @param configurationName
+ * @param messageOpt - optional additional message
+ */
+export class LaboratoryHealthOmicsConfigurationNotFoundError extends HttpError {
+  constructor(configurationName: string, messageOpt?: string) {
+    super(`AWS HealthOmics Configuration '${configurationName}' could not be found`, 404, 'EG-309', messageOpt);
+  }
+}
+
+/**
+ * Laboratory HealthOmics VPC Configuration exists but is not ACTIVE
+ *
+ * @param configurationName
+ * @param status
+ * @param messageOpt - optional additional message
+ */
+export class LaboratoryHealthOmicsConfigurationNotActiveError extends HttpError {
+  constructor(configurationName: string, status: string, messageOpt?: string) {
+    super(
+      `AWS HealthOmics Configuration '${configurationName}' is not ACTIVE (status: ${status})`,
+      400,
+      'EG-310',
+      messageOpt,
+    );
+  }
+}
+
+/**
  * Laboratory User already exists
  *
  * @param messageOpt - optional additional message
@@ -339,6 +369,154 @@ export class LaboratoryRunDeleteFailedError extends HttpError {
 export class LaboratoryRunNotFoundError extends HttpError {
   constructor(runId: string, laboratoryId: string = 'unknown', messageOpt?: string) {
     super(`Run '${runId}' for laboratory '${laboratoryId}' could not be found`, 404, 'EG-323', messageOpt);
+  }
+}
+
+/**
+ * Laboratory Run already exists with this RunId, for a different user than the requester.
+ * A same-user collision is treated as an idempotent retry (see LaboratoryRunService.addOrGetExisting)
+ * and never reaches this error.
+ */
+export class LaboratoryRunAlreadyExistsError extends HttpError {
+  constructor(messageOpt?: string) {
+    super('Laboratory run already exists', 400, 'EG-336', messageOpt);
+  }
+}
+
+/**
+ * Sequence set not found
+ *
+ * @param sequenceSetId
+ * @param messageOpt - optional additional message
+ * @deprecated Use {@link SampleNotFoundError}
+ */
+export class SequenceSetNotFoundError extends HttpError {
+  constructor(sequenceSetId: string, messageOpt?: string) {
+    super(`Sequence set '${sequenceSetId}' could not be found`, 404, 'EG-324', messageOpt);
+  }
+}
+
+/**
+ * Sample not found
+ *
+ * @param sampleId
+ * @param messageOpt - optional additional message
+ */
+export class SampleNotFoundError extends HttpError {
+  constructor(sampleId: string, messageOpt?: string) {
+    super(`Sample '${sampleId}' could not be found`, 404, 'EG-328', messageOpt);
+  }
+}
+
+/**
+ * Data collection not found
+ *
+ * @param collectionId
+ * @param messageOpt - optional additional message
+ * @deprecated Use {@link SequenceCollectionNotFoundError}
+ */
+export class DataCollectionNotFoundError extends HttpError {
+  constructor(collectionId: string, messageOpt?: string) {
+    super(`Data collection '${collectionId}' could not be found`, 404, 'EG-325', messageOpt);
+  }
+}
+
+/**
+ * Sequence collection not found
+ *
+ * @param collectionId
+ * @param messageOpt - optional additional message
+ */
+export class SequenceCollectionNotFoundError extends HttpError {
+  constructor(collectionId: string, messageOpt?: string) {
+    super(`Sequence collection '${collectionId}' could not be found`, 404, 'EG-329', messageOpt);
+  }
+}
+
+/**
+ * Batch tag not found
+ */
+export class BatchTagNotFoundError extends HttpError {
+  constructor(batchTagId: string, messageOpt?: string) {
+    super(`Unknown batch: ${batchTagId}`, 404, 'EG-330', messageOpt);
+  }
+}
+
+/**
+ * Tag is not a batch tag
+ */
+export class NotABatchTagError extends HttpError {
+  constructor(messageOpt?: string) {
+    super('Tag is not a batch', 400, 'EG-331', messageOpt);
+  }
+}
+
+/**
+ * Tag name already exists
+ */
+export class TagNameAlreadyExistsError extends HttpError {
+  constructor(messageOpt?: string) {
+    super('A tag with this name already exists', 409, 'EG-332', messageOpt);
+  }
+}
+
+/**
+ * Workflow run preset not found
+ *
+ * @param presetId
+ * @param messageOpt - optional additional message
+ */
+export class WorkflowRunPresetNotFoundError extends HttpError {
+  constructor(presetId: string, messageOpt?: string) {
+    super(`Workflow run preset '${presetId}' could not be found`, 404, 'EG-333', messageOpt);
+  }
+}
+
+/**
+ * Owner already holds the maximum number of presets for this workflow
+ *
+ * @param limit
+ * @param messageOpt - optional additional message
+ */
+export class WorkflowRunPresetLimitReachedError extends HttpError {
+  constructor(limit: number, messageOpt?: string) {
+    super(`Only ${limit} presets can be saved per workflow`, 409, 'EG-334', messageOpt);
+  }
+}
+
+/**
+ * A preset with the same name already exists for this owner and workflow
+ */
+export class WorkflowRunPresetNameTakenError extends HttpError {
+  constructor(messageOpt?: string) {
+    super('A preset with this name already exists', 409, 'EG-335', messageOpt);
+  }
+}
+
+/**
+ * S3 bucket does not match laboratory configuration
+ */
+export class S3BucketMismatchError extends HttpError {
+  constructor(messageOpt?: string) {
+    super('S3 bucket does not match laboratory configuration', 400, 'EG-326', messageOpt);
+  }
+}
+
+/**
+ * Laboratory is not permitted to use this S3 bucket (allowlist).
+ */
+export class S3BucketAccessDeniedError extends HttpError {
+  constructor(messageOpt?: string) {
+    super('S3 bucket access denied', 403, 'EG-333', messageOpt);
+  }
+}
+
+/**
+ * S3 key is outside the laboratory prefix
+ */
+export class S3KeyOutOfPrefixError extends HttpError {
+  constructor(messageOpt?: string) {
+    super('S3 key is outside the laboratory prefix', 400, 'EG-327', messageOpt);
   }
 }
 

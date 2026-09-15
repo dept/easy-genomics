@@ -1,4 +1,8 @@
 <script setup lang="ts">
+  import {
+    isRunSpecificParam,
+    type WorkflowRunPresetParams,
+  } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-run-preset';
   import { ButtonSizeEnum } from '@FE/types/buttons';
   import { useToastStore } from '@FE/stores';
 
@@ -122,7 +126,6 @@
     },
   });
 
-  const shouldSaveAsDefaults = ref(props.hasSavedDefaults);
   let paramsReady = false;
   const fieldErrors = reactive<Record<string, string>>({});
 
@@ -232,6 +235,7 @@
   // Auto-populate when component mounts, then enable param change detection
   onMounted(() => {
     autoPopulateRunName();
+    runStore.updateWipOmicsRunParams(props.omicsRunTempId, localProps.params);
     nextTick(() => {
       paramsReady = true;
     });
@@ -246,67 +250,32 @@
     },
   );
 
-  // save the updated parameters to the store too
-  runStore.updateWipOmicsRunParams(props.omicsRunTempId, localProps.params);
+  const presetableParams = computed<WorkflowRunPresetParams>(
+    () =>
+      Object.fromEntries(
+        Object.entries(localProps.params).filter(
+          ([name, value]) => !isRunSpecificParam(name) && value !== '' && value !== undefined && value !== null,
+        ),
+      ) as WorkflowRunPresetParams,
+  );
 
-  function getPersistableDefaultParams(params: Record<string, unknown>): Record<string, unknown> {
-    const ignoredFields = new Set(['input', 'output', 'outdir']);
-    const entries = Object.entries(params).filter(([key, value]) => !ignoredFields.has(key) && !!value);
-    return Object.fromEntries(entries);
-  }
-
-  async function saveDefaultsForWorkflow() {
-    try {
-      const { $api } = useNuxtApp();
-      const userStore = useUserStore();
-      const userId = userStore.currentUserDetails.id;
-      if (!userId) {
-        return false;
-      }
-
-      const user = await $api.users.getUser();
-      const existingDefaults = user.OmicsWorkflowDefaultParams || {};
-      const workflowDefaults = getPersistableDefaultParams(localProps.params as Record<string, unknown>);
-
-      await $api.users.updateUser(userId, {
-        OmicsWorkflowDefaultParams: {
-          ...existingDefaults,
-          [props.workflowId]: workflowDefaults,
-        },
-      });
-      return true;
-    } catch (error) {
-      console.error('Failed to save workflow defaults', error);
-      useToastStore().error('Unable to save workflow defaults. You can continue without saving.');
-      return false;
-    }
-  }
-
-  async function clearDefaultsForWorkflow() {
-    try {
-      const { $api } = useNuxtApp();
-      const userStore = useUserStore();
-      const userId = userStore.currentUserDetails.id;
-      if (!userId) return false;
-
-      const user = await $api.users.getUser();
-      const existingDefaults = user.OmicsWorkflowDefaultParams || {};
-      const { [props.workflowId]: _, ...remainingDefaults } = existingDefaults;
-
-      await $api.users.updateUser(userId, {
-        OmicsWorkflowDefaultParams: remainingDefaults,
-      });
-      emit('defaults-cleared');
-      return true;
-    } catch (error) {
-      console.error('Failed to clear workflow defaults', error);
-      return false;
+  /**
+   * Applies a preset as the complete parameter configuration: anything the preset does not
+   * specify falls back to its schema default, so switching presets never leaves values behind
+   * from the previously applied one.
+   */
+  function applyPreset(presetParams: WorkflowRunPresetParams): void {
+    for (const name of Object.keys(localProps.params)) {
+      if (isRunSpecificParam(name)) continue;
+      localProps.params[name] = presetParams[name] ?? paramDefaults.value[name];
     }
   }
 
   async function onSubmit() {
+    runStore.updateWipOmicsRunParams(props.omicsRunTempId, localProps.params);
+
     const paramsRequired = wipOmicsRun.value?.paramsRequired || [];
-    const missingParams = paramsRequired.filter((paramName: string) => !wipOmicsRun.value?.params[paramName]);
+    const missingParams = paramsRequired.filter((paramName: string) => !localProps.params[paramName]);
 
     if (missingParams.length > 0) {
       useToastStore().error(`The '${missingParams.shift()}' field is required. Please try again.`);
@@ -321,40 +290,15 @@
       return;
     }
 
-    try {
-      const userStore = useUserStore();
-      const userId = userStore.currentUserDetails.id;
-      if (!userId) {
-        emit('next-step');
-        return;
-      }
-
-      if (shouldSaveAsDefaults.value) {
-        const success = await saveDefaultsForWorkflow();
-        if (success) {
-          useToastStore().success('Saved defaults for this workflow.');
-        }
-      } else if (props.hasSavedDefaults) {
-        const cleared = await clearDefaultsForWorkflow();
-        if (cleared) {
-          useToastStore().success('Cleared saved defaults for this workflow.');
-        }
-      }
-      emit('next-step');
-    } catch (error) {
-      console.error('Failed to check workflow defaults', error);
-      emit('next-step');
-    }
+    emit('next-step');
   }
 
   watch(
     () => localProps.params,
     (val) => {
-      if (val) runStore.updateWipOmicsRunParams(props.omicsRunTempId, val);
+      if (!paramsReady || !val) return;
 
-      if (paramsReady) {
-        shouldSaveAsDefaults.value = false;
-      }
+      runStore.updateWipOmicsRunParams(props.omicsRunTempId, val);
 
       // Re-validate fields that already have errors so they clear when fixed
       for (const fieldName of Object.keys(fieldErrors)) {
@@ -386,10 +330,21 @@
   />
 
   <div class="flex">
-    <div class="mr-4 w-1/4">
+    <div class="mr-4 w-1/4 space-y-5">
       <EGCard>
-        <EGText tag="small" class="mb-4">Step 03</EGText>
-        <EGText tag="h4" class="mb-0">Edit Parameters</EGText>
+        <p class="text-muted mb-1 text-sm">Step 3 of 4</p>
+        <h2 class="text-heading mb-0 text-lg font-medium">Edit Parameters</h2>
+      </EGCard>
+
+      <EGCard>
+        <EGWorkflowPresets
+          :lab-id="props.labId"
+          :workflow-id="props.workflowId"
+          :current-params="presetableParams"
+          :has-legacy-defaults="props.hasSavedDefaults"
+          @apply="applyPreset"
+          @legacy-adopted="emit('defaults-cleared')"
+        />
       </EGCard>
     </div>
     <div class="w-3/4">
@@ -433,17 +388,6 @@
               v-model="localProps.params[schemaField.name]"
             />
           </EGFormGroup>
-        </div>
-        <div class="flex items-center gap-2">
-          <input
-            id="save-defaults-checkbox"
-            type="checkbox"
-            class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300 focus:ring-2"
-            v-model="shouldSaveAsDefaults"
-          />
-          <label for="save-defaults-checkbox" class="text-sm text-gray-700">
-            Save these values for future runs of this workflow
-          </label>
         </div>
       </EGCard>
 

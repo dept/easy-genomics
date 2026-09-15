@@ -43,6 +43,7 @@ import {
   UpdateItemCommandOutput,
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { marshall } from '@aws-sdk/util-dynamodb';
 
 enum DynamoDBCommand {
   PUT_ITEM = 'put-item', // Create
@@ -183,11 +184,8 @@ export class DynamoDBService {
    * Helper service function to assist the generation of the DynamoDB
    * ExpressionAttributeValues from an object's property values & types.
    *
-   * The DynamoDB AttributeValue types supported attempts to cover the available
-   * types from:
-   *    https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_AttributeValue.html
-   *
-   * The following types are not currently supported: Binary, Binary Set, Null
+   * Delegates to `marshall` so nested objects and arrays produce well-formed
+   * AttributeValues (e.g. nested objects as `{ M: { ... } }`).
    *
    * @param object
    */
@@ -196,53 +194,13 @@ export class DynamoDBService {
     exclusions?: string[],
   ): { [p: string]: any } => {
     const obj = object as Record<string, unknown>;
-    const objectExpressionAttributeValues: { [p: string]: any }[] = Object.keys(object)
-      .filter((key: string) => !exclusions?.includes(key))
-      .map((key: string) => {
-        const attributeId = `${key.charAt(0).toLowerCase() + key.slice(1)}`; // Camel Case
-        const attributeValue = obj[key];
-        const attributeType = typeof attributeValue;
-
-        if (attributeType === 'boolean') {
-          return {
-            [`:${attributeId}`]: { BOOL: attributeValue }, // Boolean
-          };
-        } else if (attributeType === 'number') {
-          return {
-            [`:${attributeId}`]: { N: `${attributeValue}` }, // Number
-          };
-        } else if (attributeType === 'string') {
-          return {
-            [`:${attributeId}`]: { S: attributeValue }, // String
-          };
-        } else if (attributeType === 'object') {
-          if (Array.isArray(obj[key])) {
-            if (obj[key].every((_: unknown) => typeof _ === 'number')) {
-              const numberSet = (attributeValue as number[]).map((n) => `${n}`);
-              return {
-                [`:${attributeId}`]: { NS: numberSet }, // Number Set
-              };
-            } else if (obj[key].every((_: unknown) => typeof _ === 'string')) {
-              return {
-                [`:${attributeId}`]: { SS: attributeValue }, // String Set
-              };
-            } else {
-              // Array of objects
-              return {
-                [`:${attributeId}`]: { L: attributeValue }, // List
-              };
-            }
-          } else {
-            return {
-              [`:${attributeId}`]: { M: attributeValue }, // Map
-            };
-          }
-        } else {
-          throw new Error(`Attribute Type: ${attributeType} not supported`);
-        }
-      });
-    // @ts-ignore
-    return Object.assign({}, ...objectExpressionAttributeValues);
+    const payload: Record<string, unknown> = {};
+    for (const key of Object.keys(obj)) {
+      if (exclusions?.includes(key)) continue;
+      const attributeId = `${key.charAt(0).toLowerCase() + key.slice(1)}`; // Camel Case
+      payload[`:${attributeId}`] = obj[key];
+    }
+    return marshall(payload);
   };
 
   /**

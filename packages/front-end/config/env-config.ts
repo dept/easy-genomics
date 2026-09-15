@@ -1,12 +1,13 @@
 import { join } from 'path';
 import {
-  findConfiguration,
   getStackEnvName,
   loadConfigurations,
+  resolveConfiguration,
 } from '@easy-genomics/shared-lib/src/app/utils/configuration';
 
 interface EnvConfig {
   appDomainName: string | undefined;
+  easyGenomicsApiUrl: string | undefined;
   sysAdminEmail: string | undefined;
   sysAdminPassword: string | undefined;
   orgAdminEmail: string | undefined;
@@ -26,6 +27,7 @@ interface EnvConfig {
  */
 function getConfigurationSettings(): EnvConfig {
   let appDomainName: string | undefined;
+  let easyGenomicsApiUrl: string | undefined;
   let orgAdminEmail: string | undefined;
   let orgAdminPassword: string | undefined;
   let sysAdminEmail: string | undefined;
@@ -42,6 +44,7 @@ function getConfigurationSettings(): EnvConfig {
   if (process.env.CI === 'true') {
     // CI/CD Pipeline uses ENV parameters
     appDomainName = process.env.APP_DOMAIN_NAME;
+    easyGenomicsApiUrl = process.env.AWS_EASY_GENOMICS_API_URL;
     orgAdminEmail = process.env.ORG_ADMIN_EMAIL;
     orgAdminPassword = process.env.ORG_ADMIN_PASSWORD;
     sysAdminEmail = process.env.SYSTEM_ADMIN_EMAIL;
@@ -58,22 +61,8 @@ function getConfigurationSettings(): EnvConfig {
     // Load the configurations from local configuration file
     const configurations = loadConfigurations(join(__dirname, '../../../config/easy-genomics.yaml'));
 
-    if (configurations.length === 0) {
-      throw new Error('Easy Genomics Configuration(s) missing / invalid, please update: easy-genomics.yaml');
-    }
-
-    // Determine the stack environment name
-    const stackEnvName = getStackEnvName();
-
-    if (configurations.length > 1 && !stackEnvName) {
-      throw new Error(
-        'Multiple configurations found in easy-genomics.yaml, please specify argument: --stack {env-name}',
-      );
-    }
-
-    // Find or select the appropriate configuration
-    const configuration =
-      configurations.length > 1 ? findConfiguration(stackEnvName!, configurations) : configurations[0];
+    // Find or select the appropriate configuration for the current environment
+    const configuration = resolveConfiguration(configurations, getStackEnvName() ?? process.env.ENV_NAME);
 
     // Extract and validate the environment configuration
     const envConfig = Object.values(configuration)[0];
@@ -83,6 +72,7 @@ function getConfigurationSettings(): EnvConfig {
     }
 
     appDomainName = envConfig['app-domain-name'];
+    easyGenomicsApiUrl = envConfig['aws-easy-genomics-api-url'];
     sysAdminEmail = envConfig['back-end']['sys-admin-email'];
     sysAdminPassword = envConfig['back-end']['sys-admin-password'];
     orgAdminEmail = envConfig['back-end']['org-admin-email'];
@@ -99,6 +89,7 @@ function getConfigurationSettings(): EnvConfig {
 
   return {
     appDomainName,
+    easyGenomicsApiUrl,
     sysAdminEmail,
     sysAdminPassword,
     orgAdminEmail,

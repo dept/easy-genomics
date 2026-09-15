@@ -2,19 +2,23 @@ import { ListObjectsV2CommandOutput } from '@aws-sdk/client-s3';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { RequestListBucketObjectsSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-list-bucket-objects';
-import { RequestListBucketObjects } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-list-bucket-objects';
+import { RequestListBucketObjects } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { S3Service } from '@BE/services/s3-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
+  validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
+import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
 
 const laboratoryService = new LaboratoryService();
 const s3Service = new S3Service();
+const s3AccessService = new LaboratoryS3AccessService();
 
 /**
  * This API enables the Easy Genomics FE to request the specified S3 Bucket's
@@ -42,6 +46,7 @@ export const handler: Handler = async (
     // Only Organisation Admins and Laboratory Members are allowed to access downloads
     if (
       !(
+        validateSystemAdminAccess(event) ||
         validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
         validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
         validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
@@ -55,6 +60,17 @@ export const handler: Handler = async (
       ? request.S3Prefix
       : `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
 
+    if (!s3Bucket) {
+      throw new InvalidRequestError('Missing S3 bucket');
+    }
+    await assertLaboratoryHasS3BucketAccess(laboratory, s3Bucket, s3AccessService);
+
+    const normalizedPrefix = s3Prefix.endsWith('/') ? s3Prefix : `${s3Prefix}/`;
+    const laboratoryOwnedPrefix = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
+    if (!normalizedPrefix.startsWith(laboratoryOwnedPrefix)) {
+      throw new UnauthorizedAccessError();
+    }
+
     let isTruncated = true;
     let continuationToken: string | undefined = undefined;
     let allContents: any[] = [];
@@ -63,7 +79,7 @@ export const handler: Handler = async (
     while (isTruncated) {
       const response: ListObjectsV2CommandOutput = await s3Service.listBucketObjectsV2({
         Bucket: s3Bucket,
-        Prefix: s3Prefix,
+        Prefix: normalizedPrefix,
         MaxKeys: request.MaxKeys,
         ContinuationToken: continuationToken,
       });

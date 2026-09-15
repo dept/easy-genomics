@@ -1,16 +1,17 @@
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
+import { QueuedUserInvitationRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization';
 import {
   SnsProcessingEvent,
   SnsProcessingOperation,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
 import { User } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user';
-import { QueuedUserInvitationRequest } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/user-invitation';
 import { APIGatewayProxyResult, Handler, SQSRecord } from 'aws-lambda';
 import { SQSEvent } from 'aws-lambda/trigger/sqs';
 import { OrganizationService } from '@BE/services/easy-genomics/organization-service';
 import { UserInviteService } from '@BE/services/easy-genomics/user-invite-service';
 import { UserService } from '@BE/services/easy-genomics/user-service';
+import { parseSqsJsonBody } from '@BE/utils/sqs-json-body';
 
 const userInviteService = new UserInviteService();
 const organizationService = new OrganizationService();
@@ -21,8 +22,7 @@ export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxy
   try {
     const sqsRecords: SQSRecord[] = event.Records;
     for (const sqsRecord of sqsRecords) {
-      const body = JSON.parse(sqsRecord.body);
-      const snsEvent: SnsProcessingEvent = <SnsProcessingEvent>JSON.parse(body.Message);
+      const snsEvent: SnsProcessingEvent = parseSqsJsonBody<SnsProcessingEvent>(sqsRecord.body);
 
       switch (snsEvent.Type) {
         case 'UserInvite':

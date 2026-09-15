@@ -15,6 +15,7 @@ import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
+  validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
 import { getFilterResults, getFilters } from '@BE/utils/rest-api-utils';
 
@@ -41,6 +42,7 @@ export const handler: Handler = async (
     // Only available for Org Admins or Laboratory Managers and Technicians
     if (
       !(
+        validateSystemAdminAccess(event) ||
         validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
         validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
         validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)

@@ -1,10 +1,11 @@
 <script setup lang="ts">
   import { ReadWorkflow } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
+  import { toCountBucket, toSizeBucket } from '@easy-genomics/shared-lib/src/app/utils/analytics-buckets';
   import { useRunStore } from '@FE/stores';
   import { ButtonVariantEnum } from '@FE/types/buttons';
   import { WorkflowParameter } from '@aws-sdk/client-omics';
-  import { WorkflowSchemaResponse } from '@FE/repository/modules/omics-workflows';
   import { v4 as uuidv4 } from 'uuid';
+  import { ensureLabInActiveOrg } from '@FE/utils/ensure-lab-in-active-org';
 
   const { $api } = useNuxtApp();
   const $router = useRouter();
@@ -13,16 +14,26 @@
   const runStore = useRunStore();
   const omicsWorkflowsStore = useOmicsWorkflowsStore();
   const uiStore = useUiStore();
+  useInitialPendingRequests('loadOmicsWorkflow');
   const userStore = useUserStore();
   const labsStore = useLabsStore();
 
   const labId = $route.params.labId as string;
   const workflowId = $route.params.workflowId as string;
+  const { labTab, labTabHref } = useLabBreadcrumbs(labId);
 
   // check permissions to be on this page
   if (!userStore.canViewLab(labId)) {
+    uiStore.setRequestComplete('loadOmicsWorkflow');
     $router.push('/labs');
   }
+
+  onBeforeMount(async () => {
+    if (await ensureLabInActiveOrg({ labId, forceReload: true })) {
+      uiStore.setRequestComplete('loadOmicsWorkflow');
+      return;
+    }
+  });
 
   // set a new omicsRunTempId if not provided
   if (!$route.query.omicsRunTempId) {
@@ -32,7 +43,6 @@
   const hasLaunched = ref<boolean>(false);
   const exitConfirmed = ref<boolean>(false);
   const nextRoute = ref<string | null>(null);
-  const hasSavedDefaults = ref<boolean>(false);
 
   const selectedStepIndex = ref(0);
   const steps = ref([
@@ -49,17 +59,29 @@
 
   const omicsRunTempId = computed<string>(() => $route.query.omicsRunTempId as string);
 
+  /**
+   * When present, this run is being launched as a retry of a previously failed run.
+   * The wizard pre-fills its parameters, inputs, name and workflow version from that
+   * run so the user can re-launch "as is" or after editing any step.
+   */
+  const retryFromRunId = computed<string | undefined>(() => ($route.query.retryFromRunId as string) || undefined);
+  const retrySourceRunName = ref<string | null>(null);
+
   const workflowVersionOptions = ref<{ value: string; label: string }[] | undefined>(undefined);
+
+  /** True when the user record still has OmicsWorkflowDefaultParams for this workflow (drives the save-defaults checkbox). */
+  const hasOmicsWorkflowSavedParameterDefaults = ref(false);
 
   const wipOmicsRun = computed<WipRun | null>(() => runStore.wipOmicsRuns[omicsRunTempId.value] || null);
 
+  /** Only mount the active wizard step so parameter defaults are not written before upload completes. */
+  const activeStepKey = computed(() => steps.value[selectedStepIndex.value]?.key);
+
   const workflow = computed<ReadWorkflow | null>(() => omicsWorkflowsStore.workflows[workflowId] || null);
 
-  const schema = computed<Record<string, WorkflowParameter> | null>(() => workflow.value?.parameterTemplate ?? null);
+  usePageTitle(() => (workflow.value?.name ? `Run workflow — ${workflow.value.name}` : 'Run workflow'));
 
-  // nf-core JSON Schema fetched from GitHub via the workflow-schema DynamoDB cache.
-  // Optional — some workflows may not have a github-repo-url tag.
-  const nfSchema = ref<object | null>(null);
+  const schema = computed<Record<string, WorkflowParameter>>(() => workflow.value?.parameterTemplate ?? {});
 
   watch(
     omicsRunTempId,
@@ -82,6 +104,11 @@
   /**
    * Intercept any navigation away from the page (including the browser back button) and present the modal
    */
+  onMounted(() => {
+    // Analytics: run wizard started.
+    useAnalytics().track('run_wizard_started', { platform: 'omics' });
+  });
+
   onBeforeRouteLeave((to, from, next) => {
     const noConfirmRoutes = ['/signin'];
 
@@ -95,7 +122,8 @@
       next(true);
     } else if (!nextRoute.value) {
       // if there's currently no nextRoute, don't navigate yet and show the confirm cancel dialog
-      nextRoute.value = to.path;
+      // Use fullPath so breadcrumb / link exits keep query (e.g. ?tab=HealthOmics+Workflows)
+      nextRoute.value = to.fullPath;
       next(false);
     } else if (!exitConfirmed.value) {
       // don't go if exit hasn't been confirmed
@@ -107,6 +135,13 @@
   });
 
   function confirmCancel() {
+    // Analytics: run wizard abandoned (only if not launched).
+    if (!hasLaunched.value) {
+      useAnalytics().track('run_wizard_abandoned', {
+        step_at_exit: steps.value[selectedStepIndex.value]?.key || '',
+        platform: 'omics',
+      });
+    }
     exitConfirmed.value = true;
     $router.push(nextRoute.value!);
   }
@@ -117,84 +152,187 @@
   async function initialize() {
     uiStore.setRequestPending('loadOmicsWorkflow');
 
-    // reset state refs
-    hasLaunched.value = false;
-    nfSchema.value = null;
-    selectedStepIndex.value = 0;
-
-    steps.value.forEach((step) => (step.disabled = true));
-    steps.value[0].disabled = false;
-
-    // get full workflow details from API and save them in the store
-    const omicsWorkflow: ReadWorkflow = await $api.omicsWorkflows.get(labId, workflowId);
-    omicsWorkflowsStore.workflows[workflowId] = omicsWorkflow;
-
     try {
-      const versionsRes = await $api.omicsWorkflows.listVersions(labId, workflowId);
-      const names = (versionsRes.items ?? [])
-        .map((v) => v.versionName)
-        .filter((n): n is string => !!n)
-        .sort((a, b) => a.localeCompare(b));
-      if (names.length > 0) {
-        workflowVersionOptions.value = [
-          { value: OMICS_DEFAULT_WORKFLOW_VERSION, label: 'Default version' },
-          ...names.map((n) => ({ value: n, label: n })),
-        ];
-      } else {
+      // reset state refs
+      hasLaunched.value = false;
+      selectedStepIndex.value = 0;
+
+      steps.value.forEach((step) => (step.disabled = true));
+      steps.value[0].disabled = false;
+
+      // get full workflow details from API and save them in the store
+      const cachedOwnerId = omicsWorkflowsStore.workflows[workflowId]?.ownerAccountId;
+      const omicsWorkflow: ReadWorkflow = await $api.omicsWorkflows.get(labId, workflowId, cachedOwnerId);
+      omicsWorkflowsStore.workflows[workflowId] = {
+        ...omicsWorkflowsStore.workflows[workflowId],
+        ...omicsWorkflow,
+        ...(cachedOwnerId ? { ownerAccountId: cachedOwnerId } : {}),
+      };
+
+      try {
+        const versionsRes = await $api.omicsWorkflows.listVersions(labId, workflowId, cachedOwnerId);
+        const names = (versionsRes.items ?? [])
+          .map((v) => v.versionName)
+          .filter((n): n is string => !!n)
+          .sort((a, b) => a.localeCompare(b));
+        if (names.length > 0) {
+          workflowVersionOptions.value = [
+            { value: OMICS_DEFAULT_WORKFLOW_VERSION, label: 'Default version' },
+            ...names.map((n) => ({ value: n, label: n })),
+          ];
+        } else {
+          workflowVersionOptions.value = undefined;
+        }
+      } catch {
         workflowVersionOptions.value = undefined;
       }
-    } catch {
-      workflowVersionOptions.value = undefined;
-    }
-    // Fetch nf-core JSON Schema from the workflow-schema cache (non-blocking).
-    // The schema enriches the parameterTemplate with types, defaults, enum options, and help text.
-    const schemaResponse: WorkflowSchemaResponse | null = await $api.omicsWorkflows
-      .getSchema(labId, workflowId)
-      .catch((err) => {
-        console.warn('[run-workflow] Could not fetch workflow schema:', err);
-        return null;
-      });
-    nfSchema.value = schemaResponse?.Schema ?? null;
 
-    // Identify AWS HealthOmics workflow schema required parameters
-    const paramsRequired: string[] = Object.entries(omicsWorkflow.parameterTemplate)
-      .map((param: [string, object]) => {
-        const paramName: string = param[0];
-        const paramDetails: any = param[1];
+      // GetWorkflowResponse.parameterTemplate is optional per the AWS SDK type — HealthOmics can
+      // legitimately return a workflow with no parameter template (e.g. one that takes no params).
+      const parameterTemplate = omicsWorkflow.parameterTemplate ?? {};
 
-        if (paramDetails.optional === false) {
-          return paramName;
+      // Identify AWS HealthOmics workflow schema required parameters
+      const paramsRequired: string[] = Object.entries(parameterTemplate)
+        .map((param: [string, object]) => {
+          const paramName: string = param[0];
+          const paramDetails: any = param[1];
+
+          if (paramDetails.optional === false) {
+            return paramName;
+          }
+        })
+        .filter((_) => _ != undefined);
+
+      // fetch user defaults for this workflow (if any), scoped to current parameter template keys
+      const userId = userStore.currentUserDetails.id;
+      let workflowDefaultParams: Record<string, unknown> = {};
+      let rawSavedDefaults: Record<string, unknown> = {};
+      if (userId) {
+        const user = await $api.users.getUser();
+        rawSavedDefaults = user.OmicsWorkflowDefaultParams?.[workflowId] ?? {};
+        workflowDefaultParams = Object.fromEntries(
+          Object.entries(rawSavedDefaults).filter(([paramName]) =>
+            Object.prototype.hasOwnProperty.call(parameterTemplate, paramName),
+          ),
+        );
+      }
+      hasOmicsWorkflowSavedParameterDefaults.value =
+        typeof rawSavedDefaults === 'object' && Object.keys(rawSavedDefaults).length > 0;
+
+      if (retryFromRunId.value) {
+        // Retry: seed the wip run from the failed run instead of the user's saved defaults.
+        await prefillFromFailedRun(paramsRequired);
+      } else {
+        // initialize wip run in store
+        runStore.updateWipOmicsRun(omicsRunTempId.value, {
+          transactionId: omicsRunTempId.value,
+          paramsRequired: paramsRequired,
+        });
+
+        const existingWip = runStore.wipOmicsRuns[omicsRunTempId.value];
+        const paramsToApply = { ...workflowDefaultParams };
+        if (existingWip?.params?.input) {
+          paramsToApply.input = existingWip.params.input;
         }
-      })
-      .filter((_) => _ != undefined);
+        if (existingWip?.params?.outdir) {
+          paramsToApply.outdir = existingWip.params.outdir;
+        }
+        runStore.updateWipOmicsRunParams(omicsRunTempId.value, paramsToApply);
 
-    // fetch user defaults for this workflow (if any)
-    const userId = userStore.currentUserDetails.id;
-    let workflowDefaultParams: Record<string, any> = {};
-    if (userId) {
-      const user = await $api.users.getUser();
-      const rawDefaults = user.OmicsWorkflowDefaultParams?.[workflowId] || {};
-      workflowDefaultParams = Object.fromEntries(
-        Object.entries(rawDefaults).filter(([paramName]) =>
-          Object.prototype.hasOwnProperty.call(omicsWorkflow.parameterTemplate, paramName),
-        ),
-      );
+        await applySequenceCollectionsPrepopulation();
+      }
+    } finally {
+      uiStore.setRequestComplete('loadOmicsWorkflow');
+    }
+  }
+
+  /** When opened from Data Collections with a pre-built sample sheet, skip to parameter configuration. */
+  async function applySequenceCollectionsPrepopulation(): Promise<void> {
+    if ($route.query.from !== 'data-collections') return;
+
+    const wip = runStore.wipOmicsRuns[omicsRunTempId.value];
+    if (!wip?.sampleSheetS3Url || !wip?.runName) return;
+
+    setStepEnabled('upload', true);
+    setStepEnabled('parameters', true);
+    await nextTick();
+    const parametersIndex = steps.value.findIndex((step) => step.key === 'parameters');
+    if (parametersIndex >= 0) {
+      selectedStepIndex.value = parametersIndex;
+    }
+  }
+
+  /**
+   * Parses an `s3://bucket/key/file.ext` URL into its bucket and containing folder.
+   */
+  function parseS3Location(url?: string): { bucket?: string; path?: string } {
+    const match = url?.match(/^s3:\/\/([^/]+)\/(.+)$/);
+    if (!match) return {};
+    const bucket = match[1];
+    const key = match[2];
+    const lastSlash = key.lastIndexOf('/');
+    return { bucket, path: lastSlash > -1 ? key.substring(0, lastSlash) : '' };
+  }
+
+  /**
+   * Seeds the wip run for a retry from a previously failed LaboratoryRun. The failed run
+   * already stores the full parameter set (`Settings`), sample sheet location and workflow
+   * version, so the input data does not need to be re-uploaded. All steps are enabled so the
+   * user can jump straight to Review ("run as is") or step back to edit parameters/inputs.
+   */
+  async function prefillFromFailedRun(paramsRequired: string[]) {
+    const retryId = retryFromRunId.value!;
+
+    let source = runStore.labRuns[retryId];
+    if (!source) {
+      await runStore.loadLabRunsForLab(labId);
+      source = runStore.labRuns[retryId];
+    }
+    if (!source) {
+      useToastStore().error('Could not load the run to retry.');
+      return;
     }
 
-    hasSavedDefaults.value = Object.keys(workflowDefaultParams).length > 0;
+    retrySourceRunName.value = source.RunName;
 
-    // initialize wip run in store
+    // `Settings` is stored as a JSON string but the list endpoint returns it already parsed
+    // (ReadLaboratoryRun), so handle both shapes.
+    const rawSettings: unknown = source.Settings;
+    let params: Record<string, unknown> = {};
+    if (typeof rawSettings === 'string' && rawSettings) {
+      try {
+        params = JSON.parse(rawSettings);
+      } catch {
+        params = {};
+      }
+    } else if (rawSettings && typeof rawSettings === 'object') {
+      params = rawSettings as Record<string, unknown>;
+    }
+
+    const { bucket, path } = parseS3Location(source.SampleSheetS3Url);
+
     runStore.updateWipOmicsRun(omicsRunTempId.value, {
       transactionId: omicsRunTempId.value,
-      paramsRequired: paramsRequired,
+      paramsRequired,
+      runName: source.RunName,
+      workflowVersionName: source.WorkflowVersionName,
+      sampleSheetS3Url: source.SampleSheetS3Url,
+      ...(bucket ? { s3Bucket: bucket } : {}),
+      ...(path !== undefined ? { s3Path: path } : {}),
+      params,
     });
-    runStore.updateWipOmicsRunParams(omicsRunTempId.value, workflowDefaultParams);
 
-    uiStore.setRequestComplete('loadOmicsWorkflow');
+    enableAllSteps();
+    const reviewIndex = steps.value.findIndex((step) => step.key === 'review');
+    selectedStepIndex.value = params.input && reviewIndex !== -1 ? reviewIndex : 0;
   }
 
   function resetParams() {
     runStore.updateWipOmicsRun(omicsRunTempId.value, { params: {} });
+  }
+
+  function onOmicsWorkflowDefaultsCleared() {
+    hasOmicsWorkflowSavedParameterDefaults.value = false;
   }
 
   /**
@@ -206,32 +344,6 @@
   function resetRunPipeline() {
     $router.push({ query: { omicsRunTempId: uuidv4() } });
   }
-
-  // Note: the UTabs :ui attribute has to be defined locally in this file - if it is imported from another file,
-  //  Tailwind won't pick up and include the classes used and styles will be missing.
-  // To keep the tab styling consistent throughout the app, any changes made here need to be duplicated to all other
-  //  UTabs that use an "EGTabsStyles" as input to the :ui attribute.
-  const EGTabsStyles = {
-    base: 'focus:outline-none',
-    list: {
-      base: '!flex rounded-none mb-6 mt-0',
-      padding: 'p-0',
-      height: 'h-14',
-      marker: {
-        background: '',
-        shadow: '',
-      },
-      tab: {
-        base: 'font-serif w-auto mr-3 rounded-xl border border-solid',
-        background: '',
-        active: 'text-white bg-primary border-primary',
-        inactive: 'font-serif text-text-body border-background-dark-grey',
-        height: '',
-        padding: 'px-5 py-2',
-        size: 'text-sm',
-      },
-    },
-  };
 
   /**
    * Set the enabled state of a step in the stepper
@@ -261,9 +373,17 @@
     }
   }
 
-  function nextStep(val: string) {
+  async function nextStep(val: string) {
+    const completedStep = steps.value[selectedStepIndex.value]?.key || '';
     setStepEnabled(val, true);
+    // Wait for the enabled tab's `disabled` attribute to reach the DOM before moving the
+    // selected index — HeadlessUI's TabGroup resolves the target tab from the live DOM state,
+    // and moving the index in the same tick makes it fall back to the nearest still-enabled tab.
+    await nextTick();
     selectedStepIndex.value = clampIndex(selectedStepIndex.value + 1);
+
+    // Analytics: run wizard step completed.
+    useAnalytics().track('run_step_completed', { step: completedStep, platform: 'omics' });
   }
 
   function clampIndex(index: number) {
@@ -290,9 +410,22 @@
     enableAllSteps();
   }
 
-  function handleLaunchSuccess() {
+  async function handleLaunchSuccess() {
     hasLaunched.value = true;
     selectedStepIndex.value = -1;
+
+    // Analytics: run launched (workflow id hashed; counts/sizes bucketed).
+    const analytics = useAnalytics();
+    const workflowIdHash = await analytics.hashId(workflowId);
+    const wip = wipOmicsRun.value as { uploadedFiles?: unknown[]; uploadedFileSize?: number } | undefined;
+    const fileCount = Array.isArray(wip?.uploadedFiles) ? wip!.uploadedFiles.length : 0;
+    const uploadBytes = typeof wip?.uploadedFileSize === 'number' ? wip!.uploadedFileSize : 0;
+    analytics.track('run_launched', {
+      platform: 'omics',
+      workflow_id_hash: workflowIdHash,
+      file_count_bucket: toCountBucket(fileCount),
+      upload_size_bucket: toSizeBucket(uploadBytes),
+    });
   }
 </script>
 
@@ -301,106 +434,107 @@
     title="Run Workflow"
     :description="labName"
     :show-back="!hasLaunched"
-    :back-action="() => (nextRoute = `/labs/${labId}?tab=HealthOmics+Workflows`)"
+    :back-action="() => (nextRoute = labTabHref('HealthOmics Workflows'))"
     back-button-label="Exit Run"
     show-org-breadcrumb
     show-lab-breadcrumb
-    :breadcrumbs="[workflow?.name]"
+    :breadcrumbs="[{ label: 'HealthOmics Workflows', to: labTab('HealthOmics Workflows') }, workflow?.name || '']"
   />
 
   <template v-if="uiStore.isRequestPending('loadOmicsWorkflow') || !omicsRunTempId">
-    <EGLoadingSpinner />
+    <EGLoadingSpinner label="Loading workflow" />
   </template>
 
   <template v-else>
-    <UTabs :items="steps" :ui="EGTabsStyles" v-model="selectedStepIndex" :key="selectedStepIndex">
-      <!-- tab rendering -->
-      <template #default="{ item, index, selected }">
-        <div class="relative flex items-center gap-2 truncate">
-          <UIcon
-            v-if="selectedStepIndex > index || hasLaunched"
-            name="i-heroicons-check-20-solid"
-            class="text-primary h-4 w-4 flex-shrink-0"
-          />
-          <span :class="selectedStepIndex > index || hasLaunched ? 'text-primary' : ''">{{ item.label }}</span>
-          <span v-if="selected" class="bg-primary-500 dark:bg-primary-400 absolute -right-4 h-2 w-2 rounded-full" />
-        </div>
-      </template>
+    <div
+      v-if="retryFromRunId && !hasLaunched"
+      class="mb-6 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm"
+    >
+      <UIcon name="i-heroicons-arrow-path" class="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-700" />
+      <div>
+        <p class="font-medium text-amber-900">
+          Retrying failed run{{ retrySourceRunName ? `: ${retrySourceRunName}` : '' }}
+        </p>
+        <p class="text-amber-800">
+          Parameters and input data have been pre-filled from the previous run. Launch as is, or edit any step before
+          launching. Completed steps from the failed run are reused automatically where the sample data and their inputs
+          are unchanged &mdash; changing the sample data re-runs the workflow from the start.
+        </p>
+      </div>
+    </div>
 
-      <!-- step rendering -->
-      <template #item="{ item, index }">
+    <EGWizardStepTabs
+      v-model="selectedStepIndex"
+      :items="steps"
+      :has-launched="hasLaunched"
+      aria-label="Run HealthOmics workflow steps"
+    >
+      <template #panel="{ selected }">
         <div v-if="!hasLaunched">
-          <!-- Run Details -->
-          <template v-if="steps[selectedStepIndex].key === 'details'">
-            <EGRunFormRunDetails
-              platform="AWS HealthOmics"
-              :wip-run-temp-id="omicsRunTempId"
-              :pipeline-or-workflow-name="workflow?.name"
-              :pipeline-or-workflow-description="workflow?.description || ''"
-              :workflow-version-options="workflowVersionOptions"
-              @next-step="() => nextStep('upload')"
-              @step-validated="($event) => setStepEnabled('upload', $event)"
-            />
-          </template>
+          <EGRunFormRunDetails
+            v-if="activeStepKey === 'details' && selected"
+            platform="AWS HealthOmics"
+            :wip-run-temp-id="omicsRunTempId"
+            :pipeline-or-workflow-name="workflow?.name"
+            :pipeline-or-workflow-description="workflow?.description || ''"
+            :workflow-version-options="workflowVersionOptions"
+            @next-step="() => nextStep('upload')"
+            @step-validated="($event) => setStepEnabled('upload', $event)"
+          />
 
-          <!-- Upload Data -->
-          <template v-if="steps[selectedStepIndex].key === 'upload'">
-            <EGRunFormUploadData
-              :lab-id="labId"
-              :pipeline-or-workflow-name="workflow.name"
-              platform="AWS HealthOmics"
-              :wip-run-temp-id="omicsRunTempId"
-              @next-step="() => nextStep('parameters')"
-              @previous-step="() => previousStep()"
-              @step-validated="($event) => setStepEnabled('parameters', $event)"
-            />
-          </template>
+          <EGRunFormUploadData
+            v-else-if="activeStepKey === 'upload' && selected"
+            :lab-id="labId"
+            :pipeline-or-workflow-name="workflow.name"
+            platform="AWS HealthOmics"
+            :wip-run-temp-id="omicsRunTempId"
+            @next-step="() => nextStep('parameters')"
+            @previous-step="() => previousStep()"
+            @step-validated="($event) => setStepEnabled('parameters', $event)"
+          />
 
-          <!-- Edit Parameters -->
-          <template v-if="steps[selectedStepIndex].key === 'parameters'">
-            <EGRunWorkflowFormEditParameters
-              :params="wipOmicsRun?.params"
-              :schema="schema"
-              :nf-schema="nfSchema"
-              :lab-id="labId"
-              :workflow-id="workflowId"
-              :omics-run-temp-id="omicsRunTempId"
-              :has-saved-defaults="hasSavedDefaults"
-              @next-step="() => nextStep('review')"
-              @previous-step="() => previousStep()"
-              @defaults-cleared="hasSavedDefaults = false"
-            />
-          </template>
+          <EGRunWorkflowFormEditParameters
+            v-else-if="activeStepKey === 'parameters' && selected"
+            :key="`${omicsRunTempId}-${wipOmicsRun?.sampleSheetS3Url ?? ''}`"
+            :params="wipOmicsRun?.params ?? {}"
+            :schema="schema"
+            :lab-id="labId"
+            :workflow-id="workflowId"
+            :omics-run-temp-id="omicsRunTempId"
+            :has-saved-defaults="hasOmicsWorkflowSavedParameterDefaults"
+            @next-step="() => nextStep('review')"
+            @previous-step="() => previousStep()"
+            @defaults-cleared="onOmicsWorkflowDefaultsCleared"
+          />
 
-          <!-- Review Pipeline -->
-          <template v-if="steps[selectedStepIndex].key === 'review'">
-            <EGRunWorkflowFormReview
-              :schema="schema"
-              :params="wipOmicsRun?.params"
-              :lab-id="labId"
-              :omics-run-temp-id="omicsRunTempId"
-              :s3-bucket="wipOmicsRun?.s3Bucket"
-              :s3-path="wipOmicsRun?.s3Path"
-              :run-name="wipOmicsRun?.runName"
-              :transaction-id="wipOmicsRun?.transactionId"
-              :workflow-id="workflowId"
-              :workflow-name="workflow.name"
-              :workflow-version-name="wipOmicsRun?.workflowVersionName"
-              @submit-launch-request="() => handleSubmitLaunchRequest()"
-              @submit-launch-request-error="() => handleSubmitLaunchRequestError()"
-              @has-launched="() => handleLaunchSuccess()"
-              @previous-tab="() => previousStep()"
-            />
-          </template>
+          <EGRunWorkflowFormReview
+            v-else-if="activeStepKey === 'review' && selected"
+            :schema="schema"
+            :params="wipOmicsRun?.params"
+            :lab-id="labId"
+            :omics-run-temp-id="omicsRunTempId"
+            :s3-bucket="wipOmicsRun?.s3Bucket"
+            :s3-path="wipOmicsRun?.s3Path"
+            :run-name="wipOmicsRun?.runName"
+            :transaction-id="wipOmicsRun?.transactionId"
+            :workflow-id="workflowId"
+            :workflow-name="workflow.name"
+            :workflow-version-name="wipOmicsRun?.workflowVersionName"
+            :workflow-owner-id="omicsWorkflowsStore.workflows[workflowId]?.ownerAccountId"
+            @submit-launch-request="() => handleSubmitLaunchRequest()"
+            @submit-launch-request-error="() => handleSubmitLaunchRequestError()"
+            @has-launched="() => handleLaunchSuccess()"
+            @previous-tab="() => previousStep()"
+          />
         </div>
       </template>
-    </UTabs>
+    </EGWizardStepTabs>
 
     <!-- post-launch rendering -->
     <template v-if="hasLaunched">
       <EGEmptyDataCTA
         message="Your Workflow Run has Launched! Check on your progress via Runs."
-        :primary-button-action="() => $router.push(`/labs/${labId}?tab=Lab+Runs`)"
+        :primary-button-action="() => $router.push(labTab('Lab Runs'))"
         primary-button-label="Back to Runs"
         :secondary-button-action="() => resetRunPipeline()"
         secondary-button-label="Launch Another Workflow Run"

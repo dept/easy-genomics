@@ -5,22 +5,26 @@ import { RequestFolderDownloadJobSchema } from '@easy-genomics/shared-lib/src/ap
 import {
   FolderDownloadJobResponse,
   RequestFolderDownloadJob,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/file/request-folder-download-job';
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { v4 as uuidv4 } from 'uuid';
+import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { S3Service } from '@BE/services/s3-service';
-import { SnsService } from '@BE/services/sns-service';
+import { SqsService } from '@BE/services/sqs-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
+  validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
+import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
 
 const laboratoryService = new LaboratoryService();
 const s3Service = new S3Service();
-const snsService = new SnsService();
+const sqsService = new SqsService();
+const s3AccessService = new LaboratoryS3AccessService();
 
 const DOWNLOAD_JOBS_PREFIX = '.downloads/jobs';
 const DOWNLOAD_ARCHIVES_PREFIX = '.downloads/archives';
@@ -168,6 +172,7 @@ export const handler: Handler = async (
 
     if (
       !(
+        validateSystemAdminAccess(event) ||
         validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
         validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
         validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
@@ -187,9 +192,7 @@ export const handler: Handler = async (
       throw new InvalidRequestError('S3 bucket mismatch between S3Bucket and S3Prefix URI');
     }
 
-    if (laboratory.S3Bucket && s3Bucket !== laboratory.S3Bucket) {
-      throw new UnauthorizedAccessError();
-    }
+    await assertLaboratoryHasS3BucketAccess(laboratory, s3Bucket, s3AccessService);
 
     const requestedPrefix = normalizePrefix(providedPrefix);
     const laboratoryOwnedPrefix = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
@@ -227,9 +230,9 @@ export const handler: Handler = async (
       }),
     });
 
-    const topicArn = process.env.SNS_FOLDER_DOWNLOAD_TOPIC || '';
-    if (!topicArn) {
-      throw new Error('Missing SNS_FOLDER_DOWNLOAD_TOPIC environment variable');
+    const queueUrl = process.env.SQS_FOLDER_DOWNLOAD_QUEUE_URL || '';
+    if (!queueUrl) {
+      throw new Error('Missing SQS_FOLDER_DOWNLOAD_QUEUE_URL environment variable');
     }
 
     const message: FolderDownloadJobMessage = {
@@ -242,11 +245,11 @@ export const handler: Handler = async (
       StatusKey: statusKey,
     };
 
-    await snsService.publish({
-      TopicArn: topicArn,
+    await sqsService.sendMessage({
+      QueueUrl: queueUrl,
       MessageGroupId: laboratory.LaboratoryId,
       MessageDeduplicationId: `${jobId}-${Date.now()}`,
-      Message: JSON.stringify(message),
+      MessageBody: JSON.stringify(message),
     });
 
     const response: FolderDownloadJobResponse = {

@@ -5,7 +5,8 @@ import { Queue, QueueProps } from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 
 export interface QueueDetails extends QueueProps {
-  snsTopics: Topic[];
+  /** Optional SNS topics to subscribe this queue to. Prefer direct SQS publish. */
+  snsTopics?: Topic[];
 }
 
 export interface Queues {
@@ -33,16 +34,17 @@ export class SqsConstruct extends Construct {
 
   private createQueue = (name: string, queueDetails: QueueDetails) => {
     const removalPolicy = this.props.envType !== 'prod' ? RemovalPolicy.DESTROY : undefined; // Only for Non-Prod
+    const { snsTopics, ...queueProps } = queueDetails;
 
     const queue = new Queue(this, `${this.props.namePrefix}-${name}`, {
-      ...queueDetails,
+      ...queueProps,
       queueName:
         queueDetails.fifo === true ? `${this.props.namePrefix}-${name}.fifo` : `${this.props.namePrefix}-${name}`,
       removalPolicy: removalPolicy,
     });
 
-    // Subscribe SQS Queue to supplied SNS Topic(s)
-    queueDetails.snsTopics.forEach((topic: Topic) => {
+    // Subscribe SQS Queue to supplied SNS Topic(s), if any
+    snsTopics?.forEach((topic: Topic) => {
       topic.addSubscription(new SqsSubscription(queue));
     });
 

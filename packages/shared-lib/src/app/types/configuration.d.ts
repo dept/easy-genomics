@@ -11,6 +11,17 @@ export interface ConfigurationSettings {
   ['aws-region']: string;
   ['env-type']: 'dev' | 'pre-prod' | 'prod';
   ['app-domain-name']: string;
+  /**
+   * Optional override for the Easy Genomics API URL used by the Front-End when
+   * easy-genomics is split into its own back-end stack.
+   *
+   * If set, the UI routes easy-genomics calls to this URL directly (instead of
+   * `${AWS_API_GATEWAY_URL}/easy-genomics`).
+   *
+   * Typical value: the `EasyGenomicsApiUrl` output of
+   * `${envType}-${envName}-easy-genomics-api-stack` (no trailing slash).
+   */
+  ['aws-easy-genomics-api-url']?: string;
   // The following Front-End Infrastructure settings will need to be pre-configured in AWS and defined when 'env-type' is 'pre-prod' or 'prod'.
   ['aws-hosted-zone-id']?: string; // Not required when env-type: 'dev', but must exist for the same app-domain-name if configured
   ['aws-certificate-arn']?: string; // Not required when env-type: 'dev', but must exist for the same app-domain-name if configured
@@ -44,6 +55,39 @@ export interface ConfigurationSettings {
 
   // Front-End specific settings
   ['front-end']?: {};
+
+  /**
+   * Optional: Privacy-safe upstream usage analytics.
+   *
+   * Off by default. When `enabled: true` the institution opts in to sending
+   * anonymous usage events to the Easy Genomics project's central PostHog
+   * project. End users must additionally accept the in-app consent banner
+   * before any event is sent (double opt-in).
+   *
+   * Turning this on does not provision any analytics services in the adopting
+   * institution's AWS account beyond a per-deployment identifier secret.
+   */
+  ['analytics']?: {
+    ['enabled']?: boolean; // Defaults to false when unset
+    /**
+     * Opt-in escape hatch to allow analytics on a 'dev' env-type deployment
+     * (e.g. the project's own dev demo). Defaults to false; local development
+     * never sends events unless this is explicitly enabled.
+     */
+    ['allow-dev']?: boolean;
+  };
+
+  /**
+   * Optional: AWS Cost Explorer billed per-run cost sync.
+   *
+   * Off by default. When `enabled: true`, CDK deploys the daily CE sync Lambda
+   * and the front-end shows billed-cost pending / 24–48h messaging. Does not
+   * enable Cost Explorer in AWS itself — operators must Launch Cost Explorer
+   * and activate cost allocation tags first.
+   */
+  ['cost-explorer']?: {
+    ['enabled']?: boolean; // Defaults to false when unset
+  };
 }
 
 export interface Configuration {

@@ -60,6 +60,8 @@
       }
     } catch (error) {
       console.error('Error processing token; error:', error);
+      useToastStore().error('Invalid or expired invitation link.');
+      navigateTo('/signin');
     }
   }
 
@@ -97,6 +99,8 @@
 
   function handleSuccess() {
     useToastStore().success(`Welcome to Easy Genomics!`);
+    // Analytics: invitation accepted (role only, no identifying details).
+    useAnalytics().track('invitation_accepted', { role: 'OrganizationUser' });
   }
 
   /**

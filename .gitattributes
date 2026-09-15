@@ -4,6 +4,7 @@
 *.snap linguist-generated
 /.eslintrc.json linguist-generated
 /.gitattributes linguist-generated
+/.github/workflows/api-diff-check.yml linguist-generated
 /.github/workflows/cicd-release-quality-uat.yml linguist-generated
 /.github/workflows/cicd-release-quality.yml linguist-generated
 /.github/workflows/cicd-release-sandbox.yml linguist-generated
