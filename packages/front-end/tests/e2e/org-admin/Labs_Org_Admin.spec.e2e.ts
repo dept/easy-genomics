@@ -167,11 +167,8 @@ test('03 - Create a Laboratory Successfully', async ({ page, baseURL }) => {
   await page.getByPlaceholder('Describe your lab and what').fill('Playwright test lab description');
   await page.getByLabel('Default S3 bucket directory').click();
   await page.getByText(envConfig.testS3Url).click();
-  await page.getByLabel('Enable Seqera Integration').check();
-  await page.getByLabel('Workspace ID').click();
-  await page.getByLabel('Workspace ID').fill(envConfig.testWorkspaceId);
-  await page.getByLabel('Personal Access Token').click();
-  await page.getByLabel('Personal Access Token').fill(envConfig.testAccessToken);
+  // Seqera is soft-deprecated for new labs: the "Enable Seqera Integration" toggle is not
+  // offered here, so nothing to check/fill.
   await page.getByRole('button', { name: 'Create Lab' }).click();
   page.getByRole('cell', { name: 'Playwright test lab' });
   page.getByRole('cell', { name: 'Playwright test lab description' });
@@ -210,11 +207,8 @@ test('04 - Update a Laboratory Successfully', async ({ page, baseURL }) => {
     await page.getByPlaceholder('Enter lab name (required and').fill(labNameUpdated);
     await page.getByPlaceholder('Describe your lab and what').click();
     await page.getByPlaceholder('Describe your lab and what').fill('Automation test lab description');
-    await page.getByLabel('Enable Seqera Integration').check();
-    await page.getByLabel('Workspace ID').click();
-    await page.getByLabel('Workspace ID').fill(envConfig.testWorkspaceId);
-    await page.getByLabel('Personal Access Token').click();
-    await page.getByLabel('Personal Access Token').fill(envConfig.testAccessToken);
+    // This lab was created without Seqera enabled (test 03), so the "Enable Seqera Integration"
+    // section is soft-deprecated and hidden here too — nothing to check/fill.
 
     await page.getByRole('button', { name: 'Save Changes' }).click();
     await page.waitForTimeout(2000);

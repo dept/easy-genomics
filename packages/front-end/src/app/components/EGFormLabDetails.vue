@@ -149,13 +149,23 @@
     { value: 'VPC', label: 'VPC' },
   ];
 
+  // Seqera is soft-deprecated: only labs that already have it enabled keep seeing the
+  // integration section. Based on the server-loaded snapshot (unedited-lab-details), not the
+  // live toggle state, so an admin disabling Seqera on an already-enabled lab doesn't lose the
+  // section mid-edit. Create mode never loads a snapshot, so this is always false there.
+  const isSeqeraAlreadyEnabled = computed(() => uneditedLabDetails.value?.NextFlowTowerEnabled === true);
+
   // Badge state for the always-visible collapsible settings cards — reflects whether the
   // section is actually in effect right now, not just whether its fields are populated.
   const integrationsBadges = computed(() => [
-    {
-      label: `Seqera ${state.value.NextFlowTowerEnabled ? 'On' : 'Off'}`,
-      tone: state.value.NextFlowTowerEnabled ? 'positive' : 'neutral',
-    } as const,
+    ...(isSeqeraAlreadyEnabled.value
+      ? [
+          {
+            label: `Seqera ${state.value.NextFlowTowerEnabled ? 'On' : 'Off'}`,
+            tone: state.value.NextFlowTowerEnabled ? 'positive' : 'neutral',
+          } as const,
+        ]
+      : []),
     {
       label: `HealthOmics ${state.value.AwsHealthOmicsEnabled ? 'On' : 'Off'}`,
       tone: state.value.AwsHealthOmicsEnabled ? 'positive' : 'neutral',
@@ -1167,7 +1177,11 @@
       <EGCollapsibleSection
         heading-id="lab-settings-integrations-heading"
         title="Integrations"
-        description="Seqera and HealthOmics connections for this lab."
+        :description="
+          isSeqeraAlreadyEnabled
+            ? 'Seqera and HealthOmics connections for this lab.'
+            : 'HealthOmics connections for this lab.'
+        "
         :badges="isLoadingFormData ? [] : integrationsBadges"
       >
         <!-- Don't render Seqera/HealthOmics Off from defaultState while lab details are still loading. -->
@@ -1182,7 +1196,7 @@
           </div>
         </div>
         <template v-else>
-          <section :aria-labelledby="seqeraSectionId">
+          <section v-if="isSeqeraAlreadyEnabled" :aria-labelledby="seqeraSectionId">
             <h3 :id="seqeraSectionId" class="sr-only">Seqera integration</h3>
 
             <!-- Next Flow Tower: Toggle -->
@@ -1388,7 +1402,8 @@
           </div>
 
           <p v-if="!state.AwsHealthOmicsEnabled && !state.NextFlowTowerEnabled" class="text-muted text-xs">
-            Enable HealthOmics or Seqera integration above to configure AI failure analysis for that integration.
+            Enable HealthOmics{{ isSeqeraAlreadyEnabled ? ' or Seqera' : '' }} integration above to configure AI
+            failure analysis for that integration.
           </p>
 
           <!-- HealthOmics sub-section -->
