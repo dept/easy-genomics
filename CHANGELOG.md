@@ -32,10 +32,17 @@ Hotfix for v1.5. **Tier 1** upgrade — no DynamoDB, schema, or configuration ch
 No schema change, no data migration, and no backfill. Organization logo URLs persisted by v1.5 keep resolving: only the
 host is rewritten at read time, and the object stays at its original key.
 
-> **If your v1.5 deploy failed and rolled back, you cannot deploy v1.5.1 over it.** A rolled-back stack can only be
-> deleted, and deleting it leaves the `{namePrefix}-*` DynamoDB tables behind with deletion protection enabled — the
-> next deploy then fails with `ResourceInUseException: Table already exists` until they are dealt with. See
-> [§7.1 Recovering from a failed deploy](./docs/deployment/upgrading.md#71-recovering-from-a-failed-deploy).
+**If your v1.5 deploy failed and rolled back**, check the stack status before doing anything — it decides whether any
+cleanup is needed at all:
+
+- `UPDATE_ROLLBACK_COMPLETE` — an update failed on a deployment that already existed. The stack is intact and updatable,
+  so **deploy v1.5.1 straight over it; nothing needs deleting.** This is the usual case when upgrading.
+- `ROLLBACK_COMPLETE` — the stack's first creation failed. CloudFormation cannot update this state, so the stack must be
+  deleted first, which leaves the `{namePrefix}-*` DynamoDB tables behind with deletion protection enabled.
+
+See [§7.1 Recovering from a failed deploy](./docs/deployment/upgrading.md#71-recovering-from-a-failed-deploy) for both
+paths, including the one case that can still block a redeploy: a table the failed release _added_ is retained rather
+than deleted during a rollback, so it can be left orphaned and must be removed before deploying again.
 
 ## [v1.5] — Back-End API stack split
 
