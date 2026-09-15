@@ -249,17 +249,75 @@ minutes across all Lambda log groups. No `ERROR`-level entries should appear aft
 ### 7.1 Recovering from a failed deploy
 
 The table above covers rolling **back** a release that deployed successfully. This section covers the different case: a
-deploy that **never completed** and left CloudFormation mid-rollback. You cannot deploy the next version over it — two
-things block you, in order.
+deploy that **never completed** and left CloudFormation mid-rollback.
 
-**1. A rolled-back stack must be deleted, not updated.** A stack in `ROLLBACK_COMPLETE` cannot be updated by
-CloudFormation at all. Find the affected root stacks and delete those; nested stacks go with their parent:
+**Start by reading the stack status. It decides everything, and two of the statuses look alike but mean opposite
+things.**
 
 ```bash
 aws cloudformation list-stacks \
   --query "StackSummaries[?starts_with(StackName,'<namePrefix>') && StackStatus!='DELETE_COMPLETE'].[StackName,StackStatus]" \
   --output table
+```
 
+| Status                     | What happened                             | What to do                                                      |
+| -------------------------- | ----------------------------------------- | --------------------------------------------------------------- |
+| `UPDATE_ROLLBACK_COMPLETE` | An **update** failed on an existing stack | [§7.1.1](#711-a-failed-update) — just redeploy                  |
+| `UPDATE_ROLLBACK_FAILED`   | The rollback itself could not finish      | [§7.1.2](#712-a-rollback-that-did-not-finish) — resume it first |
+| `ROLLBACK_COMPLETE`        | The stack's **first creation** failed     | [§7.1.3](#713-a-failed-first-creation) — delete and redeploy    |
+
+Only `ROLLBACK_COMPLETE` requires deletion. If your deployment already existed before the upgrade, you are almost
+certainly in the first case, and **no cleanup is needed** — do not delete anything.
+
+#### 7.1.1 A failed update
+
+`UPDATE_ROLLBACK_COMPLETE` is a stable, updatable state. CloudFormation rolled the failed update back and your stack is
+intact and running the previous version. Fix the cause, then deploy again as normal:
+
+```bash
+git fetch --tags && git checkout <target-tag>
+pnpm install
+pnpm run build-and-deploy
+```
+
+**One caveat if the failed release added new DynamoDB tables.** Tables carry `RemovalPolicy.RETAIN`, so any table the
+update created before failing is _released_ rather than deleted during the rollback — the physical table survives, but
+the stack no longer tracks it. The next deploy then fails with `ResourceInUseException: Table already exists` for those
+tables only. Check the ones the release introduces:
+
+```bash
+aws cloudformation describe-stack-resources --physical-resource-id <namePrefix>-<new>-table \
+  --query "StackResources[?ResourceType=='AWS::DynamoDB::Table'].[StackName,LogicalResourceId]" --output text
+```
+
+A stack name means it is still tracked — do nothing. An error means it is orphaned. Such a table was created minutes
+before the rollback and is empty, so deleting that specific table is safe; confirm with
+`aws dynamodb scan --table-name <table> --select COUNT` before you do. **Never** apply this to a table that predates the
+failed release.
+
+#### 7.1.2 A rollback that did not finish
+
+`UPDATE_ROLLBACK_FAILED` means CloudFormation could not complete the rollback, usually because a resource would not
+delete. The stack accepts no updates until the rollback finishes:
+
+```bash
+aws cloudformation continue-update-rollback --stack-name <stack>
+
+# If the same resource keeps blocking it, skip that resource and reconcile it afterwards:
+aws cloudformation continue-update-rollback --stack-name <stack> \
+  --resources-to-skip <LogicalResourceId>
+```
+
+Once it reaches `UPDATE_ROLLBACK_COMPLETE`, follow §7.1.1.
+
+#### 7.1.3 A failed first creation
+
+`ROLLBACK_COMPLETE` only occurs when a stack's **initial creation** failed. CloudFormation cannot update a stack in this
+state at all — it must be deleted and recreated. This is the only case that requires deletion.
+
+Find the affected root stacks and delete those; nested stacks go with their parent:
+
+```bash
 aws cloudformation delete-stack --stack-name <namePrefix>-easy-genomics-api-stack
 aws cloudformation wait stack-delete-complete --stack-name <namePrefix>-easy-genomics-api-stack
 ```
@@ -267,7 +325,7 @@ aws cloudformation wait stack-delete-complete --stack-name <namePrefix>-easy-gen
 Delete in dependency order: `*-easy-genomics-api-stack` imports Cognito and KMS values from `*-main-back-end-stack`, so
 the api stack goes first. Leave the shared `CDKToolkit` bootstrap stack alone.
 
-**2. Deleting the stack orphans the DynamoDB tables.** Tables are provisioned with `RemovalPolicy.RETAIN` **and**
+**Deleting the stack orphans the DynamoDB tables.** Tables are provisioned with `RemovalPolicy.RETAIN` **and**
 `deletionProtection: true` unconditionally — deliberate data protection that does **not** depend on `env-type`, so it
 applies to `dev` environments too. They survive the stack deletion (reported as `DELETE_SKIPPED` in the event log) and
 keep their explicit names, so the next deploy fails with `ResourceInUseException: Table already exists`.
