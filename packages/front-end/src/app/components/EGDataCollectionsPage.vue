@@ -9,7 +9,7 @@
     LaboratorySample,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
   import EGDialog from '@FE/components/EGDialog.vue';
-  import { useLabsStore, useToastStore, useUiStore } from '@FE/stores';
+  import { useDataCollectionsStore, useLabsStore, useToastStore, useUiStore } from '@FE/stores';
   import { ButtonVariantEnum } from '@FE/types/buttons';
   import EGBuildSampleModal from '@FE/components/EGBuildSampleModal.vue';
   import EGBuildSamplesFromRegexModal from '@FE/components/EGBuildSamplesFromRegexModal.vue';
@@ -31,14 +31,10 @@
 
   const { $api } = useNuxtApp();
   const labsStore = useLabsStore();
+  const dataCollectionsStore = useDataCollectionsStore();
   const userStore = useUserStore();
   const uiStore = useUiStore();
-  useInitialPendingRequests(
-    'dataCollectionsTags',
-    'dataCollectionsSamples',
-    'dataCollectionsRunSequenceCollections',
-    'dataCollectionsList',
-  );
+  useInitialPendingRequests('dataCollectionsTags', 'dataCollectionsSamples', 'dataCollectionsRunSequenceCollections');
   const toast = useToastStore();
 
   type View = 'main' | 'import' | 'builder';
@@ -48,8 +44,6 @@
   const canEditLabDetails = computed(() => userStore.canEditLabDetails());
   const view = ref<View>('main');
   const activeTab = ref<DataCollectionsTab>('samples');
-
-  watch(activeTab, (tab) => emit('update:explorerTab', tab), { immediate: true });
 
   const tags = ref<LaboratoryDataTag[]>([]);
   const samples = ref<LaboratorySample[]>([]);
@@ -80,13 +74,18 @@
 
   const loading = computed(() =>
     uiStore.anyRequestPending([
-      'dataCollectionsList',
       'dataCollectionsTags',
       'dataCollectionsMutate',
       'dataCollectionsSamples',
       'dataCollectionsRunSequenceCollections',
     ]),
   );
+  const filesLoading = computed(() => uiStore.isRequestPending('dataCollectionsList'));
+  const fileCount = computed(() =>
+    dataCollectionsStore.unlinkedScan(props.labId) ? unlinkedFiles.value.length : null,
+  );
+
+  let unlinkedFilesRequest: Promise<void> | null = null;
 
   async function loadTags(): Promise<void> {
     uiStore.setRequestPending('dataCollectionsTags');
@@ -145,9 +144,24 @@
     }
   }
 
+  function applyCachedUnlinkedScan(): void {
+    const scan = dataCollectionsStore.unlinkedScan(props.labId);
+    if (!scan) {
+      unlinkedFiles.value = [];
+      unlinkedMeta.value = { s3Bucket: '', resolvedPrefix: '', lastScanLabel: '' };
+      return;
+    }
+    unlinkedFiles.value = scan.files;
+    unlinkedMeta.value = {
+      s3Bucket: scan.s3Bucket,
+      resolvedPrefix: scan.resolvedPrefix,
+      lastScanLabel: `Last scan ${new Date(scan.scannedAt).toLocaleTimeString()}`,
+    };
+  }
+
   function clearUnlinkedFiles(): void {
-    unlinkedFiles.value = [];
-    unlinkedMeta.value = { s3Bucket: '', resolvedPrefix: '', lastScanLabel: '' };
+    dataCollectionsStore.clearUnlinkedScan(props.labId);
+    applyCachedUnlinkedScan();
     uiStore.setRequestComplete('dataCollectionsList');
   }
 
@@ -155,26 +169,15 @@
     await labsStore.loadLab(props.labId);
   }
 
-  async function loadUnlinkedFiles(): Promise<void> {
-    await ensureLabDetailsLoaded();
-
-    if (!isLabS3Configured.value) {
-      clearUnlinkedFiles();
-      return;
-    }
-
+  async function fetchUnlinkedFiles(): Promise<void> {
     uiStore.setRequestPending('dataCollectionsList');
     try {
       const res = await $api.dataCollections.requestUnlinkedBucketObjects({
         LaboratoryId: props.labId,
         MaxTotalKeys: 25_000,
       });
-      unlinkedFiles.value = res.Contents || [];
-      unlinkedMeta.value = {
-        s3Bucket: res.S3Bucket,
-        resolvedPrefix: res.ResolvedPrefix,
-        lastScanLabel: `Last scan ${new Date().toLocaleTimeString()}`,
-      };
+      dataCollectionsStore.setUnlinkedScan(props.labId, res);
+      applyCachedUnlinkedScan();
     } catch (e: unknown) {
       if (shouldIgnoreUnlinkedBucketObjectsError(e, lab.value)) {
         clearUnlinkedFiles();
@@ -186,13 +189,58 @@
     }
   }
 
+  /**
+   * Serves a cached scan immediately. A full S3 walk only runs when there is no cache,
+   * the cache is older than the TTL, or the caller forces a rescan.
+   */
+  async function loadUnlinkedFiles(opts: { force?: boolean } = {}): Promise<void> {
+    await ensureLabDetailsLoaded();
+
+    if (!isLabS3Configured.value) {
+      clearUnlinkedFiles();
+      return;
+    }
+
+    applyCachedUnlinkedScan();
+    const hasCache = !!dataCollectionsStore.unlinkedScan(props.labId);
+    if (!opts.force && hasCache && !dataCollectionsStore.isUnlinkedScanStale(props.labId)) {
+      return;
+    }
+
+    if (unlinkedFilesRequest && !opts.force) {
+      return unlinkedFilesRequest;
+    }
+
+    unlinkedFilesRequest = fetchUnlinkedFiles();
+    try {
+      await unlinkedFilesRequest;
+    } finally {
+      unlinkedFilesRequest = null;
+    }
+  }
+
+  async function ensureUnlinkedFilesLoaded(): Promise<void> {
+    applyCachedUnlinkedScan();
+    const hasCache = !!dataCollectionsStore.unlinkedScan(props.labId);
+    if (!hasCache) {
+      await loadUnlinkedFiles({ force: true });
+      return;
+    }
+    if (dataCollectionsStore.isUnlinkedScanStale(props.labId)) {
+      void loadUnlinkedFiles({ force: true });
+    }
+  }
+
   async function refreshAll(): Promise<void> {
     await ensureLabDetailsLoaded();
     const tasks = [loadTags(), loadSamples(), loadSequenceCollections()];
-    if (isLabS3Configured.value) {
-      tasks.push(loadUnlinkedFiles());
-    } else {
+    if (!isLabS3Configured.value) {
       clearUnlinkedFiles();
+    } else {
+      applyCachedUnlinkedScan();
+      if (activeTab.value === 'files') {
+        tasks.push(ensureUnlinkedFilesLoaded());
+      }
     }
     await Promise.all(tasks);
   }
@@ -209,18 +257,36 @@
     await Promise.all([loadTags(), loadSamples()]);
   }
 
+  applyCachedUnlinkedScan();
+
   onMounted(() => void refreshAll());
 
   watch(
+    activeTab,
+    (tab) => {
+      emit('update:explorerTab', tab);
+      if (tab === 'files') void ensureUnlinkedFilesLoaded();
+    },
+    { immediate: true },
+  );
+
+  watch(
     () => props.labId,
-    () => void refreshAll(),
+    () => {
+      applyCachedUnlinkedScan();
+      void refreshAll();
+    },
   );
 
   watch(
     () => lab.value?.S3Bucket,
-    () => {
-      if (isLabS3Configured.value) void loadUnlinkedFiles();
-      else clearUnlinkedFiles();
+    (bucket, previous) => {
+      if (bucket === previous) return;
+      if (!isLabS3Configured.value) {
+        clearUnlinkedFiles();
+        return;
+      }
+      if (activeTab.value === 'files') void ensureUnlinkedFilesLoaded();
     },
   );
 
@@ -259,6 +325,8 @@
   function onImportCompleted(): void {
     view.value = 'main';
     activeTab.value = 'samples';
+    dataCollectionsStore.clearUnlinkedScan(props.labId);
+    applyCachedUnlinkedScan();
     void refreshAll();
   }
 
@@ -381,7 +449,7 @@
           class="shrink-0"
           :collection-count="sequenceCollections.length"
           :sample-count="samples.length"
-          :file-count="unlinkedFiles.length"
+          :file-count="fileCount"
         />
 
         <EGSequenceCollectionsListTab
@@ -423,7 +491,7 @@
         <EGUnlinkedFilesTab
           v-else
           :files="unlinkedFiles"
-          :loading="loading"
+          :loading="filesLoading"
           :selected-keys="selectedFileKeys"
           :search="fileSearch"
           :s3-configured="isLabS3Configured"
@@ -433,7 +501,7 @@
           :last-scan-label="unlinkedMeta.lastScanLabel"
           @update:selected-keys="selectedFileKeys = $event"
           @update:search="fileSearch = $event"
-          @rescan="loadUnlinkedFiles"
+          @rescan="loadUnlinkedFiles({ force: true })"
           @open-settings="openLabSettings"
           @build-sample="showBuildSampleModal = true"
           @group-with-regex="showRegexGroupModal = true"
@@ -450,6 +518,8 @@
         () => {
           selectedFileKeys = [];
           activeTab = 'samples';
+          dataCollectionsStore.clearUnlinkedScan(labId);
+          applyCachedUnlinkedScan();
           refreshAll();
         }
       "
@@ -464,6 +534,8 @@
         () => {
           selectedFileKeys = [];
           activeTab = 'samples';
+          dataCollectionsStore.clearUnlinkedScan(labId);
+          applyCachedUnlinkedScan();
           refreshAll();
         }
       "

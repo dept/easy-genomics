@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { QueryCommandOutput } from '@aws-sdk/client-dynamodb';
+import { BatchGetItemCommandOutput, QueryCommandOutput } from '@aws-sdk/client-dynamodb';
 import { _Object } from '@aws-sdk/client-s3';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import {
@@ -44,6 +44,10 @@ import { S3Service } from '../s3-service';
 
 const TABLE_NAME = `${process.env.NAME_PREFIX}-laboratory-data-tagging-table`;
 const GSI1_NAME = 'Gsi1Pk_Index';
+const FILE_SK_PREFIX = 'FILE#';
+/** DynamoDB hard limit on keys per BatchGetItem request. */
+const BATCH_GET_ITEM_LIMIT = 100;
+const BATCH_GET_ITEM_ATTEMPTS = 3;
 
 function skSampleFile(setId: string, ref: string): string {
   return `SAMPLEFILE#${setId}#${ref}`;
@@ -58,7 +62,7 @@ function skDcSet(collectionId: string, setId: string): string {
 }
 
 function skFile(ref: string): string {
-  return `FILE#${ref}`;
+  return `${FILE_SK_PREFIX}${ref}`;
 }
 
 function gsi1PkForSample(laboratoryId: string, setId: string): string {
@@ -615,13 +619,47 @@ export class LaboratorySampleService extends DynamoDBService {
     };
   }
 
-  /** Returns sample ids per file ref for listFileTags enrichment. */
+  /**
+   * Returns sample ids per file ref for listFileTags enrichment.
+   *
+   * Reads are batched because the unlinked-file scan resolves one ref per object in the lab
+   * bucket, so a GetItem per ref would cost thousands of sequential round trips.
+   */
   public async getSampleIdsForFileRefs(laboratoryId: string, refs: string[]): Promise<Map<string, string[]>> {
-    const result = new Map<string, string[]>();
-    for (const ref of refs) {
-      const fileRow = await this.getFileRowSampleIds(laboratoryId, ref);
-      result.set(ref, fileRow);
+    const result = new Map<string, string[]>(refs.map((ref) => [ref, []]));
+
+    for (let i = 0; i < refs.length; i += BATCH_GET_ITEM_LIMIT) {
+      let keys = refs
+        .slice(i, i + BATCH_GET_ITEM_LIMIT)
+        .map((ref) => marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }));
+
+      for (let attempt = 0; keys.length > 0 && attempt < BATCH_GET_ITEM_ATTEMPTS; attempt++) {
+        const res: BatchGetItemCommandOutput = await this.batchGetItem({
+          RequestItems: {
+            [TABLE_NAME]: {
+              Keys: keys,
+              /** Strongly consistent with sample writes so a just-linked file is never reported unlinked. */
+              ConsistentRead: true,
+            },
+          },
+        });
+
+        for (const item of res.Responses?.[TABLE_NAME] || []) {
+          const row = unmarshall(item) as Record<string, unknown>;
+          result.set(String(row.Sk).slice(FILE_SK_PREFIX.length), (row.SampleIds as string[]) || []);
+        }
+
+        keys = res.UnprocessedKeys?.[TABLE_NAME]?.Keys || [];
+      }
+
+      // Throttling can leave keys unread; falling back to single reads keeps a linked file from
+      // being misreported as unlinked, which would let callers build duplicate samples from it.
+      for (const key of keys) {
+        const ref = String(unmarshall(key).Sk).slice(FILE_SK_PREFIX.length);
+        result.set(ref, await this.getFileRowSampleIds(laboratoryId, ref));
+      }
     }
+
     return result;
   }
 
@@ -655,19 +693,15 @@ export class LaboratorySampleService extends DynamoDBService {
       maxTransactionFolders,
     });
 
-    const unlinked: _Object[] = [];
-    const CHUNK = 100;
-    for (let i = 0; i < allContents.length; i += CHUNK) {
-      const chunk = allContents.slice(i, i + CHUNK);
-      const refs = chunk.map((o) => encodeS3ObjectRef(s3Bucket, o.Key!));
-      const setIdsByRef = await this.getSampleIdsForFileRefs(laboratory.LaboratoryId, refs);
-      for (const obj of chunk) {
-        if (!obj.Key) continue;
-        const ref = encodeS3ObjectRef(s3Bucket, obj.Key);
-        const setIds = setIdsByRef.get(ref) || [];
-        if (!setIds.length) unlinked.push(obj);
-      }
-    }
+    const objects = allContents.filter((o) => !!o.Key);
+    const setIdsByRef = await this.getSampleIdsForFileRefs(
+      laboratory.LaboratoryId,
+      objects.map((o) => encodeS3ObjectRef(s3Bucket, o.Key!)),
+    );
+    const unlinked: _Object[] = objects.filter((o) => {
+      const ref = encodeS3ObjectRef(s3Bucket, o.Key!);
+      return !setIdsByRef.get(ref)?.length;
+    });
 
     return {
       Contents: unlinked.map((o) => ({
