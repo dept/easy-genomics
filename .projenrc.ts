@@ -187,6 +187,7 @@ const root = new typescript.TypeScriptProject({
     'lint-staged',
     'validate-branch-name',
     'prettier',
+    '@playwright/cli',
   ],
 });
 
@@ -755,6 +756,11 @@ root.gitignore.addPatterns(
   '.cursor/mcp.json',
   '.cursor/rules/',
   '.claude/',
+  // Local Playwright agent skills + smoke discovery/planning artifacts (keep out of public tree)
+  '.agents/',
+  '.playwright-cli/',
+  'specs/smoke-discovery/',
+  'specs/smoke-plan/',
 );
 // Exception: Include .env example files (used for local dev setup documentation)
 root.gitignore.addPatterns('!packages/back-end/.env.local.example', '!config/.env.nuxt.local.example');

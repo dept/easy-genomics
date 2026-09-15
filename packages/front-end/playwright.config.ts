@@ -27,12 +27,19 @@ const config: PlaywrightTestConfig = {
     trace: 'on-first-retry',
     headless: true,
     screenshot: 'only-on-failure',
+    // Optional: PLAYWRIGHT_CHANNEL=chrome when bundled Chromium is unavailable locally.
+    ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}),
   },
   metadata: {
     environment: envName,
     baseURL,
   },
   projects: [
+    {
+      name: 'smoke',
+      testMatch: 'tests/e2e/smoke/**/*.spec.e2e.ts',
+      use: { baseURL },
+    },
     {
       name: 'sys-admin',
       testMatch: 'tests/e2e/sys-admin/*.spec.e2e.ts',

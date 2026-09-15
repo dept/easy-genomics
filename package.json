@@ -36,6 +36,7 @@
     "@commitlint/cz-commitlint": "^18.6.1",
     "@nrwl/devkit": "^15",
     "@nrwl/workspace": "^15",
+    "@playwright/cli": "^0.1.20",
     "@types/aws-lambda": "^8.10.149",
     "@types/jest": "^29.5.14",
     "@types/node": "^20",

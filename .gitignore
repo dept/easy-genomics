@@ -108,3 +108,9 @@ AGENTS.md
 !packages/back-end/.env.local.example
 !config/.env.nuxt.local.example
 !/.projenrc.ts
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
+# Local Playwright agent skills + smoke discovery/planning (not for public repo)
+.agents/
+specs/smoke-discovery/
+specs/smoke-plan/
