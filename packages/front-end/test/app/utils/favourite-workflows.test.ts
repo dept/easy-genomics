@@ -2,7 +2,6 @@ import { FavouriteWorkflow } from '@easy-genomics/shared-lib/src/app/types/easy-
 import {
   LabWorkflowAvailability,
   getFavouriteWorkflowState,
-  pruneMissingFavouriteWorkflows,
   selectVisibleFavouriteWorkflows,
 } from '../../../src/app/utils/favourite-workflows';
 
@@ -73,10 +72,10 @@ describe('getFavouriteWorkflowState', () => {
 });
 
 describe('selectVisibleFavouriteWorkflows', () => {
-  it('hides favourites whose workflow was deleted, and favourites of other labs', () => {
+  it('hides favourites whose workflow is gone from the live list, and favourites of other labs', () => {
     const favourites = [
       omicsFavourite('kept'),
-      omicsFavourite('deleted'),
+      omicsFavourite('deleted-or-access-revoked'),
       omicsFavourite('kept', OTHER_LAB_ID),
       seqeraFavourite('disabled-platform'),
     ];
@@ -95,50 +94,10 @@ describe('selectVisibleFavouriteWorkflows', () => {
 
     expect(selectVisibleFavouriteWorkflows(favourites, LAB_ID, availability({ state: 'unknown' }))).toEqual(favourites);
   });
-});
 
-describe('pruneMissingFavouriteWorkflows', () => {
-  it('removes only the deleted workflows of the given lab', () => {
-    const favourites = [
-      omicsFavourite('kept'),
-      omicsFavourite('deleted'),
-      omicsFavourite('deleted', OTHER_LAB_ID),
-      seqeraFavourite('42'),
-    ];
-
-    const { retained, removed } = pruneMissingFavouriteWorkflows(
-      favourites,
-      LAB_ID,
-      availability({ state: 'loaded', workflowIds: new Set(['kept']) }, { state: 'loaded', workflowIds: new Set() }),
-    );
-
-    expect(removed).toEqual([omicsFavourite('deleted'), seqeraFavourite('42')]);
-    expect(retained).toEqual([omicsFavourite('kept'), omicsFavourite('deleted', OTHER_LAB_ID)]);
-  });
-
-  it('removes nothing when no live list was loaded', () => {
-    const favourites = [omicsFavourite('one'), seqeraFavourite('42')];
-
-    const { retained, removed } = pruneMissingFavouriteWorkflows(
-      favourites,
-      LAB_ID,
-      availability({ state: 'unknown' }),
-    );
-
-    expect(removed).toEqual([]);
-    expect(retained).toEqual(favourites);
-  });
-
-  it('keeps favourites of a platform the lab has disabled so they return with the platform', () => {
+  it('hides a platform-disabled favourite without requiring a live list', () => {
     const favourites = [omicsFavourite('one')];
 
-    const { retained, removed } = pruneMissingFavouriteWorkflows(
-      favourites,
-      LAB_ID,
-      availability({ state: 'disabled' }),
-    );
-
-    expect(removed).toEqual([]);
-    expect(retained).toEqual(favourites);
+    expect(selectVisibleFavouriteWorkflows(favourites, LAB_ID, availability({ state: 'disabled' }))).toEqual([]);
   });
 });

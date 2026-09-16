@@ -79,8 +79,10 @@
   }));
 
   /**
-   * Favourites are a snapshot on the user record, so a workflow deleted on the platform would
-   * otherwise keep appearing here. Hide any favourite the lab's live list no longer contains.
+   * Favourites are a snapshot on the user record, so a workflow deleted on the platform
+   * or hidden by laboratory access would otherwise keep appearing here. Hide any favourite
+   * the lab's live list no longer contains; leave it on the user record so a later access
+   * grant can restore it.
    */
   const favouriteWorkflows = computed<FavouriteWorkflow[]>(() =>
     selectVisibleFavouriteWorkflows(
@@ -459,10 +461,6 @@
     ];
   }
 
-  async function removeFavouriteWorkflow(workflow: FavouriteWorkflow) {
-    await favouriteWorkflowsStore.toggleFavourite(workflow);
-  }
-
   function runFavouriteWorkflow(workflow: FavouriteWorkflow) {
     const path =
       workflow.Platform === 'Seqera Cloud'
@@ -591,7 +589,9 @@
           omicsWorkflowsStore
             .loadWorkflowsForLab(props.labId)
             .then(() => {
-              omicsListStatus.value = 'loaded';
+              // listShared failures are swallowed inside the store so private rows still
+              // render; only a complete private+shared fetch is safe to treat as loaded.
+              omicsListStatus.value = omicsWorkflowsStore.hasCompleteWorkflowList(props.labId) ? 'loaded' : 'unknown';
             })
             .catch(() => useToastStore().error('Failed to load workflows. Please refresh.')),
         );
@@ -602,9 +602,6 @@
       const [runs] = await Promise.all(promises);
 
       allRuns.value = runs;
-
-      // Now that the live lists are in, drop the favourites they prove no longer exist.
-      void favouriteWorkflowsStore.pruneMissingForLab(props.labId, workflowAvailability.value);
 
       void requestRuntimeRefresh(runs);
     } catch (error) {
@@ -790,7 +787,7 @@
             class="text-primary hover:text-primary-dark hover:bg-primary-muted focus-visible:outline-primary-500 flex items-center justify-center rounded-full p-1 transition-all duration-150 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
             :aria-label="`Remove ${workflow.WorkflowName} from favorites`"
             title="Remove workflow from favorites"
-            @click.stop="removeFavouriteWorkflow(workflow)"
+            @click.stop="favouriteWorkflowsStore.toggleFavourite(workflow)"
           >
             <UIcon name="i-heroicons-star-solid" class="text-primary h-6 w-6" aria-hidden="true" />
           </button>

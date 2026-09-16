@@ -5,9 +5,11 @@ export type FavouriteWorkflowPlatform = FavouriteWorkflow['Platform'];
 /**
  * What is known about a laboratory's live workflow list on one platform.
  *
- * `loaded` is the only state in which a missing id proves the workflow is gone (deleted on
- * the platform, or its access revoked for the lab). The other states mean "cannot tell", so
- * favourites are never deleted on their basis.
+ * `loaded` means both halves of the list (private + shared for Omics; the full pipeline
+ * list for Seqera) resolved. An id absent from that list is hidden in the UI, but is not
+ * treated as proof of deletion: the same list is also filtered by laboratory workflow
+ * access, and a missing shared-workflow fetch must not be read as "every shared favourite
+ * is gone".
  */
 export type PlatformWorkflowAvailability =
   | { state: 'loaded'; workflowIds: Set<string> }
@@ -35,8 +37,9 @@ export function getFavouriteWorkflowState(
 }
 
 /**
- * The lab's favourites worth showing: everything except entries whose workflow is confirmed
- * gone, or whose platform the lab no longer has enabled (they cannot be launched either way).
+ * The lab's favourites worth showing: everything except entries whose workflow is not in
+ * the live list, or whose platform the lab no longer has enabled. Hidden entries stay on
+ * the user record so a later access grant or platform re-enable can restore them.
  */
 export function selectVisibleFavouriteWorkflows(
   favourites: FavouriteWorkflow[],
@@ -48,27 +51,4 @@ export function selectVisibleFavouriteWorkflows(
     const state = getFavouriteWorkflowState(favourite, availability);
     return state === 'available' || state === 'unknown';
   });
-}
-
-/**
- * Splits the user's favourites into the ones to keep and the ones to forget, dropping only
- * this lab's entries whose workflow is confirmed gone. `retained` still holds every other
- * entry — including favourites for other laboratories — so it can be saved as the user's
- * complete favourites list.
- */
-export function pruneMissingFavouriteWorkflows(
-  favourites: FavouriteWorkflow[],
-  laboratoryId: string,
-  availability: LabWorkflowAvailability,
-): { retained: FavouriteWorkflow[]; removed: FavouriteWorkflow[] } {
-  const removed: FavouriteWorkflow[] = [];
-  const retained: FavouriteWorkflow[] = [];
-
-  for (const favourite of favourites) {
-    const isMissing =
-      favourite.LaboratoryId === laboratoryId && getFavouriteWorkflowState(favourite, availability) === 'missing';
-    (isMissing ? removed : retained).push(favourite);
-  }
-
-  return { retained, removed };
 }
