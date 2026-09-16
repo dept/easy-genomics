@@ -44,6 +44,7 @@ import { S3Service } from '../s3-service';
 
 const TABLE_NAME = `${process.env.NAME_PREFIX}-laboratory-data-tagging-table`;
 const GSI1_NAME = 'Gsi1Pk_Index';
+const FILE_SK_PREFIX = 'FILE#';
 
 function skSampleFile(setId: string, ref: string): string {
   return `SAMPLEFILE#${setId}#${ref}`;
@@ -58,7 +59,7 @@ function skDcSet(collectionId: string, setId: string): string {
 }
 
 function skFile(ref: string): string {
-  return `FILE#${ref}`;
+  return `${FILE_SK_PREFIX}${ref}`;
 }
 
 function gsi1PkForSample(laboratoryId: string, setId: string): string {
@@ -615,13 +616,35 @@ export class LaboratorySampleService extends DynamoDBService {
     };
   }
 
-  /** Returns sample ids per file ref for listFileTags enrichment. */
+  /**
+   * Returns sample ids per file ref for listFileTags enrichment.
+   *
+   * Reads are batched because the unlinked-file scan resolves one ref per object in the lab
+   * bucket, so a GetItem per ref would cost thousands of sequential round trips.
+   */
   public async getSampleIdsForFileRefs(laboratoryId: string, refs: string[]): Promise<Map<string, string[]>> {
-    const result = new Map<string, string[]>();
-    for (const ref of refs) {
-      const fileRow = await this.getFileRowSampleIds(laboratoryId, ref);
-      result.set(ref, fileRow);
+    const result = new Map<string, string[]>(refs.map((ref) => [ref, []]));
+    if (!refs.length) {
+      return result;
     }
+
+    const { items, unprocessedKeys } = await this.batchGetAll(
+      TABLE_NAME,
+      refs.map((ref) => marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) })),
+      { consistentRead: true },
+    );
+
+    for (const item of items) {
+      const row = unmarshall(item) as Record<string, unknown>;
+      result.set(String(row.Sk).slice(FILE_SK_PREFIX.length), (row.SampleIds as string[]) || []);
+    }
+
+    // Leftover keys after UnprocessedKeys retries: a linked file must not be reported unlinked.
+    for (const key of unprocessedKeys) {
+      const ref = String(unmarshall(key).Sk).slice(FILE_SK_PREFIX.length);
+      result.set(ref, await this.getFileRowSampleIds(laboratoryId, ref));
+    }
+
     return result;
   }
 
@@ -655,19 +678,15 @@ export class LaboratorySampleService extends DynamoDBService {
       maxTransactionFolders,
     });
 
-    const unlinked: _Object[] = [];
-    const CHUNK = 100;
-    for (let i = 0; i < allContents.length; i += CHUNK) {
-      const chunk = allContents.slice(i, i + CHUNK);
-      const refs = chunk.map((o) => encodeS3ObjectRef(s3Bucket, o.Key!));
-      const setIdsByRef = await this.getSampleIdsForFileRefs(laboratory.LaboratoryId, refs);
-      for (const obj of chunk) {
-        if (!obj.Key) continue;
-        const ref = encodeS3ObjectRef(s3Bucket, obj.Key);
-        const setIds = setIdsByRef.get(ref) || [];
-        if (!setIds.length) unlinked.push(obj);
-      }
-    }
+    const objects = allContents.filter((o) => !!o.Key);
+    const setIdsByRef = await this.getSampleIdsForFileRefs(
+      laboratory.LaboratoryId,
+      objects.map((o) => encodeS3ObjectRef(s3Bucket, o.Key!)),
+    );
+    const unlinked: _Object[] = objects.filter((o) => {
+      const ref = encodeS3ObjectRef(s3Bucket, o.Key!);
+      return !setIdsByRef.get(ref)?.length;
+    });
 
     return {
       Contents: unlinked.map((o) => ({

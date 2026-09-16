@@ -5,7 +5,8 @@
     activeTab: DataCollectionsTab;
     collectionCount: number;
     sampleCount: number;
-    fileCount: number;
+    /** Null until the lab bucket has been scanned in this session. */
+    fileCount: number | null;
   }>();
 
   const emit = defineEmits<{ 'update:activeTab': [tab: DataCollectionsTab] }>();
@@ -32,7 +33,7 @@
       {{ tab.label }}
       <span class="text-muted ml-1 font-normal">
         ·
-        {{ tab.key === 'collections' ? collectionCount : tab.key === 'samples' ? sampleCount : fileCount }}
+        {{ tab.key === 'collections' ? collectionCount : tab.key === 'samples' ? sampleCount : (fileCount ?? '—') }}
       </span>
     </button>
   </div>
