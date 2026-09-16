@@ -12,11 +12,18 @@ interface OmicsWorkflowsStoreState {
   workflows: Record<string, LabOmicsWorkflow>;
   // ordered lists for workflows by lab
   workflowIdsByLab: Record<string, string[]>;
+  /**
+   * True only when both the private and shared lists resolved for that lab. A failed
+   * listShared is swallowed so private workflows still render, but the combined list is
+   * then incomplete and must not be treated as proof a favourite is gone.
+   */
+  workflowListCompleteByLab: Record<string, boolean>;
 }
 
 const initialState = (): OmicsWorkflowsStoreState => ({
   workflows: {},
   workflowIdsByLab: {},
+  workflowListCompleteByLab: {},
 });
 
 /** Coalesce concurrent loads for the same lab (EGLabView + EGDashboard both call this). */
@@ -30,6 +37,11 @@ const useOmicsWorkflowsStore = defineStore('omicsWorkflowsStore', {
       (state: OmicsWorkflowsStoreState) =>
       (labId: string): LabOmicsWorkflow[] =>
         state.workflowIdsByLab[labId]?.map((workflowId) => state.workflows[workflowId]) || [],
+
+    hasCompleteWorkflowList:
+      (state: OmicsWorkflowsStoreState) =>
+      (labId: string): boolean =>
+        state.workflowListCompleteByLab[labId] === true,
   },
 
   actions: {
@@ -46,12 +58,15 @@ const useOmicsWorkflowsStore = defineStore('omicsWorkflowsStore', {
 
       const loadPromise = (async () => {
         const { $api } = useNuxtApp();
+        this.workflowListCompleteByLab[labId] = false;
+        let sharedFailed = false;
 
         const [privateRes, sharedRes] = await Promise.all([
           $api.omicsWorkflows.list(labId),
           $api.omicsWorkflows.listShared(labId).catch((err) => {
             console.error('Failed to load shared Omics workflows', err);
             useToastStore().error('Failed to load shared workflows. Please refresh.');
+            sharedFailed = true;
             return { items: [] as LabOmicsWorkflow[] };
           }),
         ]);
@@ -90,6 +105,8 @@ const useOmicsWorkflowsStore = defineStore('omicsWorkflowsStore', {
             ...(workflow.ownerAccountId ? { ownerAccountId: workflow.ownerAccountId } : {}),
           });
         }
+
+        this.workflowListCompleteByLab[labId] = !sharedFailed;
       })().finally(() => {
         loadWorkflowsInflight.delete(labId);
       });
