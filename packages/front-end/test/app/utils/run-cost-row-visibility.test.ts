@@ -1,10 +1,6 @@
+import { MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE } from '@easy-genomics/shared-lib/src/app/constants/run-cost';
 import { EstimateRunCostResponse } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
-import { MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE } from '@easy-genomics/shared-lib/src/app/utils/run-cost-thresholds';
-import {
-  hasPreLaunchCostEstimate,
-  hasRunCostAmount,
-  showRunCostRow,
-} from '../../../src/app/utils/run-cost-row-visibility';
+import { resolveRunCostSource, showRunCostRow } from '../../../src/app/utils/run-cost-row-visibility';
 
 function estimateResponse(overrides: Partial<EstimateRunCostResponse> = {}): EstimateRunCostResponse {
   return {
@@ -30,95 +26,64 @@ const preRunEstimate = {
   Exclusions: ['S3'],
 };
 
-describe('hasPreLaunchCostEstimate', () => {
-  it('accepts an estimate backed by the minimum number of comparable runs', () => {
-    expect(hasPreLaunchCostEstimate(estimateResponse())).toBe(true);
+describe('resolveRunCostSource', () => {
+  it('returns preLaunch when no run exists', () => {
+    expect(resolveRunCostSource(null)).toBe('preLaunch');
+    expect(resolveRunCostSource(undefined)).toBe('preLaunch');
   });
 
-  it('rejects an estimate with fewer comparable runs than the minimum', () => {
+  it('prefers billed cost over outcome and pre-run estimate', () => {
     expect(
-      hasPreLaunchCostEstimate(estimateResponse({ comparableRunCount: MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE - 1 })),
-    ).toBe(false);
-  });
-
-  it('rejects an unavailable estimate and one without a cost band', () => {
-    expect(
-      hasPreLaunchCostEstimate(
-        estimateResponse({
-          estimateAvailable: false,
-          confidence: 'NONE',
-          comparableRunCount: 0,
-          computeCostUsd: undefined,
-        }),
-      ),
-    ).toBe(false);
-    expect(hasPreLaunchCostEstimate(estimateResponse({ computeCostUsd: undefined }))).toBe(false);
-  });
-
-  it('rejects a missing estimate', () => {
-    expect(hasPreLaunchCostEstimate(null)).toBe(false);
-    expect(hasPreLaunchCostEstimate(undefined)).toBe(false);
-  });
-});
-
-describe('hasRunCostAmount', () => {
-  it('accepts a billed cost', () => {
-    expect(hasRunCostAmount({ BilledCost: { TotalUsd: 12.5, AsOfDate: '2026-09-10', SyncedAt: '2026-09-11' } })).toBe(
-      true,
-    );
-  });
-
-  it('accepts a captured platform outcome', () => {
-    expect(
-      hasRunCostAmount({
+      resolveRunCostSource({
+        BilledCost: { TotalUsd: 12.5, AsOfDate: '2026-09-10', SyncedAt: '2026-09-11' },
         RunCostOutcome: {
           ActualComputeCostUsd: 8,
           CostSource: 'HEALTHOMICS_TASKS',
           CostCapturedAt: '2026-09-10T00:00:00.000Z',
         },
+        PreRunCostEstimate: preRunEstimate,
       }),
-    ).toBe(true);
+    ).toBe('billed');
   });
 
-  it('accepts a zero-cost outcome, which is a real amount', () => {
+  it('returns outcome when compute cost was captured and nothing is billed yet', () => {
     expect(
-      hasRunCostAmount({
+      resolveRunCostSource({
         RunCostOutcome: {
           ActualComputeCostUsd: 0,
           CostSource: 'SEQERA_PROGRESS',
           CostCapturedAt: '2026-09-10T00:00:00.000Z',
         },
       }),
-    ).toBe(true);
+    ).toBe('outcome');
   });
 
-  it('accepts the pre-run estimate snapshot taken at launch', () => {
-    expect(hasRunCostAmount({ PreRunCostEstimate: preRunEstimate })).toBe(true);
+  it('returns preRun when the snapshot meets the minimum sample size', () => {
+    expect(resolveRunCostSource({ PreRunCostEstimate: preRunEstimate })).toBe('preRun');
   });
 
-  it('rejects a pre-run snapshot taken from too few comparable runs', () => {
+  it('returns pending for an undersized pre-run snapshot', () => {
     expect(
-      hasRunCostAmount({
+      resolveRunCostSource({
         PreRunCostEstimate: { ...preRunEstimate, ComparableRunCount: MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE - 1 },
       }),
-    ).toBe(false);
+    ).toBe('pending');
   });
 
-  it('rejects an outcome that only captured storage cost', () => {
+  it('returns pending when the outcome only captured storage', () => {
     expect(
-      hasRunCostAmount({
+      resolveRunCostSource({
         RunCostOutcome: {
           ActualStorageCostUsd: 2,
           CostSource: 'HEALTHOMICS_TASKS',
           CostCapturedAt: '2026-09-10T00:00:00.000Z',
         },
       }),
-    ).toBe(false);
+    ).toBe('pending');
   });
 
-  it('rejects a run with no cost data at all', () => {
-    expect(hasRunCostAmount({})).toBe(false);
-    expect(hasRunCostAmount(null)).toBe(false);
+  it('returns pending when the run has no cost data', () => {
+    expect(resolveRunCostSource({})).toBe('pending');
   });
 });
 
@@ -129,9 +94,17 @@ describe('showRunCostRow', () => {
         estimate: estimateResponse({
           estimateAvailable: false,
           confidence: 'NONE',
-          comparableRunCount: 2,
+          comparableRunCount: MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE - 1,
           computeCostUsd: undefined,
         }),
+      }),
+    ).toBe(false);
+  });
+
+  it('hides an otherwise available estimate that reports fewer comparable runs than the minimum', () => {
+    expect(
+      showRunCostRow({
+        estimate: estimateResponse({ comparableRunCount: MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE - 1 }),
       }),
     ).toBe(false);
   });
@@ -140,8 +113,26 @@ describe('showRunCostRow', () => {
     expect(showRunCostRow({ estimate: estimateResponse() })).toBe(true);
   });
 
+  it('hides an unavailable estimate and one without a cost band', () => {
+    expect(
+      showRunCostRow({
+        estimate: estimateResponse({
+          estimateAvailable: false,
+          confidence: 'NONE',
+          comparableRunCount: 0,
+          computeCostUsd: undefined,
+        }),
+      }),
+    ).toBe(false);
+    expect(showRunCostRow({ estimate: estimateResponse({ computeCostUsd: undefined }) })).toBe(false);
+  });
+
   it('keeps the row visible while the estimate is being fetched', () => {
     expect(showRunCostRow({ estimate: null, loading: true })).toBe(true);
+  });
+
+  it('keeps the row visible while a launched run is refreshing', () => {
+    expect(showRunCostRow({ loading: true, labRun: {} })).toBe(true);
   });
 
   it('hides the row when the estimate request returned nothing', () => {
@@ -159,6 +150,34 @@ describe('showRunCostRow', () => {
         labRun: { BilledCost: { TotalUsd: 12.5, AsOfDate: '2026-09-10', SyncedAt: '2026-09-11' } },
       }),
     ).toBe(true);
+  });
+
+  it('shows the row for a launched run with a captured platform outcome', () => {
+    expect(
+      showRunCostRow({
+        labRun: {
+          RunCostOutcome: {
+            ActualComputeCostUsd: 8,
+            CostSource: 'HEALTHOMICS_TASKS',
+            CostCapturedAt: '2026-09-10T00:00:00.000Z',
+          },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('shows the row for a launched run with a qualifying pre-run snapshot', () => {
+    expect(showRunCostRow({ labRun: { PreRunCostEstimate: preRunEstimate } })).toBe(true);
+  });
+
+  it('hides the row for an undersized pre-run snapshot', () => {
+    expect(
+      showRunCostRow({
+        labRun: {
+          PreRunCostEstimate: { ...preRunEstimate, ComparableRunCount: MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE - 1 },
+        },
+      }),
+    ).toBe(false);
   });
 
   it('ignores a stale pre-launch estimate once the run exists', () => {

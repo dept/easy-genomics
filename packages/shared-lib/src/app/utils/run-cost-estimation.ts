@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE } from './run-cost-thresholds';
+import { MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE } from '../constants/run-cost';
 import type { RunInputProfile } from '../schema/easy-genomics/laboratory-run-cost';
 
 export type CostEstimateConfidence = 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE';

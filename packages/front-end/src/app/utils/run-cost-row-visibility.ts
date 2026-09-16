@@ -1,8 +1,10 @@
+import { MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE } from '@easy-genomics/shared-lib/src/app/constants/run-cost';
 import { EstimateRunCostResponse } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
-import { MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE } from '@easy-genomics/shared-lib/src/app/utils/run-cost-thresholds';
 
 type RunCostCandidate = Pick<LaboratoryRun, 'BilledCost' | 'RunCostOutcome' | 'PreRunCostEstimate'> | null | undefined;
+
+export type RunCostSource = 'billed' | 'outcome' | 'preRun' | 'pending' | 'preLaunch';
 
 /**
  * Whether an estimate is backed by enough comparable runs to be worth showing. The estimator
@@ -14,24 +16,27 @@ function hasMinimumSampleSize(comparableRunCount: number | undefined): boolean {
 }
 
 /**
- * Whether the pre-launch estimate has a compute cost band to display.
+ * Single billed → outcome → pre-run → pending cascade for a launched run.
+ * Undersized pre-run snapshots are treated as pending so visibility and display
+ * cannot disagree about whether a figure exists.
  */
-export function hasPreLaunchCostEstimate(estimate: EstimateRunCostResponse | null | undefined): boolean {
+export function resolveRunCostSource(labRun: RunCostCandidate): RunCostSource {
+  if (!labRun) return 'preLaunch';
+  if (labRun.BilledCost) return 'billed';
+  if (labRun.RunCostOutcome?.ActualComputeCostUsd != null) return 'outcome';
+  if (hasMinimumSampleSize(labRun.PreRunCostEstimate?.ComparableRunCount)) return 'preRun';
+  return 'pending';
+}
+
+function hasPreLaunchCostEstimate(estimate: EstimateRunCostResponse | null | undefined): boolean {
   if (!estimate?.estimateAvailable || !estimate.computeCostUsd) return false;
 
   return hasMinimumSampleSize(estimate.comparableRunCount);
 }
 
-/**
- * Whether a launched run has a cost figure to display: a billed total, a captured platform
- * outcome, or the pre-run estimate snapshot taken at launch.
- */
-export function hasRunCostAmount(labRun: RunCostCandidate): boolean {
-  if (!labRun) return false;
-  if (labRun.BilledCost) return true;
-  if (labRun.RunCostOutcome?.ActualComputeCostUsd != null) return true;
-
-  return hasMinimumSampleSize(labRun.PreRunCostEstimate?.ComparableRunCount);
+function hasRunCostAmount(labRun: RunCostCandidate): boolean {
+  const source = resolveRunCostSource(labRun);
+  return source !== 'pending' && source !== 'preLaunch';
 }
 
 /**

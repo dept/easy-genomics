@@ -1,7 +1,7 @@
 <script setup lang="ts">
   import type { EstimateRunCostResponse } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
   import type { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
-  import { showRunCostRow } from '@FE/utils/run-cost-row-visibility';
+  import { resolveRunCostSource, showRunCostRow } from '@FE/utils/run-cost-row-visibility';
 
   const props = withDefaults(
     defineProps<{
@@ -25,21 +25,12 @@
 
   const costExplorerEnabled = useCostExplorerEnabled();
 
-  type CostSource = 'billed' | 'outcome' | 'preRun' | 'pending' | 'preLaunch';
-
-  /** Single billed → outcome → pre-run → pending priority cascade for post-run display. */
-  const costSource = computed<CostSource>(() => {
-    if (!props.labRun) return 'preLaunch';
-    if (props.labRun.BilledCost) return 'billed';
-    if (props.labRun.RunCostOutcome?.ActualComputeCostUsd != null) return 'outcome';
-    if (props.labRun.PreRunCostEstimate) return 'preRun';
-    return 'pending';
-  });
+  /** Single billed → outcome → pre-run cascade; pending runs never reach the template. */
+  const costSource = computed(() => resolveRunCostSource(props.labRun));
 
   /**
-   * A workflow needs a minimum number of successful runs before any estimate exists, so the
-   * whole row stays hidden until there is an actual amount to show. The 'pending' copy below
-   * is only a fallback for states this rule lets through.
+   * Hide the row until there is a real amount. A workflow needs a minimum number of
+   * successful runs before any estimate exists, so there is no placeholder pending state.
    */
   const showRow = computed<boolean>(() =>
     showRunCostRow({ estimate: props.estimate, labRun: props.labRun, loading: props.loading }),
@@ -49,7 +40,6 @@
   const billed = computed(() => props.labRun?.BilledCost);
   const outcome = computed(() => props.labRun?.RunCostOutcome);
   const preRun = computed(() => props.labRun?.PreRunCostEstimate ?? null);
-  const isBilledPending = computed(() => costSource.value === 'pending');
 
   const rowLabel = computed(() => (costSource.value === 'billed' ? 'Billed cost' : 'Estimated cost'));
   const chipLabel = computed(() => (costSource.value === 'billed' ? 'BILLED' : 'ESTIMATE'));
@@ -71,34 +61,21 @@
         return `≈ ${formatUsd(outcome.value?.ActualComputeCostUsd)}`;
       case 'preRun':
         return `${formatUsd(preRun.value?.LowUsd)} – ${formatUsd(preRun.value?.HighUsd)}`;
-      case 'pending':
-        return costExplorerEnabled.value ? 'Billed cost pending' : 'Billed cost unavailable';
       case 'preLaunch':
-      default:
-        if (!props.estimate) return '—';
-        if (!props.estimate.estimateAvailable || !props.estimate.computeCostUsd) {
-          return 'Cost estimate unavailable';
-        }
-        return `${formatUsd(props.estimate.computeCostUsd.low)} – ${formatUsd(props.estimate.computeCostUsd.high)}`;
+        return `${formatUsd(props.estimate?.computeCostUsd?.low)} – ${formatUsd(props.estimate?.computeCostUsd?.high)}`;
+      case 'pending':
+        return '';
     }
   });
 
   const tooltipTitle = computed(() => {
     if (costSource.value === 'billed') return 'Billed cost from AWS Cost Explorer';
-    if (isBilledPending.value) {
-      return costExplorerEnabled.value ? 'Billed cost pending' : 'Billed cost unavailable';
-    }
     return 'Estimated, not billed.';
   });
 
   const tooltipBody = computed(() => {
     if (costSource.value === 'billed') {
       return 'Grouped by run tags. Pre-run estimate and platform compute estimate shown for comparison. Data may lag 24–48 hours.';
-    }
-    if (isBilledPending.value) {
-      return costExplorerEnabled.value
-        ? 'AWS Cost Explorer billed cost typically appears within 24–48 hours after the run completes. Check back later.'
-        : 'Billed per-run AWS cost requires Cost Explorer (and cost allocation tags) to be enabled for this deployment. Platform and historical estimates are still available when there is run history.';
     }
     if (costSource.value === 'outcome' && outcome.value) {
       return outcome.value.CostSource === 'SEQERA_PROGRESS'
@@ -145,11 +122,6 @@
   const footerText = computed(() => {
     if (billed.value?.AsOfDate) {
       return `Data as of ${billed.value.AsOfDate}. AWS billing data typically updates within 24–48 hours.`;
-    }
-    if (isBilledPending.value) {
-      return costExplorerEnabled.value
-        ? 'Billed amounts are synced daily from Cost Explorer once available.'
-        : 'Enable Cost Explorer for this deployment to sync billed AWS charges.';
     }
     if (isPostRun.value && costSource.value !== 'billed' && !costExplorerEnabled.value) {
       return 'Billed AWS charges are not synced until Cost Explorer is enabled for this deployment.';

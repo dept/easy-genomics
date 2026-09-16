@@ -82,6 +82,41 @@ describe('run-cost-estimation', () => {
     expect(band.confidence).toBe('NONE');
   });
 
+  it('returns a MEDIUM band for exactly 3 tight comparable runs', () => {
+    const candidates = [5, 5.5, 6].map((ActualComputeCostUsd) => ({
+      ActualComputeCostUsd,
+      SampleCount: 10,
+      InputBytesTotal: 1e9,
+      ParameterHash: 'abc',
+      WorkflowVersionName: 'v1',
+    }));
+    const band = estimateComputeCostBand(
+      { SampleCount: 10, InputBytesTotal: 1e9, ParameterHash: 'abc', WorkflowVersionName: 'v1' },
+      candidates,
+    );
+    expect(band.estimateAvailable).toBe(true);
+    expect(band.confidence).toBe('MEDIUM');
+    expect(band.comparableRunCount).toBe(3);
+    expect(band.computeCostUsd).toEqual({ low: 5.25, median: 5.5, high: 5.75 });
+  });
+
+  it('returns a HIGH band for 7 same-version low-spread runs', () => {
+    const candidates = [4.9, 4.95, 5, 5, 5.05, 5.1, 5.15].map((ActualComputeCostUsd) => ({
+      ActualComputeCostUsd,
+      SampleCount: 10,
+      InputBytesTotal: 1e9,
+      ParameterHash: 'abc',
+      WorkflowVersionName: 'v1',
+    }));
+    const band = estimateComputeCostBand(
+      { SampleCount: 10, InputBytesTotal: 1e9, ParameterHash: 'abc', WorkflowVersionName: 'v1' },
+      candidates,
+    );
+    expect(band.estimateAvailable).toBe(true);
+    expect(band.confidence).toBe('HIGH');
+    expect(band.comparableRunCount).toBe(7);
+  });
+
   it('returns unavailable for empty candidates or zero sample/bytes profiles', () => {
     expect(
       estimateComputeCostBand({ SampleCount: 0, InputBytesTotal: 0, ParameterHash: 'abc' }, []).estimateAvailable,
