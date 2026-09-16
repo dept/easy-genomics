@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { BatchGetItemCommandOutput, QueryCommandOutput } from '@aws-sdk/client-dynamodb';
+import { QueryCommandOutput } from '@aws-sdk/client-dynamodb';
 import { _Object } from '@aws-sdk/client-s3';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import {
@@ -45,9 +45,6 @@ import { S3Service } from '../s3-service';
 const TABLE_NAME = `${process.env.NAME_PREFIX}-laboratory-data-tagging-table`;
 const GSI1_NAME = 'Gsi1Pk_Index';
 const FILE_SK_PREFIX = 'FILE#';
-/** DynamoDB hard limit on keys per BatchGetItem request. */
-const BATCH_GET_ITEM_LIMIT = 100;
-const BATCH_GET_ITEM_ATTEMPTS = 3;
 
 function skSampleFile(setId: string, ref: string): string {
   return `SAMPLEFILE#${setId}#${ref}`;
@@ -627,37 +624,25 @@ export class LaboratorySampleService extends DynamoDBService {
    */
   public async getSampleIdsForFileRefs(laboratoryId: string, refs: string[]): Promise<Map<string, string[]>> {
     const result = new Map<string, string[]>(refs.map((ref) => [ref, []]));
+    if (!refs.length) {
+      return result;
+    }
 
-    for (let i = 0; i < refs.length; i += BATCH_GET_ITEM_LIMIT) {
-      let keys = refs
-        .slice(i, i + BATCH_GET_ITEM_LIMIT)
-        .map((ref) => marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }));
+    const { items, unprocessedKeys } = await this.batchGetAll(
+      TABLE_NAME,
+      refs.map((ref) => marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) })),
+      { consistentRead: true },
+    );
 
-      for (let attempt = 0; keys.length > 0 && attempt < BATCH_GET_ITEM_ATTEMPTS; attempt++) {
-        const res: BatchGetItemCommandOutput = await this.batchGetItem({
-          RequestItems: {
-            [TABLE_NAME]: {
-              Keys: keys,
-              /** Strongly consistent with sample writes so a just-linked file is never reported unlinked. */
-              ConsistentRead: true,
-            },
-          },
-        });
+    for (const item of items) {
+      const row = unmarshall(item) as Record<string, unknown>;
+      result.set(String(row.Sk).slice(FILE_SK_PREFIX.length), (row.SampleIds as string[]) || []);
+    }
 
-        for (const item of res.Responses?.[TABLE_NAME] || []) {
-          const row = unmarshall(item) as Record<string, unknown>;
-          result.set(String(row.Sk).slice(FILE_SK_PREFIX.length), (row.SampleIds as string[]) || []);
-        }
-
-        keys = res.UnprocessedKeys?.[TABLE_NAME]?.Keys || [];
-      }
-
-      // Throttling can leave keys unread; falling back to single reads keeps a linked file from
-      // being misreported as unlinked, which would let callers build duplicate samples from it.
-      for (const key of keys) {
-        const ref = String(unmarshall(key).Sk).slice(FILE_SK_PREFIX.length);
-        result.set(ref, await this.getFileRowSampleIds(laboratoryId, ref));
-      }
+    // Leftover keys after UnprocessedKeys retries: a linked file must not be reported unlinked.
+    for (const key of unprocessedKeys) {
+      const ref = String(unmarshall(key).Sk).slice(FILE_SK_PREFIX.length);
+      result.set(ref, await this.getFileRowSampleIds(laboratoryId, ref));
     }
 
     return result;

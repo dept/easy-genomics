@@ -20,7 +20,7 @@
   import EGRunFromDataCollectionModal from '@FE/components/EGRunFromDataCollectionModal.vue';
   import EGSamplesTab from '@FE/components/EGSamplesTab.vue';
   import EGUnlinkedFilesTab from '@FE/components/EGUnlinkedFilesTab.vue';
-  import { isLaboratoryS3Configured, shouldIgnoreUnlinkedBucketObjectsError } from '@FE/utils/laboratory-s3';
+  import { isLaboratoryS3Configured } from '@FE/utils/laboratory-s3';
 
   const props = defineProps<{ labId: string }>();
 
@@ -50,8 +50,13 @@
   const sequenceCollections = ref<LaboratorySequenceCollection[]>([]);
   const sampleIdToTagIds = ref<Record<string, string[]>>({});
   const sampleIdToRunUsages = ref<Record<string, LaboratoryRunUsageSummary[]>>({});
-  const unlinkedFiles = ref<Array<{ Key: string; Size?: number; LastModified?: string }>>([]);
-  const unlinkedMeta = ref({ s3Bucket: '', resolvedPrefix: '', lastScanLabel: '' });
+  const unlinkedScan = computed(() => dataCollectionsStore.unlinkedScan(props.labId));
+  const unlinkedFiles = computed(() => unlinkedScan.value?.files ?? []);
+  const unlinkedMeta = computed(() => ({
+    s3Bucket: unlinkedScan.value?.s3Bucket ?? '',
+    resolvedPrefix: unlinkedScan.value?.resolvedPrefix ?? '',
+    lastScanLabel: unlinkedScan.value ? `Last scan ${new Date(unlinkedScan.value.scannedAt).toLocaleTimeString()}` : '',
+  }));
 
   const collectionSearch = ref('');
   const sampleSearch = ref('');
@@ -80,12 +85,8 @@
       'dataCollectionsRunSequenceCollections',
     ]),
   );
-  const filesLoading = computed(() => uiStore.isRequestPending('dataCollectionsList'));
-  const fileCount = computed(() =>
-    dataCollectionsStore.unlinkedScan(props.labId) ? unlinkedFiles.value.length : null,
-  );
-
-  let unlinkedFilesRequest: Promise<void> | null = null;
+  const filesLoading = computed(() => dataCollectionsStore.isUnlinkedScanLoading(props.labId));
+  const fileCount = computed(() => (unlinkedScan.value ? unlinkedFiles.value.length : null));
 
   async function loadTags(): Promise<void> {
     uiStore.setRequestPending('dataCollectionsTags');
@@ -144,103 +145,39 @@
     }
   }
 
-  function applyCachedUnlinkedScan(): void {
-    const scan = dataCollectionsStore.unlinkedScan(props.labId);
-    if (!scan) {
-      unlinkedFiles.value = [];
-      unlinkedMeta.value = { s3Bucket: '', resolvedPrefix: '', lastScanLabel: '' };
-      return;
-    }
-    unlinkedFiles.value = scan.files;
-    unlinkedMeta.value = {
-      s3Bucket: scan.s3Bucket,
-      resolvedPrefix: scan.resolvedPrefix,
-      lastScanLabel: `Last scan ${new Date(scan.scannedAt).toLocaleTimeString()}`,
-    };
+  function clearUnlinkedFiles(labId: string = props.labId): void {
+    dataCollectionsStore.clearUnlinkedScan(labId);
   }
 
-  function clearUnlinkedFiles(): void {
-    dataCollectionsStore.clearUnlinkedScan(props.labId);
-    applyCachedUnlinkedScan();
-    uiStore.setRequestComplete('dataCollectionsList');
-  }
-
-  async function ensureLabDetailsLoaded(): Promise<void> {
-    await labsStore.loadLab(props.labId);
-  }
-
-  async function fetchUnlinkedFiles(): Promise<void> {
-    uiStore.setRequestPending('dataCollectionsList');
-    try {
-      const res = await $api.dataCollections.requestUnlinkedBucketObjects({
-        LaboratoryId: props.labId,
-        MaxTotalKeys: 25_000,
-      });
-      dataCollectionsStore.setUnlinkedScan(props.labId, res);
-      applyCachedUnlinkedScan();
-    } catch (e: unknown) {
-      if (shouldIgnoreUnlinkedBucketObjectsError(e, lab.value)) {
-        clearUnlinkedFiles();
-        return;
-      }
-      toast.error('Failed to load unlinked files.');
-    } finally {
-      uiStore.setRequestComplete('dataCollectionsList');
-    }
+  async function ensureLabDetailsLoaded(labId: string = props.labId): Promise<void> {
+    await labsStore.loadLab(labId);
   }
 
   /**
    * Serves a cached scan immediately. A full S3 walk only runs when there is no cache,
-   * the cache is older than the TTL, or the caller forces a rescan.
+   * the cache is older than the TTL, or the caller forces a rescan. `labId` is captured
+   * up front so a late response cannot be written under a different lab.
    */
   async function loadUnlinkedFiles(opts: { force?: boolean } = {}): Promise<void> {
-    await ensureLabDetailsLoaded();
+    const labId = props.labId;
+    await ensureLabDetailsLoaded(labId);
 
-    if (!isLabS3Configured.value) {
-      clearUnlinkedFiles();
+    if (!isLaboratoryS3Configured(labsStore.labs[labId])) {
+      clearUnlinkedFiles(labId);
       return;
     }
 
-    applyCachedUnlinkedScan();
-    const hasCache = !!dataCollectionsStore.unlinkedScan(props.labId);
-    if (!opts.force && hasCache && !dataCollectionsStore.isUnlinkedScanStale(props.labId)) {
-      return;
-    }
-
-    if (unlinkedFilesRequest && !opts.force) {
-      return unlinkedFilesRequest;
-    }
-
-    unlinkedFilesRequest = fetchUnlinkedFiles();
-    try {
-      await unlinkedFilesRequest;
-    } finally {
-      unlinkedFilesRequest = null;
-    }
-  }
-
-  async function ensureUnlinkedFilesLoaded(): Promise<void> {
-    applyCachedUnlinkedScan();
-    const hasCache = !!dataCollectionsStore.unlinkedScan(props.labId);
-    if (!hasCache) {
-      await loadUnlinkedFiles({ force: true });
-      return;
-    }
-    if (dataCollectionsStore.isUnlinkedScanStale(props.labId)) {
-      void loadUnlinkedFiles({ force: true });
-    }
+    await dataCollectionsStore.loadUnlinkedScan(labId, opts);
   }
 
   async function refreshAll(): Promise<void> {
-    await ensureLabDetailsLoaded();
+    const labId = props.labId;
+    await ensureLabDetailsLoaded(labId);
     const tasks = [loadTags(), loadSamples(), loadSequenceCollections()];
-    if (!isLabS3Configured.value) {
-      clearUnlinkedFiles();
-    } else {
-      applyCachedUnlinkedScan();
-      if (activeTab.value === 'files') {
-        tasks.push(ensureUnlinkedFilesLoaded());
-      }
+    if (!isLaboratoryS3Configured(labsStore.labs[labId])) {
+      clearUnlinkedFiles(labId);
+    } else if (activeTab.value === 'files') {
+      tasks.push(loadUnlinkedFiles());
     }
     await Promise.all(tasks);
   }
@@ -257,25 +194,20 @@
     await Promise.all([loadTags(), loadSamples()]);
   }
 
-  applyCachedUnlinkedScan();
-
   onMounted(() => void refreshAll());
 
   watch(
     activeTab,
     (tab) => {
       emit('update:explorerTab', tab);
-      if (tab === 'files') void ensureUnlinkedFilesLoaded();
+      if (tab === 'files') void loadUnlinkedFiles();
     },
     { immediate: true },
   );
 
   watch(
     () => props.labId,
-    () => {
-      applyCachedUnlinkedScan();
-      void refreshAll();
-    },
+    () => void refreshAll(),
   );
 
   watch(
@@ -286,7 +218,7 @@
         clearUnlinkedFiles();
         return;
       }
-      if (activeTab.value === 'files') void ensureUnlinkedFilesLoaded();
+      if (activeTab.value === 'files') void loadUnlinkedFiles();
     },
   );
 
@@ -325,8 +257,7 @@
   function onImportCompleted(): void {
     view.value = 'main';
     activeTab.value = 'samples';
-    dataCollectionsStore.clearUnlinkedScan(props.labId);
-    applyCachedUnlinkedScan();
+    clearUnlinkedFiles();
     void refreshAll();
   }
 
@@ -518,8 +449,7 @@
         () => {
           selectedFileKeys = [];
           activeTab = 'samples';
-          dataCollectionsStore.clearUnlinkedScan(labId);
-          applyCachedUnlinkedScan();
+          clearUnlinkedFiles();
           refreshAll();
         }
       "
@@ -534,8 +464,7 @@
         () => {
           selectedFileKeys = [];
           activeTab = 'samples';
-          dataCollectionsStore.clearUnlinkedScan(labId);
-          applyCachedUnlinkedScan();
+          clearUnlinkedFiles();
           refreshAll();
         }
       "
