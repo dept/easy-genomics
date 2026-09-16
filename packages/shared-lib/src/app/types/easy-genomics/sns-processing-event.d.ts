@@ -10,8 +10,12 @@ export type SnsProcessingOperation = 'CREATE' | 'UPDATE' | 'DELETE';
 
 export type SnsProcessingRecordType = 'Organization' | 'OrganizationUser' | 'Laboratory' | 'LaboratoryUser' | 'LaboratoryRun' | 'User' | 'UserInvite';
 
+export type SnsProcessingTrigger = 'Automatic' | 'Manual';
+
 export interface SnsProcessingEvent {
   Operation: SnsProcessingOperation,
   Type: SnsProcessingRecordType,
   Record: Organization | OrganizationUser | Laboratory | LaboratoryUser | LaboratoryRun | User | QueuedUserInvitationRequest,
+  /** Absent means Automatic. Only the failure-classification consumer reads this. */
+  Trigger?: SnsProcessingTrigger,
 }

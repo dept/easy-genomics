@@ -21,7 +21,7 @@
   import { FormError } from '#ui/types';
   import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import { ButtonSizeEnum, ButtonVariantEnum } from '@FE/types/buttons';
-  import { useToastStore, useUiStore } from '@FE/stores';
+  import { useLabsStore, useToastStore, useUiStore } from '@FE/stores';
   import { maybeAddFieldValidationErrors } from '@FE/utils/form-utils';
   import { extractApiErrorMessage, formatValidationIssues } from '@FE/utils/api-utils';
   import {
@@ -105,6 +105,7 @@
     SeqeraLlmApiKey: '',
     HealthOmicsLogEnrichmentEnabled: false,
     // Backend kill-switch semantics: absent/undefined means enabled, only `=== false` disables.
+    FailureAnalysisEnabled: true,
     NotificationsEnabled: true,
   };
 
@@ -176,7 +177,9 @@
     return { label: active ? 'On' : 'Off', tone: active ? 'positive' : 'neutral' } as const;
   });
   const aiFailureAnalysisBadge = computed(() => {
-    const active = !!state.value.HealthOmicsLlmProvider || !!state.value.SeqeraLlmProvider;
+    const configured = !!state.value.HealthOmicsLlmProvider || !!state.value.SeqeraLlmProvider;
+    // `!== false` mirrors the back end: an unset field means enabled, no data migration needed.
+    const active = configured && state.value.FailureAnalysisEnabled !== false;
     return { label: active ? 'Enabled' : 'Disabled', tone: active ? 'positive' : 'neutral' } as const;
   });
   const runNotificationsBadge = computed(() => {
@@ -375,6 +378,7 @@
     AwsHealthOmicsEnabled: 'Integrations – HealthOmics enabled',
     AwsHealthOmicsNetworkingMode: 'HealthOmics VPC Networking – Networking mode',
     AwsHealthOmicsVpcConfigurationName: 'HealthOmics VPC Networking – VPC configuration name',
+    FailureAnalysisEnabled: 'AI Failure Analysis – Enable AI error analysis',
     HealthOmicsLogEnrichmentEnabled: 'AI Failure Analysis (HealthOmics) – Log enrichment enabled',
     HealthOmicsLlmProvider: 'AI Failure Analysis (HealthOmics) – LLM provider',
     HealthOmicsLlmModelId: 'AI Failure Analysis (HealthOmics) – Model ID',
@@ -567,6 +571,12 @@
         state.value = { ...state.value, ...withRetentionDefault };
         // Store the unedited lab details to support the cancel button in Edit mode
         uneditedLabDetails.value = { ...withRetentionDefault };
+        // This form keeps its own local copy of the lab rather than reading through
+        // the shared store, so a save here would otherwise leave labsStore.labs[labId]
+        // holding a stale pre-save record forever — anything elsewhere in the app that
+        // reads the lab from the store (e.g. the run detail page's AI-analysis button
+        // gating) would never see the update without a full page reload.
+        useLabsStore().labs[labDetails.LaboratoryId] = labDetails;
       } else {
         throw new Error('Failed to parse lab details');
       }
@@ -949,6 +959,7 @@
     'SeqeraLlmModelId',
     'SeqeraLlmApiKey',
     'HealthOmicsLogEnrichmentEnabled',
+    'FailureAnalysisEnabled',
     'AwsHealthOmicsNetworkingMode',
     'AwsHealthOmicsVpcConfigurationName',
     'NotificationsEnabled',
@@ -1406,6 +1417,20 @@
             failure analysis for that integration.
           </p>
 
+          <EGFormGroup
+            name="FailureAnalysisEnabled"
+            hint="Let technicians request AI analysis on a failed run. Turn this off to hide the analyzer for this lab."
+          >
+            <div class="flex items-center">
+              <span class="text-sm text-black">AI error analysis</span>
+              <UToggle
+                class="ml-2"
+                v-model="state.FailureAnalysisEnabled"
+                :disabled="!isEditing || isSubmittingFormData"
+              />
+            </div>
+          </EGFormGroup>
+
           <!-- HealthOmics sub-section -->
           <div v-if="state.AwsHealthOmicsEnabled" class="mb-6 rounded border border-gray-200 p-4">
             <p class="mb-3 text-sm font-medium text-black">HealthOmics</p>
@@ -1474,20 +1499,10 @@
               />
             </EGFormGroup>
 
-            <EGFormGroup
-              v-if="state.HealthOmicsLlmProvider"
-              name="HealthOmicsLogEnrichmentEnabled"
-              hint="Sends a redacted excerpt of the failed run's CloudWatch logs to the AI for deeper analysis. Identifiers, paths, and secrets are stripped before sending."
-            >
-              <div class="flex items-center">
-                <span class="text-sm text-black">Analyse run logs on failure</span>
-                <UToggle
-                  class="ml-2"
-                  v-model="state.HealthOmicsLogEnrichmentEnabled"
-                  :disabled="!isEditing || isSubmittingFormData"
-                />
-              </div>
-            </EGFormGroup>
+            <!-- Log-enrichment control hidden per product decision (manual-only analysis;
+                 keep the settings surface simple). state.HealthOmicsLogEnrichmentEnabled is
+                 still submitted as-is on save — a lab that already had it on keeps that
+                 behavior; it's just no longer user-editable from this form. -->
           </div>
 
           <!-- Seqera sub-section -->

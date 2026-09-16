@@ -1,4 +1,4 @@
-import { AMBIGUOUS_FALLBACK } from '../../../../src/app/services/llm-classification/bedrock-classification-provider';
+import { ClassificationInput } from '../../../../src/app/services/llm-classification/llm-classification-provider';
 import { OpenAIClassificationProvider } from '../../../../src/app/services/llm-classification/openai-classification-provider';
 
 describe('OpenAIClassificationProvider', () => {
@@ -17,9 +17,13 @@ describe('OpenAIClassificationProvider', () => {
   };
 
   let fetchSpy: jest.SpyInstance;
+  let provider: OpenAIClassificationProvider;
+  let input: ClassificationInput;
 
   beforeEach(() => {
     fetchSpy = jest.spyOn(globalThis, 'fetch');
+    provider = new OpenAIClassificationProvider('gpt-4o-mini', 'sk-test-key');
+    input = { platform: 'Seqera Cloud', errorMessage: 'boom' };
   });
 
   afterEach(() => {
@@ -32,8 +36,7 @@ describe('OpenAIClassificationProvider', () => {
       json: async () => goodResponseBody,
     } as any);
 
-    const provider = new OpenAIClassificationProvider('gpt-4o-mini', 'sk-test-key');
-    await provider.classify({ platform: 'Seqera Cloud', errorMessage: 'boom' });
+    await provider.classify(input);
 
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://api.openai.com/v1/chat/completions');
@@ -45,58 +48,108 @@ describe('OpenAIClassificationProvider', () => {
     expect(body.messages[1].role).toBe('user');
   });
 
-  it('parses a well-formed completion and returns the classification', async () => {
+  it('parses a well-formed completion and returns a classified outcome', async () => {
     fetchSpy.mockResolvedValue({
       ok: true,
       json: async () => goodResponseBody,
     } as any);
 
-    const result = await new OpenAIClassificationProvider('gpt-4o-mini', 'sk').classify({
-      platform: 'Seqera Cloud',
-      errorMessage: 'boom',
-    });
-
-    expect(result.owner).toBe('Lab');
-    expect(result.summary).toBe('Sample sheet invalid');
+    const result = await provider.classify(input);
+    expect(result.outcome).toBe('classified');
+    expect(result.outcome === 'classified' && result.result.owner).toBe('Lab');
+    expect(result.outcome === 'classified' && result.result.summary).toBe('Sample sheet invalid');
   });
 
-  it('returns the ambiguous fallback on non-2xx', async () => {
-    fetchSpy.mockResolvedValue({
+  it('returns INVALID_MODEL_ID on a 404', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({
       ok: false,
-      status: 429,
-      text: async () => 'rate limited',
-    } as any);
+      status: 404,
+      text: async () => 'model not found',
+    }) as unknown as typeof fetch;
 
-    const result = await new OpenAIClassificationProvider('gpt-4o-mini', 'sk').classify({
-      platform: 'Seqera Cloud',
-      errorMessage: 'boom',
+    const result = await provider.classify(input);
+    expect(result).toEqual({
+      outcome: 'failed',
+      error: {
+        code: 'INVALID_MODEL_ID',
+        message: 'The openai API does not recognise the configured model ID.',
+        retryable: false,
+      },
     });
-
-    expect(result).toEqual(AMBIGUOUS_FALLBACK);
   });
 
-  it('returns the ambiguous fallback when fetch throws', async () => {
-    fetchSpy.mockRejectedValue(new Error('network down'));
+  it('returns AUTH_FAILED on a 401', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: async () => 'bad key',
+    }) as unknown as typeof fetch;
 
-    const result = await new OpenAIClassificationProvider('gpt-4o-mini', 'sk').classify({
-      platform: 'Seqera Cloud',
-      errorMessage: 'boom',
-    });
-
-    expect(result).toEqual(AMBIGUOUS_FALLBACK);
+    const result = await provider.classify(input);
+    expect(result.outcome === 'failed' && result.error.code).toBe('AUTH_FAILED');
   });
 
-  it('returns the ambiguous fallback when the model response is not parseable', async () => {
-    fetchSpy.mockResolvedValue({
+  it('returns a retryable PROVIDER_UNAVAILABLE when fetch throws', async () => {
+    globalThis.fetch = jest.fn().mockRejectedValue(new Error('network down')) as unknown as typeof fetch;
+
+    const result = await provider.classify(input);
+    expect(result.outcome === 'failed' && result.error.code).toBe('PROVIDER_UNAVAILABLE');
+    expect(result.outcome === 'failed' && result.error.retryable).toBe(true);
+  });
+
+  it('returns UNPARSEABLE_RESPONSE when the model response is not parseable', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ choices: [{ message: { content: 'no json here' } }] }),
-    } as any);
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: 'not json at all' } }] }),
+    }) as unknown as typeof fetch;
 
-    const result = await new OpenAIClassificationProvider('gpt-4o-mini', 'sk').classify({
-      platform: 'Seqera Cloud',
-      errorMessage: 'boom',
-    });
+    const result = await provider.classify(input);
+    expect(result.outcome === 'failed' && result.error.code).toBe('UNPARSEABLE_RESPONSE');
+  });
 
-    expect(result).toEqual(AMBIGUOUS_FALLBACK);
+  it('never includes the API key in an error message', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: async () => 'sk-test-key rejected',
+    }) as unknown as typeof fetch;
+
+    const result = await provider.classify(input);
+    expect(result.outcome === 'failed' && result.error.message).not.toContain('sk-test-key');
+  });
+});
+
+describe('OpenAIClassificationProvider.validateConfig', () => {
+  it('resolves null when the model lookup returns 200', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 }) as unknown as typeof fetch;
+    const provider = new OpenAIClassificationProvider('gpt-4o-mini', 'sk-test-key');
+    await expect(provider.validateConfig()).resolves.toBeNull();
+  });
+
+  it('queries the models endpoint for the configured model id', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await new OpenAIClassificationProvider('gpt-4o-mini', 'sk-test-key').validateConfig();
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.openai.com/v1/models/gpt-4o-mini');
+  });
+
+  it('resolves INVALID_MODEL_ID on a 404', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 }) as unknown as typeof fetch;
+    const provider = new OpenAIClassificationProvider('nope', 'sk-test-key');
+    expect((await provider.validateConfig())?.code).toBe('INVALID_MODEL_ID');
+  });
+
+  it('queries a configured modelsEndpoint override instead of deriving one from endpoint', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const provider = new OpenAIClassificationProvider(
+      'gpt-4o-mini',
+      'sk-test-key',
+      'https://proxy.example.com/openai/chat/completions',
+      'https://proxy.example.com/openai/models',
+    );
+    await provider.validateConfig();
+    expect(fetchMock.mock.calls[0][0]).toBe('https://proxy.example.com/openai/models/gpt-4o-mini');
   });
 });

@@ -77,8 +77,15 @@ async function safeCaptureRunCost(run: LaboratoryRun): Promise<LaboratoryRun['Ru
  * classification pipeline. Failures here are swallowed because classification
  * is a downstream enhancement — the status-check pipeline must never break if
  * the queue is misconfigured or SQS is temporarily unavailable.
+ *
+ * Not currently called: AI failure analysis is manual-trigger-only by product
+ * decision (a technician requests it per run via
+ * request-laboratory-run-failure-analysis.lambda.ts). This is kept, exported,
+ * and unreferenced so automatic classification is a one-line call away if
+ * that decision changes — call it from this handler's FAILED-status branch,
+ * the way it used to be called before this decision.
  */
-async function safePublishForClassification(run: LaboratoryRun): Promise<void> {
+export async function safePublishForClassification(run: LaboratoryRun): Promise<void> {
   const queueUrl = process.env.SQS_LABORATORY_RUN_FAILURE_CLASSIFICATION_QUEUE_URL;
   if (!queueUrl) return;
   try {
@@ -443,9 +450,6 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         progressRemove,
       );
       await safePropagateExpiresAt(laboratory, laboratoryRun, newExpiresAt);
-      if (newStatusNormalized === 'FAILED' && existingRun.FailureOwner == null) {
-        await safePublishForClassification(laboratoryRun);
-      }
       if (nextStatusTerminal) {
         const { published, run: notifiedRun } = await laboratoryRunService.markTerminalNotified({
           LaboratoryId: laboratoryRun.LaboratoryId,

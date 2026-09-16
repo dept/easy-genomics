@@ -338,6 +338,12 @@ export class EasyGenomicsNestedStack extends NestedStack {
             SQS_LABORATORY_RUN_UPDATE_QUEUE_URL: this.sqs.sqsQueues.get('laboratory-run-update-queue')?.queueUrl || '',
           },
         },
+        '/easy-genomics/laboratory/run/request-laboratory-run-failure-analysis': {
+          environment: {
+            SQS_LABORATORY_RUN_FAILURE_CLASSIFICATION_QUEUE_URL:
+              this.sqs.sqsQueues.get('laboratory-run-failure-classification-queue')?.queueUrl || '',
+          },
+        },
         // Scheduled poller (every 2 minutes, matching the front-end's own poll cadence) that
         // finds every non-terminal run and re-enqueues a status check, so terminal
         // transitions are detected without an open browser. See process-poll-active-runs.lambda.ts.
@@ -818,6 +824,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:configuration/*`],
         actions: ['omics:GetConfiguration'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [`arn:aws:bedrock:${this.props.env.region!}::foundation-model/*`],
+        actions: ['bedrock:InvokeModel'],
         effect: Effect.ALLOW,
       }),
     ]);
@@ -1308,6 +1319,28 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
       new PolicyStatement({
         resources: [`${this.sqs.sqsQueues.get('laboratory-run-update-queue')?.queueArn || ''}`],
+        actions: ['sqs:SendMessage'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/laboratory/run/request-laboratory-run-failure-analysis
+    // Reads the Laboratory row for authorization + LLM config presence, reads and
+    // marks its own laboratory-run row as Queued, then hands the run to the
+    // classification consumer. It never calls an LLM itself.
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/run/request-laboratory-run-failure-analysis', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
+        ],
+        actions: ['dynamodb:Query', 'dynamodb:UpdateItem'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [`${this.sqs.sqsQueues.get('laboratory-run-failure-classification-queue')?.queueArn || ''}`],
         actions: ['sqs:SendMessage'],
         effect: Effect.ALLOW,
       }),
