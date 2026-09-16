@@ -387,14 +387,15 @@ export class EasyGenomicsNestedStack extends NestedStack {
         // Scheduled (daily) S3 deletion sweep that completes the run-retention cascade. Walks
         // every lab's FILE# rows, deletes the underlying S3 object + tagging-table rows for
         // files whose last referencing run has TTL'd out, and skips anything tagged Permanent.
-        // Only `DRY_RUN=false` enables real deletes (unset or any other value stays dry-run).
+        // `DRY_RUN=false` enables real deletes (any other value, including unset, stays dry-run).
+        // Set to `true` temporarily to audit eligibility without deleting.
         // Runtime `assertLaboratoryHasS3BucketAccess` / `assertKeyUnderLabPrefix` bound blast radius; IAM
         // still uses `s3://*/*` because lab buckets are provisioned per org at data-setup time.
         '/easy-genomics/data-collections/process-expired-laboratory-data': {
           timeoutSeconds: 900,
           memorySizeMb: 1024,
           environment: {
-            DRY_RUN: 'true',
+            DRY_RUN: 'false',
           },
           callbacks: [
             (lambdaFunction) => {
