@@ -18,6 +18,7 @@
     LabDetailsFormMode,
   } from '@FE/types/labs';
   import { AutoCompleteOptionsEnum } from '@FE/types/forms';
+  import { DEFAULT_BEDROCK_MODEL_ID, withCustomModelOption } from '@FE/utils/llm-model-options';
   import { FormError } from '#ui/types';
   import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import { ButtonSizeEnum, ButtonVariantEnum } from '@FE/types/buttons';
@@ -351,7 +352,7 @@
   function modelIdPlaceholderFor(provider: string | undefined): string {
     switch (provider) {
       case 'bedrock':
-        return 'e.g. anthropic.claude-haiku-4-5-20251001';
+        return `e.g. ${DEFAULT_BEDROCK_MODEL_ID}`;
       case 'openai':
         return 'e.g. gpt-4o-mini';
       case 'anthropic':
@@ -414,7 +415,7 @@
   function modelIdHintFor(provider: string | undefined): string {
     switch (provider) {
       case 'bedrock':
-        return 'Foundation model identifier used by Bedrock InvokeModel.';
+        return 'Bedrock model or inference profile ID. Newer models are only served via a profile (us.* prefix).';
       case 'openai':
         return 'Model name as it appears in the OpenAI dashboard.';
       case 'anthropic':
@@ -890,17 +891,22 @@
       );
     }
 
-    // Model ID is only meaningful once a provider is picked for that integration.
-    if (state.HealthOmicsLlmProvider) {
+    // Model ID is only meaningful once a provider is picked for that integration,
+    // and only while analysis is switched on — a lab turning the feature off must
+    // be able to save without first completing a config it no longer uses.
+    if (state.FailureAnalysisEnabled && state.HealthOmicsLlmProvider) {
       maybeAddFieldValidationErrors(errors, LlmModelIdSchema, 'HealthOmicsLlmModelId', state.HealthOmicsLlmModelId);
     }
-    if (state.SeqeraLlmProvider) {
+    if (state.FailureAnalysisEnabled && state.SeqeraLlmProvider) {
       maybeAddFieldValidationErrors(errors, LlmModelIdSchema, 'SeqeraLlmModelId', state.SeqeraLlmModelId);
     }
 
     // openai/anthropic are BYOK: an API key is required unless one is already saved
     // for the currently-selected provider specifically (see isLlmApiKeyRequired).
-    if (state.HealthOmicsLlmProvider === 'openai' || state.HealthOmicsLlmProvider === 'anthropic') {
+    if (
+      state.FailureAnalysisEnabled &&
+      (state.HealthOmicsLlmProvider === 'openai' || state.HealthOmicsLlmProvider === 'anthropic')
+    ) {
       if (
         isLlmApiKeyRequired(
           state.HealthOmicsLlmProvider,
@@ -1050,7 +1056,7 @@
       if (newProvider === uneditedLabDetails.value?.HealthOmicsLlmProvider) {
         return;
       }
-      state.value.HealthOmicsLlmModelId = '';
+      state.value.HealthOmicsLlmModelId = newProvider === 'bedrock' ? DEFAULT_BEDROCK_MODEL_ID : '';
       state.value.HealthOmicsLlmApiKey = '';
     },
   );
@@ -1413,8 +1419,8 @@
           </div>
 
           <p v-if="!state.AwsHealthOmicsEnabled && !state.NextFlowTowerEnabled" class="text-muted text-xs">
-            Enable HealthOmics{{ isSeqeraAlreadyEnabled ? ' or Seqera' : '' }} integration above to configure AI
-            failure analysis for that integration.
+            Enable HealthOmics{{ isSeqeraAlreadyEnabled ? ' or Seqera' : '' }} integration above to configure AI failure
+            analysis for that integration.
           </p>
 
           <EGFormGroup
@@ -1453,10 +1459,16 @@
               required
               :hint="modelIdHintFor(state.HealthOmicsLlmProvider)"
             >
-              <EGInput
+              <USelectMenu
                 v-model="state.HealthOmicsLlmModelId"
+                :options="withCustomModelOption(state.HealthOmicsLlmProvider, state.HealthOmicsLlmModelId)"
                 :placeholder="modelIdPlaceholderFor(state.HealthOmicsLlmProvider)"
                 :disabled="!isEditing || isSubmittingFormData"
+                searchable
+                searchable-placeholder="Search or type any model ID…"
+                creatable
+                show-create-option-when="always"
+                size="xl"
               />
             </EGFormGroup>
 
@@ -1527,10 +1539,16 @@
               required
               :hint="modelIdHintFor(state.SeqeraLlmProvider)"
             >
-              <EGInput
+              <USelectMenu
                 v-model="state.SeqeraLlmModelId"
+                :options="withCustomModelOption(state.SeqeraLlmProvider, state.SeqeraLlmModelId)"
                 :placeholder="modelIdPlaceholderFor(state.SeqeraLlmProvider)"
                 :disabled="!isEditing || isSubmittingFormData"
+                searchable
+                searchable-placeholder="Search or type any model ID…"
+                creatable
+                show-create-option-when="always"
+                size="xl"
               />
             </EGFormGroup>
 

@@ -1,4 +1,4 @@
-import { InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 
 import {
   BedrockClassificationProvider,
@@ -59,14 +59,71 @@ describe('parseClassificationResponse', () => {
 });
 
 describe('mapBedrockError', () => {
-  it('maps ValidationException to an invalid model id', () => {
-    const error = mapBedrockError({ name: 'ValidationException', message: 'bad model' });
+  it('maps ValidationException to an invalid model id and keeps the Bedrock message', () => {
+    const error = mapBedrockError({
+      name: 'ValidationException',
+      message: "Invocation of model ID anthropic.claude-sonnet-4-5 with on-demand throughput isn't supported.",
+    });
     expect(error.code).toBe('INVALID_MODEL_ID');
+    expect(error.retryable).toBe(false);
+    expect(error.message).toContain("on-demand throughput isn't supported");
+  });
+
+  it('maps ResourceNotFoundException to a config error carrying the Bedrock message', () => {
+    const error = mapBedrockError({
+      name: 'ResourceNotFoundException',
+      message: 'Model use case details have not been submitted for this account.',
+    });
+    expect(error.code).toBe('MODEL_ACCESS_DENIED');
+    expect(error.message).toContain('use case details');
     expect(error.retryable).toBe(false);
   });
 
-  it('maps ResourceNotFoundException to an invalid model id', () => {
-    expect(mapBedrockError({ name: 'ResourceNotFoundException' }).code).toBe('INVALID_MODEL_ID');
+  it('tells the admin how to clear the one-time Anthropic use case form', () => {
+    const error = mapBedrockError({
+      name: 'ResourceNotFoundException',
+      message:
+        'Model use case details have not been submitted for this account. Fill out the Anthropic use case details form before using the model.',
+    });
+    expect(error.message).toContain('Bedrock console');
+    expect(error.message).toContain('Amazon Nova');
+  });
+
+  it('tells the admin to use an inference profile when on-demand is unsupported', () => {
+    const error = mapBedrockError({
+      name: 'ValidationException',
+      message:
+        "Invocation of model ID anthropic.claude-sonnet-4-5-20250929-v1:0 with on-demand throughput isn't supported. Retry your request with the ID or ARN of an inference profile.",
+    });
+    expect(error.code).toBe('INVALID_MODEL_ID');
+    expect(error.message).toContain('us.');
+  });
+
+  it('tells the admin where to look when IAM or an SCP blocks the model', () => {
+    const error = mapBedrockError({
+      name: 'AccessDeniedException',
+      message:
+        'User: arn:aws:sts::1234:assumed-role/lambda is not authorized to perform: bedrock:InvokeModel on resource: arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-lite-v1:0',
+    });
+    expect(error.code).toBe('MODEL_ACCESS_DENIED');
+    expect(error.message).toContain('execution role');
+    expect(error.message).toContain('inference-profile');
+    expect(error.retryable).toBe(false);
+  });
+
+  it('tells the admin to subscribe when the model comes from AWS Marketplace', () => {
+    const error = mapBedrockError({
+      name: 'AccessDeniedException',
+      message: 'Your account does not have an active subscription for this model.',
+    });
+    expect(error.code).toBe('MODEL_ACCESS_DENIED');
+    expect(error.message).toContain('Marketplace');
+  });
+
+  it('leaves an unrelated ValidationException without inference-profile advice', () => {
+    const error = mapBedrockError({ name: 'ValidationException', message: 'malformed input' });
+    expect(error.message).toContain('malformed input');
+    expect(error.message).not.toContain('us.');
   });
 
   it('maps AccessDeniedException to denied model access', () => {
@@ -93,11 +150,11 @@ describe('mapBedrockError', () => {
 });
 
 describe('BedrockClassificationProvider.validateConfig', () => {
+  const converseReply = { output: { message: { content: [{ text: 'ok' }] } } };
+
   it('resolves null when the probe succeeds', async () => {
     const provider = new BedrockClassificationProvider('a-model');
-    jest.spyOn((provider as any).client, 'send').mockResolvedValue({
-      body: new TextEncoder().encode(JSON.stringify({ content: [{ text: 'ok' }] })),
-    });
+    jest.spyOn((provider as any).client, 'send').mockResolvedValue(converseReply);
     await expect(provider.validateConfig()).resolves.toBeNull();
   });
 
@@ -108,17 +165,61 @@ describe('BedrockClassificationProvider.validateConfig', () => {
     expect(error?.code).toBe('MODEL_ACCESS_DENIED');
   });
 
-  it('sends a single-token probe for the configured model rather than a full classification', async () => {
+  it('logs the underlying Bedrock exception so a rejected save is diagnosable', async () => {
     const provider = new BedrockClassificationProvider('a-model');
-    const sendSpy = jest.spyOn((provider as any).client, 'send').mockResolvedValue({
-      body: new TextEncoder().encode(JSON.stringify({ content: [{ text: 'ok' }] })),
-    });
+    const logSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest
+      .spyOn((provider as any).client, 'send')
+      .mockRejectedValue({ name: 'ResourceNotFoundException', message: 'use case details' });
 
     await provider.validateConfig();
 
-    const command = sendSpy.mock.calls[0][0] as InvokeModelCommand;
+    expect(logSpy).toHaveBeenCalled();
+    logSpy.mockRestore();
+  });
+
+  it('sends a single-token Converse probe for the configured model', async () => {
+    const provider = new BedrockClassificationProvider('a-model');
+    const sendSpy = jest.spyOn((provider as any).client, 'send').mockResolvedValue(converseReply);
+
+    await provider.validateConfig();
+
+    const command = sendSpy.mock.calls[0][0] as ConverseCommand;
     expect(command.input.modelId).toBe('a-model');
-    const body = JSON.parse(new TextDecoder().decode(command.input.body as Uint8Array));
-    expect(body.max_tokens).toBe(1);
+    expect(command.input.inferenceConfig?.maxTokens).toBe(1);
+  });
+});
+
+describe('BedrockClassificationProvider.classify', () => {
+  const input = { platform: 'AWS HealthOmics', runName: 'r', status: 'FAILED', statusMessage: 'boom' } as any;
+
+  it('sends a Converse request that carries no provider-specific body format', async () => {
+    const provider = new BedrockClassificationProvider('us.amazon.nova-lite-v1:0');
+    const sendSpy = jest.spyOn((provider as any).client, 'send').mockResolvedValue({
+      output: {
+        message: {
+          content: [{ text: '{"owner":"Lab","summary":"Bad sample sheet.","action":"Re-upload it."}' }],
+        },
+      },
+    });
+
+    const outcome = await provider.classify(input);
+
+    const command = sendSpy.mock.calls[0][0] as ConverseCommand;
+    expect(command.input.modelId).toBe('us.amazon.nova-lite-v1:0');
+    expect(command.input.messages?.[0]?.content?.[0]).toHaveProperty('text');
+    expect(outcome.outcome).toBe('classified');
+  });
+
+  it('fails with UNPARSEABLE_RESPONSE when the model returns prose', async () => {
+    const provider = new BedrockClassificationProvider('a-model');
+    jest.spyOn((provider as any).client, 'send').mockResolvedValue({
+      output: { message: { content: [{ text: 'I cannot help with that.' }] } },
+    });
+
+    const outcome = await provider.classify(input);
+
+    expect(outcome.outcome).toBe('failed');
+    expect((outcome as any).error.code).toBe('UNPARSEABLE_RESPONSE');
   });
 });
