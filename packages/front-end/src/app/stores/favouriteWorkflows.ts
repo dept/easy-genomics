@@ -24,7 +24,7 @@ const initialState = (): FavouriteWorkflowsStoreState => ({
 });
 
 /** Coalesces concurrent loads (EGLabView and the EGDashboard tab it renders both ask). */
-let loadInflight: Promise<void> | null = null;
+let loadInflight: Promise<boolean> | null = null;
 /** Bumped on reset so a getUser() that outlives logout cannot write the previous user's list. */
 let loadGeneration = 0;
 
@@ -47,29 +47,37 @@ const useFavouriteWorkflowsStore = defineStore('favouriteWorkflowsStore', {
       Object.assign(this, initialState());
     },
 
-    async load(): Promise<void> {
+    /**
+     * Refreshes favourites from the server.
+     * @returns true only when this call applied a fresh server snapshot. Callers that write
+     * the whole array must abort when this is false — a swallowed error would otherwise leave
+     * the previous in-memory list in place, and saving it would drop another tab's additions.
+     */
+    async load(): Promise<boolean> {
       if (loadInflight) {
         return loadInflight;
       }
 
       const generation = loadGeneration;
-      const loadPromise = (async () => {
+      const loadPromise = (async (): Promise<boolean> => {
         const { $api } = useNuxtApp();
         try {
           const user = await $api.users.getUser();
           if (generation !== loadGeneration) {
-            return;
+            return false;
           }
           this.favouriteWorkflows = user.FavouriteWorkflows ?? [];
           this.loaded = true;
+          return true;
         } catch (error) {
           if (generation !== loadGeneration) {
-            return;
+            return false;
           }
           console.error('Error loading favorite workflows', error);
           if (!this.loaded) {
             useToastStore().error('Failed to load favorite workflows. Please refresh.');
           }
+          return false;
         }
       })().finally(() => {
         if (loadInflight === loadPromise) {
@@ -84,13 +92,20 @@ const useFavouriteWorkflowsStore = defineStore('favouriteWorkflowsStore', {
     /** Adds the favourite, or removes the existing entry for the same lab and workflow. */
     async toggleFavourite(favourite: FavouriteWorkflow): Promise<void> {
       const wasFavourited = this.isFavourited(favourite.LaboratoryId, favourite.WorkflowId);
+      const toggleFailedMessage = wasFavourited
+        ? 'Failed to remove workflow from favorites'
+        : 'Failed to add workflow to favorites';
 
       try {
         // Re-read immediately before the whole-array write so a favourite added in another
-        // tab is not overwritten by this session's older snapshot.
-        await this.load();
-        if (!this.loaded) {
-          // load() already toasted when it had nothing to show.
+        // tab is not overwritten by this session's older snapshot. Abort when the re-read
+        // fails: loaded may still be true from an earlier fetch, and saving that snapshot
+        // would silently drop another tab's additions.
+        const refreshed = await this.load();
+        if (!refreshed) {
+          if (this.loaded) {
+            useToastStore().error(toggleFailedMessage);
+          }
           return;
         }
 
@@ -106,9 +121,7 @@ const useFavouriteWorkflowsStore = defineStore('favouriteWorkflowsStore', {
         useToastStore().success(isFavourited ? 'Workflow removed from favorites' : 'Workflow added to favorites');
       } catch (error) {
         console.error('Failed to update favorite workflows', error);
-        useToastStore().error(
-          wasFavourited ? 'Failed to remove workflow from favorites' : 'Failed to add workflow to favorites',
-        );
+        useToastStore().error(toggleFailedMessage);
       }
     },
 

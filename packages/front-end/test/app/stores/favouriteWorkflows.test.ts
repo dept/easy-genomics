@@ -50,9 +50,11 @@ describe('favourite workflows store', () => {
     getUser.mockResolvedValue({ FavouriteWorkflows: [omicsFavourite('kept')] });
     const store = useFavouriteWorkflowsStore();
 
-    await Promise.all([store.load(), store.load()]);
+    const [first, second] = await Promise.all([store.load(), store.load()]);
 
     expect(getUser).toHaveBeenCalledTimes(1);
+    expect(first).toBe(true);
+    expect(second).toBe(true);
     expect(store.favouriteWorkflows).toEqual([omicsFavourite('kept')]);
     expect(store.loaded).toBe(true);
   });
@@ -61,7 +63,7 @@ describe('favourite workflows store', () => {
     getUser.mockRejectedValueOnce(new Error('network'));
     const store = useFavouriteWorkflowsStore();
 
-    await store.load();
+    expect(await store.load()).toBe(false);
 
     expect(store.loaded).toBe(false);
     expect(store.favouriteWorkflows).toEqual([]);
@@ -69,7 +71,7 @@ describe('favourite workflows store', () => {
     expect(updateUser).not.toHaveBeenCalled();
 
     getUser.mockResolvedValue({ FavouriteWorkflows: [omicsFavourite('kept')] });
-    await store.load();
+    expect(await store.load()).toBe(true);
 
     expect(store.loaded).toBe(true);
     expect(store.favouriteWorkflows).toEqual([omicsFavourite('kept')]);
@@ -81,11 +83,29 @@ describe('favourite workflows store', () => {
     await store.load();
 
     getUser.mockRejectedValueOnce(new Error('network'));
-    await store.load();
+    const refreshed = await store.load();
 
+    expect(refreshed).toBe(false);
     expect(store.loaded).toBe(true);
     expect(store.favouriteWorkflows).toEqual([omicsFavourite('kept')]);
     expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('toggleFavourite aborts when the re-read fails instead of writing a stale snapshot', async () => {
+    getUser.mockResolvedValueOnce({ FavouriteWorkflows: [omicsFavourite('local')] });
+    const store = useFavouriteWorkflowsStore();
+    await store.load();
+    toastError.mockReset();
+
+    // Server has another tab's favourite, but this re-read fails — writing the local
+    // snapshot would drop it. Abort instead.
+    getUser.mockRejectedValueOnce(new Error('network'));
+    await store.toggleFavourite(omicsFavourite('one'));
+
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(store.favouriteWorkflows).toEqual([omicsFavourite('local')]);
+    expect(toastError).toHaveBeenCalledWith('Failed to add workflow to favorites');
+    expect(toastSuccess).not.toHaveBeenCalled();
   });
 
   it('discards an in-flight load after reset so the previous user is not written back', async () => {
