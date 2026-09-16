@@ -469,6 +469,21 @@ export class EasyGenomicsNestedStack extends NestedStack {
     );
   }
 
+  /**
+   * Resources a Lambda needs to invoke a lab's configured Bedrock model.
+   *
+   * Each lab picks its own model id, so no single ARN can be pinned. Two ARN
+   * shapes are required because newer models (Claude 4.x, Nova) are only served
+   * through cross-region inference profiles, not by their bare foundation-model
+   * id — granting the profile alone still fails, because Bedrock authorises the
+   * foundation model in whichever destination region it routes the call to.
+   * Foundation-model ARNs have no account part by design.
+   */
+  private bedrockInvokeModelResources = (): string[] => [
+    `arn:aws:bedrock:${this.props.env.region!}:${this.props.env.account!}:inference-profile/*`,
+    'arn:aws:bedrock:*::foundation-model/*',
+  ];
+
   // Easy Genomics specific IAM policies
   private setupIamPolicies = () => {
     // /easy-genomics/organization/create-organization
@@ -828,7 +843,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
-        resources: [`arn:aws:bedrock:${this.props.env.region!}::foundation-model/*`],
+        resources: this.bedrockInvokeModelResources(),
         actions: ['bedrock:InvokeModel'],
         effect: Effect.ALLOW,
       }),
@@ -1537,9 +1552,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
-        // Each lab picks its own Bedrock model id; we can't pin a single ARN here.
-        // Bedrock foundation-model ARNs have no account part by design.
-        resources: [`arn:aws:bedrock:${this.props.env.region!}::foundation-model/*`],
+        resources: this.bedrockInvokeModelResources(),
         actions: ['bedrock:InvokeModel'],
         effect: Effect.ALLOW,
       }),

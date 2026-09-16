@@ -348,10 +348,15 @@
     if (!checked && !successChecked) return;
     notificationEventFilter.value = checked ? (successChecked ? 'all_terminal' : 'failures_only') : 'successes_only';
   }
+  // Amazon Nova needs no use-case form and is served on-demand by its bare model
+  // id, so it is the only Bedrock family that works in a fresh AWS account with
+  // no console steps. Anthropic models require a one-time use case form.
+  const DEFAULT_BEDROCK_MODEL_ID = 'amazon.nova-lite-v1:0';
+
   function modelIdPlaceholderFor(provider: string | undefined): string {
     switch (provider) {
       case 'bedrock':
-        return 'e.g. anthropic.claude-haiku-4-5-20251001';
+        return `e.g. ${DEFAULT_BEDROCK_MODEL_ID}`;
       case 'openai':
         return 'e.g. gpt-4o-mini';
       case 'anthropic':
@@ -414,7 +419,7 @@
   function modelIdHintFor(provider: string | undefined): string {
     switch (provider) {
       case 'bedrock':
-        return 'Foundation model identifier used by Bedrock InvokeModel.';
+        return 'Bedrock model or inference profile ID. Newer models are only served via a profile (us.* prefix).';
       case 'openai':
         return 'Model name as it appears in the OpenAI dashboard.';
       case 'anthropic':
@@ -890,17 +895,22 @@
       );
     }
 
-    // Model ID is only meaningful once a provider is picked for that integration.
-    if (state.HealthOmicsLlmProvider) {
+    // Model ID is only meaningful once a provider is picked for that integration,
+    // and only while analysis is switched on — a lab turning the feature off must
+    // be able to save without first completing a config it no longer uses.
+    if (state.FailureAnalysisEnabled && state.HealthOmicsLlmProvider) {
       maybeAddFieldValidationErrors(errors, LlmModelIdSchema, 'HealthOmicsLlmModelId', state.HealthOmicsLlmModelId);
     }
-    if (state.SeqeraLlmProvider) {
+    if (state.FailureAnalysisEnabled && state.SeqeraLlmProvider) {
       maybeAddFieldValidationErrors(errors, LlmModelIdSchema, 'SeqeraLlmModelId', state.SeqeraLlmModelId);
     }
 
     // openai/anthropic are BYOK: an API key is required unless one is already saved
     // for the currently-selected provider specifically (see isLlmApiKeyRequired).
-    if (state.HealthOmicsLlmProvider === 'openai' || state.HealthOmicsLlmProvider === 'anthropic') {
+    if (
+      state.FailureAnalysisEnabled &&
+      (state.HealthOmicsLlmProvider === 'openai' || state.HealthOmicsLlmProvider === 'anthropic')
+    ) {
       if (
         isLlmApiKeyRequired(
           state.HealthOmicsLlmProvider,
@@ -1050,7 +1060,7 @@
       if (newProvider === uneditedLabDetails.value?.HealthOmicsLlmProvider) {
         return;
       }
-      state.value.HealthOmicsLlmModelId = '';
+      state.value.HealthOmicsLlmModelId = newProvider === 'bedrock' ? DEFAULT_BEDROCK_MODEL_ID : '';
       state.value.HealthOmicsLlmApiKey = '';
     },
   );
@@ -1413,8 +1423,8 @@
           </div>
 
           <p v-if="!state.AwsHealthOmicsEnabled && !state.NextFlowTowerEnabled" class="text-muted text-xs">
-            Enable HealthOmics{{ isSeqeraAlreadyEnabled ? ' or Seqera' : '' }} integration above to configure AI
-            failure analysis for that integration.
+            Enable HealthOmics{{ isSeqeraAlreadyEnabled ? ' or Seqera' : '' }} integration above to configure AI failure
+            analysis for that integration.
           </p>
 
           <EGFormGroup
