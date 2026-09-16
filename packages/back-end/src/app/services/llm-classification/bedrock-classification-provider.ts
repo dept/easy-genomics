@@ -6,10 +6,11 @@ import { parseClassificationResponse } from './parse-classification-response';
 import { buildUserMessage, CLASSIFICATION_SYSTEM_PROMPT } from './prompts/classification-prompt';
 
 /**
- * Two Bedrock rejections are account-configuration problems an admin can clear
- * themselves, but neither is obvious from the exception name alone. Both are
- * identified by Bedrock's own wording rather than by exception type, because
- * the same exception name covers unrelated causes.
+ * Bedrock rejections that are account-configuration problems an admin can act
+ * on, none of which is obvious from the exception name alone. Matched on
+ * Bedrock's own wording rather than exception type, because one exception name
+ * covers unrelated causes — AccessDeniedException alone spans an IAM gap, an
+ * SCP, and a missing Marketplace subscription, which need different fixes.
  */
 const BEDROCK_REMEDIATIONS: { matches: RegExp; advice: string }[] = [
   {
@@ -21,6 +22,17 @@ const BEDROCK_REMEDIATIONS: { matches: RegExp; advice: string }[] = [
     matches: /on-demand throughput isn.t supported|inference profile/i,
     advice:
       'This model is only served through a cross-region inference profile — prefix the model ID with `us.` (for example us.anthropic.claude-sonnet-4-5-20250929-v1:0).',
+  },
+  // Checked before the broader authorisation match: a Marketplace model also
+  // reports as an authorisation failure, but subscribing is the fix, not IAM.
+  {
+    matches: /subscri/i,
+    advice: 'This is an AWS Marketplace model. Subscribe to it in the Bedrock console before configuring it here.',
+  },
+  {
+    matches: /not authorized to perform/i,
+    advice:
+      "The Lambda's execution role or a Service Control Policy is blocking this model. Check that the bedrock:InvokeModel grant covers both the inference-profile ARN and the foundation-model ARN in the region the profile routes to.",
   },
 ];
 

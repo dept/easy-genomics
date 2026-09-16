@@ -99,6 +99,27 @@ describe('mapBedrockError', () => {
     expect(error.message).toContain('us.');
   });
 
+  it('tells the admin where to look when IAM or an SCP blocks the model', () => {
+    const error = mapBedrockError({
+      name: 'AccessDeniedException',
+      message:
+        'User: arn:aws:sts::1234:assumed-role/lambda is not authorized to perform: bedrock:InvokeModel on resource: arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-lite-v1:0',
+    });
+    expect(error.code).toBe('MODEL_ACCESS_DENIED');
+    expect(error.message).toContain('execution role');
+    expect(error.message).toContain('inference-profile');
+    expect(error.retryable).toBe(false);
+  });
+
+  it('tells the admin to subscribe when the model comes from AWS Marketplace', () => {
+    const error = mapBedrockError({
+      name: 'AccessDeniedException',
+      message: 'Your account does not have an active subscription for this model.',
+    });
+    expect(error.code).toBe('MODEL_ACCESS_DENIED');
+    expect(error.message).toContain('Marketplace');
+  });
+
   it('leaves an unrelated ValidationException without inference-profile advice', () => {
     const error = mapBedrockError({ name: 'ValidationException', message: 'malformed input' });
     expect(error.message).toContain('malformed input');
