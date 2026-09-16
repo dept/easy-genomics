@@ -218,6 +218,12 @@ export default function useAnalytics() {
           // $current_url (incl. query params like ?email=) on auth routes.
           // Pageviews are emitted manually and sanitized via page().
           capture_pageleave: false,
+          // Pin off new SDK defaults that add fingerprinting / DOM / ad-cookie
+          // surfaces; keep the same locally-pinned posture as the flags above
+          // rather than deferring to PostHog project remote config.
+          capture_performance: false,
+          disableDeviceModel: true,
+          save_campaign_params: false,
           disable_session_recording: true,
           persistence: 'localStorage',
           // Defense-in-depth: PostHog auto-attaches URL/host properties to every
