@@ -18,6 +18,7 @@
     LabDetailsFormMode,
   } from '@FE/types/labs';
   import { AutoCompleteOptionsEnum } from '@FE/types/forms';
+  import { DEFAULT_BEDROCK_MODEL_ID, withCustomModelOption } from '@FE/utils/llm-model-options';
   import { FormError } from '#ui/types';
   import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import { ButtonSizeEnum, ButtonVariantEnum } from '@FE/types/buttons';
@@ -348,11 +349,6 @@
     if (!checked && !successChecked) return;
     notificationEventFilter.value = checked ? (successChecked ? 'all_terminal' : 'failures_only') : 'successes_only';
   }
-  // Amazon Nova needs no use-case form and is served on-demand by its bare model
-  // id, so it is the only Bedrock family that works in a fresh AWS account with
-  // no console steps. Anthropic models require a one-time use case form.
-  const DEFAULT_BEDROCK_MODEL_ID = 'amazon.nova-lite-v1:0';
-
   function modelIdPlaceholderFor(provider: string | undefined): string {
     switch (provider) {
       case 'bedrock':
@@ -1463,10 +1459,16 @@
               required
               :hint="modelIdHintFor(state.HealthOmicsLlmProvider)"
             >
-              <EGInput
+              <USelectMenu
                 v-model="state.HealthOmicsLlmModelId"
+                :options="withCustomModelOption(state.HealthOmicsLlmProvider, state.HealthOmicsLlmModelId)"
                 :placeholder="modelIdPlaceholderFor(state.HealthOmicsLlmProvider)"
                 :disabled="!isEditing || isSubmittingFormData"
+                searchable
+                searchable-placeholder="Search or type any model ID…"
+                creatable
+                show-create-option-when="always"
+                size="xl"
               />
             </EGFormGroup>
 
@@ -1537,10 +1539,16 @@
               required
               :hint="modelIdHintFor(state.SeqeraLlmProvider)"
             >
-              <EGInput
+              <USelectMenu
                 v-model="state.SeqeraLlmModelId"
+                :options="withCustomModelOption(state.SeqeraLlmProvider, state.SeqeraLlmModelId)"
                 :placeholder="modelIdPlaceholderFor(state.SeqeraLlmProvider)"
                 :disabled="!isEditing || isSubmittingFormData"
+                searchable
+                searchable-placeholder="Search or type any model ID…"
+                creatable
+                show-create-option-when="always"
+                size="xl"
               />
             </EGFormGroup>
 
