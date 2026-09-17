@@ -106,7 +106,11 @@
           <USkeleton v-for="line in skeletonDescriptionLines" class="mt-4 min-h-5 w-[150px] rounded" :key="line" />
         </template>
         <template v-else>
-          <EGText :id="titleId" tag="h1" class="mb-0">{{ title }}</EGText>
+          <div class="flex flex-wrap items-center gap-3">
+            <EGText :id="titleId" tag="h1" class="mb-0">{{ title }}</EGText>
+            <!-- Optional status/badge rendered inline with the title; renders nothing when unused. -->
+            <slot name="titleSuffix" />
+          </div>
           <EGText v-if="description" tag="p" class="text-muted mt-4 rounded">{{ description }}</EGText>
         </template>
       </div>
