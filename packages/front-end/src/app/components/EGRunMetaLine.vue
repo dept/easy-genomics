@@ -34,7 +34,7 @@
       <span v-if="index > 0" class="px-2 text-gray-300" aria-hidden="true">·</span>
 
       <span>
-        <template v-if="part.label">{{ part.label }}</template>
+        <span v-if="part.label" class="mr-1">{{ part.label }}</span>
         <span :class="part.strong ? 'text-black' : ''" :title="part.title">{{ part.text }}</span>
       </span>
     </template>
