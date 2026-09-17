@@ -18,10 +18,11 @@
     LabDetailsFormMode,
   } from '@FE/types/labs';
   import { AutoCompleteOptionsEnum } from '@FE/types/forms';
+  import { DEFAULT_BEDROCK_MODEL_ID, withCustomModelOption } from '@FE/utils/llm-model-options';
   import { FormError } from '#ui/types';
   import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import { ButtonSizeEnum, ButtonVariantEnum } from '@FE/types/buttons';
-  import { useToastStore, useUiStore } from '@FE/stores';
+  import { useLabsStore, useToastStore, useUiStore } from '@FE/stores';
   import { maybeAddFieldValidationErrors } from '@FE/utils/form-utils';
   import { extractApiErrorMessage, formatValidationIssues } from '@FE/utils/api-utils';
   import {
@@ -105,6 +106,7 @@
     SeqeraLlmApiKey: '',
     HealthOmicsLogEnrichmentEnabled: false,
     // Backend kill-switch semantics: absent/undefined means enabled, only `=== false` disables.
+    FailureAnalysisEnabled: true,
     NotificationsEnabled: true,
   };
 
@@ -149,13 +151,23 @@
     { value: 'VPC', label: 'VPC' },
   ];
 
+  // Seqera is soft-deprecated: only labs that already have it enabled keep seeing the
+  // integration section. Based on the server-loaded snapshot (unedited-lab-details), not the
+  // live toggle state, so an admin disabling Seqera on an already-enabled lab doesn't lose the
+  // section mid-edit. Create mode never loads a snapshot, so this is always false there.
+  const isSeqeraAlreadyEnabled = computed(() => uneditedLabDetails.value?.NextFlowTowerEnabled === true);
+
   // Badge state for the always-visible collapsible settings cards — reflects whether the
   // section is actually in effect right now, not just whether its fields are populated.
   const integrationsBadges = computed(() => [
-    {
-      label: `Seqera ${state.value.NextFlowTowerEnabled ? 'On' : 'Off'}`,
-      tone: state.value.NextFlowTowerEnabled ? 'positive' : 'neutral',
-    } as const,
+    ...(isSeqeraAlreadyEnabled.value
+      ? [
+          {
+            label: `Seqera ${state.value.NextFlowTowerEnabled ? 'On' : 'Off'}`,
+            tone: state.value.NextFlowTowerEnabled ? 'positive' : 'neutral',
+          } as const,
+        ]
+      : []),
     {
       label: `HealthOmics ${state.value.AwsHealthOmicsEnabled ? 'On' : 'Off'}`,
       tone: state.value.AwsHealthOmicsEnabled ? 'positive' : 'neutral',
@@ -166,7 +178,9 @@
     return { label: active ? 'On' : 'Off', tone: active ? 'positive' : 'neutral' } as const;
   });
   const aiFailureAnalysisBadge = computed(() => {
-    const active = !!state.value.HealthOmicsLlmProvider || !!state.value.SeqeraLlmProvider;
+    const configured = !!state.value.HealthOmicsLlmProvider || !!state.value.SeqeraLlmProvider;
+    // `!== false` mirrors the back end: an unset field means enabled, no data migration needed.
+    const active = configured && state.value.FailureAnalysisEnabled !== false;
     return { label: active ? 'Enabled' : 'Disabled', tone: active ? 'positive' : 'neutral' } as const;
   });
   const runNotificationsBadge = computed(() => {
@@ -338,7 +352,7 @@
   function modelIdPlaceholderFor(provider: string | undefined): string {
     switch (provider) {
       case 'bedrock':
-        return 'e.g. anthropic.claude-haiku-4-5-20251001';
+        return `e.g. ${DEFAULT_BEDROCK_MODEL_ID}`;
       case 'openai':
         return 'e.g. gpt-4o-mini';
       case 'anthropic':
@@ -365,6 +379,7 @@
     AwsHealthOmicsEnabled: 'Integrations – HealthOmics enabled',
     AwsHealthOmicsNetworkingMode: 'HealthOmics VPC Networking – Networking mode',
     AwsHealthOmicsVpcConfigurationName: 'HealthOmics VPC Networking – VPC configuration name',
+    FailureAnalysisEnabled: 'AI Failure Analysis – Enable AI error analysis',
     HealthOmicsLogEnrichmentEnabled: 'AI Failure Analysis (HealthOmics) – Log enrichment enabled',
     HealthOmicsLlmProvider: 'AI Failure Analysis (HealthOmics) – LLM provider',
     HealthOmicsLlmModelId: 'AI Failure Analysis (HealthOmics) – Model ID',
@@ -400,7 +415,7 @@
   function modelIdHintFor(provider: string | undefined): string {
     switch (provider) {
       case 'bedrock':
-        return 'Foundation model identifier used by Bedrock InvokeModel.';
+        return 'Bedrock model or inference profile ID. Newer models are only served via a profile (us.* prefix).';
       case 'openai':
         return 'Model name as it appears in the OpenAI dashboard.';
       case 'anthropic':
@@ -557,6 +572,12 @@
         state.value = { ...state.value, ...withRetentionDefault };
         // Store the unedited lab details to support the cancel button in Edit mode
         uneditedLabDetails.value = { ...withRetentionDefault };
+        // This form keeps its own local copy of the lab rather than reading through
+        // the shared store, so a save here would otherwise leave labsStore.labs[labId]
+        // holding a stale pre-save record forever — anything elsewhere in the app that
+        // reads the lab from the store (e.g. the run detail page's AI-analysis button
+        // gating) would never see the update without a full page reload.
+        useLabsStore().labs[labDetails.LaboratoryId] = labDetails;
       } else {
         throw new Error('Failed to parse lab details');
       }
@@ -870,17 +891,22 @@
       );
     }
 
-    // Model ID is only meaningful once a provider is picked for that integration.
-    if (state.HealthOmicsLlmProvider) {
+    // Model ID is only meaningful once a provider is picked for that integration,
+    // and only while analysis is switched on — a lab turning the feature off must
+    // be able to save without first completing a config it no longer uses.
+    if (state.FailureAnalysisEnabled && state.HealthOmicsLlmProvider) {
       maybeAddFieldValidationErrors(errors, LlmModelIdSchema, 'HealthOmicsLlmModelId', state.HealthOmicsLlmModelId);
     }
-    if (state.SeqeraLlmProvider) {
+    if (state.FailureAnalysisEnabled && state.SeqeraLlmProvider) {
       maybeAddFieldValidationErrors(errors, LlmModelIdSchema, 'SeqeraLlmModelId', state.SeqeraLlmModelId);
     }
 
     // openai/anthropic are BYOK: an API key is required unless one is already saved
     // for the currently-selected provider specifically (see isLlmApiKeyRequired).
-    if (state.HealthOmicsLlmProvider === 'openai' || state.HealthOmicsLlmProvider === 'anthropic') {
+    if (
+      state.FailureAnalysisEnabled &&
+      (state.HealthOmicsLlmProvider === 'openai' || state.HealthOmicsLlmProvider === 'anthropic')
+    ) {
       if (
         isLlmApiKeyRequired(
           state.HealthOmicsLlmProvider,
@@ -939,6 +965,7 @@
     'SeqeraLlmModelId',
     'SeqeraLlmApiKey',
     'HealthOmicsLogEnrichmentEnabled',
+    'FailureAnalysisEnabled',
     'AwsHealthOmicsNetworkingMode',
     'AwsHealthOmicsVpcConfigurationName',
     'NotificationsEnabled',
@@ -1029,7 +1056,7 @@
       if (newProvider === uneditedLabDetails.value?.HealthOmicsLlmProvider) {
         return;
       }
-      state.value.HealthOmicsLlmModelId = '';
+      state.value.HealthOmicsLlmModelId = newProvider === 'bedrock' ? DEFAULT_BEDROCK_MODEL_ID : '';
       state.value.HealthOmicsLlmApiKey = '';
     },
   );
@@ -1167,7 +1194,11 @@
       <EGCollapsibleSection
         heading-id="lab-settings-integrations-heading"
         title="Integrations"
-        description="Seqera and HealthOmics connections for this lab."
+        :description="
+          isSeqeraAlreadyEnabled
+            ? 'Seqera and HealthOmics connections for this lab.'
+            : 'HealthOmics connections for this lab.'
+        "
         :badges="isLoadingFormData ? [] : integrationsBadges"
       >
         <!-- Don't render Seqera/HealthOmics Off from defaultState while lab details are still loading. -->
@@ -1182,7 +1213,7 @@
           </div>
         </div>
         <template v-else>
-          <section :aria-labelledby="seqeraSectionId">
+          <section v-if="isSeqeraAlreadyEnabled" :aria-labelledby="seqeraSectionId">
             <h3 :id="seqeraSectionId" class="sr-only">Seqera integration</h3>
 
             <!-- Next Flow Tower: Toggle -->
@@ -1388,8 +1419,23 @@
           </div>
 
           <p v-if="!state.AwsHealthOmicsEnabled && !state.NextFlowTowerEnabled" class="text-muted text-xs">
-            Enable HealthOmics or Seqera integration above to configure AI failure analysis for that integration.
+            Enable HealthOmics{{ isSeqeraAlreadyEnabled ? ' or Seqera' : '' }} integration above to configure AI failure
+            analysis for that integration.
           </p>
+
+          <EGFormGroup
+            name="FailureAnalysisEnabled"
+            hint="Let technicians request AI analysis on a failed run. Turn this off to hide the analyzer for this lab."
+          >
+            <div class="flex items-center">
+              <span class="text-sm text-black">AI error analysis</span>
+              <UToggle
+                class="ml-2"
+                v-model="state.FailureAnalysisEnabled"
+                :disabled="!isEditing || isSubmittingFormData"
+              />
+            </div>
+          </EGFormGroup>
 
           <!-- HealthOmics sub-section -->
           <div v-if="state.AwsHealthOmicsEnabled" class="mb-6 rounded border border-gray-200 p-4">
@@ -1413,10 +1459,16 @@
               required
               :hint="modelIdHintFor(state.HealthOmicsLlmProvider)"
             >
-              <EGInput
+              <USelectMenu
                 v-model="state.HealthOmicsLlmModelId"
+                :options="withCustomModelOption(state.HealthOmicsLlmProvider, state.HealthOmicsLlmModelId)"
                 :placeholder="modelIdPlaceholderFor(state.HealthOmicsLlmProvider)"
                 :disabled="!isEditing || isSubmittingFormData"
+                searchable
+                searchable-placeholder="Search or type any model ID…"
+                creatable
+                show-create-option-when="always"
+                size="xl"
               />
             </EGFormGroup>
 
@@ -1459,20 +1511,10 @@
               />
             </EGFormGroup>
 
-            <EGFormGroup
-              v-if="state.HealthOmicsLlmProvider"
-              name="HealthOmicsLogEnrichmentEnabled"
-              hint="Sends a redacted excerpt of the failed run's CloudWatch logs to the AI for deeper analysis. Identifiers, paths, and secrets are stripped before sending."
-            >
-              <div class="flex items-center">
-                <span class="text-sm text-black">Analyse run logs on failure</span>
-                <UToggle
-                  class="ml-2"
-                  v-model="state.HealthOmicsLogEnrichmentEnabled"
-                  :disabled="!isEditing || isSubmittingFormData"
-                />
-              </div>
-            </EGFormGroup>
+            <!-- Log-enrichment control hidden per product decision (manual-only analysis;
+                 keep the settings surface simple). state.HealthOmicsLogEnrichmentEnabled is
+                 still submitted as-is on save — a lab that already had it on keeps that
+                 behavior; it's just no longer user-editable from this form. -->
           </div>
 
           <!-- Seqera sub-section -->
@@ -1497,10 +1539,16 @@
               required
               :hint="modelIdHintFor(state.SeqeraLlmProvider)"
             >
-              <EGInput
+              <USelectMenu
                 v-model="state.SeqeraLlmModelId"
+                :options="withCustomModelOption(state.SeqeraLlmProvider, state.SeqeraLlmModelId)"
                 :placeholder="modelIdPlaceholderFor(state.SeqeraLlmProvider)"
                 :disabled="!isEditing || isSubmittingFormData"
+                searchable
+                searchable-placeholder="Search or type any model ID…"
+                creatable
+                show-create-option-when="always"
+                size="xl"
               />
             </EGFormGroup>
 

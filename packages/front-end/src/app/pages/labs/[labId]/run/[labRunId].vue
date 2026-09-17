@@ -16,6 +16,7 @@
     showSeqeraTaskProgressCard,
   } from '@FE/utils/run-progress-card-visibility';
   import { v4 as uuidv4 } from 'uuid';
+  import { analysisErrorMessage } from '@FE/utils/analysis-error-message';
 
   const $route = useRoute();
   const $router = useRouter();
@@ -263,6 +264,56 @@
     });
   }
 
+  const analysisStatus = computed<string | undefined>(() => labRun.value?.AnalysisStatus);
+  const analysisInFlight = computed<boolean>(
+    () => analysisStatus.value === 'Queued' || analysisStatus.value === 'Running',
+  );
+
+  // A button that can only ever fail is worse than no button, so it appears
+  // only when the lab actually has a provider and model configured.
+  const labHasLlmConfigured = computed<boolean>(() => {
+    if (!lab.value) return false;
+    return isHealthOmics.value
+      ? !!lab.value.HealthOmicsLlmProvider && !!lab.value.HealthOmicsLlmModelId
+      : !!lab.value.SeqeraLlmProvider && !!lab.value.SeqeraLlmModelId;
+  });
+
+  // Master switch: hidden for everyone (tech and admin alike) when the lab has
+  // turned AI error analysis off — `!== false` so a lab that predates the field
+  // keeps today's behaviour with no data migration.
+  const failureAnalysisEnabled = computed<boolean>(() => lab.value?.FailureAnalysisEnabled !== false);
+
+  const canRequestAnalysis = computed<boolean>(
+    () => isFailed.value && labHasLlmConfigured.value && failureAnalysisEnabled.value,
+  );
+  const analysisButtonLabel = computed<string>(() =>
+    labRun.value?.FailureOwner ? 'Re-run AI analysis' : 'Run AI analysis',
+  );
+
+  async function requestAnalysis() {
+    await runStore.requestFailureAnalysis(labId, labRunId);
+  }
+
+  // A page load/reload while AnalysisStatus is already Queued/Running has no poll
+  // running for it (e.g. the SQS send failed, or the consumer's message died in a
+  // DLQ) — the button would otherwise stay stuck on "Analysing…" forever. Resume
+  // the existing poll (with its own terminal-status detection and timeout) whenever
+  // the in-flight state is observed and nothing is polling it yet. `labRun` loads
+  // asynchronously after mount, so this is a watcher rather than onMounted logic.
+  watch(
+    labRun,
+    (run) => {
+      if (!run) return;
+      const inFlight = run.AnalysisStatus === 'Queued' || run.AnalysisStatus === 'Running';
+      if (inFlight && !runStore.analysisPolls[labRunId]) {
+        runStore.startAnalysisPolling(labRunId);
+      }
+    },
+    { immediate: true },
+  );
+
+  onUnmounted(() => runStore.stopAnalysisPolling(labRunId));
+
   const tabItems = computed(() => [
     { key: 'runDetails', label: 'Run Details' },
     { key: 'fileManager', label: 'File Manager' },
@@ -440,6 +491,53 @@
     </section>
   </div>
 
+  <!-- Failure classification (owner + summary + suggested action). Populated asynchronously
+       by the classifier Lambda when a run reaches FAILED; absent on older rows or while the
+       classifier is still working. Sits beside Failed Tasks, above the tabs, so it's visible
+       without clicking into Run Details. Independent of showSeqeraProgressCard/
+       showOmicsProgressCard — a FAILED run can lack progress-card content (no failure
+       reason, no task list) while still having a classification or a manual-trigger button
+       to show. -->
+  <section
+    v-if="failureClassificationVisible || canRequestAnalysis"
+    class="stroke-light mb-6 flex flex-col rounded-2xl border border-solid bg-white p-6 max-md:px-5"
+  >
+    <h3 class="mb-4 text-sm font-medium text-black">Failure analysis</h3>
+    <div class="space-y-2">
+      <div v-if="failureClassificationVisible" class="flex items-center gap-3">
+        <span
+          class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium"
+          :class="failureOwnerBadgeClass"
+        >
+          Owner: {{ labRun?.FailureOwner }}
+        </span>
+        <span v-if="labRun?.FailureClassifiedBy === 'llm'" class="text-muted text-xs italic">
+          AI-assisted classification — verify before acting
+        </span>
+      </div>
+      <p v-if="labRun?.FailureSummary" class="text-sm text-black">{{ labRun.FailureSummary }}</p>
+      <p v-if="labRun?.FailureAction" class="text-muted text-sm">
+        <span class="font-medium text-black">What to do next:</span>
+        {{ labRun.FailureAction }}
+      </p>
+      <div v-if="canRequestAnalysis" class="mt-3 flex items-center gap-2">
+        <EGButton
+          :label="analysisButtonLabel"
+          :loading="analysisInFlight"
+          :disabled="analysisInFlight"
+          variant="secondary"
+          size="xs"
+          @click="requestAnalysis"
+        />
+        <span v-if="analysisInFlight" class="text-muted text-xs italic">Analysing…</span>
+        <span v-else-if="labRun?.AnalysisStatus === 'Failed'" class="flex flex-col text-xs italic">
+          <span class="text-red-700">{{ analysisErrorMessage(labRun?.AnalysisErrorCode) }}</span>
+          <span v-if="labRun?.AnalysisErrorMessage" class="text-muted">{{ labRun.AnalysisErrorMessage }}</span>
+        </span>
+      </div>
+    </div>
+  </section>
+
   <EGDetailTabs
     :model-value="tabIndex"
     :items="tabItems"
@@ -547,34 +645,6 @@
               </dd>
             </div>
           </dl>
-        </section>
-
-        <!-- Failure classification (owner + summary + suggested action). Populated asynchronously
-             by the classifier Lambda when a run reaches FAILED; absent on older rows or while the
-             classifier is still working. -->
-        <section
-          v-if="failureClassificationVisible"
-          class="stroke-light flex flex-col rounded-none rounded-b-2xl border border-solid bg-white p-6 max-md:px-5"
-        >
-          <h3 class="mb-4 text-sm font-medium text-black">Failure analysis</h3>
-          <div class="space-y-2">
-            <div class="flex items-center gap-3">
-              <span
-                class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium"
-                :class="failureOwnerBadgeClass"
-              >
-                Owner: {{ labRun?.FailureOwner }}
-              </span>
-              <span v-if="labRun?.FailureClassifiedBy === 'llm'" class="text-muted text-xs italic">
-                AI-assisted classification — verify before acting
-              </span>
-            </div>
-            <p v-if="labRun?.FailureSummary" class="text-sm text-black">{{ labRun.FailureSummary }}</p>
-            <p v-if="labRun?.FailureAction" class="text-muted text-sm">
-              <span class="font-medium text-black">What to do next:</span>
-              {{ labRun.FailureAction }}
-            </p>
-          </div>
         </section>
       </div>
 

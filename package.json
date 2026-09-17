@@ -26,7 +26,7 @@
     "pre-commit": "lint-staged"
   },
   "author": {
-    "name": "DEPT Agency",
+    "name": "DEPT® Agency",
     "organization": true
   },
   "devDependencies": {

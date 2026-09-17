@@ -47,7 +47,7 @@
           <EGText tag="p" class="text-muted text-sm">
             This deployment can send
             <strong>anonymous</strong>
-            usage data to DEPT to improve the open-source project. No names, emails, file names, sample data or run
+            usage data to DEPT® to improve the open-source project. No names, emails, file names, sample data or run
             parameters are ever sent. You can change this any time in your profile.
             <a href="https://easy-genomics.org/privacy" class="text-primary underline" target="_blank" rel="noopener">
               Learn more

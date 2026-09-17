@@ -105,6 +105,18 @@ export const LaboratoryRunSchema = z
      */
     FailureClassifiedBy: z.enum(['lookup', 'llm']).optional(),
     /**
+     * Execution state of the AI failure analysis for this run. Absent means it
+     * has never been requested. Written by the classification consumer; polled
+     * by the run detail page after a manual trigger.
+     */
+    AnalysisStatus: z.enum(['Queued', 'Running', 'Succeeded', 'Failed']).optional(),
+    /** One of ClassificationErrorCode. Typed as a string so this schema does not couple to the provider taxonomy. */
+    AnalysisErrorCode: z.string().optional(),
+    /** The provider's own detail. Shown as secondary text under the mapped UI copy, never in place of it. */
+    AnalysisErrorMessage: z.string().optional(),
+    /** ISO timestamp. Load-bearing: lets the UI abandon a Running status stranded by a dead consumer. */
+    AnalysisRequestedAt: z.string().optional(),
+    /**
      * Sparse marker present only while the run is non-terminal. Backs the `PollStatus_Index`
      * GSI so the notification poller can query "every active run" in O(1) regardless of total
      * run history, instead of scanning or iterating every lab. Removed (not set false) on the
@@ -172,6 +184,10 @@ export const ReadLaboratoryRunSchema = z
     FailureSummary: z.string().optional(),
     FailureAction: z.string().optional(),
     FailureClassifiedBy: z.enum(['lookup', 'llm']).optional(),
+    AnalysisStatus: z.enum(['Queued', 'Running', 'Succeeded', 'Failed']).optional(),
+    AnalysisErrorCode: z.string().optional(),
+    AnalysisErrorMessage: z.string().optional(),
+    AnalysisRequestedAt: z.string().optional(),
     ...laboratoryRunCostFields,
     ProgressPercent: z.number().min(0).max(100).optional(),
     TasksTotal: z.number().nonnegative().optional(),

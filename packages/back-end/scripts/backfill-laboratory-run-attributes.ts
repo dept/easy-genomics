@@ -32,11 +32,10 @@
  * Requires .env.local (or env) with: NAME_PREFIX, REGION.
  */
 
-import path from 'path';
-import dotenv from 'dotenv';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import { LaboratoryRunService } from '../src/app/services/easy-genomics/laboratory-run-service';
 import { isTerminalLaboratoryRunStatus } from '../src/app/utils/laboratory-run-ttl-utils';
+import { loadDotEnvAndReconcileRegion } from './lib/load-env';
 
 /** Legacy attribute removed from LaboratoryRunSchema; still present on some DynamoDB items. */
 const LEGACY_CURRENT_PROCESS_NAME = 'CurrentProcessName';
@@ -44,16 +43,11 @@ const LEGACY_CURRENT_PROCESS_NAME = 'CurrentProcessName';
 type LaboratoryRunWithLegacy = LaboratoryRun & { CurrentProcessName?: string };
 
 function loadEnv(): void {
-  const envPath = path.resolve(process.cwd(), '.env.local');
-  dotenv.config({ path: envPath });
-  if (process.env.REGION && !process.env.AWS_REGION) {
-    process.env.AWS_REGION = process.env.REGION;
-  }
+  loadDotEnvAndReconcileRegion();
   const required = ['NAME_PREFIX', 'REGION'];
   const missing = required.filter((k) => !process.env[k]);
   if (missing.length > 0) {
-    console.error(`Missing required env: ${missing.join(', ')}. Set in .env.local or environment.`);
-    process.exit(1);
+    throw new Error(`Missing required env: ${missing.join(', ')}. Set in .env.local or environment.`);
   }
 }
 
@@ -86,7 +80,17 @@ export async function main(): Promise<void> {
   const runService = new LaboratoryRunService();
 
   console.log('Scanning laboratory-run table...');
-  const allRuns = await runService.listAllLaboratoryRuns();
+  let allRuns: LaboratoryRun[];
+  try {
+    allRuns = await runService.listAllLaboratoryRuns();
+  } catch (err: any) {
+    // Fresh/greenfield deploy: laboratory-run table may not exist yet.
+    if (err?.name === 'ResourceNotFoundException' || err?.__type?.includes('ResourceNotFoundException')) {
+      console.log('Laboratory-run table not found; nothing to backfill.');
+      return;
+    }
+    throw err;
+  }
 
   // Pass 1: REMOVE legacy CurrentProcessName (must run before SET-only passes that
   // would otherwise re-read in-memory objects still carrying the attribute).
@@ -188,11 +192,17 @@ export async function main(): Promise<void> {
   );
   console.log(`  PollStatus:          ${verb} ${pollStatusPatched} run(s), errors: ${pollStatusErrors}.`);
   console.log(`  NotifiedAt:          ${verb} ${notifiedAtPatched} run(s), errors: ${notifiedAtErrors}.`);
-  if (currentProcessNameErrors > 0 || pollStatusErrors > 0 || notifiedAtErrors > 0) process.exit(1);
+  if (currentProcessNameErrors > 0 || pollStatusErrors > 0 || notifiedAtErrors > 0) {
+    throw new Error(
+      `backfill-laboratory-run-attributes failed: ${currentProcessNameErrors} CurrentProcessName error(s), ` +
+        `${pollStatusErrors} PollStatus error(s), ${notifiedAtErrors} NotifiedAt error(s).`,
+    );
+  }
 }
 
-// Skip auto-run under Jest (JEST_WORKER_ID is set) so tests can import and await `main`.
-if (!process.env.JEST_WORKER_ID) {
+// Auto-run only when this file is the actual CLI entry point — not when it's imported as a
+// dependency (registry.ts statically imports `main` for run-deploy-migrations.ts) or under Jest.
+if (require.main === module && !process.env.JEST_WORKER_ID) {
   main().catch((e) => {
     console.error(e);
     process.exit(1);

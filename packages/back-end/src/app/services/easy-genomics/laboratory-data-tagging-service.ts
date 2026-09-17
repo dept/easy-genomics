@@ -1,9 +1,5 @@
 import { randomUUID } from 'crypto';
-import {
-  BatchGetItemCommandOutput,
-  ConditionalCheckFailedException,
-  QueryCommandOutput,
-} from '@aws-sdk/client-dynamodb';
+import { ConditionalCheckFailedException, QueryCommandOutput } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import {
   FileTagAssignment,
@@ -712,32 +708,20 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     );
     if (!toResolve.length) return;
 
-    for (let i = 0; i < toResolve.length; i += 100) {
-      const chunk = toResolve.slice(i, i + 100);
-      const res: BatchGetItemCommandOutput = await this.batchGetItem({
-        RequestItems: {
-          [TABLE_NAME]: {
-            Keys: chunk.map((tagId) =>
-              marshall({
-                LaboratoryId: laboratoryId,
-                Sk: skTag(tagId),
-              }),
-            ),
-            /** Strongly consistent so Kind/workflow metadata is visible right after PutItem on TAG# rows. */
-            ConsistentRead: true,
-          },
-        },
-      });
-      for (const item of res.Responses?.[TABLE_NAME] || []) {
-        const tag = this.tagRowToModel(unmarshall(item) as Record<string, unknown>);
-        const isWorkflow = tag.Kind === 'workflow' || !!(tag.Platform && tag.WorkflowExternalId);
-        if (tag.Kind === 'batch') {
-          batchTagIds.add(tag.TagId);
-        } else if (tag.Kind === 'permanent') {
-          permanentTagIds.add(tag.TagId);
-        } else if (isWorkflow) {
-          workflowTagIds.add(tag.TagId);
-        }
+    const { items } = await this.batchGetAll(
+      TABLE_NAME,
+      toResolve.map((tagId) => marshall({ LaboratoryId: laboratoryId, Sk: skTag(tagId) })),
+      { consistentRead: true },
+    );
+    for (const item of items) {
+      const tag = this.tagRowToModel(unmarshall(item) as Record<string, unknown>);
+      const isWorkflow = tag.Kind === 'workflow' || !!(tag.Platform && tag.WorkflowExternalId);
+      if (tag.Kind === 'batch') {
+        batchTagIds.add(tag.TagId);
+      } else if (tag.Kind === 'permanent') {
+        permanentTagIds.add(tag.TagId);
+      } else if (isWorkflow) {
+        workflowTagIds.add(tag.TagId);
       }
     }
   }
@@ -762,17 +746,11 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         Sk: skFile(encodeS3ObjectRef(bucket, key)),
       }));
 
-      const res: BatchGetItemCommandOutput = await this.batchGetItem({
-        RequestItems: {
-          [TABLE_NAME]: {
-            Keys: dynamoKeys.map((k) => marshall(k)),
-            /** Strongly consistent with workflow writes (FILE# + TAG# in the same request path). */
-            ConsistentRead: true,
-          },
-        },
-      });
-
-      const items = res.Responses?.[TABLE_NAME] || [];
+      const { items } = await this.batchGetAll(
+        TABLE_NAME,
+        dynamoKeys.map((k) => marshall(k)),
+        { consistentRead: true },
+      );
       const bySk = new Map<string, string[]>();
       const usagesBySk = new Map<string, Record<string, LaboratoryRunUsageSummary>>();
       const chunkTagIds = new Set<string>();

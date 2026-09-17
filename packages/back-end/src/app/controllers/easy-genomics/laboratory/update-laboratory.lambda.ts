@@ -5,6 +5,7 @@ import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib
 import {
   InvalidRequestError,
   LaboratoryAccessTokenUnavailableError,
+  LaboratoryLlmConfigurationInvalidError,
   LaboratoryNameTakenError,
   LaboratorySeqeraCredentialsIncorrectError,
   RequiredIdNotFoundError,
@@ -20,6 +21,7 @@ import { migrateS3AccessOnDefaultModeChange } from '@BE/services/easy-genomics/l
 import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { migrateWorkflowAccessOnDefaultModeChange } from '@BE/services/easy-genomics/laboratory-workflow-access-default-migration';
+import { LLMClassificationService } from '@BE/services/llm-classification/llm-classification-service';
 import { OmicsService } from '@BE/services/omics-service';
 import { SsmService } from '@BE/services/ssm-service';
 import { validateOrganizationAdminAccess } from '@BE/utils/auth-utils';
@@ -31,6 +33,7 @@ const laboratoryService = new LaboratoryService();
 const ssmService = new SsmService();
 const omicsService = new OmicsService();
 const s3AccessService = new LaboratoryS3AccessService();
+const llmClassificationService = new LLMClassificationService();
 
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -103,6 +106,42 @@ export const handler: Handler = async (
       );
     }
 
+    // Live probe only when the stored LLM config actually changes. Probing on
+    // every laboratory save would add a provider round-trip to an unrelated
+    // action.
+    for (const platform of ['AWS HealthOmics', 'Seqera Cloud'] as const) {
+      const isOmics = platform === 'AWS HealthOmics';
+      const provider = isOmics ? request.HealthOmicsLlmProvider : request.SeqeraLlmProvider;
+      const modelId = isOmics ? request.HealthOmicsLlmModelId : request.SeqeraLlmModelId;
+      let apiKey = isOmics ? request.HealthOmicsLlmApiKey : request.SeqeraLlmApiKey;
+
+      const changed =
+        provider !== (isOmics ? existing.HealthOmicsLlmProvider : existing.SeqeraLlmProvider) ||
+        modelId !== (isOmics ? existing.HealthOmicsLlmModelId : existing.SeqeraLlmModelId) ||
+        apiKey !== undefined;
+
+      if (!changed || !provider || !modelId) continue;
+
+      // The front end normalizes an untouched API-key field to `undefined` before
+      // submitting, so a save that only fixes e.g. a typo'd model ID never resupplies
+      // the key. Without this, probing with no key would reject the whole save as
+      // CONFIG_INCOMPLETE even though a working key is already on file for this platform.
+      if (apiKey === undefined && (provider === 'openai' || provider === 'anthropic')) {
+        const hasExistingKey = isOmics ? existing.HasHealthOmicsLlmApiKey : existing.HasSeqeraLlmApiKey;
+        if (hasExistingKey) {
+          apiKey = await fetchExistingLlmApiKey(existing, isOmics ? 'llm-api-key-healthomics' : 'llm-api-key-seqera');
+        }
+      }
+
+      const configError = await llmClassificationService.validateConfig({
+        provider,
+        modelId,
+        apiKey,
+        bedrockRegion: process.env.BEDROCK_REGION || process.env.AWS_REGION,
+      });
+      if (configError) throw new LaboratoryLlmConfigurationInvalidError(configError.message);
+    }
+
     const response = await laboratoryService
       .update(
         {
@@ -133,6 +172,7 @@ export const handler: Handler = async (
           // Same direct-mapping rationale: an unchecked toggle (undefined) clears the flag.
           HealthOmicsLogEnrichmentEnabled: request.HealthOmicsLogEnrichmentEnabled,
           NotificationsEnabled: request.NotificationsEnabled,
+          FailureAnalysisEnabled: request.FailureAnalysisEnabled,
           ModifiedAt: new Date().toISOString(),
           ModifiedBy: userId,
         },
@@ -216,6 +256,21 @@ export const handler: Handler = async (
     return buildErrorResponse(err, event);
   }
 };
+
+async function fetchExistingLlmApiKey(
+  laboratory: Laboratory,
+  ssmSuffix: 'llm-api-key-healthomics' | 'llm-api-key-seqera',
+): Promise<string | undefined> {
+  try {
+    const param: GetParameterCommandOutput = await ssmService.getParameter({
+      Name: `/easy-genomics/organization/${laboratory.OrganizationId}/laboratory/${laboratory.LaboratoryId}/${ssmSuffix}`,
+      WithDecryption: true,
+    });
+    return param?.Parameter?.Value;
+  } catch {
+    return undefined;
+  }
+}
 
 async function validateExistingNextFlowIntegration(
   laboratory: Laboratory,

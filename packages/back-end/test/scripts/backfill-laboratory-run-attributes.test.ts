@@ -1,5 +1,10 @@
 import type { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 
+// Without this, dotenv.config() reads whatever real .env.local exists on the machine running
+// the test and repopulates REGION/AWS_REGION regardless of what a test deleted beforehand —
+// passing only in CI (no .env.local there) and silently broken for local runs.
+jest.mock('dotenv', () => ({ config: jest.fn() }));
+
 const SERVICE_MODULE_PATH = '../../src/app/services/easy-genomics/laboratory-run-service';
 const SCRIPT_MODULE_PATH = '../../scripts/backfill-laboratory-run-attributes';
 
@@ -21,18 +26,27 @@ interface ScriptRunResult {
   listAllLaboratoryRuns: jest.Mock;
   update: jest.Mock;
   updateWithAttributeRemoval: jest.Mock;
+  error?: Error;
 }
 
 /**
- * Re-running the script per test requires a fresh module registry so the service it imports
- * picks up this call's mocked implementations. `main` is exported and awaited (auto-run is
- * skipped under Jest via JEST_WORKER_ID) to avoid racing a fire-and-forget side effect.
+ * The script's CLI entry is gated behind `require.main === module && !process.env.JEST_WORKER_ID`
+ * (the latter skips auto-run under Jest; the former also keeps it from auto-running when
+ * imported as a dependency outside Jest, e.g. registry.ts statically importing `main` for
+ * run-deploy-migrations.ts), so tests import the module, mock the service it depends on, then
+ * await the exported `main()` directly. `jest.resetModules()` per call ensures each test gets a
+ * fresh module registry that picks up that call's mocked implementations.
+ *
+ * `main()`'s own rejection is caught here rather than left to reject the returned promise,
+ * so failure-path tests can still inspect the service mocks (which pass and error assertions
+ * both need) instead of losing them to an unresolved destructuring assignment.
  */
 async function runScript(
   argv: string[],
   runs: LaboratoryRun[],
   updateImpl: (run: LaboratoryRun) => Promise<LaboratoryRun> = async (run) => run,
   updateWithAttributeRemovalImpl: (run: LaboratoryRun, remove: string[]) => Promise<LaboratoryRun> = async (run) => run,
+  listAllLaboratoryRunsImpl?: () => Promise<LaboratoryRun[]>,
 ): Promise<ScriptRunResult> {
   jest.resetModules();
   jest.doMock(SERVICE_MODULE_PATH);
@@ -40,7 +54,9 @@ async function runScript(
   // Jest's automock is generated at runtime from the real class, so the destructured export
   // isn't statically typed as mocked — cast loosely rather than fight the compiler for a test-only value.
   const { LaboratoryRunService } = (await import(SERVICE_MODULE_PATH)) as any;
-  const listAllLaboratoryRuns = jest.fn().mockResolvedValue(runs);
+  const listAllLaboratoryRuns = listAllLaboratoryRunsImpl
+    ? jest.fn(listAllLaboratoryRunsImpl)
+    : jest.fn().mockResolvedValue(runs);
   const update = jest.fn(updateImpl);
   const updateWithAttributeRemoval = jest.fn(updateWithAttributeRemovalImpl);
   LaboratoryRunService.prototype.listAllLaboratoryRuns = listAllLaboratoryRuns;
@@ -49,9 +65,15 @@ async function runScript(
 
   process.argv = ['node', 'backfill-laboratory-run-attributes.ts', ...argv];
   const { main } = await import(SCRIPT_MODULE_PATH);
-  await main();
 
-  return { listAllLaboratoryRuns, update, updateWithAttributeRemoval };
+  let error: Error | undefined;
+  try {
+    await main();
+  } catch (e) {
+    error = e as Error;
+  }
+
+  return { listAllLaboratoryRuns, update, updateWithAttributeRemoval, error };
 }
 
 describe('backfill-laboratory-run-attributes script', () => {
@@ -62,12 +84,10 @@ describe('backfill-laboratory-run-attributes script', () => {
   jest.setTimeout(60000);
 
   const originalArgv = process.argv;
-  let exitSpy: jest.SpyInstance;
 
   beforeEach(() => {
     process.env.NAME_PREFIX = 'test-prefix';
     process.env.REGION = 'us-east-1';
-    exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
   });
@@ -84,14 +104,14 @@ describe('backfill-laboratory-run-attributes script', () => {
         buildRun({ RunId: 'run-clean', PollStatus: 'ACTIVE' }),
       ];
 
-      const { update, updateWithAttributeRemoval } = await runScript([], runs);
+      const { update, updateWithAttributeRemoval, error } = await runScript([], runs);
 
       expect(updateWithAttributeRemoval).toHaveBeenCalledTimes(1);
       expect(updateWithAttributeRemoval.mock.calls[0][0].RunId).toBe('run-with-legacy');
       expect(updateWithAttributeRemoval.mock.calls[0][0]).not.toHaveProperty('CurrentProcessName');
       expect(updateWithAttributeRemoval.mock.calls[0][1]).toEqual(['CurrentProcessName']);
       expect(update).not.toHaveBeenCalled();
-      expect(exitSpy).not.toHaveBeenCalled();
+      expect(error).toBeUndefined();
     });
 
     it('only patches runs in the laboratory given via --lab', async () => {
@@ -110,10 +130,11 @@ describe('backfill-laboratory-run-attributes script', () => {
         }),
       ];
 
-      const { updateWithAttributeRemoval } = await runScript(['--lab', 'lab-1'], runs);
+      const { updateWithAttributeRemoval, error } = await runScript(['--lab', 'lab-1'], runs);
 
       expect(updateWithAttributeRemoval).toHaveBeenCalledTimes(1);
       expect(updateWithAttributeRemoval.mock.calls[0][0].RunId).toBe('run-lab-1');
+      expect(error).toBeUndefined();
     });
   });
 
@@ -125,14 +146,14 @@ describe('backfill-laboratory-run-attributes script', () => {
         buildRun({ RunId: 'run-pending', Status: 'PENDING' }),
       ];
 
-      const { update, updateWithAttributeRemoval } = await runScript([], runs);
+      const { update, updateWithAttributeRemoval, error } = await runScript([], runs);
 
       expect(updateWithAttributeRemoval).not.toHaveBeenCalled();
       expect(update).toHaveBeenCalledTimes(2);
       const patchedRunIds = update.mock.calls.map(([run]) => run.RunId);
       expect(patchedRunIds).toEqual(expect.arrayContaining(['run-missing', 'run-pending']));
       expect(update.mock.calls.every(([run]) => run.PollStatus === 'ACTIVE')).toBe(true);
-      expect(exitSpy).not.toHaveBeenCalled();
+      expect(error).toBeUndefined();
     });
 
     it('only patches runs in the laboratory given via --lab', async () => {
@@ -141,21 +162,23 @@ describe('backfill-laboratory-run-attributes script', () => {
         buildRun({ RunId: 'run-lab-2', LaboratoryId: 'lab-2', Status: 'RUNNING' }),
       ];
 
-      const { update } = await runScript(['--lab', 'lab-1'], runs);
+      const { update, error } = await runScript(['--lab', 'lab-1'], runs);
 
       expect(update).toHaveBeenCalledTimes(1);
       expect(update.mock.calls[0][0].RunId).toBe('run-lab-1');
+      expect(error).toBeUndefined();
     });
 
     it('strips CurrentProcessName from the SET payload when both passes apply', async () => {
       const runs = [buildRun({ RunId: 'run-both', Status: 'RUNNING', CurrentProcessName: 'proc' })];
 
-      const { update, updateWithAttributeRemoval } = await runScript([], runs);
+      const { update, updateWithAttributeRemoval, error } = await runScript([], runs);
 
       expect(updateWithAttributeRemoval).toHaveBeenCalledTimes(1);
       expect(update).toHaveBeenCalledTimes(1);
       expect(update.mock.calls[0][0]).not.toHaveProperty('CurrentProcessName');
       expect(update.mock.calls[0][0].PollStatus).toBe('ACTIVE');
+      expect(error).toBeUndefined();
     });
   });
 
@@ -169,13 +192,14 @@ describe('backfill-laboratory-run-attributes script', () => {
         buildRun({ RunId: 'run-running', Status: 'RUNNING', PollStatus: 'ACTIVE' }),
       ];
 
-      const { update } = await runScript([], runs);
+      const { update, error } = await runScript([], runs);
 
       expect(update).toHaveBeenCalledTimes(1);
       expect(update.mock.calls[0][0]).toMatchObject({
         RunId: 'run-completed',
         NotifiedAt: '2024-06-01T00:00:00.000Z',
       });
+      expect(error).toBeUndefined();
     });
 
     it('prefers ModifiedAt over CreatedAt, and falls back to now() when both are missing', async () => {
@@ -192,12 +216,13 @@ describe('backfill-laboratory-run-attributes script', () => {
         buildRun({ RunId: 'run-neither-timestamp', Status: 'CANCELLED' }),
       ];
 
-      const { update } = await runScript([], runs);
+      const { update, error } = await runScript([], runs);
 
       const notifiedAtByRunId = new Map(update.mock.calls.map(([run]) => [run.RunId, run.NotifiedAt]));
       expect(notifiedAtByRunId.get('run-both-timestamps')).toBe('2024-06-01T00:00:00.000Z');
       expect(notifiedAtByRunId.get('run-created-only')).toBe('2024-02-02T00:00:00.000Z');
       expect(notifiedAtByRunId.get('run-neither-timestamp')).toBe('2026-07-31T12:00:00.000Z');
+      expect(error).toBeUndefined();
     });
 
     it('only patches runs in the laboratory given via --lab', async () => {
@@ -206,10 +231,11 @@ describe('backfill-laboratory-run-attributes script', () => {
         buildRun({ RunId: 'run-lab-2', LaboratoryId: 'lab-2', Status: 'COMPLETED' }),
       ];
 
-      const { update } = await runScript(['--lab', 'lab-2'], runs);
+      const { update, error } = await runScript(['--lab', 'lab-2'], runs);
 
       expect(update).toHaveBeenCalledTimes(1);
       expect(update.mock.calls[0][0].RunId).toBe('run-lab-2');
+      expect(error).toBeUndefined();
     });
   });
 
@@ -221,22 +247,22 @@ describe('backfill-laboratory-run-attributes script', () => {
         buildRun({ RunId: 'run-notified-candidate', Status: 'COMPLETED' }),
       ];
 
-      const { update, updateWithAttributeRemoval } = await runScript(['--dry-run'], runs);
+      const { update, updateWithAttributeRemoval, error } = await runScript(['--dry-run'], runs);
 
       expect(update).not.toHaveBeenCalled();
       expect(updateWithAttributeRemoval).not.toHaveBeenCalled();
-      expect(exitSpy).not.toHaveBeenCalled();
+      expect(error).toBeUndefined();
     });
   });
 
-  describe('exit behavior', () => {
-    it('exits with code 1 but still attempts remaining runs when a CurrentProcessName update fails', async () => {
+  describe('failure behavior', () => {
+    it('throws but still attempts remaining runs when a CurrentProcessName update fails', async () => {
       const runs = [
         buildRun({ RunId: 'run-fail', CurrentProcessName: 'proc', PollStatus: 'ACTIVE' }),
         buildRun({ RunId: 'run-ok', CurrentProcessName: 'proc', PollStatus: 'ACTIVE' }),
       ];
 
-      const { updateWithAttributeRemoval } = await runScript(
+      const { updateWithAttributeRemoval, error } = await runScript(
         [],
         runs,
         async (run) => run,
@@ -247,49 +273,85 @@ describe('backfill-laboratory-run-attributes script', () => {
       );
 
       expect(updateWithAttributeRemoval).toHaveBeenCalledTimes(2);
-      expect(exitSpy).toHaveBeenCalledWith(1);
+      expect(error?.message).toContain('1 CurrentProcessName error(s)');
     });
 
-    it('exits with code 1 but still attempts remaining runs when a PollStatus update fails', async () => {
+    it('throws but still attempts remaining runs when a PollStatus update fails', async () => {
       const runs = [
         buildRun({ RunId: 'run-fail', Status: 'RUNNING' }),
         buildRun({ RunId: 'run-ok', Status: 'PENDING' }),
       ];
 
-      const { update } = await runScript([], runs, async (run) => {
+      const { update, error } = await runScript([], runs, async (run) => {
         if (run.RunId === 'run-fail') throw new Error('ddb write failed');
         return run;
       });
 
       expect(update).toHaveBeenCalledTimes(2);
-      expect(exitSpy).toHaveBeenCalledWith(1);
+      expect(error?.message).toContain('1 PollStatus error(s)');
     });
 
-    it('exits with code 1 when a NotifiedAt update fails', async () => {
+    it('throws when a NotifiedAt update fails', async () => {
       const runs = [
         buildRun({ RunId: 'run-fail', Status: 'COMPLETED' }),
         buildRun({ RunId: 'run-ok', Status: 'FAILED' }),
       ];
 
-      const { update } = await runScript([], runs, async (run) => {
+      const { update, error } = await runScript([], runs, async (run) => {
         if (run.RunId === 'run-fail') throw new Error('ddb write failed');
         return run;
       });
 
       expect(update).toHaveBeenCalledTimes(2);
-      expect(exitSpy).toHaveBeenCalledWith(1);
+      expect(error?.message).toContain('1 NotifiedAt error(s)');
     });
 
-    it('does not call process.exit when every candidate is patched successfully', async () => {
+    it('does not throw when every candidate is patched successfully', async () => {
       const runs = [
         buildRun({ RunId: 'run-legacy', CurrentProcessName: 'proc', PollStatus: 'ACTIVE' }),
         buildRun({ RunId: 'run-poll', Status: 'RUNNING' }),
         buildRun({ RunId: 'run-notified', Status: 'COMPLETED' }),
       ];
 
-      await runScript([], runs);
+      const { error } = await runScript([], runs);
 
-      expect(exitSpy).not.toHaveBeenCalled();
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('loadEnv REGION/AWS_REGION reconciliation', () => {
+    it('succeeds when REGION is unset but AWS_REGION is set (CI sets only AWS_REGION)', async () => {
+      delete process.env.REGION;
+      process.env.AWS_REGION = 'us-east-1';
+
+      const { error } = await runScript([], []);
+
+      expect(error).toBeUndefined();
+      expect(process.env.REGION).toBe('us-east-1');
+
+      delete process.env.AWS_REGION;
+    });
+  });
+
+  describe('greenfield deploy: laboratory-run table does not exist yet', () => {
+    it('resolves without throwing and performs no writes when the scan rejects with ResourceNotFoundException', async () => {
+      const notFoundError = Object.assign(new Error('Requested resource not found'), {
+        name: 'ResourceNotFoundException',
+      });
+
+      const { update, updateWithAttributeRemoval, error } = await runScript(
+        [],
+        [],
+        async (run) => run,
+        async (run) => run,
+        async () => {
+          throw notFoundError;
+        },
+      );
+
+      expect(error).toBeUndefined();
+      expect(update).not.toHaveBeenCalled();
+      expect(updateWithAttributeRemoval).not.toHaveBeenCalled();
     });
   });
 });

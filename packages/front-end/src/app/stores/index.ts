@@ -1,4 +1,6 @@
 import useAnalyticsStore from './analytics';
+import useDataCollectionsStore from './dataCollections';
+import useFavouriteWorkflowsStore from './favouriteWorkflows';
 import useLabsStore from './labs';
 import useOmicsWorkflowsStore from './omicsWorkflows';
 import useOrgsStore from './orgs';
@@ -10,6 +12,8 @@ import useUserStore from './user';
 import useWorkflowRunPresetsStore from './workflowRunPresets';
 
 function resetStores() {
+  useDataCollectionsStore().reset();
+  useFavouriteWorkflowsStore().reset();
   useLabsStore().reset();
   useOrgsStore().reset();
   useRunStore().reset();
@@ -22,6 +26,8 @@ function resetStores() {
 export {
   resetStores,
   useAnalyticsStore,
+  useDataCollectionsStore,
+  useFavouriteWorkflowsStore,
   useOrgsStore,
   useToastStore,
   useUserStore,

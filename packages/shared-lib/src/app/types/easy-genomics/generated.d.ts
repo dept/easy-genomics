@@ -238,6 +238,10 @@ export interface paths {
     /** Request Estimate Run Cost */
     post: operations["requestEstimateRunCost"];
   };
+  "/easy-genomics/laboratory/run/request-laboratory-run-failure-analysis": {
+    /** Request Laboratory Run Failure Analysis */
+    post: operations["requestLaboratoryRunFailureAnalysis"];
+  };
   "/easy-genomics/laboratory/run/request-laboratory-run-status-check": {
     /** Request Laboratory Run Status Check */
     post: operations["requestLaboratoryRunStatusCheck"];
@@ -1099,6 +1103,7 @@ export interface components {
       SeqeraLlmProvider?: "bedrock" | "openai" | "anthropic";
       SeqeraLlmModelId?: string;
       HealthOmicsLogEnrichmentEnabled?: boolean;
+      FailureAnalysisEnabled?: boolean;
       HealthOmicsLlmApiKey?: string;
       SeqeraLlmApiKey?: string;
     };
@@ -1178,6 +1183,14 @@ export interface components {
        * the configured LLM for deeper diagnosis. Requires a HealthOmics LLM provider.
        */
       HealthOmicsLogEnrichmentEnabled?: boolean;
+      /**
+       * @description Master switch for AI failure analysis at this lab. `undefined` means
+       * enabled — labs that predate this field keep today's behaviour with no
+       * data migration. When `false`, the manual trigger is unavailable to
+       * everyone (technicians and admins alike) — there is no automatic path;
+       * analysis is always technician-initiated per run.
+       */
+      FailureAnalysisEnabled?: boolean;
       /** @description Boolean indicators returned by read-laboratory; the actual keys never leave SSM. */
       HasHealthOmicsLlmApiKey?: boolean;
       HasSeqeraLlmApiKey?: boolean;
@@ -1224,6 +1237,7 @@ export interface components {
       SeqeraLlmProvider?: "anthropic" | "bedrock" | "openai";
       SeqeraLlmModelId?: string;
       HealthOmicsLogEnrichmentEnabled?: boolean;
+      FailureAnalysisEnabled?: boolean;
       HasNextFlowTowerAccessToken?: boolean;
       HasGitHubAccessToken?: boolean;
       /** @description Boolean indicators. The actual keys live in SSM and are never returned. */
@@ -1350,6 +1364,19 @@ export interface components {
        */
       FailureClassifiedBy?: "llm" | "lookup";
       /**
+       * @description Execution state of the AI failure analysis for this run. Absent means it
+       * has never been requested. Written by the classification consumer; polled
+       * by the run detail page after a manual trigger.
+       * @enum {string}
+       */
+      AnalysisStatus?: "Failed" | "Queued" | "Running" | "Succeeded";
+      /** @description One of ClassificationErrorCode. Typed as a string so this schema does not couple to the provider taxonomy. */
+      AnalysisErrorCode?: string;
+      /** @description The provider's own detail. Shown as secondary text under the mapped UI copy, never in place of it. */
+      AnalysisErrorMessage?: string;
+      /** @description ISO timestamp. Load-bearing: lets the UI abandon a Running status stranded by a dead consumer. */
+      AnalysisRequestedAt?: string;
+      /**
        * @description Sparse marker present only while the run is non-terminal. Backs the `PollStatus_Index`
        * GSI so the notification poller can query "every active run" in O(1) regardless of total
        * run history, instead of scanning or iterating every lab. Removed (not set false) on the
@@ -1450,6 +1477,11 @@ export interface components {
       FailureAction?: string;
       /** @enum {string} */
       FailureClassifiedBy?: "llm" | "lookup";
+      /** @enum {string} */
+      AnalysisStatus?: "Failed" | "Queued" | "Running" | "Succeeded";
+      AnalysisErrorCode?: string;
+      AnalysisErrorMessage?: string;
+      AnalysisRequestedAt?: string;
       ProgressPercent?: number;
       TasksTotal?: number;
       TasksCompleted?: number;
@@ -1559,6 +1591,7 @@ export interface components {
       SeqeraLlmProvider?: "bedrock" | "openai" | "anthropic";
       SeqeraLlmModelId?: string;
       HealthOmicsLogEnrichmentEnabled?: boolean;
+      FailureAnalysisEnabled?: boolean;
       HealthOmicsLlmApiKey?: string;
       SeqeraLlmApiKey?: string;
     };
@@ -4989,6 +5022,22 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["EstimateRunCostResponse"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Request Laboratory Run Failure Analysis */
+  requestLaboratoryRunFailureAnalysis: {
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
         };
       };
       400: components["responses"]["BadRequest"];

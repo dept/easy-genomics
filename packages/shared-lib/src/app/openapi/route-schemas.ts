@@ -279,6 +279,7 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
   },
   'POST /easy-genomics/laboratory/run/request-apply-run-retention-policy': {},
   'POST /easy-genomics/laboratory/run/request-laboratory-run-status-check': {},
+  'POST /easy-genomics/laboratory/run/request-laboratory-run-failure-analysis': {},
 
   // ── easy-genomics/data-collections/ ─────────────────────────────────────────
 

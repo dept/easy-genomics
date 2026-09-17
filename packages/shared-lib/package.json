@@ -20,7 +20,7 @@
     "lint": "eslint 'src/**/*.{js,ts}' --fix"
   },
   "author": {
-    "name": "DEPT Agency",
+    "name": "DEPT® Agency",
     "organization": true
   },
   "devDependencies": {
