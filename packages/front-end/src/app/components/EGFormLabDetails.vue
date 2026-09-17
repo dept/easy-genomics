@@ -609,6 +609,8 @@
     canSubmit.value = false;
     retentionPreviewCacheMonths.value = null;
     retentionPreviewCounts.value = null;
+    isSaveRetentionChangeDialogOpen.value = false;
+    isRetentionDeleteConfirmDialogOpen.value = false;
   }
 
   const isSubmittingFormData = computed(
@@ -616,6 +618,7 @@
   );
   const isLoadingRetentionPreview = ref(false);
   const isSaveRetentionChangeDialogOpen = ref(false);
+  const isRetentionDeleteConfirmDialogOpen = ref(false);
   const retentionPreviewCacheMonths = ref<number | null>(null);
   const retentionPreviewCounts = ref<{ immediate: number; updated: number } | null>(null);
   const retentionMonthsForDialog = computed<number>(
@@ -635,6 +638,10 @@
     if (!counts) return policyLine;
     return `${policyLine}\n\n${counts.immediate} run${counts.immediate === 1 ? '' : 's'} will be deleted immediately (new expiry is in the past).\n${counts.updated} run${counts.updated === 1 ? '' : 's'} will have their expiration date updated.`;
   });
+
+  // Second-step confirmation agreed with product/design: irreversible deletion + up-to-48h delay.
+  const retentionDeleteConfirmSecondaryMessage =
+    'This cannot be undone. Data scheduled for deletion under the new retention policy can take up to 48 hours to be permanently removed from the system.';
 
   function retentionMonthsKey(): number {
     return state.value.RunRetentionMonths ?? 6;
@@ -715,6 +722,16 @@
     await runSubmitAfterValidation();
   }
 
+  function handleRetentionWarningDialogConfirm() {
+    isSaveRetentionChangeDialogOpen.value = false;
+    // "Never delete" only clears expiry; skip the irreversible-deletion confirmation.
+    if (retentionMonthsForDialog.value === 0) {
+      void handleConfirmSaveRetentionPolicyChange();
+      return;
+    }
+    isRetentionDeleteConfirmDialogOpen.value = true;
+  }
+
   async function handleConfirmSaveRetentionPolicyChange() {
     useUiStore().setRequestPending('updateLab');
     try {
@@ -768,6 +785,7 @@
     } finally {
       useUiStore().setRequestComplete('updateLab');
       isSaveRetentionChangeDialogOpen.value = false;
+      isRetentionDeleteConfirmDialogOpen.value = false;
     }
   }
 
@@ -1805,10 +1823,23 @@
     :action-variant="ButtonVariantEnum.enum.primary"
     cancel-label="Cancel"
     :cancel-variant="ButtonVariantEnum.enum.secondary"
-    @action-triggered="handleConfirmSaveRetentionPolicyChange"
+    @action-triggered="handleRetentionWarningDialogConfirm"
     primary-message="Warning: Data Loss Risk"
     :secondary-message="retentionSaveDialogSecondaryMessage"
     v-model="isSaveRetentionChangeDialogOpen"
+    :loading="isSubmittingFormData"
+    :buttons-disabled="isSubmittingFormData"
+  />
+
+  <EGDialog
+    action-label="Confirm"
+    :action-variant="ButtonVariantEnum.enum.primary"
+    cancel-label="Cancel"
+    :cancel-variant="ButtonVariantEnum.enum.secondary"
+    @action-triggered="handleConfirmSaveRetentionPolicyChange"
+    primary-message="Are you sure?"
+    :secondary-message="retentionDeleteConfirmSecondaryMessage"
+    v-model="isRetentionDeleteConfirmDialogOpen"
     :loading="isSubmittingFormData"
     :buttons-disabled="isSubmittingFormData"
   />
