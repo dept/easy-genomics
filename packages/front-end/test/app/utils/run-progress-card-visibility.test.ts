@@ -28,9 +28,9 @@ describe('isTerminalRunStatus', () => {
 
 describe('showSeqeraTaskProgressCard', () => {
   it('shows the card when there is a failure reason', () => {
-    expect(
-      showSeqeraTaskProgressCard({ Platform: 'Seqera Cloud', Status: 'FAILED' }, { failureReason: 'exit status 137' }),
-    ).toBe(true);
+    expect(showSeqeraTaskProgressCard({ Platform: 'Seqera Cloud', Status: 'FAILED' }, { hasProgress: true })).toBe(
+      true,
+    );
   });
 
   it('shows the card when there is progress', () => {
@@ -58,13 +58,13 @@ describe('showSeqeraTaskProgressCard', () => {
 
 describe('showOmicsTaskProgressCard', () => {
   it('shows the card when there is a failure reason', () => {
-    expect(
-      showOmicsTaskProgressCard({ Platform: 'AWS HealthOmics', Status: 'FAILED' }, { failureReason: 'OutOfMemory' }),
-    ).toBe(true);
+    expect(showOmicsTaskProgressCard({ Platform: 'AWS HealthOmics', Status: 'RUNNING' }, { hasProgress: true })).toBe(
+      true,
+    );
   });
 
   it('shows the card when there are failed tasks', () => {
-    expect(showOmicsTaskProgressCard({ Platform: 'AWS HealthOmics', Status: 'FAILED' }, { failedTaskCount: 2 })).toBe(
+    expect(showOmicsTaskProgressCard({ Platform: 'AWS HealthOmics', Status: 'RUNNING' }, { hasProgress: true })).toBe(
       true,
     );
   });
@@ -88,6 +88,26 @@ describe('showOmicsTaskProgressCard', () => {
 
   it('hides the card for non-HealthOmics and missing runs', () => {
     expect(showOmicsTaskProgressCard(seqeraRun, { hasProgress: true })).toBe(false);
-    expect(showOmicsTaskProgressCard(null, { failureReason: 'OutOfMemory' })).toBe(false);
+    expect(showOmicsTaskProgressCard(null, { hasProgress: true })).toBe(false);
+  });
+});
+
+describe('progress cards no longer own failure content', () => {
+  it('does not open the HealthOmics card for a failed run with no live progress', () => {
+    expect(
+      showOmicsTaskProgressCard(
+        { Platform: 'AWS HealthOmics', Status: 'FAILED' },
+        { failureReason: 'INPUT_URI_NOT_FOUND', failedTaskCount: 3, hasProgress: false },
+      ),
+    ).toBe(false);
+  });
+
+  it('does not open the Seqera card for a failed run with no live progress', () => {
+    expect(
+      showSeqeraTaskProgressCard(
+        { Platform: 'Seqera Cloud', Status: 'FAILED' },
+        { failureReason: 'exit status 137', hasProgress: false },
+      ),
+    ).toBe(false);
   });
 });
