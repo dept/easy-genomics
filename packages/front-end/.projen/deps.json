@@ -98,11 +98,6 @@
       "type": "build"
     },
     {
-      "name": "@aws-amplify/ui-vue",
-      "version": "3.1.30",
-      "type": "runtime"
-    },
-    {
       "name": "@aws-sdk/client-omics",
       "version": "^3.1090.0",
       "type": "runtime"
@@ -171,12 +166,8 @@
       "type": "runtime"
     },
     {
-      "name": "amazon-cognito-identity-js",
-      "type": "runtime"
-    },
-    {
       "name": "aws-amplify",
-      "version": "5.3.18",
+      "version": "^6.22.0",
       "type": "runtime"
     },
     {

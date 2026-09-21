@@ -2,7 +2,7 @@
   import { z } from 'zod';
   import { resetStores, useUiStore } from '@FE/stores';
   import { VALIDATION_MESSAGES } from '@FE/constants/validation';
-  import { Auth } from 'aws-amplify';
+  import { signInWithRedirect } from 'aws-amplify/auth';
 
   definePageMeta({ layout: 'signin' });
 
@@ -33,7 +33,7 @@
   });
 
   async function signInWithGoogle() {
-    await Auth.federatedSignIn({ provider: 'Google' });
+    await signInWithRedirect({ provider: 'Google' });
   }
 </script>
 

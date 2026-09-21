@@ -73,7 +73,6 @@
     "vue-eslint-parser": "^9.4.3"
   },
   "dependencies": {
-    "@aws-amplify/ui-vue": "3.1.30",
     "@aws-sdk/client-omics": "^3.1090.0",
     "@aws-sdk/client-s3": "^3.782.0",
     "@aws-sdk/s3-request-presigner": "^3.782.0",
@@ -90,8 +89,7 @@
     "@vueuse/core": "^11.3.0",
     "@vueuse/integrations": "^10.11.1",
     "@vueuse/nuxt": "^11.3.0",
-    "amazon-cognito-identity-js": "^6.3.15",
-    "aws-amplify": "5.3.18",
+    "aws-amplify": "^6.22.0",
     "aws-cdk-lib": "^2.260.0",
     "axios": "^1.18.1",
     "cdk-nag": "^2.35.67",
