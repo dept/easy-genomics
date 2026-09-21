@@ -1,12 +1,11 @@
-import { CognitoUserSession, CognitoRefreshToken } from 'amazon-cognito-identity-js';
-import { Auth } from 'aws-amplify';
+import { fetchAuthSession, getCurrentUser, signIn as amplifySignIn, signOut as amplifySignOut } from 'aws-amplify/auth';
 import { VALIDATION_MESSAGES } from '@FE/constants/validation';
 import { resetStores, useToastStore, useUiStore } from '@FE/stores';
 
 export default function useAuth() {
   async function isAuthed() {
     try {
-      const authenticatedUser = await Auth.currentAuthenticatedUser();
+      const authenticatedUser = await getCurrentUser();
       return !!authenticatedUser;
     } catch (error) {
       console.error('Error occurred getting the authenticated user.', error);
@@ -17,8 +16,8 @@ export default function useAuth() {
   async function signIn(username: string, password: string) {
     try {
       useUiStore().setRequestPending('signIn');
-      const user = await Auth.signIn(username, password);
-      if (user) {
+      const { isSignedIn } = await amplifySignIn({ username, password });
+      if (isSignedIn) {
         await useUser().setCurrentUserDataFromToken();
         await useOrgsStore().loadOrgs();
         // Navigate into the app before emitting analytics so events fire on a
@@ -30,7 +29,8 @@ export default function useAuth() {
         analytics.track('signed_in', { method: 'password' });
       }
     } catch (error: any) {
-      if (error.code === 'NotAuthorizedException') {
+      // v6 surfaces the Cognito exception on `name`; v5 used `code`.
+      if (error.name === 'NotAuthorizedException') {
         useToastStore().error('Incorrect email or password. Please try again.');
       } else {
         useToastStore().error(VALIDATION_MESSAGES.network);
@@ -43,8 +43,14 @@ export default function useAuth() {
   }
 
   async function getToken(): Promise<string> {
-    const session = await Auth.currentSession();
-    return session.getIdToken().getJwtToken();
+    const { tokens } = await fetchAuthSession();
+    const idToken = tokens?.idToken?.toString();
+    // v5's currentSession() rejected without a session; v6 resolves with no
+    // tokens, so raise it here to keep callers' error handling intact.
+    if (!idToken) {
+      throw new Error('No ID token in the current session');
+    }
+    return idToken;
   }
 
   /**
@@ -53,24 +59,14 @@ export default function useAuth() {
    */
   async function getRefreshedToken(): Promise<string> {
     try {
-      const currentUser = await Auth.currentAuthenticatedUser();
-      if (!currentUser) {
-        throw new Error('No current user');
+      const { tokens } = await fetchAuthSession({ forceRefresh: true });
+      const idToken = tokens?.idToken?.toString();
+      // A rejected refresh token resolves with no tokens rather than throwing,
+      // which would otherwise drop the Bearer header silently.
+      if (!idToken) {
+        throw new Error('No ID token after refresh');
       }
-
-      const newSession: CognitoUserSession = await new Promise((resolve, reject) => {
-        currentUser.refreshSession(
-          currentUser.getSignInUserSession().getRefreshToken() as CognitoRefreshToken,
-          (err: Error, session: CognitoUserSession) => {
-            if (err) {
-              return reject(err);
-            }
-            resolve(session);
-          },
-        );
-      });
-
-      return newSession.getIdToken().getJwtToken();
+      return idToken;
     } catch (error) {
       console.error('Error occurred during token refresh.', error);
       throw error;
@@ -92,7 +88,7 @@ export default function useAuth() {
       // Clear device consent so the next account on this browser is not opted in
       // by default. Server-side consent is restored on next login via JWT sync.
       useAnalyticsStore().reset();
-      await Auth.signOut();
+      await amplifySignOut();
       // Reset user after Cognito clear. Lab watchers no-op when currentOrgId is
       // null or isLoggingOut is set, so this is safe while still on a lab page.
       useUserStore().reset();

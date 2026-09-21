@@ -9,6 +9,14 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ## [Unreleased]
 
+Content here is folded into the next tagged release (planned as **v1.6**). Until that tag is cut, treat this as the
+draft release note for operators.
+
+### Changed
+
+- **Front-end authentication upgraded from AWS Amplify JS v5 to v6.** Amplify is used only for Cognito sign-in, sign-out,
+  Google SSO, and token refresh. There is no back-end, user-pool, or CDK change.
+
 ### Fixed
 
 - **Deploying no longer runs the unit test suite.** `pnpm run build-and-deploy` builds each package through its `build`
@@ -23,6 +31,15 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
   the suite with coverage on and no limit on concurrent workers; back-end already had coverage disabled. Coverage is not
   gated or uploaded anywhere, so it is dropped in all three packages — run `jest --coverage` locally on demand when a
   report is needed. Workers are now capped at half the available cores, which bounds peak memory on smaller machines.
+
+### Migration
+
+**Every signed-in user will be asked to sign in once after this front-end is deployed.** Amplify v6 stores session tokens
+under different browser keys and does not migrate v5 sessions, so existing logins are not recognised. No accounts, data,
+or passwords are affected. After that one sign-in, sessions persist as before.
+
+If a user is signed out again on every page load after that first login, that is *not* this migration effect — treat it
+as a token-storage regression.
 
 ## [v1.5.1] — Private org email assets
 
