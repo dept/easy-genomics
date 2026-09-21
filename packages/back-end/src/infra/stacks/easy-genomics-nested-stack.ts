@@ -50,6 +50,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
   laboratoryRunStreamDlq!: Queue;
   /** DLQ for the run-completion notification sender queue. See constructor for wiring detail. */
   notificationDlq!: Queue;
+  /** DLQ for the AI failure-classification consumer. See constructor for wiring detail. */
+  classificationDlq!: Queue;
 
   constructor(scope: Construct, id: string, props: EasyGenomicsNestedStackProps) {
     super(scope, id);
@@ -60,6 +62,16 @@ export class EasyGenomicsNestedStack extends NestedStack {
     // sender) lands here after 3 attempts for manual inspection instead of blocking the queue.
     this.notificationDlq = new Queue(this, `${this.props.namePrefix}-laboratory-run-notification-dlq`, {
       queueName: `${this.props.namePrefix}-laboratory-run-notification-dlq.fifo`,
+      fifo: true,
+      retentionPeriod: Duration.days(14),
+      enforceSSL: true,
+    });
+
+    // Dead-letter queue for the AI failure-classification consumer. Without it a record
+    // that keeps failing is retried until it expires and then vanishes, leaving the run
+    // stuck at `AnalysisStatus: Queued` with no trace of why.
+    this.classificationDlq = new Queue(this, `${this.props.namePrefix}-laboratory-run-failure-classification-dlq`, {
+      queueName: `${this.props.namePrefix}-laboratory-run-failure-classification-dlq.fifo`,
       fifo: true,
       retentionPeriod: Duration.days(14),
       enforceSSL: true,
@@ -101,6 +113,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
           retentionPeriod: Duration.days(1),
           visibilityTimeout: Duration.minutes(5),
           enforceSSL: true,
+          deadLetterQueue: { queue: this.classificationDlq, maxReceiveCount: 3 },
         },
         ['laboratory-run-notification-queue']: <QueueDetails>{
           fifo: true,
