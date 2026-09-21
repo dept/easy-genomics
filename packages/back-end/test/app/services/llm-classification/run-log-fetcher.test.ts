@@ -22,7 +22,7 @@ describe('fetchRedactedLogExcerpt', () => {
 
     const excerpt = await fetchRedactedLogExcerpt(healthOmicsRun, deps);
 
-    expect(getLogStreamText).toHaveBeenCalledWith('/aws/omics/WorkflowLog', 'run/4399444/engine');
+    expect(getLogStreamText).toHaveBeenCalledWith('/aws/omics/WorkflowLog', 'run/4399444/engine', 1000);
     expect(excerpt).toContain('OutOfMemoryError');
     expect(excerpt).not.toContain('s3://');
     expect(excerpt).not.toContain('10.0.0.5');
