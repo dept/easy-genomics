@@ -38,6 +38,10 @@ export interface paths {
     /** Create Workflow Upload Request */
     post: operations["createWorkflowUploadRequest"];
   };
+  "/aws-healthomics/workflow/delete-private-workflow/{id}": {
+    /** Delete Private Workflow */
+    delete: operations["deletePrivateWorkflow"];
+  };
   "/aws-healthomics/workflow/list-private-workflows": {
     /** List Private Workflows */
     get: operations["listPrivateWorkflows"];
@@ -3902,6 +3906,31 @@ export interface operations {
       query?: {
         /** @description Laboratory to upload workflow for */
         laboratoryId?: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Delete Private Workflow */
+  deletePrivateWorkflow: {
+    parameters: {
+      query?: {
+        /** @description Laboratory to delete the workflow from */
+        laboratoryId?: string;
+      };
+      path: {
+        id: string;
       };
     };
     responses: {

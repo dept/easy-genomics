@@ -516,6 +516,36 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
     ]);
+    // /aws-healthomics/workflow/delete-private-workflow
+    this.iam.addPolicyStatements('/aws-healthomics/workflow/delete-private-workflow', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+      }),
+      new PolicyStatement({
+        resources: [laboratoryWorkflowAccessTableArn],
+        actions: ['dynamodb:DeleteItem'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
+        actions: [
+          'omics:GetWorkflow',
+          'omics:DeleteWorkflow',
+          'omics:ListWorkflowVersions',
+          'omics:DeleteWorkflowVersion',
+        ],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:/shares`],
+        actions: ['omics:ListShares'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
     // /aws-healthomics/workflow/create-private-workflow
     this.iam.addPolicyStatements('/aws-healthomics/workflow/create-private-workflow', [
       new PolicyStatement({

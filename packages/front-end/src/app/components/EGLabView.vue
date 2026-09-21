@@ -56,6 +56,8 @@
   const omicsWorkflows = computed<LabOmicsWorkflow[]>(() => omicsWorkflowsStore.workflowsForLab(props.labId));
   const canAddUsers = computed<boolean>(() => userStore.canAddLabUsers(props.labId));
   const canCreateOmicsWorkflows = computed<boolean>(() => userStore.canEditLabUsers(props.labId));
+  const workflowToDelete = ref<LabOmicsWorkflow | null>(null);
+  const isDeleteWorkflowDialogOpen = ref<boolean>(false);
   const showAddUserModule = ref(false);
   const searchOutput = ref('');
   const runToCancel = ref<LaboratoryRun | null>(null);
@@ -516,13 +518,78 @@
 
   // Omics Workflows Tab
 
-  const omicsWorkflowsTableColumns = [
-    { key: 'Name', label: 'Name' },
-    { key: 'source', label: 'Source' },
-    { key: 'description', label: 'Description' },
-    { key: 'favourite', label: 'Favorite' },
-    { key: 'run', label: 'Run' },
-  ];
+  const omicsWorkflowsTableColumns = computed(() => {
+    const columns = [
+      { key: 'Name', label: 'Name' },
+      { key: 'source', label: 'Source' },
+      { key: 'description', label: 'Description' },
+    ];
+    if (canCreateOmicsWorkflows.value) {
+      columns.push({ key: 'actions', label: 'Actions' });
+    }
+    columns.push({ key: 'favourite', label: 'Favorite' }, { key: 'run', label: 'Run' });
+    return columns;
+  });
+
+  function omicsWorkflowCreatorId(workflow: LabOmicsWorkflow): string | undefined {
+    return workflow.tags?.UserId || workflow.metadata?.createdByUserId;
+  }
+
+  function canDeleteOmicsWorkflow(workflow: LabOmicsWorkflow): boolean {
+    if (!canCreateOmicsWorkflows.value || workflow.source === 'SHARED' || !workflow.id) {
+      return false;
+    }
+    const createdBy = omicsWorkflowCreatorId(workflow);
+    if (!createdBy) {
+      return true;
+    }
+    const userIds = [userStore.currentUserDetails.id, userStore.currentUserDetails.internalId].filter(
+      (id): id is string => Boolean(id),
+    );
+    return userIds.includes(createdBy);
+  }
+
+  function omicsWorkflowsActionItems(workflow: LabOmicsWorkflow) {
+    if (!canDeleteOmicsWorkflow(workflow)) {
+      return [];
+    }
+    return [
+      [
+        {
+          label: 'Delete',
+          click: () => {
+            workflowToDelete.value = workflow;
+            isDeleteWorkflowDialogOpen.value = true;
+          },
+          isHighlighted: true,
+        },
+      ],
+    ];
+  }
+
+  async function handleDeleteOmicsWorkflow(): Promise<void> {
+    const workflow = workflowToDelete.value;
+    const workflowId = workflow?.id;
+    if (!workflowId) {
+      isDeleteWorkflowDialogOpen.value = false;
+      return;
+    }
+
+    uiStore.setRequestPending('deleteOmicsWorkflow');
+    try {
+      await omicsWorkflowsStore.deleteWorkflow(props.labId, workflowId);
+      useToastStore().success(`Deleted "${workflow?.name || 'workflow'}".`);
+      workflowToDelete.value = null;
+      isDeleteWorkflowDialogOpen.value = false;
+    } catch (error) {
+      console.error('Failed to delete workflow', error);
+      useToastStore().error(
+        error instanceof Error && error.message ? error.message : 'Unable to delete this workflow.',
+      );
+    } finally {
+      uiStore.setRequestComplete('deleteOmicsWorkflow');
+    }
+  }
 
   function isWorkflowFavourited(workflowId: string): boolean {
     return favouriteWorkflowsStore.isFavourited(props.labId, workflowId);
@@ -1203,6 +1270,17 @@
         {{ workflow?.description }}
       </template>
 
+      <template #actions-data="{ row: workflow }">
+        <div v-if="omicsWorkflowsActionItems(workflow).length" class="flex justify-end">
+          <EGActionButton
+            menu-label="Workflow actions"
+            :items="omicsWorkflowsActionItems(workflow)"
+            class="ml-2"
+            @click="$event.stopPropagation()"
+          />
+        </div>
+      </template>
+
       <template #run-data="{ row: workflow }">
         <button
           type="button"
@@ -1314,6 +1392,20 @@
     secondary-message="This will stop any progress made."
     v-model="isCancelDialogOpen"
     :buttons-disabled="uiStore.anyRequestPending(['cancelSeqeraRun', 'cancelOmicsRun'])"
+  />
+
+  <EGDialog
+    action-label="Delete workflow"
+    :action-variant="ButtonVariantEnum.enum.destructive"
+    cancel-label="Cancel"
+    :cancel-variant="ButtonVariantEnum.enum.secondary"
+    @action-triggered="handleDeleteOmicsWorkflow"
+    :primary-message="
+      workflowToDelete?.name ? `Delete the “${workflowToDelete.name}” workflow?` : 'Delete this workflow?'
+    "
+    secondary-message="Only workflows you created can be deleted. This cannot be undone."
+    v-model="isDeleteWorkflowDialogOpen"
+    :buttons-disabled="uiStore.isRequestPending('deleteOmicsWorkflow')"
   />
 
   <EGDialog

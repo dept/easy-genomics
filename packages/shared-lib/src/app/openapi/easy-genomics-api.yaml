@@ -7664,6 +7664,38 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
+  /aws-healthomics/workflow/delete-private-workflow/{id}:
+    delete:
+      operationId: deletePrivateWorkflow
+      summary: Delete Private Workflow
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: laboratoryId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Laboratory to delete the workflow from
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /aws-healthomics/workflow/list-private-workflows:
     get:
       operationId: listPrivateWorkflows

@@ -287,6 +287,9 @@ export const handler: Handler = async (
       ...workflowRequest,
       definitionUri,
       main,
+      metadata: {
+        createdByUserId: omicsUserId,
+      },
       tags: {
         LaboratoryId: laboratory.LaboratoryId,
         OrganizationId: laboratory.OrganizationId,

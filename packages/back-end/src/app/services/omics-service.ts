@@ -5,6 +5,12 @@ import {
   CancelRunCommand,
   CancelRunCommandInput,
   CancelRunCommandOutput,
+  DeleteWorkflowCommand,
+  DeleteWorkflowCommandInput,
+  DeleteWorkflowCommandOutput,
+  DeleteWorkflowVersionCommand,
+  DeleteWorkflowVersionCommandInput,
+  DeleteWorkflowVersionCommandOutput,
   CreateRunCacheCommand,
   CreateRunCacheCommandInput,
   CreateRunCacheCommandOutput,
@@ -48,6 +54,8 @@ import type { AwsCredentialIdentity } from '@aws-sdk/types';
 
 export enum OmicsCommand {
   CREATE_WORKFLOW = 'create-workflow',
+  DELETE_WORKFLOW = 'delete-workflow',
+  DELETE_WORKFLOW_VERSION = 'delete-workflow-version',
   CANCEL_RUN = 'cancel-run',
   CREATE_RUN_CACHE = 'create-run-cache',
   GET_CONFIGURATION = 'get-configuration',
@@ -88,6 +96,24 @@ export class OmicsService {
     return this.omicsRequest<CreateWorkflowCommandInput, CreateWorkflowCommandOutput>(
       OmicsCommand.CREATE_WORKFLOW,
       createWorkflowCommandInput,
+    );
+  };
+
+  public deleteWorkflow = async (
+    deleteWorkflowCommandInput: DeleteWorkflowCommandInput,
+  ): Promise<DeleteWorkflowCommandOutput> => {
+    return this.omicsRequest<DeleteWorkflowCommandInput, DeleteWorkflowCommandOutput>(
+      OmicsCommand.DELETE_WORKFLOW,
+      deleteWorkflowCommandInput,
+    );
+  };
+
+  public deleteWorkflowVersion = async (
+    deleteWorkflowVersionCommandInput: DeleteWorkflowVersionCommandInput,
+  ): Promise<DeleteWorkflowVersionCommandOutput> => {
+    return this.omicsRequest<DeleteWorkflowVersionCommandInput, DeleteWorkflowVersionCommandOutput>(
+      OmicsCommand.DELETE_WORKFLOW_VERSION,
+      deleteWorkflowVersionCommandInput,
     );
   };
 
@@ -213,6 +239,10 @@ export class OmicsService {
     switch (command) {
       case OmicsCommand.CREATE_WORKFLOW:
         return new CreateWorkflowCommand(data as CreateWorkflowCommandInput);
+      case OmicsCommand.DELETE_WORKFLOW:
+        return new DeleteWorkflowCommand(data as DeleteWorkflowCommandInput);
+      case OmicsCommand.DELETE_WORKFLOW_VERSION:
+        return new DeleteWorkflowVersionCommand(data as DeleteWorkflowVersionCommandInput);
       case OmicsCommand.CANCEL_RUN:
         return new CancelRunCommand(data as CancelRunCommandInput);
       case OmicsCommand.CREATE_RUN_CACHE:
