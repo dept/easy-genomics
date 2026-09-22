@@ -5,6 +5,12 @@ import {
   CancelRunCommand,
   CancelRunCommandInput,
   CancelRunCommandOutput,
+  DeleteWorkflowCommand,
+  DeleteWorkflowCommandInput,
+  DeleteWorkflowCommandOutput,
+  DeleteWorkflowVersionCommand,
+  DeleteWorkflowVersionCommandInput,
+  DeleteWorkflowVersionCommandOutput,
   CreateRunCacheCommand,
   CreateRunCacheCommandInput,
   CreateRunCacheCommandOutput,
@@ -32,6 +38,9 @@ import {
   ListSharesCommand,
   ListSharesCommandInput,
   ListSharesCommandOutput,
+  ListTagsForResourceCommand,
+  ListTagsForResourceCommandInput,
+  ListTagsForResourceCommandOutput,
   ListRunTasksCommand,
   ListRunTasksCommandInput,
   ListRunTasksCommandOutput,
@@ -48,6 +57,8 @@ import type { AwsCredentialIdentity } from '@aws-sdk/types';
 
 export enum OmicsCommand {
   CREATE_WORKFLOW = 'create-workflow',
+  DELETE_WORKFLOW = 'delete-workflow',
+  DELETE_WORKFLOW_VERSION = 'delete-workflow-version',
   CANCEL_RUN = 'cancel-run',
   CREATE_RUN_CACHE = 'create-run-cache',
   GET_CONFIGURATION = 'get-configuration',
@@ -59,6 +70,7 @@ export enum OmicsCommand {
   LIST_WORKFLOWS = 'list-workflows',
   LIST_WORKFLOW_VERSIONS = 'list-workflow-versions',
   LIST_SHARED_WORKFLOWS = 'list-shared-workflows',
+  LIST_TAGS_FOR_RESOURCE = 'list-tags-for-resource',
   START_RUN = 'start-run',
   TAG_RESOURCE = 'tag-resource',
 }
@@ -88,6 +100,24 @@ export class OmicsService {
     return this.omicsRequest<CreateWorkflowCommandInput, CreateWorkflowCommandOutput>(
       OmicsCommand.CREATE_WORKFLOW,
       createWorkflowCommandInput,
+    );
+  };
+
+  public deleteWorkflow = async (
+    deleteWorkflowCommandInput: DeleteWorkflowCommandInput,
+  ): Promise<DeleteWorkflowCommandOutput> => {
+    return this.omicsRequest<DeleteWorkflowCommandInput, DeleteWorkflowCommandOutput>(
+      OmicsCommand.DELETE_WORKFLOW,
+      deleteWorkflowCommandInput,
+    );
+  };
+
+  public deleteWorkflowVersion = async (
+    deleteWorkflowVersionCommandInput: DeleteWorkflowVersionCommandInput,
+  ): Promise<DeleteWorkflowVersionCommandOutput> => {
+    return this.omicsRequest<DeleteWorkflowVersionCommandInput, DeleteWorkflowVersionCommandOutput>(
+      OmicsCommand.DELETE_WORKFLOW_VERSION,
+      deleteWorkflowVersionCommandInput,
     );
   };
 
@@ -182,6 +212,15 @@ export class OmicsService {
     );
   };
 
+  public listTagsForResource = async (
+    listTagsForResourceCommandInput: ListTagsForResourceCommandInput,
+  ): Promise<ListTagsForResourceCommandOutput> => {
+    return this.omicsRequest<ListTagsForResourceCommandInput, ListTagsForResourceCommandOutput>(
+      OmicsCommand.LIST_TAGS_FOR_RESOURCE,
+      listTagsForResourceCommandInput,
+    );
+  };
+
   public startRun = async (startRunCommandInput: StartRunCommandInput): Promise<StartRunCommandOutput> => {
     return this.omicsRequest<StartRunCommandInput, StartRunCommandOutput>(OmicsCommand.START_RUN, startRunCommandInput);
   };
@@ -213,6 +252,10 @@ export class OmicsService {
     switch (command) {
       case OmicsCommand.CREATE_WORKFLOW:
         return new CreateWorkflowCommand(data as CreateWorkflowCommandInput);
+      case OmicsCommand.DELETE_WORKFLOW:
+        return new DeleteWorkflowCommand(data as DeleteWorkflowCommandInput);
+      case OmicsCommand.DELETE_WORKFLOW_VERSION:
+        return new DeleteWorkflowVersionCommand(data as DeleteWorkflowVersionCommandInput);
       case OmicsCommand.CANCEL_RUN:
         return new CancelRunCommand(data as CancelRunCommandInput);
       case OmicsCommand.CREATE_RUN_CACHE:
@@ -235,6 +278,8 @@ export class OmicsService {
         return new ListWorkflowVersionsCommand(data as ListWorkflowVersionsCommandInput);
       case OmicsCommand.LIST_SHARED_WORKFLOWS:
         return new ListSharesCommand(data as ListSharesCommandInput);
+      case OmicsCommand.LIST_TAGS_FOR_RESOURCE:
+        return new ListTagsForResourceCommand(data as ListTagsForResourceCommandInput);
       case OmicsCommand.START_RUN:
         return new StartRunCommand(data as StartRunCommandInput);
       case OmicsCommand.TAG_RESOURCE:

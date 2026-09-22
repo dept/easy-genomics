@@ -10,9 +10,8 @@ import { LaboratoryService } from '../../../../../src/app/services/easy-genomics
 import { LaboratoryWorkflowAccessService } from '../../../../../src/app/services/easy-genomics/laboratory-workflow-access-service';
 import { OmicsService } from '../../../../../src/app/services/omics-service';
 import {
-  validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
-  validateOrganizationAdminAccess,
+  validateOrganizationAdminOrLaboratoryManagerAccess,
 } from '../../../../../src/app/utils/auth-utils';
 
 describe('list-private-workflows.lambda', () => {
@@ -22,8 +21,7 @@ describe('list-private-workflows.lambda', () => {
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
   let mockOmicsService: jest.MockedClass<typeof OmicsService>;
   let mockAccessService: jest.MockedClass<typeof LaboratoryWorkflowAccessService>;
-  let mockValidateOrgAdmin: jest.MockedFunction<typeof validateOrganizationAdminAccess>;
-  let mockValidateLabManager: jest.MockedFunction<typeof validateLaboratoryManagerAccess>;
+  let mockValidateAdminOrManager: jest.MockedFunction<typeof validateOrganizationAdminOrLaboratoryManagerAccess>;
   let mockValidateLabTechnician: jest.MockedFunction<typeof validateLaboratoryTechnicianAccess>;
 
   const createEvent = (
@@ -76,16 +74,15 @@ describe('list-private-workflows.lambda', () => {
     mockLabService = LaboratoryService as jest.MockedClass<typeof LaboratoryService>;
     mockOmicsService = OmicsService as jest.MockedClass<typeof OmicsService>;
     mockAccessService = LaboratoryWorkflowAccessService as jest.MockedClass<typeof LaboratoryWorkflowAccessService>;
-    mockValidateOrgAdmin = validateOrganizationAdminAccess as any;
-    mockValidateLabManager = validateLaboratoryManagerAccess as any;
+    mockValidateAdminOrManager = validateOrganizationAdminOrLaboratoryManagerAccess as any;
     mockValidateLabTechnician = validateLaboratoryTechnicianAccess as any;
 
-    mockValidateOrgAdmin.mockReturnValue(true);
-    mockValidateLabManager.mockReturnValue(false);
+    mockValidateAdminOrManager.mockReturnValue(true);
     mockValidateLabTechnician.mockReturnValue(false);
 
     mockLabService.prototype.queryByLaboratoryId = jest.fn();
     mockOmicsService.prototype.listWorkflows = jest.fn();
+    mockOmicsService.prototype.listTagsForResource = jest.fn();
     mockAccessService.prototype.listByLaboratoryId = jest.fn();
   });
 
@@ -125,6 +122,7 @@ describe('list-private-workflows.lambda', () => {
       { id: 'wf-allowed-2', name: 'Allowed 2' },
     ]);
     expect(mockOmicsService.prototype.listWorkflows).toHaveBeenCalledTimes(2);
+    expect(mockOmicsService.prototype.listTagsForResource).not.toHaveBeenCalled();
   });
 
   it('when new workflows are enabled by default, omits only explicitly denied workflows', async () => {
@@ -151,5 +149,79 @@ describe('list-private-workflows.lambda', () => {
     expect(res?.statusCode).toBe(200);
     const body = JSON.parse(res?.body ?? '{}');
     expect(body.items).toEqual([{ id: 'wf-ok', name: 'Ok' }]);
+  });
+
+  it('attaches creator tags for org admins and lab managers', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+      EnableNewWorkflowsByDefault: true,
+    });
+    (mockOmicsService.prototype.listWorkflows as jest.Mock).mockResolvedValueOnce({
+      items: [
+        { id: 'wf-tagged', name: 'Tagged', arn: 'arn:aws:omics:us-east-1:123:workflow/wf-tagged' },
+        { id: 'wf-no-arn', name: 'No arn' },
+      ],
+    });
+    (mockAccessService.prototype.listByLaboratoryId as jest.Mock).mockResolvedValue([]);
+    (mockOmicsService.prototype.listTagsForResource as jest.Mock).mockResolvedValue({
+      tags: { UserId: 'user-1', Application: 'easy-genomics' },
+    });
+
+    const res = await handler(createEvent({ laboratoryId: LAB_ID }), createContext(), () => {});
+    expect(res?.statusCode).toBe(200);
+    expect(JSON.parse(res?.body ?? '{}').items).toEqual([
+      {
+        id: 'wf-tagged',
+        name: 'Tagged',
+        arn: 'arn:aws:omics:us-east-1:123:workflow/wf-tagged',
+        tags: { UserId: 'user-1', Application: 'easy-genomics' },
+      },
+      { id: 'wf-no-arn', name: 'No arn' },
+    ]);
+    expect(mockOmicsService.prototype.listTagsForResource).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves tags unset when ListTagsForResource fails so the UI can fail closed', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+      EnableNewWorkflowsByDefault: true,
+    });
+    (mockOmicsService.prototype.listWorkflows as jest.Mock).mockResolvedValueOnce({
+      items: [{ id: 'wf-1', name: 'One', arn: 'arn:aws:omics:us-east-1:123:workflow/wf-1' }],
+    });
+    (mockAccessService.prototype.listByLaboratoryId as jest.Mock).mockResolvedValue([]);
+    (mockOmicsService.prototype.listTagsForResource as jest.Mock).mockRejectedValue(new Error('throttled'));
+
+    const res = await handler(createEvent({ laboratoryId: LAB_ID }), createContext(), () => {});
+    expect(res?.statusCode).toBe(200);
+    expect(JSON.parse(res?.body ?? '{}').items).toEqual([
+      { id: 'wf-1', name: 'One', arn: 'arn:aws:omics:us-east-1:123:workflow/wf-1' },
+    ]);
+  });
+
+  it('does not look up tags for laboratory technicians', async () => {
+    mockValidateAdminOrManager.mockReturnValue(false);
+    mockValidateLabTechnician.mockReturnValue(true);
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+      EnableNewWorkflowsByDefault: true,
+    });
+    (mockOmicsService.prototype.listWorkflows as jest.Mock).mockResolvedValueOnce({
+      items: [{ id: 'wf-1', name: 'One', arn: 'arn:aws:omics:us-east-1:123:workflow/wf-1' }],
+    });
+    (mockAccessService.prototype.listByLaboratoryId as jest.Mock).mockResolvedValue([]);
+
+    const res = await handler(createEvent({ laboratoryId: LAB_ID }), createContext(), () => {});
+    expect(res?.statusCode).toBe(200);
+    expect(JSON.parse(res?.body ?? '{}').items).toEqual([
+      { id: 'wf-1', name: 'One', arn: 'arn:aws:omics:us-east-1:123:workflow/wf-1' },
+    ]);
+    expect(mockOmicsService.prototype.listTagsForResource).not.toHaveBeenCalled();
   });
 });

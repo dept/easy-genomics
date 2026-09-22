@@ -12,11 +12,11 @@ import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service
 import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
 import { OmicsService } from '@BE/services/omics-service';
 import {
-  validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
-  validateOrganizationAdminAccess,
+  validateOrganizationAdminOrLaboratoryManagerAccess,
 } from '@BE/utils/auth-utils';
 import { isWorkflowAccessAllowed } from '@BE/utils/laboratory-workflow-access-utils';
+import { attachPrivateWorkflowTags } from '@BE/utils/private-workflow-list-utils';
 import { AwsHealthOmicsQueryParameters, getAwsHealthOmicsApiQueryParameters } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -76,11 +76,16 @@ export const handler: Handler = async (
       throw new LaboratoryNotFoundError();
     }
 
+    const canManagePrivateWorkflows = validateOrganizationAdminOrLaboratoryManagerAccess(
+      event,
+      laboratory.OrganizationId,
+      laboratory.LaboratoryId,
+    );
+
     // Only available for Org Admins or Laboratory Managers and Technicians
     if (
       !(
-        validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
-        validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
+        canManagePrivateWorkflows ||
         validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
       )
     ) {
@@ -100,7 +105,9 @@ export const handler: Handler = async (
       (w) => w.id != null && isWorkflowAccessAllowed(laboratory, accessRows, 'HEALTH_OMICS', w.id),
     );
 
-    return buildResponse(200, JSON.stringify({ items }), event);
+    const responseItems = canManagePrivateWorkflows ? await attachPrivateWorkflowTags(omicsService, items) : items;
+
+    return buildResponse(200, JSON.stringify({ items: responseItems }), event);
   } catch (err: any) {
     console.error(err);
     return buildErrorResponse(err, event);

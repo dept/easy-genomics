@@ -20,6 +20,7 @@ import {
   validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
 import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
+import { normalizeS3Prefix, parseS3Uri } from '@BE/utils/s3-uri-utils';
 
 const laboratoryService = new LaboratoryService();
 const s3Service = new S3Service();
@@ -32,21 +33,6 @@ const MAX_DOWNLOAD_SIZE_BYTES = 3 * 1024 * 1024 * 1024; // 3GB
 const FOLDER_SIZE_EXCEEDED_MESSAGE =
   'This folder is too large to download as a single ZIP file. You can download files individually, or contact support for assistance retrieving the full dataset.';
 const DOWNLOAD_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
-
-const parseS3Uri = (value: string): { bucket: string; prefix: string } | null => {
-  if (!value.startsWith('s3://')) return null;
-  try {
-    const s3Url = new URL(value);
-    return {
-      bucket: s3Url.hostname,
-      prefix: s3Url.pathname.replace(/^\/*/, ''),
-    };
-  } catch {
-    throw new InvalidRequestError('Invalid S3 URI');
-  }
-};
-
-const normalizePrefix = (prefix: string): string => (prefix.endsWith('/') ? prefix : `${prefix}/`);
 
 const streamToString = async (body: unknown): Promise<string> => {
   if (!body) return '';
@@ -194,7 +180,7 @@ export const handler: Handler = async (
 
     await assertLaboratoryHasS3BucketAccess(laboratory, s3Bucket, s3AccessService);
 
-    const requestedPrefix = normalizePrefix(providedPrefix);
+    const requestedPrefix = normalizeS3Prefix(providedPrefix);
     const laboratoryOwnedPrefix = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
     if (!requestedPrefix.startsWith(laboratoryOwnedPrefix)) {
       throw new UnauthorizedAccessError();

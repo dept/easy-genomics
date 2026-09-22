@@ -18,6 +18,7 @@ export type PendingRequest =
   | 'loadSeqeraRun'
   | 'cancelSeqeraRun'
   | 'getOmicsWorkflows'
+  | 'deleteOmicsWorkflow'
   | 'getOmicsRuns'
   | 'loadOmicsWorkflow'
   | 'loadOmicsRun'

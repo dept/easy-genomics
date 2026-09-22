@@ -166,4 +166,49 @@ describe('request-laboratory-run-failure-analysis handler', () => {
     expect(published.Type).toBe('LaboratoryRun');
     expect(published.Operation).toBe('UPDATE');
   });
+  describe('when the SQS enqueue fails', () => {
+    // The `Queued` status is written before the send. Leaving it behind strands the
+    // run: no consumer will ever pick it up, and the UI renders "Analysing…" instead
+    // of a clickable button, so the user cannot retry.
+    beforeEach(() => {
+      mockSendMessage.mockRejectedValue(new Error('SQS unavailable'));
+    });
+
+    it('does not leave the run queued', async () => {
+      await handler(buildEvent({ LaboratoryRunId: 'run-1' }), {} as any, () => undefined);
+
+      const lastWrite = mockUpdateWithRemoval.mock.calls.at(-1);
+      const [writtenRun, removedAttributes] = lastWrite!;
+      expect(writtenRun.AnalysisStatus === 'Queued' && !removedAttributes.includes('AnalysisStatus')).toBe(false);
+    });
+
+    it('removes the analysis fields that the run did not have before', async () => {
+      await handler(buildEvent({ LaboratoryRunId: 'run-1' }), {} as any, () => undefined);
+
+      const [, removedAttributes] = mockUpdateWithRemoval.mock.calls.at(-1)!;
+      expect(removedAttributes).toEqual(
+        expect.arrayContaining(['AnalysisStatus', 'AnalysisRequestedAt', 'AnalysisErrorCode', 'AnalysisErrorMessage']),
+      );
+    });
+
+    it('restores a previous analysis result rather than wiping it', async () => {
+      mockQueryByRunId.mockResolvedValue({
+        ...failedRun,
+        AnalysisStatus: 'Succeeded',
+        FailureOwner: 'Lab',
+      });
+
+      await handler(buildEvent({ LaboratoryRunId: 'run-1' }), {} as any, () => undefined);
+
+      const [writtenRun, removedAttributes] = mockUpdateWithRemoval.mock.calls.at(-1)!;
+      expect(writtenRun.AnalysisStatus).toBe('Succeeded');
+      expect(writtenRun.FailureOwner).toBe('Lab');
+      expect(removedAttributes).not.toContain('AnalysisStatus');
+    });
+
+    it('reports the failure to the caller', async () => {
+      const response = await handler(buildEvent({ LaboratoryRunId: 'run-1' }), {} as any, () => undefined);
+      expect(response.statusCode).toBeGreaterThanOrEqual(400);
+    });
+  });
 });
