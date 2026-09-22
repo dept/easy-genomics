@@ -442,7 +442,41 @@
                 :error-report="platformErrorReport"
               >
                 <template v-if="failureClassificationVisible" #analysis>
-                  <h4 class="text-muted mb-3 text-xs font-medium uppercase tracking-wide">Failure analysis</h4>
+                  <div class="mb-3 flex items-center gap-1.5">
+                    <h4 class="text-muted text-xs font-medium uppercase tracking-wide">Failure analysis</h4>
+                    <!-- Provenance: the summary below reads as authoritative prose, so state plainly that a
+                         model wrote it, what it was given, and that it is a suggestion rather than a verdict. -->
+                    <UTooltip :delay-duration="0" :ui="{ base: 'h-auto w-auto max-w-sm whitespace-normal text-left' }">
+                      <template #text>
+                        <div class="space-y-1.5 py-1">
+                          <p>
+                            This attempts to explain the raw error above in plain language and suggests a next step. It
+                            is generated automatically, not written by a person.
+                          </p>
+                          <p>
+                            <span class="font-medium text-black">How it works</span>
+                            — documented HealthOmics error codes are matched against a built-in lookup table, so those
+                            results are always identical. Anything else is sent to the language model configured for
+                            this lab.
+                          </p>
+                          <p>
+                            <span class="font-medium text-black">What it is given</span>
+                            — the platform, the workflow name and the error text the run returned. Never your sequence
+                            data or run outputs.
+                          </p>
+                          <p class="italic">
+                            Treat it as a starting point, not a verdict — check the raw error and the platform logs
+                            before acting on it.
+                          </p>
+                        </div>
+                      </template>
+                      <UIcon
+                        name="i-heroicons-information-circle"
+                        class="text-muted h-4 w-4 shrink-0"
+                        aria-label="How failure analysis works"
+                      />
+                    </UTooltip>
+                  </div>
                   <div class="space-y-2">
                     <div class="flex flex-wrap items-center gap-3">
                       <span
