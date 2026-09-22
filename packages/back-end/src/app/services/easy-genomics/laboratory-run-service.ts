@@ -162,6 +162,40 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
   };
 
   /**
+   * Every run for a laboratory, following `LastEvaluatedKey` to the end.
+   *
+   * `queryByLaboratoryId` returns only the first 1MB page. That is fine for request paths that
+   * render a page of runs, but callers deciding whether data is still referenced must see the
+   * complete set: a run missing from a truncated page reads as "no longer exists", which for the
+   * retention sweep means deleting a live run's outputs. Use this wherever absence implies safety.
+   */
+  public listAllRunsForLaboratory = async (laboratoryId: string): Promise<LaboratoryRun[]> => {
+    const results: LaboratoryRun[] = [];
+    let lastKey: Record<string, any> | undefined;
+
+    do {
+      const response: QueryCommandOutput = await this.queryItems({
+        TableName: this.LABORATORY_RUN_TABLE_NAME,
+        KeyConditionExpression: '#LaboratoryId = :laboratoryId',
+        ExpressionAttributeNames: { '#LaboratoryId': 'LaboratoryId' },
+        ExpressionAttributeValues: { ':laboratoryId': { S: laboratoryId } },
+        ...(lastKey ? { ExclusiveStartKey: lastKey } : {}),
+      });
+      if (response.$metadata.httpStatusCode !== 200) {
+        throw new Error(
+          `Query all LaboratoryRuns by LaboratoryId=${laboratoryId} unsuccessful: HTTP Status Code=${response.$metadata.httpStatusCode}`,
+        );
+      }
+      for (const item of response.Items || []) {
+        results.push(withCoercedInputFileKeys(unmarshall(item) as LaboratoryRun));
+      }
+      lastKey = response.LastEvaluatedKey as Record<string, any> | undefined;
+    } while (lastKey);
+
+    return results;
+  };
+
+  /**
    * Scans the entire laboratory-run table and returns all runs.
    * Used for one-off operations (e.g. backfilling Omics run tags).
    */

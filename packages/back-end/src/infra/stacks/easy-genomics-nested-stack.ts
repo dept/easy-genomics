@@ -403,10 +403,19 @@ export class EasyGenomicsNestedStack extends NestedStack {
         // Then reconciles the bucket against surviving runs to pick up outputs orphaned by runs
         // that expired before this cascade existed, and drains the RUNOUTPUT# rows, deleting each
         // expired run's results/ prefix and generated sample sheet unless a surviving run still
-        // publishes into that prefix. `ORPHAN_SCAN_MIN_AGE_DAYS` keeps the reconciliation away
+        // publishes into that prefix. A fixed 30-day quiet period keeps the reconciliation away
         // from uploads whose run has not been launched yet.
         // `DRY_RUN=false` enables real deletes (any other value, including unset, stays dry-run).
         // Set to `true` temporarily to audit eligibility without deleting.
+        //
+        // The two output paths ship disabled and are enabled one at a time, because unlike the
+        // input-file sweep they delete data that previously survived retention and there is no
+        // bucket versioning to undo it. Rollout: deploy as-is and read the EMF metrics, then set
+        // OUTPUT_DELETION_ENABLED=true (go-forward runs only), and once that looks right set
+        // ORPHAN_RECONCILIATION_ENABLED=true to work through the pre-cascade backlog.
+        // MAX_ORPHAN_FOLDERS_PER_LAB_SWEEP is pinned here rather than left to the code default so
+        // the backlog drains at a reviewable rate.
+        //
         // Runtime `assertLaboratoryHasS3BucketAccess` / `assertKeyUnderLabPrefix` bound blast radius; IAM
         // still uses `s3://*/*` because lab buckets are provisioned per org at data-setup time.
         '/easy-genomics/data-collections/process-expired-laboratory-data': {
@@ -414,6 +423,9 @@ export class EasyGenomicsNestedStack extends NestedStack {
           memorySizeMb: 1024,
           environment: {
             DRY_RUN: 'false',
+            OUTPUT_DELETION_ENABLED: 'false',
+            ORPHAN_RECONCILIATION_ENABLED: 'false',
+            MAX_ORPHAN_FOLDERS_PER_LAB_SWEEP: '100',
           },
           callbacks: [
             (lambdaFunction) => {

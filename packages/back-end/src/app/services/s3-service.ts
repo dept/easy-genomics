@@ -169,6 +169,64 @@ export class S3Service {
     );
   };
 
+  /**
+   * Lists every object under a prefix, following `ContinuationToken` to the end. Callers that
+   * delete by prefix must see the whole listing — a truncated page would leave objects behind and
+   * make "did everything drain?" checks read as success.
+   */
+  public listAllObjectsUnderPrefix = async (
+    bucket: string,
+    prefix: string,
+  ): Promise<Array<{ Key: string; LastModified?: Date }>> => {
+    const out: Array<{ Key: string; LastModified?: Date }> = [];
+    let continuationToken: string | undefined;
+    let isTruncated = true;
+
+    while (isTruncated) {
+      const response = await this.listBucketObjectsV2({
+        Bucket: bucket,
+        Prefix: prefix,
+        MaxKeys: 1000,
+        ContinuationToken: continuationToken,
+      });
+      for (const object of response.Contents || []) {
+        if (object.Key) out.push({ Key: object.Key, LastModified: object.LastModified });
+      }
+      isTruncated = !!response.IsTruncated;
+      continuationToken = response.NextContinuationToken;
+    }
+
+    return out;
+  };
+
+  public listAllObjectKeysUnderPrefix = async (bucket: string, prefix: string): Promise<string[]> => {
+    return (await this.listAllObjectsUnderPrefix(bucket, prefix)).map((object) => object.Key);
+  };
+
+  /** Lists the immediate "directories" under a prefix (S3 common prefixes), following pagination. */
+  public listChildPrefixes = async (bucket: string, prefix: string): Promise<string[]> => {
+    const out: string[] = [];
+    let continuationToken: string | undefined;
+    let isTruncated = true;
+
+    while (isTruncated) {
+      const response = await this.listBucketObjectsV2({
+        Bucket: bucket,
+        Prefix: prefix,
+        Delimiter: '/',
+        MaxKeys: 1000,
+        ContinuationToken: continuationToken,
+      });
+      for (const common of response.CommonPrefixes || []) {
+        if (common.Prefix) out.push(common.Prefix);
+      }
+      isTruncated = !!response.IsTruncated;
+      continuationToken = response.NextContinuationToken;
+    }
+
+    return out;
+  };
+
   public copyBucketObject = async (copyObjectInput: CopyObjectCommandInput): Promise<void> => {
     await this.s3Request<CopyObjectCommandInput, void>(S3Command.COPY_BUCKET_OBJECT, copyObjectInput);
   };

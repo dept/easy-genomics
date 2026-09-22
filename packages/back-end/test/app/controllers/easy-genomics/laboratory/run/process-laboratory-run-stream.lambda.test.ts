@@ -243,6 +243,47 @@ describe('process-laboratory-run-stream.lambda', () => {
       expect(mockRecordExpiredRunOutput).not.toHaveBeenCalled();
     });
 
+    it('does not record an outdir pointing at the run folder root, where the input files live', async () => {
+      // `outdir` is user-editable, and prefix deletion is recursive: recording the root would let
+      // the sweep delete the run's FASTQ inputs, bypassing the FILE#-row and Permanent-tag rules.
+      const event = buildEvent([
+        {
+          eventName: 'REMOVE',
+          oldImage: {
+            LaboratoryId: 'lab-1',
+            RunId: 'run-7',
+            InputFileKeys: [],
+            OutputS3Url: `s3://my-bucket/${runFolder}`,
+          },
+        },
+      ]);
+
+      await handler(event, ctx, jest.fn());
+
+      expect(mockRecordExpiredRunOutput).not.toHaveBeenCalled();
+    });
+
+    it('records a custom outdir that is a subdirectory of the run folder', async () => {
+      const event = buildEvent([
+        {
+          eventName: 'REMOVE',
+          oldImage: {
+            LaboratoryId: 'lab-1',
+            RunId: 'run-7',
+            InputFileKeys: [],
+            OutputS3Url: `s3://my-bucket/${runFolder}/custom-outdir`,
+          },
+        },
+      ]);
+
+      await handler(event, ctx, jest.fn());
+
+      expect(mockRecordExpiredRunOutput).toHaveBeenCalledWith(
+        'lab-1',
+        expect.objectContaining({ OutputPrefix: `${runFolder}/custom-outdir/` }),
+      );
+    });
+
     it('does not record outputs living in a different bucket', async () => {
       const event = buildEvent([
         {

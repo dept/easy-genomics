@@ -1299,3 +1299,153 @@ describe('LaboratoryDataTaggingService.recordLaboratoryRunUsageForSamples', () =
     expect(mockUpdateItem).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('LaboratoryDataTaggingService expired run output markers', () => {
+  let svc: LaboratoryDataTaggingService;
+  let mockPutItem: jest.Mock;
+  let mockQueryItems: jest.Mock;
+  let mockUpdateItem: jest.Mock;
+
+  const tableName = `${process.env.NAME_PREFIX}-laboratory-data-tagging-table`;
+  const runId = '11111111-2222-4333-8444-555555555555';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratoryDataTaggingService();
+    mockPutItem = jest.fn().mockResolvedValue({});
+    mockQueryItems = jest.fn().mockResolvedValue({ Items: [] });
+    mockUpdateItem = jest.fn().mockResolvedValue({});
+    (svc as unknown as { putItem: typeof mockPutItem }).putItem = mockPutItem;
+    (svc as unknown as { queryItems: typeof mockQueryItems }).queryItems = mockQueryItems;
+    (svc as unknown as { updateItem: typeof mockUpdateItem }).updateItem = mockUpdateItem;
+  });
+
+  describe('recordExpiredRunOutput', () => {
+    it('writes a RUNOUTPUT# row keyed by laboratory and run', async () => {
+      await svc.recordExpiredRunOutput('lab-1', {
+        RunId: runId,
+        S3Bucket: 'my-bucket',
+        OutputPrefix: `org-1/lab-1/aws-healthomics/${runId}/results/`,
+        SampleSheetKeys: [`org-1/lab-1/aws-healthomics/${runId}/samplesheet.csv`],
+        RecordedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      expect(mockPutItem).toHaveBeenCalledTimes(1);
+      const input = mockPutItem.mock.calls[0][0];
+      expect(input.TableName).toBe(tableName);
+      expect(unmarshall(input.Item)).toEqual({
+        LaboratoryId: 'lab-1',
+        Sk: `RUNOUTPUT#${runId}`,
+        RunId: runId,
+        S3Bucket: 'my-bucket',
+        OutputPrefix: `org-1/lab-1/aws-healthomics/${runId}/results/`,
+        SampleSheetKeys: [`org-1/lab-1/aws-healthomics/${runId}/samplesheet.csv`],
+        RecordedAt: '2026-01-01T00:00:00.000Z',
+      });
+    });
+
+    it('omits absent optional locations rather than writing nulls', async () => {
+      await svc.recordExpiredRunOutput('lab-1', {
+        RunId: runId,
+        S3Bucket: 'my-bucket',
+        OutputPrefix: undefined,
+        SampleSheetKeys: undefined,
+        RecordedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      const stored = unmarshall(mockPutItem.mock.calls[0][0].Item);
+      expect(stored).not.toHaveProperty('OutputPrefix');
+      expect(stored).not.toHaveProperty('SampleSheetKeys');
+    });
+  });
+
+  describe('listExpiredRunOutputsForLab', () => {
+    it('queries the lab partition for the RUNOUTPUT# prefix only', async () => {
+      await svc.listExpiredRunOutputsForLab('lab-1');
+
+      const input = mockQueryItems.mock.calls[0][0];
+      expect(input.TableName).toBe(tableName);
+      expect(input.KeyConditionExpression).toBe('#pk = :pk AND begins_with(#sk, :prefix)');
+      expect(input.ExpressionAttributeValues).toEqual({
+        ':pk': { S: 'lab-1' },
+        ':prefix': { S: 'RUNOUTPUT#' },
+      });
+    });
+
+    it('follows LastEvaluatedKey so a second page is not silently dropped', async () => {
+      // A dropped page means those expired outputs are never deleted and never re-discovered,
+      // because reconciliation skips folders that already have a marker row.
+      mockQueryItems
+        .mockResolvedValueOnce({
+          Items: [marshall({ RunId: 'run-a', S3Bucket: 'my-bucket', RecordedAt: '2026-01-01T00:00:00.000Z' })],
+          LastEvaluatedKey: { LaboratoryId: { S: 'lab-1' }, Sk: { S: 'RUNOUTPUT#run-a' } },
+        })
+        .mockResolvedValueOnce({
+          Items: [marshall({ RunId: 'run-b', S3Bucket: 'my-bucket', RecordedAt: '2026-01-02T00:00:00.000Z' })],
+        });
+
+      const rows = await svc.listExpiredRunOutputsForLab('lab-1');
+
+      expect(mockQueryItems).toHaveBeenCalledTimes(2);
+      expect(mockQueryItems.mock.calls[1][0].ExclusiveStartKey).toEqual({
+        LaboratoryId: { S: 'lab-1' },
+        Sk: { S: 'RUNOUTPUT#run-a' },
+      });
+      expect(rows.map((r) => r.RunId)).toEqual(['run-a', 'run-b']);
+    });
+
+    it('drops rows missing the fields the sweep needs to act safely', async () => {
+      mockQueryItems.mockResolvedValueOnce({
+        Items: [
+          marshall({ S3Bucket: 'my-bucket', RecordedAt: '' }),
+          marshall({ RunId: 'run-b', RecordedAt: '' }),
+          marshall({ RunId: 'run-c', S3Bucket: 'my-bucket', RecordedAt: '2026-01-01T00:00:00.000Z' }),
+        ],
+      });
+
+      const rows = await svc.listExpiredRunOutputsForLab('lab-1');
+
+      expect(rows.map((r) => r.RunId)).toEqual(['run-c']);
+    });
+
+    it('ignores malformed optional fields instead of passing them to the deleter', async () => {
+      mockQueryItems.mockResolvedValueOnce({
+        Items: [
+          marshall({
+            RunId: 'run-a',
+            S3Bucket: 'my-bucket',
+            OutputPrefix: 42,
+            SampleSheetKeys: ['good.csv', '', 7],
+            RecordedAt: 99,
+            CompletedAt: false,
+          }),
+        ],
+      });
+
+      const rows = await svc.listExpiredRunOutputsForLab('lab-1');
+
+      expect(rows[0]).toEqual({
+        RunId: 'run-a',
+        S3Bucket: 'my-bucket',
+        OutputPrefix: undefined,
+        SampleSheetKeys: ['good.csv'],
+        RecordedAt: '',
+        CompletedAt: undefined,
+      });
+    });
+  });
+
+  describe('markExpiredRunOutputCompleted', () => {
+    it('stamps CompletedAt with an update rather than deleting the row', async () => {
+      // The row is the reconciliation pass's memory of folders it has handled; deleting it would
+      // make the bucket walk re-list every historical run folder every night.
+      await svc.markExpiredRunOutputCompleted('lab-1', runId);
+
+      expect(mockUpdateItem).toHaveBeenCalledTimes(1);
+      const input = mockUpdateItem.mock.calls[0][0];
+      expect(input.UpdateExpression).toBe('SET #completedAt = :completedAt');
+      expect(unmarshall(input.Key)).toEqual({ LaboratoryId: 'lab-1', Sk: `RUNOUTPUT#${runId}` });
+      expect(unmarshall(input.ExpressionAttributeValues)[':completedAt']).toEqual(expect.any(String));
+    });
+  });
+});

@@ -6,7 +6,7 @@ import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-geno
 import { DynamoDBRecord, DynamoDBStreamEvent, Handler } from 'aws-lambda';
 import { LaboratoryDataTaggingService } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { isWithinRunFolder, normalizeS3Prefix, parseS3Uri } from '@BE/utils/s3-uri-utils';
+import { isBelowRunFolderRoot, isWithinRunFolder, normalizeS3Prefix, parseS3ObjectUri } from '@BE/utils/s3-uri-utils';
 
 const laboratoryService = new LaboratoryService();
 const laboratoryDataTaggingService = new LaboratoryDataTaggingService();
@@ -127,7 +127,9 @@ async function processRecord(record: DynamoDBRecord): Promise<void> {
  * so they can be removed wholesale once the run expires.
  *
  * Locations are validated against the run's own folder before being recorded; a custom `outdir`
- * pointing elsewhere is skipped rather than scheduled for deletion.
+ * pointing elsewhere is skipped rather than scheduled for deletion. `outdir` is a user-editable
+ * workflow parameter, so it must also point strictly *below* the run folder root: the root is
+ * where the run's input files live, and prefix deletion is recursive.
  */
 async function recordRunOutputsForCleanup(
   laboratory: Laboratory,
@@ -136,20 +138,22 @@ async function recordRunOutputsForCleanup(
 ): Promise<void> {
   const bucket = laboratory.S3Bucket!;
 
-  const parsedOutput = parseS3Uri(run.OutputS3Url);
+  const parsedOutput = parseS3ObjectUri(run.OutputS3Url);
   let outputPrefix: string | undefined;
   if (parsedOutput) {
     const candidate = normalizeS3Prefix(parsedOutput.prefix);
     if (parsedOutput.bucket !== bucket) {
       console.warn(`Skip output cleanup for RunId=${runId}: OutputS3Url bucket is not the laboratory bucket.`);
-    } else if (!isWithinRunFolder(candidate, laboratory, runId)) {
-      console.warn(`Skip output cleanup for RunId=${runId}: OutputS3Url is outside the run's own folder.`);
+    } else if (!isBelowRunFolderRoot(candidate, laboratory, runId)) {
+      console.warn(
+        `Skip output cleanup for RunId=${runId}: OutputS3Url is not a subdirectory of the run's own folder.`,
+      );
     } else {
       outputPrefix = candidate;
     }
   }
 
-  const parsedSampleSheet = parseS3Uri(run.SampleSheetS3Url);
+  const parsedSampleSheet = parseS3ObjectUri(run.SampleSheetS3Url);
   let sampleSheetKey: string | undefined;
   if (parsedSampleSheet) {
     if (parsedSampleSheet.bucket === bucket && isWithinRunFolder(parsedSampleSheet.prefix, laboratory, runId)) {
