@@ -348,8 +348,26 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       // Allow read-only workflow and share APIs without additional tag conditions
       new PolicyStatement({
         resources: ['*'],
-        actions: ['omics:ListWorkflows', 'omics:GetWorkflow', 'omics:ListShares'],
+        actions: [
+          'omics:ListWorkflows',
+          'omics:GetWorkflow',
+          'omics:ListShares',
+          'omics:ListWorkflowVersions',
+          'omics:ListTagsForResource',
+        ],
         effect: Effect.ALLOW,
+      }),
+      // Allow deleting a workflow (and its versions) only when resource tags match the lab session
+      new PolicyStatement({
+        resources: ['*'],
+        actions: ['omics:DeleteWorkflow', 'omics:DeleteWorkflowVersion'],
+        effect: Effect.ALLOW,
+        conditions: {
+          StringEquals: {
+            'aws:ResourceTag/LaboratoryId': '${aws:PrincipalTag/LaboratoryId}',
+            'aws:ResourceTag/OrganizationId': '${aws:PrincipalTag/OrganizationId}',
+          },
+        },
       }),
       // Allow CreateWorkflow to read ZIP definitions from the dedicated workflow upload bucket.
       // HealthOmics validates and fetches definitionUri objects during workflow creation.
@@ -512,7 +530,7 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       workflowAccessQuery(),
       new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
-        actions: ['omics:ListWorkflows'],
+        actions: ['omics:ListWorkflows', 'omics:ListTagsForResource'],
         effect: Effect.ALLOW,
       }),
     ]);
@@ -527,22 +545,14 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       }),
       new PolicyStatement({
         resources: [laboratoryWorkflowAccessTableArn],
-        actions: ['dynamodb:DeleteItem'],
+        actions: ['dynamodb:Scan', 'dynamodb:DeleteItem'],
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
-        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:workflow/*`],
-        actions: [
-          'omics:GetWorkflow',
-          'omics:DeleteWorkflow',
-          'omics:ListWorkflowVersions',
-          'omics:DeleteWorkflowVersion',
+        resources: [
+          `arn:aws:iam::${this.props.env.account!}:role/${this.props.namePrefix}-easy-genomics-omics-access-role`,
         ],
-        effect: Effect.ALLOW,
-      }),
-      new PolicyStatement({
-        resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:/shares`],
-        actions: ['omics:ListShares'],
+        actions: ['sts:AssumeRole', 'sts:TagSession'],
         effect: Effect.ALLOW,
       }),
     ]);

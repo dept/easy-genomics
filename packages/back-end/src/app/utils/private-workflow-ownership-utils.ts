@@ -1,4 +1,5 @@
-const OWNERSHIP_DENIED_MESSAGE = 'You can only delete private workflows that you created in this laboratory.';
+export const PRIVATE_WORKFLOW_OWNERSHIP_DENIED_MESSAGE =
+  'You can only delete private workflows that you created in this laboratory.';
 
 type AuthorizerClaims = Record<string, unknown> | undefined;
 
@@ -21,15 +22,10 @@ export function canDeleteOwnedPrivateWorkflow(params: {
   laboratoryId: string;
   organizationId: string;
   creatorIds: Set<string>;
-}): { allowed: true } | { allowed: false; reason: string } {
+}): boolean {
   const tags = params.tags ?? {};
   const createdByApp = tags.Application === 'easy-genomics';
   const belongsToLab = tags.LaboratoryId === params.laboratoryId && tags.OrganizationId === params.organizationId;
   const ownedByCaller = Boolean(tags.UserId) && params.creatorIds.has(tags.UserId);
-
-  if (!createdByApp || !belongsToLab || !ownedByCaller) {
-    return { allowed: false, reason: OWNERSHIP_DENIED_MESSAGE };
-  }
-
-  return { allowed: true };
+  return createdByApp && belongsToLab && ownedByCaller;
 }

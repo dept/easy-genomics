@@ -28,6 +28,7 @@
   import { TableSort } from './EGTable.vue';
   import { ensureLabInActiveOrg } from '@FE/utils/ensure-lab-in-active-org';
   import { isLaboratoryRunOwnedByUser } from '@FE/utils/laboratory-run-ownership';
+  import { canDeletePrivateOmicsWorkflow } from '@FE/utils/omics-workflow-ownership';
 
   const props = defineProps<{
     superuser?: boolean;
@@ -518,35 +519,21 @@
 
   // Omics Workflows Tab
 
-  const omicsWorkflowsTableColumns = computed(() => {
-    const columns = [
-      { key: 'Name', label: 'Name' },
-      { key: 'source', label: 'Source' },
-      { key: 'description', label: 'Description' },
-    ];
-    if (canCreateOmicsWorkflows.value) {
-      columns.push({ key: 'actions', label: 'Actions' });
-    }
-    columns.push({ key: 'favourite', label: 'Favorite' }, { key: 'run', label: 'Run' });
-    return columns;
-  });
-
-  function omicsWorkflowCreatorId(workflow: LabOmicsWorkflow): string | undefined {
-    return workflow.tags?.UserId || workflow.metadata?.createdByUserId;
-  }
+  const omicsWorkflowsTableColumns = computed(() => [
+    { key: 'Name', label: 'Name' },
+    { key: 'source', label: 'Source' },
+    { key: 'description', label: 'Description' },
+    ...(canCreateOmicsWorkflows.value ? [{ key: 'actions', label: 'Actions' }] : []),
+    { key: 'favourite', label: 'Favorite' },
+    { key: 'run', label: 'Run' },
+  ]);
 
   function canDeleteOmicsWorkflow(workflow: LabOmicsWorkflow): boolean {
-    if (!canCreateOmicsWorkflows.value || workflow.source === 'SHARED' || !workflow.id) {
-      return false;
-    }
-    const createdBy = omicsWorkflowCreatorId(workflow);
-    if (!createdBy) {
-      return true;
-    }
-    const userIds = [userStore.currentUserDetails.id, userStore.currentUserDetails.internalId].filter(
-      (id): id is string => Boolean(id),
-    );
-    return userIds.includes(createdBy);
+    return canDeletePrivateOmicsWorkflow({
+      workflow,
+      canCreateOmicsWorkflows: canCreateOmicsWorkflows.value,
+      userIds: [userStore.currentUserDetails.id, userStore.currentUserDetails.internalId],
+    });
   }
 
   function omicsWorkflowsActionItems(workflow: LabOmicsWorkflow) {
@@ -1271,7 +1258,7 @@
       </template>
 
       <template #actions-data="{ row: workflow }">
-        <div v-if="omicsWorkflowsActionItems(workflow).length" class="flex justify-end">
+        <div v-if="canDeleteOmicsWorkflow(workflow)" class="flex justify-end">
           <EGActionButton
             menu-label="Workflow actions"
             :items="omicsWorkflowsActionItems(workflow)"

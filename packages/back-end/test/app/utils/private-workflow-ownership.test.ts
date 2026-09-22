@@ -1,9 +1,9 @@
 import {
   canDeleteOwnedPrivateWorkflow,
   creatorIdsFromAuthorizerClaims,
-} from '../../../src/app/utils/private-workflow-ownership';
+} from '../../../src/app/utils/private-workflow-ownership-utils';
 
-describe('private-workflow-ownership', () => {
+describe('private-workflow-ownership-utils', () => {
   const laboratoryId = 'lab-1';
   const organizationId = 'org-1';
   const creatorIds = new Set(['user-1', 'user-sub']);
@@ -37,7 +37,7 @@ describe('private-workflow-ownership', () => {
         organizationId,
         creatorIds,
       }),
-    ).toEqual({ allowed: true });
+    ).toBe(true);
   });
 
   it('denies when UserId does not match the caller', () => {
@@ -47,7 +47,7 @@ describe('private-workflow-ownership', () => {
         laboratoryId,
         organizationId,
         creatorIds,
-      }).allowed,
+      }),
     ).toBe(false);
   });
 
@@ -58,7 +58,44 @@ describe('private-workflow-ownership', () => {
         laboratoryId,
         organizationId,
         creatorIds,
-      }).allowed,
+      }),
+    ).toBe(false);
+  });
+
+  it('denies when the organization tag does not match', () => {
+    expect(
+      canDeleteOwnedPrivateWorkflow({
+        tags: { ...ownedTags, OrganizationId: 'other-org' },
+        laboratoryId,
+        organizationId,
+        creatorIds,
+      }),
+    ).toBe(false);
+  });
+
+  it('denies console-created workflows with no tags', () => {
+    expect(
+      canDeleteOwnedPrivateWorkflow({
+        tags: undefined,
+        laboratoryId,
+        organizationId,
+        creatorIds,
+      }),
+    ).toBe(false);
+  });
+
+  it('denies tags that omit UserId', () => {
+    expect(
+      canDeleteOwnedPrivateWorkflow({
+        tags: {
+          Application: 'easy-genomics',
+          LaboratoryId: laboratoryId,
+          OrganizationId: organizationId,
+        },
+        laboratoryId,
+        organizationId,
+        creatorIds,
+      }),
     ).toBe(false);
   });
 });

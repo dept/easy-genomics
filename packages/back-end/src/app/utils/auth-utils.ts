@@ -265,3 +265,17 @@ export function verifyCurrentOrganizationAccess(event: APIGatewayProxyEvent, use
     return false;
   }
 }
+
+/**
+ * Org admins and lab managers — the same roles that can use Create Workflow in the UI.
+ */
+export function validateOrganizationAdminOrLaboratoryManagerAccess(
+  event: APIGatewayProxyEvent,
+  organizationId: string,
+  laboratoryId: string,
+): boolean {
+  return !!(
+    validateOrganizationAdminAccess(event, organizationId) ||
+    validateLaboratoryManagerAccess(event, organizationId, laboratoryId)
+  );
+}

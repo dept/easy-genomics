@@ -38,6 +38,9 @@ import {
   ListSharesCommand,
   ListSharesCommandInput,
   ListSharesCommandOutput,
+  ListTagsForResourceCommand,
+  ListTagsForResourceCommandInput,
+  ListTagsForResourceCommandOutput,
   ListRunTasksCommand,
   ListRunTasksCommandInput,
   ListRunTasksCommandOutput,
@@ -67,6 +70,7 @@ export enum OmicsCommand {
   LIST_WORKFLOWS = 'list-workflows',
   LIST_WORKFLOW_VERSIONS = 'list-workflow-versions',
   LIST_SHARED_WORKFLOWS = 'list-shared-workflows',
+  LIST_TAGS_FOR_RESOURCE = 'list-tags-for-resource',
   START_RUN = 'start-run',
   TAG_RESOURCE = 'tag-resource',
 }
@@ -208,6 +212,15 @@ export class OmicsService {
     );
   };
 
+  public listTagsForResource = async (
+    listTagsForResourceCommandInput: ListTagsForResourceCommandInput,
+  ): Promise<ListTagsForResourceCommandOutput> => {
+    return this.omicsRequest<ListTagsForResourceCommandInput, ListTagsForResourceCommandOutput>(
+      OmicsCommand.LIST_TAGS_FOR_RESOURCE,
+      listTagsForResourceCommandInput,
+    );
+  };
+
   public startRun = async (startRunCommandInput: StartRunCommandInput): Promise<StartRunCommandOutput> => {
     return this.omicsRequest<StartRunCommandInput, StartRunCommandOutput>(OmicsCommand.START_RUN, startRunCommandInput);
   };
@@ -265,6 +278,8 @@ export class OmicsService {
         return new ListWorkflowVersionsCommand(data as ListWorkflowVersionsCommandInput);
       case OmicsCommand.LIST_SHARED_WORKFLOWS:
         return new ListSharesCommand(data as ListSharesCommandInput);
+      case OmicsCommand.LIST_TAGS_FOR_RESOURCE:
+        return new ListTagsForResourceCommand(data as ListTagsForResourceCommandInput);
       case OmicsCommand.START_RUN:
         return new StartRunCommand(data as StartRunCommandInput);
       case OmicsCommand.TAG_RESOURCE:

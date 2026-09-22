@@ -1,8 +1,7 @@
-import { ConflictException, ResourceNotFoundException } from '@aws-sdk/client-omics';
+import { ResourceNotFoundException } from '@aws-sdk/client-omics';
 import { GetWorkflowCommandInput } from '@aws-sdk/client-omics/dist-types/commands/GetWorkflowCommand';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
-  InvalidRequestError,
   LaboratoryNotFoundError,
   MissingAWSHealthOmicsAccessError,
   OmicsWorkflowNotFoundError,
@@ -13,90 +12,24 @@ import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomic
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
-import { OmicsService } from '@BE/services/omics-service';
-import {
-  validateLaboratoryManagerAccess,
-  validateLaboratoryTechnicianAccess,
-  validateOrganizationAdminAccess,
-} from '@BE/utils/auth-utils';
+import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
+import { validateOrganizationAdminOrLaboratoryManagerAccess } from '@BE/utils/auth-utils';
 import { resolveSharedWorkflowOwnerId } from '@BE/utils/omics-shared-workflow-utils';
-import { canDeleteOwnedPrivateWorkflow, creatorIdsFromAuthorizerClaims } from '@BE/utils/private-workflow-ownership';
+import { deletePrivateOmicsWorkflow } from '@BE/utils/private-workflow-delete-utils';
+import {
+  PRIVATE_WORKFLOW_OWNERSHIP_DENIED_MESSAGE,
+  canDeleteOwnedPrivateWorkflow,
+  creatorIdsFromAuthorizerClaims,
+} from '@BE/utils/private-workflow-ownership-utils';
 
 const laboratoryService = new LaboratoryService();
 const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
-const omicsService = new OmicsService();
-
-function hasPrivateWorkflowCreateAccess(
-  event: APIGatewayProxyWithCognitoAuthorizerEvent,
-  laboratory: Laboratory,
-): boolean {
-  return !!(
-    validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
-    validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
-    validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
-  );
-}
-
-async function deleteWorkflowVersions(workflowId: string): Promise<void> {
-  let nextToken: string | undefined;
-  do {
-    const page = await omicsService.listWorkflowVersions({
-      workflowId,
-      type: 'PRIVATE',
-      maxResults: 100,
-      startingToken: nextToken,
-    });
-    for (const version of page.items ?? []) {
-      if (!version.versionName) continue;
-      try {
-        await omicsService.deleteWorkflowVersion({
-          workflowId,
-          versionName: version.versionName,
-        });
-      } catch (error) {
-        // The remaining default version is removed with DeleteWorkflow.
-        if (!(error instanceof ConflictException) && !(error instanceof ResourceNotFoundException)) {
-          throw error;
-        }
-      }
-    }
-    nextToken = page.nextToken;
-  } while (nextToken);
-}
-
-async function deletePrivateWorkflow(workflowId: string): Promise<void> {
-  try {
-    await omicsService.deleteWorkflow({ id: workflowId });
-    return;
-  } catch (error) {
-    if (error instanceof ResourceNotFoundException) {
-      throw new OmicsWorkflowNotFoundError(workflowId);
-    }
-    if (!(error instanceof ConflictException)) {
-      throw error;
-    }
-  }
-
-  await deleteWorkflowVersions(workflowId);
-
-  try {
-    await omicsService.deleteWorkflow({ id: workflowId });
-  } catch (error) {
-    if (error instanceof ResourceNotFoundException) {
-      return;
-    }
-    if (error instanceof ConflictException) {
-      throw new InvalidRequestError('This workflow cannot be deleted while a run is using it.');
-    }
-    throw error;
-  }
-}
 
 /**
  * DELETE /aws-healthomics/workflow/delete-private-workflow/{id}?laboratoryId={LaboratoryId}
  *
  * Deletes a private HealthOmics workflow that the caller created through Easy Genomics.
- * Permission matches create-private-workflow: org admin, lab manager, or lab technician.
+ * Permission matches the Create Workflow UI: org admin or lab manager.
  */
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -112,13 +45,29 @@ export const handler: Handler = async (
     const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(laboratoryId);
     if (!laboratory) throw new LaboratoryNotFoundError();
 
-    if (!hasPrivateWorkflowCreateAccess(event, laboratory)) {
+    if (
+      !validateOrganizationAdminOrLaboratoryManagerAccess(
+        event,
+        laboratory.OrganizationId,
+        laboratory.LaboratoryId,
+      )
+    ) {
       throw new UnauthorizedAccessError();
     }
 
     if (!laboratory.AwsHealthOmicsEnabled) {
       throw new MissingAWSHealthOmicsAccessError();
     }
+
+    const userId =
+      event.requestContext.authorizer.claims['cognito:username'] ??
+      event.requestContext.authorizer.claims.sub ??
+      'unknown-user';
+    const omicsService = await createOmicsServiceForLab(
+      laboratory.LaboratoryId,
+      laboratory.OrganizationId,
+      userId,
+    );
 
     const sharedOwnerId = await resolveSharedWorkflowOwnerId(omicsService, id);
     if (sharedOwnerId) {
@@ -137,21 +86,24 @@ export const handler: Handler = async (
         throw error;
       });
 
-    const ownership = canDeleteOwnedPrivateWorkflow({
-      tags: workflow.tags,
-      laboratoryId: laboratory.LaboratoryId,
-      organizationId: laboratory.OrganizationId,
-      creatorIds: creatorIdsFromAuthorizerClaims(event.requestContext.authorizer?.claims),
-    });
-    if (!ownership.allowed) {
-      throw new UnauthorizedAccessError(ownership.reason);
+    if (
+      !canDeleteOwnedPrivateWorkflow({
+        tags: workflow.tags,
+        laboratoryId: laboratory.LaboratoryId,
+        organizationId: laboratory.OrganizationId,
+        creatorIds: creatorIdsFromAuthorizerClaims(event.requestContext.authorizer?.claims),
+      })
+    ) {
+      throw new UnauthorizedAccessError(PRIVATE_WORKFLOW_OWNERSHIP_DENIED_MESSAGE);
     }
 
-    await deletePrivateWorkflow(id);
+    await deletePrivateOmicsWorkflow(omicsService, id);
 
     try {
-      await laboratoryWorkflowAccessService.remove(laboratoryId, 'HEALTH_OMICS', id);
+      await laboratoryWorkflowAccessService.removeAllForWorkflow('HEALTH_OMICS', id);
     } catch (error) {
+      // HealthOmics already deleted the workflow. Stale access grants only affect
+      // catalog rows and must not fail the caller; list APIs already omit missing workflows.
       console.warn(`Failed to remove laboratory workflow access after deleting workflow ${id}`, error);
     }
 
