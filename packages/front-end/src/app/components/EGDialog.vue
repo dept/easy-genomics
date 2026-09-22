@@ -4,6 +4,8 @@
   const props = defineProps<{
     modelValue: any;
     primaryMessage?: string;
+    /** Heading tag for the title. Defaults to `h2` (36px); pass `h4` for the 18px size other modals use. */
+    titleTag?: string;
     secondaryMessage?: string;
     actionLabel: string;
     actionVariant: string;
@@ -68,7 +70,9 @@
       <template #header>
         <div class="flex flex-col">
           <div class="flex items-start gap-2">
-            <EGText :id="titleId" tag="h2" class="mb-6 min-w-0 flex-1 break-words">{{ primaryMessage }}</EGText>
+            <EGText :id="titleId" :tag="titleTag ?? 'h2'" class="mb-6 min-w-0 flex-1 break-words">
+              {{ primaryMessage }}
+            </EGText>
             <div class="shrink-0">
               <UButton
                 @click="handleCancel"

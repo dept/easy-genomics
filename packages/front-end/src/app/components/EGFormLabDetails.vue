@@ -380,7 +380,7 @@
     AwsHealthOmicsNetworkingMode: 'HealthOmics VPC Networking – Networking mode',
     AwsHealthOmicsVpcConfigurationName: 'HealthOmics VPC Networking – VPC configuration name',
     FailureAnalysisEnabled: 'AI Failure Analysis – Enable AI error analysis',
-    HealthOmicsLogEnrichmentEnabled: 'AI Failure Analysis (HealthOmics) – Log enrichment enabled',
+    HealthOmicsLogEnrichmentEnabled: 'AI Failure Analysis (HealthOmics) – Include run logs in AI analysis',
     HealthOmicsLlmProvider: 'AI Failure Analysis (HealthOmics) – LLM provider',
     HealthOmicsLlmModelId: 'AI Failure Analysis (HealthOmics) – Model ID',
     HealthOmicsLlmApiKey: 'AI Failure Analysis (HealthOmics) – API key',
@@ -848,6 +848,48 @@
     await getLabDetails({ showLoader: false });
 
     useToastStore().success(`${lab.Name} successfully updated`);
+  }
+
+  // Turning log enrichment ON widens what leaves the platform — from an AWS error
+  // code to (redacted) log text — so it is confirmed explicitly. Turning it off
+  // narrows egress and needs no confirmation.
+  const isLogEnrichmentDialogOpen = ref(false);
+
+  /** Where a log excerpt would be sent, phrased for the lab admin. */
+  const logEnrichmentDestination = computed<string>(() => {
+    switch (state.value.HealthOmicsLlmProvider) {
+      case 'openai':
+        return 'OpenAI';
+      case 'anthropic':
+        return 'Anthropic';
+      default:
+        return 'Amazon Bedrock';
+    }
+  });
+
+  /** Bedrock calls run under the platform's AWS account, so nothing leaves AWS. */
+  const logEnrichmentLeavesAws = computed<boolean>(
+    () => state.value.HealthOmicsLlmProvider === 'openai' || state.value.HealthOmicsLlmProvider === 'anthropic',
+  );
+
+  const logEnrichmentWarning = computed<string>(() =>
+    logEnrichmentLeavesAws.value
+      ? `A redacted excerpt of the failed run's CloudWatch logs is sent to ${logEnrichmentDestination.value}, outside AWS. Identifiers, paths and secrets are stripped first, but redaction is best-effort.`
+      : `A redacted excerpt of the failed run's CloudWatch logs is sent to ${logEnrichmentDestination.value} under the platform's AWS account. It does not leave AWS, but it is not isolated to your own AWS account.`,
+  );
+
+  function onLogEnrichmentToggle(enabled: boolean): void {
+    if (!enabled) {
+      state.value.HealthOmicsLogEnrichmentEnabled = false;
+      return;
+    }
+    // Hold the toggle off until the admin confirms in the dialog.
+    isLogEnrichmentDialogOpen.value = true;
+  }
+
+  function confirmLogEnrichment(): void {
+    state.value.HealthOmicsLogEnrichmentEnabled = true;
+    isLogEnrichmentDialogOpen.value = false;
   }
 
   const validate = (state: LabDetails): FormError[] => {
@@ -1529,10 +1571,33 @@
               />
             </EGFormGroup>
 
-            <!-- Log-enrichment control hidden per product decision (manual-only analysis;
-                 keep the settings surface simple). state.HealthOmicsLogEnrichmentEnabled is
-                 still submitted as-is on save — a lab that already had it on keeps that
-                 behavior; it's just no longer user-editable from this form. -->
+            <EGFormGroup v-if="state.HealthOmicsLlmProvider" name="HealthOmicsLogEnrichmentEnabled">
+              <div class="flex items-center">
+                <span class="text-sm text-black">Include run logs in AI analysis</span>
+                <UToggle
+                  class="ml-2"
+                  :model-value="state.HealthOmicsLogEnrichmentEnabled"
+                  @update:model-value="onLogEnrichmentToggle"
+                  :disabled="!isEditing || isSubmittingFormData"
+                />
+              </div>
+              <p class="text-muted mt-1 text-xs">
+                Gives the AI the run's logs instead of just its error code, so it can explain failures the error code
+                alone does not describe.
+              </p>
+              <div
+                v-if="state.HealthOmicsLogEnrichmentEnabled"
+                class="mt-2 flex items-start gap-1.5"
+                :class="logEnrichmentLeavesAws ? 'text-alert-danger-dark' : 'text-muted'"
+              >
+                <UIcon
+                  :name="logEnrichmentLeavesAws ? 'i-heroicons-exclamation-triangle' : 'i-heroicons-information-circle'"
+                  class="mt-0.5 h-4 w-4 shrink-0"
+                  aria-hidden="true"
+                />
+                <p class="text-xs">{{ logEnrichmentWarning }}</p>
+              </div>
+            </EGFormGroup>
           </div>
 
           <!-- Seqera sub-section -->
@@ -1842,5 +1907,15 @@
     v-model="isRetentionDeleteConfirmDialogOpen"
     :loading="isSubmittingFormData"
     :buttons-disabled="isSubmittingFormData"
+  />
+
+  <EGDialog
+    action-label="Send logs to the AI"
+    :action-variant="ButtonVariantEnum.enum.primary"
+    @action-triggered="confirmLogEnrichment"
+    primary-message="Include run logs?"
+    title-tag="h4"
+    :secondary-message="logEnrichmentWarning"
+    v-model="isLogEnrichmentDialogOpen"
   />
 </template>

@@ -6,6 +6,7 @@ import {
   LaboratoryNotFoundError,
   UnauthorizedAccessError,
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import { SnsProcessingEvent } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { v4 as uuidv4 } from 'uuid';
@@ -22,6 +23,22 @@ import { assertLaboratoryLlmConfigured } from '@BE/utils/laboratory-llm-config-u
 const laboratoryRunService = new LaboratoryRunService();
 const laboratoryService = new LaboratoryService();
 const sqsService = new SqsService();
+
+/** Analysis fields this endpoint writes, and must be able to undo. */
+const ANALYSIS_FIELDS = ['AnalysisStatus', 'AnalysisRequestedAt', 'AnalysisErrorCode', 'AnalysisErrorMessage'] as const;
+
+/**
+ * Revert the analysis fields to their pre-request values. Fields the run did not
+ * have are REMOVEd rather than left behind, so a run that had never been analysed
+ * goes back to exactly that — not to a half-written `Queued`.
+ */
+async function restoreAnalysisFields(previous: LaboratoryRun, modifiedBy: string): Promise<void> {
+  const absentBefore = ANALYSIS_FIELDS.filter((field) => previous[field] === undefined);
+  await laboratoryRunService.updateWithAttributeRemoval(
+    { ...previous, ModifiedAt: new Date().toISOString(), ModifiedBy: modifiedBy },
+    [...absentBefore],
+  );
+}
 
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -77,12 +94,21 @@ export const handler: Handler = async (
     );
 
     const message: SnsProcessingEvent = { Operation: 'UPDATE', Type: 'LaboratoryRun', Record: run, Trigger: 'Manual' };
-    await sqsService.sendMessage({
-      QueueUrl: process.env.SQS_LABORATORY_RUN_FAILURE_CLASSIFICATION_QUEUE_URL,
-      MessageBody: JSON.stringify(message),
-      MessageGroupId: `classify-laboratory-run-${run.RunId}`,
-      MessageDeduplicationId: uuidv4(),
-    });
+    try {
+      await sqsService.sendMessage({
+        QueueUrl: process.env.SQS_LABORATORY_RUN_FAILURE_CLASSIFICATION_QUEUE_URL,
+        MessageBody: JSON.stringify(message),
+        MessageGroupId: `classify-laboratory-run-${run.RunId}`,
+        MessageDeduplicationId: uuidv4(),
+      });
+    } catch (enqueueError: any) {
+      // The `Queued` write above has already landed. Leaving it strands the run:
+      // no consumer will ever pick it up, and the run page renders "Analysing…"
+      // instead of a clickable button, so the user can never retry. Put the
+      // analysis fields back exactly as they were, then report the failure.
+      await restoreAnalysisFields(run, event.requestContext.authorizer.claims['cognito:username']);
+      throw enqueueError;
+    }
 
     return buildResponse(200, JSON.stringify({ Status: 'Queued' }), event);
   } catch (err: any) {

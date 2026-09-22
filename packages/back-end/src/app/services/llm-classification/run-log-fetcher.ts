@@ -7,6 +7,15 @@ import { CloudWatchLogsService } from '@BE/services/cloudwatch-logs-service';
 /** CloudWatch log group HealthOmics writes every run's engine + task logs to. */
 const HEALTHOMICS_LOG_GROUP = '/aws/omics/WorkflowLog';
 
+/**
+ * Log events to pull from the tail of the engine stream.
+ *
+ * Deliberately larger than the service default: Nextflow on HealthOmics emits a
+ * stack frame per task, so most of a window is noise and a root cause logged a
+ * few hundred events before the failure would otherwise never be fetched.
+ */
+const ENGINE_LOG_EVENT_LIMIT = 1000;
+
 export interface RunLogFetcherDeps {
   cloudWatchLogsService: CloudWatchLogsService;
 }
@@ -33,7 +42,11 @@ export async function fetchRedactedLogExcerpt(
   try {
     // HealthOmics names the engine stream deterministically per run.
     const logStreamName = `run/${run.ExternalRunId}/engine`;
-    const rawLog = await deps.cloudWatchLogsService.getLogStreamText(HEALTHOMICS_LOG_GROUP, logStreamName);
+    const rawLog = await deps.cloudWatchLogsService.getLogStreamText(
+      HEALTHOMICS_LOG_GROUP,
+      logStreamName,
+      ENGINE_LOG_EVENT_LIMIT,
+    );
     if (!rawLog) return undefined;
 
     const excerpt = redactSensitive(extractErrorWindow(rawLog));
