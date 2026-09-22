@@ -6,6 +6,7 @@ import { Context, DynamoDBStreamEvent } from 'aws-lambda';
 
 const mockRemove: jest.Mock = jest.fn().mockResolvedValue(undefined);
 const mockQueryByLaboratoryId: jest.Mock = jest.fn();
+const mockRecordExpiredRunOutput: jest.Mock = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-service', () => ({
   LaboratoryService: jest.fn().mockImplementation(() => ({
@@ -16,6 +17,7 @@ jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-service',
 jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-data-tagging-service', () => ({
   LaboratoryDataTaggingService: jest.fn().mockImplementation(() => ({
     removeLaboratoryRunUsageForRunIds: mockRemove,
+    recordExpiredRunOutput: mockRecordExpiredRunOutput,
   })),
 }));
 
@@ -47,6 +49,7 @@ describe('process-laboratory-run-stream.lambda', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockRemove.mockResolvedValue(undefined);
+    mockRecordExpiredRunOutput.mockReset().mockResolvedValue(undefined);
     mockQueryByLaboratoryId.mockReset().mockResolvedValue({
       LaboratoryId: 'lab-1',
       OrganizationId: 'org-1',
@@ -111,7 +114,7 @@ describe('process-laboratory-run-stream.lambda', () => {
     expect(mockRemove).not.toHaveBeenCalled();
   });
 
-  it('skips REMOVE records with empty InputFileKeys without calling the tagging service', async () => {
+  it('skips per-file unlinking when InputFileKeys is empty', async () => {
     const event = buildEvent([
       { eventName: 'REMOVE', oldImage: { LaboratoryId: 'lab-1', RunId: 'run-4', InputFileKeys: [] } },
     ]);
@@ -152,5 +155,120 @@ describe('process-laboratory-run-stream.lambda', () => {
       },
     ]);
     await expect(handler(event, ctx, jest.fn())).rejects.toThrow(/ddb explode/);
+  });
+
+  describe('expired run output bookkeeping', () => {
+    const runFolder = 'org-1/lab-1/aws-healthomics/run-7';
+
+    it('records the output prefix and sample sheet so the sweep can delete them', async () => {
+      const event = buildEvent([
+        {
+          eventName: 'REMOVE',
+          oldImage: {
+            LaboratoryId: 'lab-1',
+            RunId: 'run-7',
+            InputFileKeys: [],
+            OutputS3Url: `s3://my-bucket/${runFolder}/results`,
+            SampleSheetS3Url: `s3://my-bucket/${runFolder}/samplesheet.csv`,
+          },
+        },
+      ]);
+
+      await handler(event, ctx, jest.fn());
+
+      expect(mockRecordExpiredRunOutput).toHaveBeenCalledWith('lab-1', {
+        RunId: 'run-7',
+        S3Bucket: 'my-bucket',
+        OutputPrefix: `${runFolder}/results/`,
+        SampleSheetKeys: [`${runFolder}/samplesheet.csv`],
+        RecordedAt: expect.any(String),
+      });
+    });
+
+    it('records outputs alongside the per-file unlinking when the run had inputs', async () => {
+      const event = buildEvent([
+        {
+          eventName: 'REMOVE',
+          oldImage: {
+            LaboratoryId: 'lab-1',
+            RunId: 'run-7',
+            InputFileKeys: ['org-1/lab-1/a.fq.gz'],
+            OutputS3Url: `s3://my-bucket/${runFolder}/results`,
+          },
+        },
+      ]);
+
+      await handler(event, ctx, jest.fn());
+
+      expect(mockRemove).toHaveBeenCalledTimes(1);
+      expect(mockRecordExpiredRunOutput).toHaveBeenCalledTimes(1);
+    });
+
+    it('percent-decodes keys so sample sheet names containing spaces survive the round trip', async () => {
+      const event = buildEvent([
+        {
+          eventName: 'REMOVE',
+          oldImage: {
+            LaboratoryId: 'lab-1',
+            RunId: 'run-7',
+            InputFileKeys: [],
+            SampleSheetS3Url: `s3://my-bucket/${runFolder}/my run sheet.csv`,
+          },
+        },
+      ]);
+
+      await handler(event, ctx, jest.fn());
+
+      expect(mockRecordExpiredRunOutput).toHaveBeenCalledWith(
+        'lab-1',
+        expect.objectContaining({ SampleSheetKeys: [`${runFolder}/my run sheet.csv`] }),
+      );
+    });
+
+    it('does not record a custom outdir that points outside the run folder', async () => {
+      const event = buildEvent([
+        {
+          eventName: 'REMOVE',
+          oldImage: {
+            LaboratoryId: 'lab-1',
+            RunId: 'run-7',
+            InputFileKeys: [],
+            OutputS3Url: 's3://my-bucket/org-1/lab-1/shared-results',
+          },
+        },
+      ]);
+
+      await handler(event, ctx, jest.fn());
+
+      expect(mockRecordExpiredRunOutput).not.toHaveBeenCalled();
+    });
+
+    it('does not record outputs living in a different bucket', async () => {
+      const event = buildEvent([
+        {
+          eventName: 'REMOVE',
+          oldImage: {
+            LaboratoryId: 'lab-1',
+            RunId: 'run-7',
+            InputFileKeys: [],
+            OutputS3Url: `s3://other-bucket/${runFolder}/results`,
+          },
+        },
+      ]);
+
+      await handler(event, ctx, jest.fn());
+
+      expect(mockRecordExpiredRunOutput).not.toHaveBeenCalled();
+    });
+
+    it('records nothing when the run has no output or sample sheet locations', async () => {
+      const event = buildEvent([
+        { eventName: 'REMOVE', oldImage: { LaboratoryId: 'lab-1', RunId: 'run-7', InputFileKeys: [] } },
+      ]);
+
+      await handler(event, ctx, jest.fn());
+
+      expect(mockRecordExpiredRunOutput).not.toHaveBeenCalled();
+    });
   });
 });

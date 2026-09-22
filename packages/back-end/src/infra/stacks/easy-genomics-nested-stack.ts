@@ -400,6 +400,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
         // Scheduled (daily) S3 deletion sweep that completes the run-retention cascade. Walks
         // every lab's FILE# rows, deletes the underlying S3 object + tagging-table rows for
         // files whose last referencing run has TTL'd out, and skips anything tagged Permanent.
+        // Then reconciles the bucket against surviving runs to pick up outputs orphaned by runs
+        // that expired before this cascade existed, and drains the RUNOUTPUT# rows, deleting each
+        // expired run's results/ prefix and generated sample sheet unless a surviving run still
+        // publishes into that prefix. `ORPHAN_SCAN_MIN_AGE_DAYS` keeps the reconciliation away
+        // from uploads whose run has not been launched yet.
         // `DRY_RUN=false` enables real deletes (any other value, including unset, stays dry-run).
         // Set to `true` temporarily to audit eligibility without deleting.
         // Runtime `assertLaboratoryHasS3BucketAccess` / `assertKeyUnderLabPrefix` bound blast radius; IAM
@@ -1591,8 +1596,9 @@ export class EasyGenomicsNestedStack extends NestedStack {
 
     // /easy-genomics/laboratory/run/process-laboratory-run-stream
     // DynamoDB Stream subscriber: reads OLD images (no DDB Query/Get needed beyond stream
-    // permissions), looks up the parent Laboratory record, and patches LaboratoryRunUsages
-    // entries on the data-tagging table. DLQ + SendMessage cover the onFailure routing.
+    // permissions), looks up the parent Laboratory record, patches LaboratoryRunUsages entries
+    // on the data-tagging table, and writes the RUNOUTPUT# row that hands the expired run's
+    // output prefix to the scheduled sweep. DLQ + SendMessage cover the onFailure routing.
     this.iam.addPolicyStatements('/easy-genomics/laboratory/run/process-laboratory-run-stream', [
       new PolicyStatement({
         resources: [
@@ -1616,7 +1622,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
       new PolicyStatement({
         resources: [laboratoryDataTaggingTableArnForRunLambdas],
-        actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem'],
+        actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem'],
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
@@ -2362,10 +2368,27 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: laboratoryDataTaggingDynamoActions,
       }),
       new PolicyStatement({
+        // Expired run outputs are deleted by prefix, which needs the surviving runs' OutputS3Url
+        // values to confirm no live run still publishes into that prefix.
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
         // Wildcard bucket: lab S3Bucket values come from org provisioning. The sweep Lambda
         // calls `assertLaboratoryHasS3BucketAccess` + `assertKeyUnderLabPrefix` before each delete.
         resources: ['arn:aws:s3:::*/*'],
         actions: ['s3:DeleteObject'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        // Bucket-level ARN (no `/*`): required to enumerate a run's results/ prefix before
+        // deleting it. Object deletes are still authorised by the object-ARN statement above.
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
         effect: Effect.ALLOW,
       }),
     ]);

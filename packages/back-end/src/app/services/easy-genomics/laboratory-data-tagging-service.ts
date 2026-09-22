@@ -156,6 +156,37 @@ function skMap(tagId: string, ref: string): string {
   return `MAP#${tagId}#${ref}`;
 }
 
+function skRunOutput(runId: string): string {
+  return `RUNOUTPUT#${runId}`;
+}
+
+/**
+ * Bookkeeping row written when a laboratory run row is removed (TTL or manual delete), capturing
+ * where that run's outputs and generated sample sheet live. The run record is the only place
+ * those locations are stored, and it is gone by the time the scheduled sweep runs — so the stream
+ * subscriber hands them over here for `process-expired-laboratory-data` to act on later.
+ *
+ * Rows are retained after the sweep finishes (stamped `CompletedAt`) rather than deleted. The
+ * sweep's orphan reconciliation pass walks the bucket looking for run folders left behind by runs
+ * that expired before this cascade existed, and these rows are how it remembers which folders it
+ * has already dealt with — without them it would re-list every historical run folder every night.
+ */
+export type ExpiredRunOutput = {
+  RunId: string;
+  S3Bucket: string;
+  /** Normalised (trailing-slash) prefix of the run's output directory, e.g. `org/lab/platform/run/results/`. */
+  OutputPrefix?: string;
+  /**
+   * Exact object keys of sample sheets sitting at the run folder root. A list rather than a
+   * single key because the reconciliation backfill discovers sheets by name and a folder can
+   * legitimately hold more than one (e.g. a sheet regenerated under a new run name).
+   */
+  SampleSheetKeys?: string[];
+  RecordedAt: string;
+  /** Set once the sweep has removed everything this row points at; such rows are not re-swept. */
+  CompletedAt?: string;
+};
+
 export function skSample(setId: string): string {
   return `SAMPLE#${setId}`;
 }
@@ -1194,6 +1225,72 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     await this.deleteItem({
       TableName: TABLE_NAME,
       Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
+    });
+  }
+
+  /**
+   * Records where an expired run's outputs live so the scheduled sweep can delete them after the
+   * run row itself is gone. Idempotent: re-processing the same stream record overwrites an
+   * identical row.
+   */
+  public async recordExpiredRunOutput(laboratoryId: string, output: ExpiredRunOutput): Promise<void> {
+    await this.putItem({
+      TableName: TABLE_NAME,
+      Item: marshall(
+        {
+          LaboratoryId: laboratoryId,
+          Sk: skRunOutput(output.RunId),
+          ...output,
+        },
+        { removeUndefinedValues: true },
+      ),
+    });
+  }
+
+  public async listExpiredRunOutputsForLab(laboratoryId: string): Promise<ExpiredRunOutput[]> {
+    const out: ExpiredRunOutput[] = [];
+    let startKey: Record<string, unknown> | undefined;
+    do {
+      const response: QueryCommandOutput = await this.queryItems({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: '#pk = :pk AND begins_with(#sk, :prefix)',
+        ExpressionAttributeNames: { '#pk': 'LaboratoryId', '#sk': 'Sk' },
+        ExpressionAttributeValues: {
+          ':pk': { S: laboratoryId },
+          ':prefix': { S: 'RUNOUTPUT#' },
+        },
+        ...(startKey ? { ExclusiveStartKey: startKey as never } : {}),
+      });
+      for (const item of response.Items || []) {
+        const row = unmarshall(item) as Record<string, unknown>;
+        if (typeof row.RunId !== 'string' || typeof row.S3Bucket !== 'string') continue;
+        out.push({
+          RunId: row.RunId,
+          S3Bucket: row.S3Bucket,
+          OutputPrefix: typeof row.OutputPrefix === 'string' ? row.OutputPrefix : undefined,
+          SampleSheetKeys: Array.isArray(row.SampleSheetKeys)
+            ? row.SampleSheetKeys.filter((k): k is string => typeof k === 'string' && k.length > 0)
+            : undefined,
+          RecordedAt: typeof row.RecordedAt === 'string' ? row.RecordedAt : '',
+          CompletedAt: typeof row.CompletedAt === 'string' ? row.CompletedAt : undefined,
+        });
+      }
+      startKey = response.LastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (startKey);
+    return out;
+  }
+
+  /**
+   * Retires a marker row once its objects are gone. The row is kept rather than deleted so the
+   * orphan reconciliation pass can skip this run folder on subsequent nights.
+   */
+  public async markExpiredRunOutputCompleted(laboratoryId: string, runId: string): Promise<void> {
+    await this.updateItem({
+      TableName: TABLE_NAME,
+      Key: marshall({ LaboratoryId: laboratoryId, Sk: skRunOutput(runId) }),
+      UpdateExpression: 'SET #completedAt = :completedAt',
+      ExpressionAttributeNames: { '#completedAt': 'CompletedAt' },
+      ExpressionAttributeValues: marshall({ ':completedAt': new Date().toISOString() }),
     });
   }
 

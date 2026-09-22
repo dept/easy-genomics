@@ -15,6 +15,9 @@ import {
   DeleteBucketCommandOutput,
   DeleteObjectCommand,
   DeleteObjectCommandInput,
+  DeleteObjectsCommand,
+  DeleteObjectsCommandInput,
+  DeleteObjectsCommandOutput,
   ExpirationStatus,
   GetBucketLocationCommand,
   GetBucketLocationCommandInput,
@@ -73,6 +76,7 @@ export enum S3Command {
   // Manage S3 Bucket objects
   COPY_BUCKET_OBJECT = 'copy-bucket-object',
   DELETE_BUCKET_OBJECT = 'delete-bucket-object',
+  DELETE_BUCKET_OBJECTS = 'delete-bucket-objects',
   LIST_BUCKET_OBJECTS_V2 = 'list-bucket-objects-v2',
   HEAD_OBJECT = 'head-object',
   GET_OBJECT = 'get-object',
@@ -225,6 +229,14 @@ export class S3Service {
     return this.s3Request<DeleteObjectCommandInput, any>(S3Command.DELETE_BUCKET_OBJECT, deleteObjectInput);
   };
 
+  /** Batch delete. S3 accepts at most 1000 keys per request; callers must chunk accordingly. */
+  public deleteObjects = async (deleteObjectsInput: DeleteObjectsCommandInput): Promise<DeleteObjectsCommandOutput> => {
+    return this.s3Request<DeleteObjectsCommandInput, DeleteObjectsCommandOutput>(
+      S3Command.DELETE_BUCKET_OBJECTS,
+      deleteObjectsInput,
+    );
+  };
+
   public createMultipartUpload = async (
     createMultipartUploadInput: CreateMultipartUploadCommandInput,
   ): Promise<any> => {
@@ -316,6 +328,8 @@ export class S3Service {
         return new CopyObjectCommand(data as CopyObjectCommandInput);
       case S3Command.DELETE_BUCKET_OBJECT:
         return new DeleteObjectCommand(data as DeleteObjectCommandInput);
+      case S3Command.DELETE_BUCKET_OBJECTS:
+        return new DeleteObjectsCommand(data as DeleteObjectsCommandInput);
       case S3Command.LIST_BUCKET_OBJECTS_V2:
         return new ListObjectsV2Command(data as ListObjectsV2CommandInput);
       case S3Command.HEAD_OBJECT:
