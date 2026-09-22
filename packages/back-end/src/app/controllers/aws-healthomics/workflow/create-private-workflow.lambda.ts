@@ -16,9 +16,8 @@ import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import { S3Service } from '@BE/services/s3-service';
 import { SsmService } from '@BE/services/ssm-service';
 import {
-  validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
-  validateOrganizationAdminAccess,
+  validateOrganizationAdminOrLaboratoryManagerAccess,
 } from '@BE/utils/auth-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -254,9 +253,11 @@ export const handler: Handler = async (
 
     if (
       !(
-        validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
-        validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
-        validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
+        validateOrganizationAdminOrLaboratoryManagerAccess(
+          event,
+          laboratory.OrganizationId,
+          laboratory.LaboratoryId,
+        ) || validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
       )
     ) {
       throw new UnauthorizedAccessError();

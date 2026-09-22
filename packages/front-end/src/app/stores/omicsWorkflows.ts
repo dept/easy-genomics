@@ -5,6 +5,7 @@ import { defineStore } from 'pinia';
 export type LabOmicsWorkflow = OmicsWorkflow & {
   source?: 'PRIVATE' | 'SHARED';
   ownerAccountId?: string;
+  tags?: Record<string, string>;
 };
 
 interface OmicsWorkflowsStoreState {
@@ -113,6 +114,19 @@ const useOmicsWorkflowsStore = defineStore('omicsWorkflowsStore', {
 
       loadWorkflowsInflight.set(labId, loadPromise);
       return loadPromise;
+    },
+
+    removeWorkflow(workflowId: string) {
+      delete this.workflows[workflowId];
+      for (const labId of Object.keys(this.workflowIdsByLab)) {
+        this.workflowIdsByLab[labId] = this.workflowIdsByLab[labId].filter((id) => id !== workflowId);
+      }
+    },
+
+    async deleteWorkflow(labId: string, workflowId: string): Promise<void> {
+      const { $api } = useNuxtApp();
+      await $api.omicsWorkflows.delete(labId, workflowId);
+      this.removeWorkflow(workflowId);
     },
   },
 

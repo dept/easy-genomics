@@ -108,6 +108,19 @@ class OmicsWorkflowsModule extends HttpFactory {
     return res;
   }
 
+  async delete(labId: string, workflowId: string): Promise<{ Status: string }> {
+    const res = await this.callOmics<{ Status: string }>(
+      'DELETE',
+      `/workflow/delete-private-workflow/${encodeURIComponent(workflowId)}?laboratoryId=${labId}`,
+    );
+
+    if (!res) {
+      throw new Error('Failed to delete omics workflow');
+    }
+
+    return res;
+  }
+
   async listVersions(
     labId: string,
     workflowId: string,
