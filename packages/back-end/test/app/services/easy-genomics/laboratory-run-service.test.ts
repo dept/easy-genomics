@@ -237,3 +237,62 @@ describe('LaboratoryRunService.updateWithAttributeRemoval', () => {
     updateItem.mockRestore();
   });
 });
+
+describe('LaboratoryRunService.listAllRunsForLaboratory', () => {
+  const laboratoryId = '00000000-0000-0000-0000-000000000001';
+
+  const runItem = (runId: string) =>
+    marshall({
+      LaboratoryId: laboratoryId,
+      RunId: runId,
+      UserId: '00000000-0000-0000-0000-000000000003',
+      OrganizationId: '00000000-0000-0000-0000-000000000004',
+      RunName: `Run ${runId}`,
+      Platform: 'AWS HealthOmics',
+      Status: 'SUCCEEDED',
+      Owner: 'user@example.com',
+    });
+
+  it('follows LastEvaluatedKey so runs beyond the first 1MB page are returned', async () => {
+    // The retention sweep treats absence from this list as "the run is gone, delete its outputs",
+    // so a truncated result would authorise deleting a live run's data.
+    const svc = new LaboratoryRunService();
+    const queryItems = jest
+      .spyOn(svc as unknown as { queryItems: jest.Mock }, 'queryItems')
+      .mockResolvedValueOnce({
+        $metadata: { httpStatusCode: 200 },
+        Items: [runItem('run-a')],
+        LastEvaluatedKey: { LaboratoryId: { S: laboratoryId }, RunId: { S: 'run-a' } },
+      })
+      .mockResolvedValueOnce({
+        $metadata: { httpStatusCode: 200 },
+        Items: [runItem('run-b')],
+      });
+
+    const runs = await svc.listAllRunsForLaboratory(laboratoryId);
+
+    expect(queryItems).toHaveBeenCalledTimes(2);
+    expect(queryItems.mock.calls[0][0].ExclusiveStartKey).toBeUndefined();
+    expect(queryItems.mock.calls[1][0].ExclusiveStartKey).toEqual({
+      LaboratoryId: { S: laboratoryId },
+      RunId: { S: 'run-a' },
+    });
+    expect(runs.map((r) => r.RunId)).toEqual(['run-a', 'run-b']);
+    queryItems.mockRestore();
+  });
+
+  it('throws rather than returning a partial list when a page fails', async () => {
+    const svc = new LaboratoryRunService();
+    const queryItems = jest
+      .spyOn(svc as unknown as { queryItems: jest.Mock }, 'queryItems')
+      .mockResolvedValueOnce({
+        $metadata: { httpStatusCode: 200 },
+        Items: [runItem('run-a')],
+        LastEvaluatedKey: { LaboratoryId: { S: laboratoryId }, RunId: { S: 'run-a' } },
+      })
+      .mockResolvedValueOnce({ $metadata: { httpStatusCode: 500 } });
+
+    await expect(svc.listAllRunsForLaboratory(laboratoryId)).rejects.toThrow('HTTP Status Code=500');
+    queryItems.mockRestore();
+  });
+});

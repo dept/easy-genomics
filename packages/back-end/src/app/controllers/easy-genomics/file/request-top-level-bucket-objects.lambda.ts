@@ -16,24 +16,12 @@ import {
   validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
 import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
+import { parseS3Uri } from '@BE/utils/s3-uri-utils';
 
 const laboratoryService = new LaboratoryService();
 const laboratoryRunService = new LaboratoryRunService();
 const s3Service = new S3Service();
 const s3AccessService = new LaboratoryS3AccessService();
-
-const parseS3Uri = (value: string): { bucket: string; prefix: string } | null => {
-  if (!value.startsWith('s3://')) return null;
-  try {
-    const s3Url = new URL(value);
-    return {
-      bucket: s3Url.hostname,
-      prefix: s3Url.pathname.replace(/^\/*/, ''),
-    };
-  } catch {
-    throw new InvalidRequestError('Invalid S3 URI');
-  }
-};
 
 const getParentPrefix = (prefix: string): string | null => {
   const normalized = prefix.endsWith('/') ? prefix : `${prefix}/`;
