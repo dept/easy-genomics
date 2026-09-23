@@ -290,8 +290,11 @@ Then, from the repository root, choose the path that matches your setup:
 <summary><strong>Option A — Manual deploy (local machine or AWS CloudShell)</strong></summary>
 
 ```bash
-pnpm run build-and-deploy
+pnpm run build-and-deploy-no-tests
 ```
+
+This skips the unit test suite, which a deploy does not need and which has been OOM-killed on machines with less RAM
+than a CI runner. `pnpm run build-and-deploy` deploys the same artifacts and runs the suite first.
 
 CDK bootstrap runs automatically on the first deploy. The command builds and deploys both the back-end and front-end
 stacks. On success, the final output includes the application URL:

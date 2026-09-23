@@ -65,6 +65,13 @@ Complete this before starting any upgrade procedure.
 
 No infrastructure or schema changes. Rolling deploy; no downtime expected.
 
+> **Which deploy command:** use `pnpm run build-and-deploy-no-tests` throughout this guide. It builds and deploys
+> exactly the same artifacts as `pnpm run build-and-deploy`, but skips the unit test suite, which a deploy does not
+> need. The test suite is memory-hungry — on a machine with less RAM than a CI runner it has been killed by the
+> operating system part-way through, failing the deploy before anything is deployed. The suite still runs in DEPT's
+> release pipeline, so the release you are deploying has already been tested. Use `pnpm run build-and-deploy` only if
+> you are developing against this checkout and want the tests to run first.
+
 **Steps**
 
 1. Fetch the new tag and check it out:
@@ -78,14 +85,14 @@ No infrastructure or schema changes. Rolling deploy; no downtime expected.
    ```
 3. Deploy:
    ```bash
-   pnpm run build-and-deploy
+   pnpm run build-and-deploy-no-tests
    ```
 4. Run [post-upgrade smoke tests](#6-post-upgrade-smoke-tests).
 5. Confirm with users that the app is working normally.
 
-> **Note:** `pnpm run build-and-deploy` may run one or more pending data migrations automatically as part of the deploy
-> (see `packages/back-end/scripts/README.md`). These are opt-in, idempotent, and tracked so each runs at most once per
-> environment — no separate action is required.
+> **Note:** `pnpm run build-and-deploy-no-tests` may run one or more pending data migrations automatically as part of
+> the deploy (see `packages/back-end/scripts/README.md`). These are opt-in, idempotent, and tracked so each runs at most
+> once per environment — no separate action is required.
 
 **Rollback**
 
@@ -94,7 +101,7 @@ Always safe. Check out the previous tag and redeploy:
 ```bash
 git checkout <previous-tag>
 pnpm install
-pnpm run build-and-deploy
+pnpm run build-and-deploy-no-tests
 ```
 
 ---
@@ -145,14 +152,14 @@ a ~5–10 min deploy window during which old and new application code may briefl
    ```
 6. Deploy:
    ```bash
-   pnpm run build-and-deploy
+   pnpm run build-and-deploy-no-tests
    ```
 7. Run [post-upgrade smoke tests](#6-post-upgrade-smoke-tests).
 8. Confirm with users that the app is working normally.
 
-> **Note:** `pnpm run build-and-deploy` may run one or more pending data migrations automatically as part of the deploy
-> (see `packages/back-end/scripts/README.md`). These are opt-in, idempotent, and tracked so each runs at most once per
-> environment — no separate action is required.
+> **Note:** `pnpm run build-and-deploy-no-tests` may run one or more pending data migrations automatically as part of
+> the deploy (see `packages/back-end/scripts/README.md`). These are opt-in, idempotent, and tracked so each runs at most
+> once per environment — no separate action is required.
 
 **DynamoDB notes**
 
@@ -171,7 +178,7 @@ Safe. Redeploy the previous tag:
 ```bash
 git checkout <previous-tag>
 pnpm install
-pnpm run build-and-deploy
+pnpm run build-and-deploy-no-tests
 ```
 
 New empty tables or attributes created by the failed/unwanted upgrade are orphaned but harmless. Delete them manually in
@@ -277,7 +284,7 @@ intact and running the previous version. Fix the cause, then deploy again as nor
 ```bash
 git fetch --tags && git checkout <target-tag>
 pnpm install
-pnpm run build-and-deploy
+pnpm run build-and-deploy-no-tests
 ```
 
 **One caveat if the failed release added new DynamoDB tables.** Tables carry `RemovalPolicy.RETAIN`, so any table the

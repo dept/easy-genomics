@@ -126,6 +126,19 @@ const jestOptions: JestOptions = {
   extraCliOptions: ['--detectOpenHandles'],
 };
 
+// Jest memory settings, shared by all three packages. The test/infra/** suites synthesize
+// full CDK stacks (~1.4GB heap each); collecting v8 coverage over them multiplied worker
+// memory enough to exceed the 16GB CI runner and to OOM-kill a lab operator's laptop
+// mid-deploy (exit 1, no Jest summary). Coverage is not gated or uploaded anywhere, so it is
+// dropped; run `jest --coverage` locally on demand when a report is needed.
+// workerIdleMemoryLimit recycles a worker between suites, capping what one worker accumulates
+// but not how many run at once; maxWorkers caps the concurrent peak, which is what exhausts a
+// machine with less memory than a CI runner.
+// Spread at each use site: projen appends its own default CLI flags to the array it is given,
+// so sharing one instance across the three packages accumulates the other packages' flags.
+const jestMemoryCliOptions = ['--workerIdleMemoryLimit=2GB'];
+const jestMemoryConfig = { collectCoverage: false, maxWorkers: '50%' };
+
 const licenseOptions: LicenseOptions = {
   spdx: 'Apache-2.0',
   copyrightOwner: copyrightOwner,
@@ -214,6 +227,7 @@ root.addScripts({
     'pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --verbose=true --outputStyle=stream && ' +
     'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --verbose=true --outputStyle=stream && ' +
     'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --verbose=true --outputStyle=stream',
+  ['build-and-deploy-no-tests']: 'export SKIP_TESTS=1 && pnpm run build-and-deploy',
   ['prettier']: "prettier --write '{**/*,*}.{js,ts,vue,scss,json,md,html,mdx}'",
   ['upgrade']:
     'pnpm dlx projen upgrade && ' +
@@ -252,6 +266,11 @@ const sharedLib = new typescript.TypeScriptProject({
   outdir: './packages/shared-lib',
   defaultReleaseBranch: defaultReleaseBranch,
   docgen: false,
+  jest: true,
+  jestOptions: {
+    extraCliOptions: [...jestMemoryCliOptions],
+    jestConfig: { ...jestMemoryConfig },
+  },
   sampleCode: false,
   authorName: authorName,
   authorOrganization: true,
@@ -334,16 +353,9 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
   eslint: true,
   jest: true,
   jestOptions: {
-    // Recycle a worker past this heap as a safety net so no single worker accumulates
-    // unbounded memory across suites.
-    extraCliOptions: ['--workerIdleMemoryLimit=2GB'],
+    extraCliOptions: [...jestMemoryCliOptions],
     jestConfig: {
-      // Disable v8 coverage on the build/deploy path. The test/infra/** suites synthesize
-      // full CDK stacks (~1.4GB heap each); collecting coverage over them multiplied worker
-      // memory enough to exceed the 16GB CI runner and OOM-kill the run (exit 1, no Jest
-      // summary). Coverage is not gated or uploaded anywhere, so it is dropped from CI; run
-      // `jest --coverage` locally on demand when a report is needed.
-      collectCoverage: false,
+      ...jestMemoryConfig,
       // Ensure Jest can resolve tsconfig path aliases used by lambda handlers/tests.
       moduleNameMapper: {
         '^@BE/(.*)$': '<rootDir>/src/app/$1',
@@ -483,6 +495,7 @@ backEndApp.addScripts({
   ['deploy']:
     'pnpm cdk bootstrap --app cdk.out && pnpm run preflight-deletion-protection && pnpm run deploy-dynamodb-gsi-waves && pnpm run run-deploy-migrations -- --phase=pre && pnpm exec projen deploy --app cdk.out --all --progress bar --no-color --no-notices && pnpm run run-deploy-migrations -- --phase=post',
   ['build-and-deploy']: 'pnpm -w run build-back-end && pnpm run deploy --require-approval any-change', // Run root build-back-end script to inc shared-lib
+  ['build-and-deploy-no-tests']: 'export SKIP_TESTS=1 && pnpm run build-and-deploy',
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
   ['local-server']: 'tsx src/local-server/index.ts',
   ['local-server:watch']: 'tsx watch src/local-server/index.ts',
@@ -527,7 +540,9 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
   eslint: true,
   jest: true,
   jestOptions: {
+    extraCliOptions: [...jestMemoryCliOptions],
     jestConfig: {
+      ...jestMemoryConfig,
       moduleNameMapper: {
         '^@FE/(.*)$': '<rootDir>/src/app/$1',
         '^@SharedLib/(.*)$': '<rootDir>/../shared-lib/src/app/$1',
@@ -650,6 +665,7 @@ frontEndApp.addScripts({
   ['deploy']: 'pnpm cdk bootstrap --app cdk.out && pnpm exec projen deploy --app cdk.out',
   ['build-and-deploy']:
     'pnpm -w run build-front-end && pnpm cdk bootstrap --app cdk.out && pnpm exec projen deploy --app cdk.out --require-approval any-change', // Run root build-front-end script to inc shared-lib
+  ['build-and-deploy-no-tests']: 'export SKIP_TESTS=1 && pnpm run build-and-deploy',
   ['nuxt-dev']: 'pnpm -w run build-front-end && pnpm kill-port 3000 && nuxt dev',
   ['nuxt-load-settings']: 'npx esrun nuxt-load-configuration-settings.ts',
   ['nuxt-generate']: 'nuxt generate',
@@ -883,6 +899,16 @@ root.addFields({
     },
   },
 });
+
+// SKIP_TESTS lets the `build-and-deploy-no-tests` scripts deploy without running Jest or
+// ESLint: a projen task whose condition exits non-zero is skipped. An unset variable means
+// tests run, so CI — which never sets it — keeps the full suite as its release gate. Set it
+// through those scripts rather than by hand. `1` and `true` are the accepted values, matching
+// the repo's other skip flags (SKIP_JWT_VERIFY, SKIP_STACK_RESOURCE_BUDGET).
+const skipTestsCondition = '[ "$SKIP_TESTS" != 1 ] && [ "$SKIP_TESTS" != true ]';
+sharedLib.testTask.addCondition(skipTestsCondition);
+backEndApp.testTask.addCondition(skipTestsCondition);
+frontEndApp.testTask.addCondition(skipTestsCondition);
 
 // Synthesize the project
 root.synth();

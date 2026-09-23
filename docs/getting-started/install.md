@@ -62,13 +62,18 @@ After configuring your [AWS credentials](../deployment/aws-setup.md) and
 following command.
 
 ```
-[easy-genomics]$ pnpm run build-and-deploy
+[easy-genomics]$ pnpm run build-and-deploy-no-tests
 ```
+
+`build-and-deploy-no-tests` builds and deploys the same artifacts as `build-and-deploy`, but skips the unit test suite,
+which a deploy does not need. The suite is memory-hungry and on a machine with less RAM than a CI runner the operating
+system has killed it part-way through, failing the deploy before anything is deployed. Use `build-and-deploy` only if
+you are developing against this checkout and want the tests to run first.
 
 Once the deployment is completed, it will output the `ApplicationUrl` which can then be accessed from your web browser.
 
 ```
-[easy-genomics]$ pnpm run build-and-deploy
+[easy-genomics]$ pnpm run build-and-deploy-no-tests
 ...
 
 Outputs:
@@ -86,11 +91,11 @@ Finally, use the `${easy-genomics root-dir}/config/easy-genomics.yaml` file's co
 (organisation, lab, integrations, data upload, and workflow run).
 
 Once you have completed an initial deployment of the Back-End and Front-End application logic, you can subsequently use
-the `build-and-deploy` short-cut command from the `${easy-genomics root-dir}` directory to conveniently complete both
-Back-End and Front-End deployments in one command.
+the `build-and-deploy-no-tests` short-cut command from the `${easy-genomics root-dir}` directory to conveniently
+complete both Back-End and Front-End deployments in one command.
 
 ```
 e.g.
 [easy-genomics/packages/front-end]$ cd ../../
-[easy-genomics]$ pnpm run build-and-deploy             # Deploys both Back-End and Front-End logic using the existing easy-genomics.yaml settings
+[easy-genomics]$ pnpm run build-and-deploy-no-tests    # Deploys both Back-End and Front-End logic using the existing easy-genomics.yaml settings
 ```
