@@ -779,6 +779,57 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
     expect(written.AnalysisStatus).toBe('Failed');
   });
 
+  it('appends the lookup fallback to history when the LLM leg fails, keeping the previous entry', async () => {
+    // Log enrichment on so the LLM runs at all despite the lookup already hitting;
+    // OUT_OF_MEMORY_ERROR is a valid HEALTHOMICS_FAILURE_LOOKUP entry.
+    mockQueryByLaboratoryId.mockResolvedValue({ ...labMixedProviders, HealthOmicsLogEnrichmentEnabled: true });
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Platform: 'AWS HealthOmics',
+      Status: 'FAILED',
+      FailureReason: 'OUT_OF_MEMORY_ERROR',
+      AnalysisHistory: [
+        {
+          AnalysedAt: '2026-09-22T10:00:00.000Z',
+          Owner: 'Lab',
+          Summary: 'Earlier wording',
+          Action: 'Earlier action',
+          ClassifiedBy: 'llm',
+        },
+      ],
+    });
+    mockClassify.mockResolvedValue({
+      outcome: 'failed',
+      error: { code: 'INVALID_MODEL_ID', message: 'bad model', retryable: false },
+    });
+
+    await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any, 'Manual');
+
+    const written = mockUpdateWithRemoval.mock.calls[mockUpdateWithRemoval.mock.calls.length - 1][0];
+    expect(written.AnalysisHistory).toHaveLength(2);
+    expect(written.AnalysisHistory[0]).toMatchObject({ ClassifiedBy: 'lookup', Owner: 'Bioinformatician' });
+    expect(written.AnalysisHistory[1]).toMatchObject({ Summary: 'Earlier wording' });
+    expect(written.AnalysisStatus).toBe('Failed');
+  });
+
+  it('records no Provider or ModelId on a history entry classified by the deterministic lookup', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Platform: 'AWS HealthOmics',
+      Status: 'FAILED',
+      FailureReason: 'OUT_OF_MEMORY_ERROR',
+    });
+
+    await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any, 'Manual');
+
+    const written = mockUpdateWithRemoval.mock.calls[mockUpdateWithRemoval.mock.calls.length - 1][0];
+    expect(written.AnalysisHistory).toHaveLength(1);
+    expect(written.AnalysisHistory[0]).not.toHaveProperty('Provider');
+    expect(written.AnalysisHistory[0]).not.toHaveProperty('ModelId');
+  });
+
   it('starts the run counter at 1 on a run that has never been analysed', async () => {
     mockQueryByRunId.mockResolvedValue({
       RunId: 'run-1',

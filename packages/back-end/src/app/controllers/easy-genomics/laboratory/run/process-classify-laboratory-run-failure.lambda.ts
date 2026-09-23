@@ -175,8 +175,10 @@ export async function processClassificationEvent(
           Action: classification.result.action,
           ClassifiedBy: classification.source,
           ...(resolved.kind === 'classified' && resolved.evidence ? { Evidence: resolved.evidence } : {}),
-          ...(platformConfig?.provider ? { Provider: platformConfig.provider } : {}),
-          ...(platformConfig?.modelId ? { ModelId: platformConfig.modelId } : {}),
+          // A lookup verdict never calls the provider, so recording Provider/ModelId
+          // on it would misattribute the answer to a model that never ran.
+          ...(classification.source === 'llm' && platformConfig?.provider ? { Provider: platformConfig.provider } : {}),
+          ...(classification.source === 'llm' && platformConfig?.modelId ? { ModelId: platformConfig.modelId } : {}),
           ...(existingRun.AnalysisRequestedBy ? { RequestedBy: existingRun.AnalysisRequestedBy } : {}),
         }
       : undefined;
@@ -193,9 +195,11 @@ export async function processClassificationEvent(
             }
           : {}),
         ...(resolved.kind === 'classified' && resolved.evidence ? { AnalysisEvidence: resolved.evidence } : {}),
-        ...(historyEntry && resolved.kind === 'classified'
-          ? { AnalysisHistory: prependAnalysisEntry(existingRun.AnalysisHistory, historyEntry) }
-          : {}),
+        // A failed LLM leg can still carry a lookup fallback as `classification` —
+        // that verdict is real evidence and must be recorded, not just used to
+        // overwrite the flat fields. Only a classification-less failure (no
+        // verdict at all) appends nothing.
+        ...(historyEntry ? { AnalysisHistory: prependAnalysisEntry(existingRun.AnalysisHistory, historyEntry) } : {}),
         // Attempts, not answers: a failed analysis is still a run. Incremented
         // unconditionally so the gap against AnalysisHistory.length is readable.
         AnalysisRunCount: (existingRun.AnalysisRunCount ?? 0) + 1,

@@ -16,7 +16,10 @@
   const runCountLabel = computed<string>(() => {
     const total = props.runCount ?? 0;
     const stored = props.entries?.length ?? 0;
-    return total > stored ? `Run ${total} times · ${stored} answers kept` : `Run ${total} times`;
+    if (total > stored) {
+      return `Run ${total} times · ${stored} ${stored === 1 ? 'answer' : 'answers'} kept`;
+    }
+    return `Run ${total} times`;
   });
 </script>
 
@@ -28,19 +31,22 @@
       v-if="previous.length"
       type="button"
       class="text-muted text-xs underline"
+      :aria-expanded="isOpen"
+      aria-controls="analysis-history-list"
       @click="isOpen = !isOpen"
     >
       {{ isOpen ? 'Hide' : 'Show' }} {{ previous.length }} earlier
       {{ previous.length === 1 ? 'analysis' : 'analyses' }}
     </button>
 
-    <ul v-if="isOpen" class="mt-2 space-y-3">
-      <li v-for="entry in previous" :key="entry.AnalysedAt" class="border-l-2 border-gray-200 pl-3">
+    <ul v-if="isOpen" id="analysis-history-list" class="mt-2 space-y-3">
+      <li v-for="(entry, index) in previous" :key="index" class="border-l-2 border-gray-200 pl-3">
         <p class="text-muted text-xs">
           {{ formatRelativeDateTime(entry.AnalysedAt) }} · Owner: {{ entry.Owner }}
           <span v-if="entry.ModelId"> · {{ entry.ModelId }}</span>
           <span v-if="entry.Evidence === 'log-excerpt'"> · with run logs</span>
           <span v-else-if="entry.Evidence"> · without run logs</span>
+          <span v-if="entry.RequestedBy"> · by {{ entry.RequestedBy }}</span>
         </p>
         <p class="text-sm text-black">{{ entry.Summary }}</p>
         <p class="text-muted text-sm">{{ entry.Action }}</p>

@@ -326,6 +326,11 @@
     labRun,
     (run) => {
       if (!run) return;
+      // A terminal status observed outside the poll (e.g. the user navigated away
+      // and back while it completed) has to release the trigger — nothing else will.
+      if (run.AnalysisStatus === 'Succeeded' || run.AnalysisStatus === 'Failed') {
+        delete runStore.analysisRequestPending[labRunId];
+      }
       const inFlight = run.AnalysisStatus === 'Queued' || run.AnalysisStatus === 'Running';
       if (inFlight && !runStore.analysisPolls[labRunId] && !runStore.analysisStalled[labRunId]) {
         runStore.startAnalysisPolling(labRunId);
