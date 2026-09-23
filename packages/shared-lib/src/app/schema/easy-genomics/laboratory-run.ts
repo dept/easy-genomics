@@ -17,6 +17,39 @@ export const AnalysisEvidenceSchema = z.enum(['log-excerpt', 'enrichment-disable
 
 export type AnalysisEvidence = z.infer<typeof AnalysisEvidenceSchema>;
 
+/**
+ * Newest-first ceiling on {@link AnalysisHistoryEntrySchema} entries per run.
+ *
+ * Every answer is kept; this only bounds the array so it cannot breach
+ * DynamoDB's 400KB item limit, which fails the write outright rather than
+ * degrading. At ~800 bytes an entry this is ~40KB. `AnalysisRunCount` keeps
+ * counting past it, so a truncated history is visible rather than silent.
+ */
+export const ANALYSIS_HISTORY_LIMIT = 50;
+
+/**
+ * One completed AI failure analysis, retained so a re-run adds an opinion
+ * rather than destroying the previous one.
+ *
+ * Classification is not reproducible — every provider is asked for
+ * `temperature: 0`, but greedy decoding is not a determinism guarantee under
+ * batched inference. Two runs over the same input can word the same verdict
+ * differently, so the earlier answer is evidence, not noise.
+ */
+export const AnalysisHistoryEntrySchema = z.object({
+  AnalysedAt: z.string(),
+  Owner: z.enum(['Bioinformatician', 'Lab', 'AWS', 'Ambiguous']),
+  Summary: z.string(),
+  Action: z.string(),
+  ClassifiedBy: z.enum(['lookup', 'llm']),
+  Evidence: AnalysisEvidenceSchema.optional(),
+  Provider: z.enum(['bedrock', 'openai', 'anthropic']).optional(),
+  ModelId: z.string().optional(),
+  RequestedBy: z.string().optional(),
+});
+
+export type AnalysisHistoryEntry = z.infer<typeof AnalysisHistoryEntrySchema>;
+
 const laboratoryRunCostFields = {
   /** Pre-run input features for historical cost similarity matching. */
   RunInputProfile: RunInputProfileSchema.optional(),
@@ -134,6 +167,19 @@ export const LaboratoryRunSchema = z
      * excerpt is platform state the user can fix, not a verdict about the run.
      */
     AnalysisEvidence: AnalysisEvidenceSchema.optional(),
+    /** Cognito username that requested the current analysis. Set by the request handler. */
+    AnalysisRequestedBy: z.string().optional(),
+    /**
+     * How many times analysis has completed for this run, including attempts
+     * that failed before producing a verdict. Always >= AnalysisHistory.length.
+     */
+    AnalysisRunCount: z.number().nonnegative().optional(),
+    /**
+     * Completed analyses, newest first, up to {@link ANALYSIS_HISTORY_LIMIT}.
+     * Entry 0 mirrors the flat `Failure*` fields above — deliberate duplication,
+     * so runs predating this field keep rendering with no migration.
+     */
+    AnalysisHistory: z.array(AnalysisHistoryEntrySchema).optional(),
     /**
      * Sparse marker present only while the run is non-terminal. Backs the `PollStatus_Index`
      * GSI so the notification poller can query "every active run" in O(1) regardless of total
@@ -207,6 +253,9 @@ export const ReadLaboratoryRunSchema = z
     AnalysisErrorMessage: z.string().optional(),
     AnalysisRequestedAt: z.string().optional(),
     AnalysisEvidence: AnalysisEvidenceSchema.optional(),
+    AnalysisRequestedBy: z.string().optional(),
+    AnalysisRunCount: z.number().nonnegative().optional(),
+    AnalysisHistory: z.array(AnalysisHistoryEntrySchema).optional(),
     ...laboratoryRunCostFields,
     ProgressPercent: z.number().min(0).max(100).optional(),
     TasksTotal: z.number().nonnegative().optional(),
