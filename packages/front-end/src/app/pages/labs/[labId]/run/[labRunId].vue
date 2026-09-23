@@ -18,6 +18,7 @@
   import { v4 as uuidv4 } from 'uuid';
   import { analysisErrorMessage } from '@FE/utils/analysis-error-message';
   import { analysisEvidenceMessage } from '@FE/utils/analysis-evidence-message';
+  import { toSentenceCase } from '@FE/utils/string-utils';
 
   const $route = useRoute();
   const $router = useRouter();
@@ -524,7 +525,7 @@
                     <span v-else-if="labRun?.AnalysisStatus === 'Failed'" class="flex flex-col text-xs italic">
                       <span class="text-red-700">{{ analysisErrorMessage(labRun?.AnalysisErrorCode) }}</span>
                       <span v-if="labRun?.AnalysisErrorMessage" class="text-muted">
-                        {{ labRun.AnalysisErrorMessage }}
+                        {{ toSentenceCase(labRun.AnalysisErrorMessage) }}
                       </span>
                     </span>
                   </div>
