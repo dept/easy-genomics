@@ -41,6 +41,10 @@ export class Nx extends Component {
               '!{projectRoot}/dist/**/*',
               '!{projectRoot}/lib/**/*',
               '!{projectRoot}/cdk.out/**/*',
+
+              // SKIP_TESTS is part of the cache key so a build that skipped Jest and ESLint
+              // cannot be replayed as a cache hit for one that should have run them.
+              { env: 'SKIP_TESTS' },
             ],
 
             // Outputs tell nx where artifacts can be found for caching purposes.

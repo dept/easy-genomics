@@ -146,7 +146,8 @@
         {
           "spawn": "eslint"
         }
-      ]
+      ],
+      "condition": "[ \"$SKIP_TESTS\" != 1 ] && [ \"$SKIP_TESTS\" != true ]"
     },
     "test:watch": {
       "name": "test:watch",
