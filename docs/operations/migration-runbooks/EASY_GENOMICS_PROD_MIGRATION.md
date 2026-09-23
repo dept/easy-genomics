@@ -43,7 +43,7 @@ The migration is executed in three distinct stages:
 1. **Phase 0 — data protections armed (one-time, per environment):** Arm deletion protection and PITR on every
    easy-genomics DynamoDB table in every environment. Two paths are supported:
 
-   - **Default:** let the preflight script do it. The back-end `deploy` / `build-and-deploy` tasks invoke
+   - **Default:** let the preflight script do it. The back-end `deploy` / `build-and-deploy-no-tests` tasks invoke
      [`packages/back-end/scripts/preflight-deletion-protection.ts`](../../../packages/back-end/scripts/preflight-deletion-protection.ts)
      before `cdk deploy`. On the first run against an un-armed environment (CI or local) the preflight takes an
      on-demand backup, calls `dynamodb:UpdateTable DeletionProtectionEnabled=true` +
@@ -69,10 +69,10 @@ The migration is executed in three distinct stages:
      preflight fails closed (exit `2`) and `cdk deploy` is not invoked. See "What happens if the preflight cannot reach
      CloudFormation" further down.
    - **Preflight bypassed at the edit-history level (not supported):** if someone reverts the preflight wiring in
-     `.projenrc.ts` or runs `cdk deploy --all` directly without going through `pnpm run build-and-deploy`, the DynamoDB
-     deletion protection armed by Phase 0 is still the final backstop: CloudFormation's `DeleteTable` calls will be
-     rejected, the stack update will fail, and CloudFormation will roll back. Data stays safe, but the error surface is
-     noisier than the preflight's banner.
+     `.projenrc.ts` or runs `cdk deploy --all` directly without going through `pnpm run build-and-deploy-no-tests`, the
+     DynamoDB deletion protection armed by Phase 0 is still the final backstop: CloudFormation's `DeleteTable` calls
+     will be rejected, the stack update will fail, and CloudFormation will roll back. Data stays safe, but the error
+     surface is noisier than the preflight's banner.
 
    **CI turns red and stays red on each environment until the per-environment migration below completes.** That is the
    intended signal for operators to schedule the cutover.
@@ -231,7 +231,7 @@ Arming deletion protection via the AWS API — out-of-band from CloudFormation �
 
 ### Default path: let the preflight do it automatically
 
-The back-end `deploy` / `build-and-deploy` tasks run
+The back-end `deploy` / `build-and-deploy-no-tests` tasks run
 [`packages/back-end/scripts/preflight-deletion-protection.ts`](../../../packages/back-end/scripts/preflight-deletion-protection.ts)
 _before_ `cdk deploy`. On the first invocation against an un-armed environment the preflight auto-arms Phase 0 in one
 shot:
@@ -246,8 +246,8 @@ This is the recommended path. The simplest way to execute Phase 0 on every envir
 the first auto-deploy do the arming — no CloudFormation change is attempted (the preflight exits before `cdk deploy`
 runs), so the operation is safe even though CI will red-build.
 
-If you prefer to run it locally instead of via CI, check out the merged code and run `pnpm run build-and-deploy` pointed
-at the target environment. The auto-arm path triggers identically.
+If you prefer to run it locally instead of via CI, check out the merged code and run
+`pnpm run build-and-deploy-no-tests` pointed at the target environment. The auto-arm path triggers identically.
 
 Requirements for the auto-arm path:
 
@@ -402,10 +402,10 @@ metadata Phase 2 needs to detach the tables cleanly (via `DELETE_SKIPPED`) rathe
 hard rejection.
 
 Because the split PR is already merged to the deployment branch, the tip of that branch cannot be used directly for this
-step — `pnpm run build-and-deploy` from that tip will halt at the preflight's "migration pending" check, and even if the
-preflight were bypassed, deletion protection from Phase 0 would reject the `DeleteTable` calls and force a noisy
-CloudFormation rollback. Instead, build a short-lived "retain bridge" working tree that keeps the old stack topology but
-picks up the new `dynamodb-construct.ts`.
+step — `pnpm run build-and-deploy-no-tests` from that tip will halt at the preflight's "migration pending" check, and
+even if the preflight were bypassed, deletion protection from Phase 0 would reject the `DeleteTable` calls and force a
+noisy CloudFormation rollback. Instead, build a short-lived "retain bridge" working tree that keeps the old stack
+topology but picks up the new `dynamodb-construct.ts`.
 
 ### 1.1 Assemble the retain-bridge working tree
 
@@ -456,8 +456,8 @@ new code means the bridge cannot be constructed this simply, and the rest of the
 ### 1.2 Deploy the retain bridge
 
 > Note: Phases 1, 2, and 3 call `pnpm cdk diff` / `pnpm cdk deploy` / `pnpm cdk import` **directly** rather than going
-> through `pnpm run build-and-deploy`. That is intentional. The preflight script is wired into `build-and-deploy` and
-> will halt on "migration pending" until the cutover is complete, which is the correct behaviour for routine CI/CD
+> through `pnpm run build-and-deploy-no-tests`. That is intentional. The preflight script is wired into the deploy task
+> and will halt on "migration pending" until the cutover is complete, which is the correct behaviour for routine CI/CD
 > deploys but would block the migration itself. The raw `cdk` commands below are the supported escape hatch for
 > operators executing the runbook.
 
@@ -716,7 +716,7 @@ invocation against `NEW_STACK` is sufficient to adopt all of them.
 cd packages/back-end
 
 # Synthesize the cloud assembly. The preflight script (which guards
-# build-and-deploy) is intentionally skipped here because Phase 0 has
+# build-and-deploy-no-tests) is intentionally skipped here because Phase 0 has
 # already completed for this environment; we just need the template
 # files in cdk.out.
 pnpm cdk synth --quiet

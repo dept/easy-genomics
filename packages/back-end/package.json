@@ -26,6 +26,7 @@
     "migrate-laboratory-s3-access-seed": "tsx scripts/migrate-laboratory-s3-access-seed.ts",
     "run-deploy-migrations": "tsx scripts/run-deploy-migrations.ts",
     "build-and-deploy": "pnpm -w run build-back-end && pnpm run deploy --require-approval any-change",
+    "build-and-deploy-no-tests": "export SKIP_TESTS=1 && pnpm run build-and-deploy",
     "lint": "eslint 'src/**/*.{js,ts}' --fix",
     "local-server": "tsx src/local-server/index.ts",
     "local-server:watch": "tsx watch src/local-server/index.ts",
@@ -118,6 +119,7 @@
   "jest": {
     "coverageProvider": "v8",
     "collectCoverage": false,
+    "maxWorkers": "50%",
     "moduleNameMapper": {
       "^@BE/(.*)$": "<rootDir>/src/app/$1",
       "^@SharedLib/(.*)$": "<rootDir>/../shared-lib/src/app/$1",

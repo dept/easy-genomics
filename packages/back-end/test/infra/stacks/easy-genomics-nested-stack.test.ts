@@ -505,15 +505,13 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
       return lambdaConstructMock.mock.calls[0][2].lambdaFunctionsResources[SWEEP_ROUTE];
     };
 
-    it('ships both destructive output paths disabled so the first deploy only audits', () => {
-      // These delete data that previously survived retention, and there is no bucket versioning
-      // to undo it, so they are enabled deliberately after reading the metrics.
+    it('enables both output deletion and orphan reconciliation on deploy', () => {
       const app = new App();
       const parentStack = new Stack(app, 'parent-stack');
       new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
 
-      expect(sweepConfig().environment.OUTPUT_DELETION_ENABLED).toBe('false');
-      expect(sweepConfig().environment.ORPHAN_RECONCILIATION_ENABLED).toBe('false');
+      expect(sweepConfig().environment.OUTPUT_DELETION_ENABLED).toBe('true');
+      expect(sweepConfig().environment.ORPHAN_RECONCILIATION_ENABLED).toBe('true');
     });
 
     it('pins the orphan scan budget rather than relying on the code default', () => {

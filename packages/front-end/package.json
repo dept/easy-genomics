@@ -22,6 +22,7 @@
     "projen": "pnpm exec projen",
     "cdk-audit": "export CDK_AUDIT=true && pnpm exec projen synth:silent",
     "build-and-deploy": "pnpm -w run build-front-end && pnpm cdk bootstrap --app cdk.out && pnpm exec projen deploy --app cdk.out --require-approval any-change",
+    "build-and-deploy-no-tests": "export SKIP_TESTS=1 && pnpm run build-and-deploy",
     "nuxt-dev": "pnpm -w run build-front-end && pnpm kill-port 3000 && nuxt dev",
     "nuxt-load-settings": "npx esrun nuxt-load-configuration-settings.ts",
     "nuxt-generate": "nuxt generate",
@@ -124,6 +125,8 @@
   "version": "0.0.0",
   "jest": {
     "coverageProvider": "v8",
+    "collectCoverage": false,
+    "maxWorkers": "50%",
     "moduleNameMapper": {
       "^@FE/(.*)$": "<rootDir>/src/app/$1",
       "^@SharedLib/(.*)$": "<rootDir>/../shared-lib/src/app/$1",
@@ -134,7 +137,6 @@
       "<rootDir>/@(src|test)/**/__tests__/**/*.ts?(x)"
     ],
     "clearMocks": true,
-    "collectCoverage": true,
     "coverageReporters": [
       "json",
       "lcov",

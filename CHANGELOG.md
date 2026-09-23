@@ -7,6 +7,23 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 > For step-by-step upgrade instructions, see [docs/deployment/upgrading.md](./docs/deployment/upgrading.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **Deploying no longer runs the unit test suite.** `pnpm run build-and-deploy` builds each package through its `build`
+  target, which runs Jest and ESLint before packaging. On a machine with less memory than a CI runner the operating
+  system killed the Jest workers part-way through, so the build failed and nothing was deployed. A new
+  **`pnpm run build-and-deploy-no-tests`** command deploys exactly the same artifacts without running the tests or the
+  linter, and is now the command the deployment guides use. `pnpm run build-and-deploy` is unchanged and still runs the
+  full suite first, for developers who want it. The release pipeline is unaffected and still runs every package's tests
+  as its release gate.
+
+- **Jest no longer collects v8 coverage in `shared-lib` and `front-end`, and caps its worker count.** Both packages ran
+  the suite with coverage on and no limit on concurrent workers; back-end already had coverage disabled. Coverage is not
+  gated or uploaded anywhere, so it is dropped in all three packages — run `jest --coverage` locally on demand when a
+  report is needed. Workers are now capped at half the available cores, which bounds peak memory on smaller machines.
+
 ## [v1.5.1] — Private org email assets
 
 Hotfix for v1.5. **Tier 1** upgrade — no DynamoDB, schema, or configuration changes.
