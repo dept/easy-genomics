@@ -65,12 +65,11 @@ Complete this before starting any upgrade procedure.
 
 No infrastructure or schema changes. Rolling deploy; no downtime expected.
 
-> **Which deploy command:** use `pnpm run build-and-deploy-no-tests` throughout this guide. It builds and deploys
-> exactly the same artifacts as `pnpm run build-and-deploy`, but skips the unit test suite, which a deploy does not
-> need. The test suite is memory-hungry — on a machine with less RAM than a CI runner it has been killed by the
-> operating system part-way through, failing the deploy before anything is deployed. The suite still runs in DEPT's
-> release pipeline, so the release you are deploying has already been tested. Use `pnpm run build-and-deploy` only if
-> you are developing against this checkout and want the tests to run first.
+> **Deploy command:** `pnpm run build-and-deploy-no-tests` is the command to use, here and in every guide. It builds and
+> deploys the whole solution without running the unit test suite, which a deploy does not need: the suite is
+> memory-hungry, and on a machine with less RAM than a CI runner the operating system has killed it part-way through,
+> failing the deploy before anything was deployed. The suite still runs in DEPT's release pipeline, so the release you
+> are deploying has already been tested.
 
 **Steps**
 

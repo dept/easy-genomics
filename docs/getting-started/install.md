@@ -49,7 +49,7 @@ project source code and install the project dependencies.
 
 5. (Development only) Run `pnpm projen install` to install all the defined `.projenrc.ts` dependencies for compilation.
    This is intended for local development/bootstrapping; it is **not required** and generally **should not be run
-   immediately before a production `build-and-deploy`**, because it can regenerate configs and dependencies:
+   immediately before a production `build-and-deploy-no-tests`**, because it can regenerate configs and dependencies:
 
    ```
    [easy-genomics]$ pnpm projen install
@@ -65,10 +65,10 @@ following command.
 [easy-genomics]$ pnpm run build-and-deploy-no-tests
 ```
 
-`build-and-deploy-no-tests` builds and deploys the same artifacts as `build-and-deploy`, but skips the unit test suite,
-which a deploy does not need. The suite is memory-hungry and on a machine with less RAM than a CI runner the operating
-system has killed it part-way through, failing the deploy before anything is deployed. Use `build-and-deploy` only if
-you are developing against this checkout and want the tests to run first.
+`build-and-deploy-no-tests` builds and deploys the whole solution without running the unit test suite, which a deploy
+does not need. The suite is memory-hungry, and on a machine with less RAM than a CI runner the operating system has
+killed it part-way through, failing the deploy before anything was deployed. The release you are deploying has already
+been tested in DEPT's release pipeline.
 
 Once the deployment is completed, it will output the `ApplicationUrl` which can then be accessed from your web browser.
 
