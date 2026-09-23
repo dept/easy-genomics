@@ -211,4 +211,23 @@ describe('request-laboratory-run-failure-analysis handler', () => {
       expect(response.statusCode).toBeGreaterThanOrEqual(400);
     });
   });
+
+  it('records the requesting user so the history entry can attribute the analysis', async () => {
+    const response = await handler(buildEvent({ LaboratoryRunId: 'run-1' }), {} as any, () => undefined);
+
+    expect(response.statusCode).toBe(200);
+    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(
+      expect.objectContaining({ AnalysisStatus: 'Queued', AnalysisRequestedBy: 'user@example.com' }),
+      ['AnalysisErrorCode', 'AnalysisErrorMessage'],
+    );
+  });
+
+  it('clears the requester when the enqueue fails, so a stale name cannot be reused', async () => {
+    mockSendMessage.mockRejectedValue(new Error('SQS unavailable'));
+
+    await handler(buildEvent({ LaboratoryRunId: 'run-1' }), {} as any, () => undefined);
+
+    const rollback = mockUpdateWithRemoval.mock.calls[mockUpdateWithRemoval.mock.calls.length - 1];
+    expect(rollback[1]).toEqual(expect.arrayContaining(['AnalysisRequestedBy']));
+  });
 });

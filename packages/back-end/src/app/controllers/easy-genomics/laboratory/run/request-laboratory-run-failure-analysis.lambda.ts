@@ -25,7 +25,13 @@ const laboratoryService = new LaboratoryService();
 const sqsService = new SqsService();
 
 /** Analysis fields this endpoint writes, and must be able to undo. */
-const ANALYSIS_FIELDS = ['AnalysisStatus', 'AnalysisRequestedAt', 'AnalysisErrorCode', 'AnalysisErrorMessage'] as const;
+const ANALYSIS_FIELDS = [
+  'AnalysisStatus',
+  'AnalysisRequestedAt',
+  'AnalysisRequestedBy',
+  'AnalysisErrorCode',
+  'AnalysisErrorMessage',
+] as const;
 
 /**
  * Revert the analysis fields to their pre-request values. Fields the run did not
@@ -87,6 +93,7 @@ export const handler: Handler = async (
         ...run,
         AnalysisStatus: 'Queued',
         AnalysisRequestedAt: requestedAt,
+        AnalysisRequestedBy: event.requestContext.authorizer.claims['cognito:username'],
         ModifiedAt: requestedAt,
         ModifiedBy: event.requestContext.authorizer.claims['cognito:username'],
       },
