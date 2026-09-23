@@ -1381,6 +1381,14 @@ export interface components {
       /** @description ISO timestamp. Load-bearing: lets the UI abandon a Running status stranded by a dead consumer. */
       AnalysisRequestedAt?: string;
       /**
+       * @description What evidence the LLM actually had when it produced this classification.
+       * Written only on the LLM path; the deterministic lookup never sets it.
+       * Load-bearing for the UI: an `Ambiguous` verdict reached without a log
+       * excerpt is platform state the user can fix, not a verdict about the run.
+       * @enum {string}
+       */
+      AnalysisEvidence?: "enrichment-disabled" | "log-excerpt" | "log-no-error" | "log-unavailable";
+      /**
        * @description Sparse marker present only while the run is non-terminal. Backs the `PollStatus_Index`
        * GSI so the notification poller can query "every active run" in O(1) regardless of total
        * run history, instead of scanning or iterating every lab. Removed (not set false) on the
@@ -1486,6 +1494,8 @@ export interface components {
       AnalysisErrorCode?: string;
       AnalysisErrorMessage?: string;
       AnalysisRequestedAt?: string;
+      /** @enum {string} */
+      AnalysisEvidence?: "enrichment-disabled" | "log-excerpt" | "log-no-error" | "log-unavailable";
       ProgressPercent?: number;
       TasksTotal?: number;
       TasksCompleted?: number;
