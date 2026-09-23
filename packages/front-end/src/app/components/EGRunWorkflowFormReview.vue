@@ -49,21 +49,14 @@
   onMounted(async () => {
     costEstimateLoading.value = true;
     try {
-      // TEMP local-only stub to render the cost row without 3+ historical runs. Revert before commit.
-      costEstimate.value = {
-        estimateAvailable: true,
-        comparableRunCount: 4,
-        computeCostUsd: { low: 12.4, high: 31.8 },
-        disclaimer: 'Estimated compute cost based on similar completed runs of this workflow.',
-      } as any;
-      // costEstimate.value = await $api.labs.estimateRunCost(props.labId, {
-      //   platform: 'AWS HealthOmics',
-      //   workflowExternalId: props.workflowId,
-      //   workflowVersionName: props.workflowVersionName,
-      //   inputFileKeys: wipOmicsRun.value?.inputFileKeys,
-      //   sampleSheetS3Url: (props.params as any)?.input,
-      //   settings: withoutEmptyFields(props.params),
-      // });
+      costEstimate.value = await $api.labs.estimateRunCost(props.labId, {
+        platform: 'AWS HealthOmics',
+        workflowExternalId: props.workflowId,
+        workflowVersionName: props.workflowVersionName,
+        inputFileKeys: wipOmicsRun.value?.inputFileKeys,
+        sampleSheetS3Url: (props.params as any)?.input,
+        settings: withoutEmptyFields(props.params),
+      });
     } catch (error) {
       console.warn('Pre-run cost estimate unavailable:', error);
       costEstimate.value = null;

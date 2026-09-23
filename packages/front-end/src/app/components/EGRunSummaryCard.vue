@@ -3,15 +3,7 @@
   import { getDate, getTime } from '@FE/utils/date-time';
   import { formatRunDuration } from '@FE/utils/run-duration';
 
-  const rawProps = defineProps<{ labRun: LaboratoryRun }>();
-
-  // TEMP local-only stub so the cost row renders without captured run costs. Revert before commit.
-  const props = computed(() => ({
-    labRun: {
-      ...rawProps.labRun,
-      RunCostOutcome: { ActualComputeCostUsd: 1.6, CostSource: 'HEALTHOMICS_TASKS' },
-    } as LaboratoryRun,
-  })).value;
+  const props = defineProps<{ labRun: LaboratoryRun }>();
 
   const runtime = computed<string | null>(() => formatRunDuration(props.labRun.RunDurationSeconds));
 
