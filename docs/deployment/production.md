@@ -31,8 +31,8 @@ long-lived access keys.
 
 ### CDK bootstrap
 
-CDK bootstrap runs automatically as the first step of `pnpm run build-and-deploy`. No manual step is needed. If running
-from a CI/CD pipeline, the pipeline role must have permission to create and update the `CDKToolkit` stack.
+CDK bootstrap runs automatically as the first step of `pnpm run build-and-deploy-no-tests`. No manual step is needed. If
+running from a CI/CD pipeline, the pipeline role must have permission to create and update the `CDKToolkit` stack.
 
 ### Supported regions
 
@@ -290,8 +290,11 @@ Then, from the repository root, choose the path that matches your setup:
 <summary><strong>Option A — Manual deploy (local machine or AWS CloudShell)</strong></summary>
 
 ```bash
-pnpm run build-and-deploy
+pnpm run build-and-deploy-no-tests
 ```
+
+This builds and deploys the whole solution without running the unit test suite, which a deploy does not need and which
+has been killed by the operating system on machines with less RAM than a CI runner.
 
 CDK bootstrap runs automatically on the first deploy. The command builds and deploys both the back-end and front-end
 stacks. On success, the final output includes the application URL:
@@ -310,7 +313,7 @@ over HTTPS. If they are missing or invalid, the URL falls back to the raw CloudF
 <details>
 <summary><strong>Option B — CI/CD pipeline (GitHub Actions or equivalent)</strong></summary>
 
-The deploy command is the same (`pnpm run build-and-deploy`). To wire it into a pipeline:
+The deploy command is the same (`pnpm run build-and-deploy-no-tests`). To wire it into a pipeline:
 
 1. **Credentials:** configure the pipeline role with `AdministratorAccess`. OIDC-based keyless auth (GitHub Actions
    OIDC + an IAM role with a trusted GitHub Actions subject condition) is preferred over long-lived access keys.
@@ -320,7 +323,7 @@ The deploy command is the same (`pnpm run build-and-deploy`). To wire it into a 
    `easy-genomics.yaml` at deploy time from those values.
 
 3. **Environment variables:** the pipeline job needs `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` +
-   `AWS_DEFAULT_REGION` (or the OIDC equivalent) before running `pnpm run build-and-deploy`.
+   `AWS_DEFAULT_REGION` (or the OIDC equivalent) before running `pnpm run build-and-deploy-no-tests`.
 
 See `.github/workflows/cicd-release-*.yml` in this repository for reference workflow patterns used by the Easy Genomics
 team.

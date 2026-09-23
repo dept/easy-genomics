@@ -408,13 +408,10 @@ export class EasyGenomicsNestedStack extends NestedStack {
         // `DRY_RUN=false` enables real deletes (any other value, including unset, stays dry-run).
         // Set to `true` temporarily to audit eligibility without deleting.
         //
-        // The two output paths ship disabled and are enabled one at a time, because unlike the
-        // input-file sweep they delete data that previously survived retention and there is no
-        // bucket versioning to undo it. Rollout: deploy as-is and read the EMF metrics, then set
-        // OUTPUT_DELETION_ENABLED=true (go-forward runs only), and once that looks right set
-        // ORPHAN_RECONCILIATION_ENABLED=true to work through the pre-cascade backlog.
-        // MAX_ORPHAN_FOLDERS_PER_LAB_SWEEP is pinned here rather than left to the code default so
-        // the backlog drains at a reviewable rate.
+        // Both output paths are on: go-forward markers (stream-recorded results/ + sample
+        // sheets) and the orphan pass that records leftover folders from runs that expired
+        // before this cascade existed. MAX_ORPHAN_FOLDERS_PER_LAB_SWEEP is pinned here rather
+        // than left to the code default so the backlog drains at a reviewable rate.
         //
         // Runtime `assertLaboratoryHasS3BucketAccess` / `assertKeyUnderLabPrefix` bound blast radius; IAM
         // still uses `s3://*/*` because lab buckets are provisioned per org at data-setup time.
@@ -423,8 +420,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
           memorySizeMb: 1024,
           environment: {
             DRY_RUN: 'false',
-            OUTPUT_DELETION_ENABLED: 'false',
-            ORPHAN_RECONCILIATION_ENABLED: 'false',
+            OUTPUT_DELETION_ENABLED: 'true',
+            ORPHAN_RECONCILIATION_ENABLED: 'true',
             MAX_ORPHAN_FOLDERS_PER_LAB_SWEEP: '100',
           },
           callbacks: [

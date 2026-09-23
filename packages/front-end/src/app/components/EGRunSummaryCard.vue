@@ -52,7 +52,7 @@
         </dd>
       </div>
 
-      <EGRunCostRow :lab-run="labRun" label-class="text-muted text-sm" value-class="text-sm text-black text-right" />
+      <EGRunCostRow :lab-run="labRun" variant="summary" />
     </dl>
   </section>
 </template>

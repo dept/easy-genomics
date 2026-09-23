@@ -11,16 +11,30 @@
       labRun?: LaboratoryRun | null;
       /** Loading state while fetching pre-run estimate */
       loading?: boolean;
-      labelClass?: string;
-      valueClass?: string;
+      /**
+       * 'detail' is the wide label/value row used by the run wizard review step;
+       * 'summary' matches the compact right-aligned rows of the run summary card.
+       */
+      variant?: 'detail' | 'summary';
     }>(),
     {
       estimate: null,
       labRun: null,
       loading: false,
-      labelClass: 'w-48 shrink-0 text-black',
-      valueClass: 'min-w-0 flex-1 break-words text-muted text-left',
+      variant: 'detail',
     },
+  );
+
+  const isSummary = computed(() => props.variant === 'summary');
+
+  const rowClass = computed(() =>
+    isSummary.value
+      ? 'flex items-start justify-between gap-4 border-b py-3'
+      : 'text-md flex items-center rounded-lg border-b px-4 py-4 last:border-0',
+  );
+  const labelClass = computed(() => (isSummary.value ? 'text-muted shrink-0 text-sm' : 'w-48 shrink-0 text-black'));
+  const valueClass = computed(() =>
+    isSummary.value ? 'text-sm text-black text-right' : 'min-w-0 flex-1 break-words text-muted text-left',
   );
 
   const costExplorerEnabled = useCostExplorerEnabled();
@@ -119,6 +133,24 @@
     return lines;
   });
 
+  /**
+   * One-line provenance shown under the label. Kept source-specific rather than a single
+   * fixed sentence: only the HealthOmics outcome is priced off AWS list rates, while the
+   * pre-run band comes from this workflow's own completed runs.
+   */
+  const captionText = computed<string>(() => {
+    switch (costSource.value) {
+      case 'billed':
+        return 'From AWS Cost Explorer';
+      case 'outcome':
+        return outcome.value?.CostSource === 'SEQERA_PROGRESS'
+          ? 'Seqera compute estimate'
+          : 'Based on AWS list pricing';
+      default:
+        return 'Based on similar completed runs';
+    }
+  });
+
   const footerText = computed(() => {
     if (billed.value?.AsOfDate) {
       return `Data as of ${billed.value.AsOfDate}. AWS billing data typically updates within 24–48 hours.`;
@@ -131,18 +163,10 @@
 </script>
 
 <template>
-  <div v-if="showRow" class="cost-row text-md flex items-center rounded-lg border-b px-4 py-4 last:border-0">
-    <dt :class="labelClass">{{ rowLabel }}</dt>
-    <dd :class="valueClass">
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="text-base font-semibold text-gray-900">{{ amountText }}</span>
-        <span
-          v-if="!loading && (estimate?.estimateAvailable || labRun)"
-          class="rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide"
-          :class="chipClass"
-        >
-          {{ chipLabel }}
-        </span>
+  <div v-if="showRow" class="cost-row" :class="rowClass">
+    <dt :class="labelClass">
+      <span class="flex items-center gap-1.5">
+        {{ rowLabel }}
         <!-- Nuxt UI tooltip defaults to h-6 + truncate on a white bg; override so multi-line copy is visible. -->
         <UTooltip
           :popper="{ placement: 'bottom' }"
@@ -169,6 +193,20 @@
             </div>
           </template>
         </UTooltip>
+      </span>
+      <span v-if="isSummary && !loading" class="text-muted mt-0.5 block text-xs">{{ captionText }}</span>
+    </dt>
+
+    <dd :class="valueClass">
+      <div class="flex flex-wrap items-center gap-2" :class="isSummary ? 'justify-end' : ''">
+        <span class="text-base font-semibold text-gray-900">{{ amountText }}</span>
+        <span
+          v-if="!isSummary && !loading && (estimate?.estimateAvailable || labRun)"
+          class="rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide"
+          :class="chipClass"
+        >
+          {{ chipLabel }}
+        </span>
       </div>
     </dd>
   </div>

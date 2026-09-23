@@ -57,3 +57,15 @@ export function getUrlParamValue(param: string): string | null {
   const urlParams = new URLSearchParams(window.location.search);
   return urlParams.get(param);
 }
+
+/**
+ * Capitalise the first letter, leaving the rest exactly as given.
+ *
+ * For text we did not author — LLM provider error messages arrive in whatever
+ * case the provider chose. Only the first character is touched, so acronyms,
+ * model IDs and quoted values survive intact.
+ */
+export function toSentenceCase(input: string | undefined): string | undefined {
+  if (!input) return input;
+  return input.charAt(0).toUpperCase() + input.slice(1);
+}

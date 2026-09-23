@@ -17,6 +17,8 @@
   } from '@FE/utils/run-progress-card-visibility';
   import { v4 as uuidv4 } from 'uuid';
   import { analysisErrorMessage } from '@FE/utils/analysis-error-message';
+  import { analysisEvidenceMessage } from '@FE/utils/analysis-evidence-message';
+  import { toSentenceCase } from '@FE/utils/string-utils';
 
   const $route = useRoute();
   const $router = useRouter();
@@ -246,6 +248,15 @@
     }
   });
 
+  // Only an Ambiguous verdict needs explaining, and only when the analysis
+  // actually succeeded — a Failed analysis shows its own error copy instead, and
+  // its AnalysisEvidence may be left over from an earlier run.
+  const ambiguousEvidenceNote = computed<string | undefined>(() => {
+    if (labRun.value?.FailureOwner !== 'Ambiguous') return undefined;
+    if (labRun.value?.AnalysisStatus !== 'Succeeded') return undefined;
+    return analysisEvidenceMessage(labRun.value?.AnalysisEvidence);
+  });
+
   const isHealthOmics = computed<boolean>(() => labRun.value?.Platform === 'AWS HealthOmics');
   const isFailed = computed<boolean>(() => labRun.value?.Status?.toUpperCase() === 'FAILED');
 
@@ -265,9 +276,20 @@
   }
 
   const analysisStatus = computed<string | undefined>(() => labRun.value?.AnalysisStatus);
+  // Local pending covers the window between the click and the first poll, which
+  // the server-derived status cannot: AnalysisStatus is a poll interval behind.
   const analysisInFlight = computed<boolean>(
-    () => analysisStatus.value === 'Queued' || analysisStatus.value === 'Running',
+    () =>
+      !!runStore.analysisRequestPending[labRunId] ||
+      analysisStatus.value === 'Queued' ||
+      analysisStatus.value === 'Running',
   );
+
+  const analysisStalled = computed<boolean>(() => !!runStore.analysisStalled[labRunId]);
+
+  function checkAnalysisAgain() {
+    runStore.startAnalysisPolling(labRunId);
+  }
 
   // A button that can only ever fail is worse than no button, so it appears
   // only when the lab actually has a provider and model configured.
@@ -304,8 +326,13 @@
     labRun,
     (run) => {
       if (!run) return;
+      // A terminal status observed outside the poll (e.g. the user navigated away
+      // and back while it completed) has to release the trigger — nothing else will.
+      if (run.AnalysisStatus === 'Succeeded' || run.AnalysisStatus === 'Failed') {
+        delete runStore.analysisRequestPending[labRunId];
+      }
       const inFlight = run.AnalysisStatus === 'Queued' || run.AnalysisStatus === 'Running';
-      if (inFlight && !runStore.analysisPolls[labRunId]) {
+      if (inFlight && !runStore.analysisPolls[labRunId] && !runStore.analysisStalled[labRunId]) {
         runStore.startAnalysisPolling(labRunId);
       }
     },
@@ -494,6 +521,10 @@
                       <span class="font-medium text-black">What to do next:</span>
                       {{ labRun.FailureAction }}
                     </p>
+                    <p v-if="ambiguousEvidenceNote" class="text-muted border-l-2 border-gray-200 pl-3 text-xs">
+                      {{ ambiguousEvidenceNote }}
+                    </p>
+                    <EGAnalysisHistory :entries="labRun?.AnalysisHistory" :run-count="labRun?.AnalysisRunCount" />
                   </div>
                 </template>
 
@@ -507,11 +538,21 @@
                       size="xs"
                       @click="requestAnalysis"
                     />
-                    <span v-if="analysisInFlight" class="text-muted text-xs italic">Analysing…</span>
+                    <EGButton
+                      v-if="analysisStalled"
+                      label="Check again"
+                      variant="secondary"
+                      size="xs"
+                      @click="checkAnalysisAgain"
+                    />
+                    <span v-if="analysisStalled" class="text-muted text-xs italic">
+                      Still processing — this can take a few minutes.
+                    </span>
+                    <span v-else-if="analysisInFlight" class="text-muted text-xs italic">Analysing…</span>
                     <span v-else-if="labRun?.AnalysisStatus === 'Failed'" class="flex flex-col text-xs italic">
                       <span class="text-red-700">{{ analysisErrorMessage(labRun?.AnalysisErrorCode) }}</span>
                       <span v-if="labRun?.AnalysisErrorMessage" class="text-muted">
-                        {{ labRun.AnalysisErrorMessage }}
+                        {{ toSentenceCase(labRun.AnalysisErrorMessage) }}
                       </span>
                     </span>
                   </div>
