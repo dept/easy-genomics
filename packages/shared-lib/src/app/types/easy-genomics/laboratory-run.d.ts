@@ -147,6 +147,13 @@ export interface LaboratoryRun extends BaseAttributes {
   AnalysisRequestedAt?: string;
 
   /**
+   * What evidence the LLM classifier actually had. Written only on the LLM
+   * path. Lets the UI distinguish a verdict about the run from a gap in the
+   * platform's own inputs.
+   */
+  AnalysisEvidence?: 'log-excerpt' | 'enrichment-disabled' | 'log-unavailable' | 'log-no-error';
+
+  /**
    * Sparse marker present only while the run is non-terminal. Backs the `PollStatus_Index`
    * GSI so the notification poller can query "every active run" in O(1) regardless of total
    * run history, instead of scanning or iterating every lab. Removed (not set false) on the

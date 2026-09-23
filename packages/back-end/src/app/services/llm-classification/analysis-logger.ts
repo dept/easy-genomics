@@ -1,3 +1,5 @@
+import { AnalysisEvidence } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run';
+
 import { ClassificationErrorCode, LlmProviderName } from './classification-outcome';
 
 export interface AnalysisLogFields {
@@ -12,6 +14,8 @@ export interface AnalysisLogFields {
   modelId?: string;
   errorCode?: ClassificationErrorCode;
   classifiedBy?: 'lookup' | 'llm';
+  /** What the LLM was given to reason about. Absent on the deterministic lookup path. */
+  evidence?: AnalysisEvidence;
   /** Why the run was skipped, e.g. 'automatic-analysis-disabled'. */
   reason?: string;
 }

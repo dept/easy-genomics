@@ -17,6 +17,7 @@
   } from '@FE/utils/run-progress-card-visibility';
   import { v4 as uuidv4 } from 'uuid';
   import { analysisErrorMessage } from '@FE/utils/analysis-error-message';
+  import { analysisEvidenceMessage } from '@FE/utils/analysis-evidence-message';
 
   const $route = useRoute();
   const $router = useRouter();
@@ -244,6 +245,15 @@
       default:
         return 'bg-gray-100 text-gray-900 border-gray-200';
     }
+  });
+
+  // Only an Ambiguous verdict needs explaining, and only when the analysis
+  // actually succeeded — a Failed analysis shows its own error copy instead, and
+  // its AnalysisEvidence may be left over from an earlier run.
+  const ambiguousEvidenceNote = computed<string | undefined>(() => {
+    if (labRun.value?.FailureOwner !== 'Ambiguous') return undefined;
+    if (labRun.value?.AnalysisStatus !== 'Succeeded') return undefined;
+    return analysisEvidenceMessage(labRun.value?.AnalysisEvidence);
   });
 
   const isHealthOmics = computed<boolean>(() => labRun.value?.Platform === 'AWS HealthOmics');
@@ -493,6 +503,9 @@
                     <p v-if="labRun?.FailureAction" class="text-muted text-sm">
                       <span class="font-medium text-black">What to do next:</span>
                       {{ labRun.FailureAction }}
+                    </p>
+                    <p v-if="ambiguousEvidenceNote" class="text-muted border-l-2 border-gray-200 pl-3 text-xs">
+                      {{ ambiguousEvidenceNote }}
                     </p>
                   </div>
                 </template>

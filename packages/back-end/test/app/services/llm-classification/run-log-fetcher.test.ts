@@ -20,35 +20,51 @@ describe('fetchRedactedLogExcerpt', () => {
       'progress\nCaused by: OutOfMemoryError for s3://bucket/patientA/reads.bam at 10.0.0.5',
     );
 
-    const excerpt = await fetchRedactedLogExcerpt(healthOmicsRun, deps);
+    const { excerpt, reason } = await fetchRedactedLogExcerpt(healthOmicsRun, deps);
 
     expect(getLogStreamText).toHaveBeenCalledWith('/aws/omics/WorkflowLog', 'run/4399444/engine', 1000);
     expect(excerpt).toContain('OutOfMemoryError');
     expect(excerpt).not.toContain('s3://');
     expect(excerpt).not.toContain('10.0.0.5');
+    expect(reason).toEqual('log-excerpt');
   });
 
-  it('returns undefined for non-HealthOmics platforms (Seqera log fetch not implemented)', async () => {
-    const excerpt = await fetchRedactedLogExcerpt({ ...healthOmicsRun, Platform: 'Seqera Cloud' }, deps);
+  it('reports log-no-error when the engine log carries no failure marker', async () => {
+    // A run whose engine exited without reporting a cause: the excerpt is the
+    // log tail, which proves nothing on its own.
+    getLogStreamText.mockResolvedValue('Launching `main.nf` [cheeky_dijkstra]\nPulling image\nStaging inputs');
+
+    const { excerpt, reason } = await fetchRedactedLogExcerpt(healthOmicsRun, deps);
+
+    expect(excerpt).toContain('Staging inputs');
+    expect(reason).toEqual('log-no-error');
+  });
+
+  it('reports log-unavailable for non-HealthOmics platforms (Seqera log fetch not implemented)', async () => {
+    const { excerpt, reason } = await fetchRedactedLogExcerpt({ ...healthOmicsRun, Platform: 'Seqera Cloud' }, deps);
     expect(excerpt).toBeUndefined();
+    expect(reason).toEqual('log-unavailable');
     expect(getLogStreamText).not.toHaveBeenCalled();
   });
 
-  it('returns undefined (best-effort) when the log fetch throws', async () => {
+  it('reports log-unavailable (best-effort) when the log fetch throws', async () => {
     getLogStreamText.mockRejectedValue(new Error('AccessDenied'));
-    const excerpt = await fetchRedactedLogExcerpt(healthOmicsRun, deps);
+    const { excerpt, reason } = await fetchRedactedLogExcerpt(healthOmicsRun, deps);
     expect(excerpt).toBeUndefined();
+    expect(reason).toEqual('log-unavailable');
   });
 
-  it('returns undefined when the run has no ExternalRunId', async () => {
-    const excerpt = await fetchRedactedLogExcerpt({ ...healthOmicsRun, ExternalRunId: undefined }, deps);
+  it('reports log-unavailable when the run has no ExternalRunId', async () => {
+    const { excerpt, reason } = await fetchRedactedLogExcerpt({ ...healthOmicsRun, ExternalRunId: undefined }, deps);
     expect(excerpt).toBeUndefined();
+    expect(reason).toEqual('log-unavailable');
     expect(getLogStreamText).not.toHaveBeenCalled();
   });
 
-  it('returns undefined when the engine stream is empty', async () => {
+  it('reports log-unavailable when the engine stream is empty', async () => {
     getLogStreamText.mockResolvedValue('');
-    const excerpt = await fetchRedactedLogExcerpt(healthOmicsRun, deps);
+    const { excerpt, reason } = await fetchRedactedLogExcerpt(healthOmicsRun, deps);
     expect(excerpt).toBeUndefined();
+    expect(reason).toEqual('log-unavailable');
   });
 });
