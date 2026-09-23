@@ -6,7 +6,7 @@ You need a deployed dev stack so you can obtain AWS resource identifiers.
 
 ```bash
 # From repo root
-pnpm run build-and-deploy
+pnpm run build-and-deploy-no-tests
 ```
 
 Or deploy only the back-end:
