@@ -78,9 +78,9 @@ describe('requestFailureAnalysis', () => {
   it('gives up after the timeout rather than polling forever', async () => {
     mockReadLabRun.mockResolvedValue({ RunId: 'run-1', AnalysisStatus: 'Running' });
     await store.requestFailureAnalysis('lab-1', 'run-1');
-    await jest.advanceTimersByTimeAsync(95_000);
+    await jest.advanceTimersByTimeAsync(400_000);
     expect(store.analysisPolls['run-1']).toBeUndefined();
-    expect(mockToastError).toHaveBeenCalledWith(expect.stringContaining('taking longer than expected'));
+    expect(mockToastError).toHaveBeenCalledWith(expect.stringContaining('still processing'));
 
     const toastErrorCallCountAtTerminal = mockToastError.mock.calls.length;
     await jest.advanceTimersByTimeAsync(3000);
@@ -92,5 +92,56 @@ describe('requestFailureAnalysis', () => {
     await store.requestFailureAnalysis('lab-1', 'run-1');
     store.stopAnalysisPolling('run-1');
     expect(store.analysisPolls['run-1']).toBeUndefined();
+  });
+
+  it('marks the run pending before the request resolves, so a second click is a no-op', async () => {
+    let releaseRequest: () => void = () => {};
+    mockRequest.mockImplementation(() => new Promise<void>((resolve) => { releaseRequest = () => resolve(); }));
+    mockReadLabRun.mockResolvedValue({ RunId: 'run-1', AnalysisStatus: 'Running' });
+
+    const first = store.requestFailureAnalysis('lab-1', 'run-1');
+    expect(store.analysisRequestPending['run-1']).toBe(true);
+
+    await store.requestFailureAnalysis('lab-1', 'run-1');
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+
+    releaseRequest();
+    await first;
+  });
+
+  it('clears pending when the request is rejected, so the button comes back', async () => {
+    mockRequest.mockRejectedValue({ message: 'No LLM provider is configured' });
+    await store.requestFailureAnalysis('lab-1', 'run-1');
+    expect(store.analysisRequestPending['run-1']).toBeFalsy();
+  });
+
+  it('leaves the trigger disabled and marks the run stalled when polling times out', async () => {
+    mockReadLabRun.mockResolvedValue({ RunId: 'run-1', AnalysisStatus: 'Running' });
+    await store.requestFailureAnalysis('lab-1', 'run-1');
+
+    await jest.advanceTimersByTimeAsync(95_000);
+    expect(store.analysisPolls['run-1']).toBeDefined();
+
+    await jest.advanceTimersByTimeAsync(300_000);
+    expect(store.analysisPolls['run-1']).toBeUndefined();
+    expect(store.analysisStalled['run-1']).toBe(true);
+    expect(store.analysisRequestPending['run-1']).toBe(true);
+  });
+
+  it('clears the stalled flag when polling is restarted', async () => {
+    mockReadLabRun.mockResolvedValue({ RunId: 'run-1', AnalysisStatus: 'Running' });
+    await store.requestFailureAnalysis('lab-1', 'run-1');
+    await jest.advanceTimersByTimeAsync(400_000);
+    expect(store.analysisStalled['run-1']).toBe(true);
+
+    store.startAnalysisPolling('run-1');
+    expect(store.analysisStalled['run-1']).toBeFalsy();
+  });
+
+  it('clears pending once the analysis reaches a terminal status', async () => {
+    mockReadLabRun.mockResolvedValue({ RunId: 'run-1', AnalysisStatus: 'Succeeded', FailureOwner: 'Lab' });
+    await store.requestFailureAnalysis('lab-1', 'run-1');
+    await jest.advanceTimersByTimeAsync(3000);
+    expect(store.analysisRequestPending['run-1']).toBeFalsy();
   });
 });
