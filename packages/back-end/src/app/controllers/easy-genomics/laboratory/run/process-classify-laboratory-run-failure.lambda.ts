@@ -1,5 +1,6 @@
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { LaboratoryNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { AnalysisEvidence } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import {
@@ -172,6 +173,7 @@ export async function processClassificationEvent(
               FailureClassifiedBy: classification.source,
             }
           : {}),
+        ...(resolved.kind === 'classified' && resolved.evidence ? { AnalysisEvidence: resolved.evidence } : {}),
         AnalysisStatus: resolved.kind === 'failed' ? 'Failed' : 'Succeeded',
         ...(resolved.kind === 'failed'
           ? { AnalysisErrorCode: resolved.error.code, AnalysisErrorMessage: resolved.error.message }
@@ -179,7 +181,14 @@ export async function processClassificationEvent(
         ModifiedAt: new Date().toISOString(),
         ModifiedBy: 'Failure Classification',
       },
-      resolved.kind === 'failed' ? [] : ['AnalysisErrorCode', 'AnalysisErrorMessage'],
+      // An evidence value from a previous analysis would misdescribe this one,
+      // so the lookup path removes it rather than leaving it behind. The failed
+      // path sets the error fields instead and removes nothing, as before.
+      resolved.kind === 'failed'
+        ? []
+        : resolved.evidence
+          ? ['AnalysisErrorCode', 'AnalysisErrorMessage']
+          : ['AnalysisErrorCode', 'AnalysisErrorMessage', 'AnalysisEvidence'],
     );
 
     const platformConfig = laboratory ? resolvePlatformConfig(laboratory, existingRun.Platform) : undefined;
@@ -192,6 +201,7 @@ export async function processClassificationEvent(
       outcome: resolved.kind === 'failed' ? 'failed' : 'succeeded',
       errorCode: resolved.kind === 'failed' ? resolved.error.code : undefined,
       classifiedBy: classification?.source,
+      evidence: resolved.kind === 'classified' ? resolved.evidence : undefined,
       provider: platformConfig?.provider,
       modelId: platformConfig?.modelId,
       durationMs: Date.now() - startedAt,
@@ -219,7 +229,9 @@ type Resolved =
   // The LLM path failed. `fallback` carries the deterministic lookup hit, if
   // there was one — a provider error must never cost the lab its free
   // classification.
-  { kind: 'failed'; error: ClassificationError; fallback: Classified | null } | ({ kind: 'classified' } & Classified);
+  | { kind: 'failed'; error: ClassificationError; fallback: Classified | null }
+  // `evidence` is absent on the deterministic lookup path, which reads no logs.
+  | ({ kind: 'classified'; evidence?: AnalysisEvidence } & Classified);
 
 async function resolveClassification(run: LaboratoryRun, laboratory: Laboratory | undefined): Promise<Resolved> {
   // Deterministic lookup first — free and high-confidence. Held (not returned
@@ -267,9 +279,16 @@ async function resolveClassification(run: LaboratoryRun, laboratory: Laboratory 
     workflowName: run.WorkflowName,
   };
 
-  // Best-effort: a missing excerpt never blocks classification.
+  // Best-effort: a missing excerpt never blocks classification, but what the
+  // model was given is recorded either way so the UI can explain a thin verdict.
+  //
+  // Left undefined on platforms without log enrichment: 'enrichment-disabled'
+  // would tell a Seqera user to switch on a HealthOmics-only setting.
+  let evidence: AnalysisEvidence | undefined = supportsLogEnrichment(run.Platform) ? 'enrichment-disabled' : undefined;
   if (logEnrichmentEnabled) {
-    input.logExcerpt = await fetchRedactedLogExcerpt(run, { cloudWatchLogsService });
+    const logResult = await fetchRedactedLogExcerpt(run, { cloudWatchLogsService });
+    input.logExcerpt = logResult.excerpt;
+    evidence = logResult.reason;
   }
 
   const outcome: ClassificationOutcome = await llmClassificationService.classify(input, config);
@@ -278,13 +297,20 @@ async function resolveClassification(run: LaboratoryRun, laboratory: Laboratory 
   if (outcome.outcome === 'failed') {
     return { kind: 'failed', error: outcome.error, fallback: lookupResult };
   }
-  return { kind: 'classified', result: outcome.result, source: 'llm' };
+  return { kind: 'classified', result: outcome.result, source: 'llm', evidence };
+}
+
+/**
+ * Log enrichment is HealthOmics-only — its engine log lives in CloudWatch.
+ * Seqera log retrieval is not implemented (uncertain log storage/retention), and
+ * there is no Lab Settings toggle for it.
+ */
+function supportsLogEnrichment(platform: LaboratoryRun['Platform']): boolean {
+  return platform === 'AWS HealthOmics';
 }
 
 function isLogEnrichmentEnabled(laboratory: Laboratory, platform: LaboratoryRun['Platform']): boolean {
-  // Log enrichment is HealthOmics-only — its engine log lives in CloudWatch.
-  // Seqera log retrieval is not implemented (uncertain log storage/retention).
-  return platform === 'AWS HealthOmics' && laboratory.HealthOmicsLogEnrichmentEnabled === true;
+  return supportsLogEnrichment(platform) && laboratory.HealthOmicsLogEnrichmentEnabled === true;
 }
 
 type PlatformLlmConfig = {

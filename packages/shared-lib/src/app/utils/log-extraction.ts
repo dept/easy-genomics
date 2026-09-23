@@ -55,6 +55,18 @@ const capToHead = (text: string, maxChars: number): string =>
   text.length <= maxChars ? text : `${text.slice(0, maxChars)}\n…[truncated]`;
 
 /**
+ * Whether the log contains an identifiable failure marker.
+ *
+ * Distinguishes "the engine reported a cause" from "the engine exited without
+ * saying why" — {@link extractErrorWindow} cannot, because it falls back to the
+ * log tail when no marker is present, so a non-empty excerpt proves nothing.
+ */
+export function hasErrorMarker(logText: string | undefined | null): boolean {
+  if (!logText) return false;
+  return logText.split('\n').some((line) => !isNoise(line) && isErrorLine(line));
+}
+
+/**
  * Return the error window of a log as plain text, bounded to `maxChars`.
  *
  * - If an error marker is found, the window runs from a few lines before the
