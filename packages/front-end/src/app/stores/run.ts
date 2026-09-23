@@ -8,9 +8,11 @@ import { FilePair } from '@FE/components/EGRunFormUploadData.vue';
 import { analysisErrorMessage } from '@FE/utils/analysis-error-message';
 
 const ANALYSIS_POLL_INTERVAL_MS = 3_000;
-// Log enrichment plus a slow provider can legitimately take a while; past this
-// the run is assumed stranded rather than slow.
-const ANALYSIS_POLL_TIMEOUT_MS = 90_000;
+// The classification queue allows 3 receives at a 5-minute visibility timeout
+// before a record reaches the DLQ, so a run can legitimately be in flight far
+// longer than a user expects. Stop polling after one full retry cycle; past
+// that the DLQ owns the record, not the browser.
+const ANALYSIS_POLL_TIMEOUT_MS = 360_000;
 
 /*
 The WIP run is a construct for storing all of the data for a pipeline run that's being configured but hasn't been
@@ -61,6 +63,10 @@ interface RunState {
 
   /** Interval handles for in-flight analysis polls, keyed by RunId. */
   analysisPolls: Record<string, ReturnType<typeof setInterval>>;
+  /** Runs whose analysis request is in flight or queued, keyed by RunId. Set before the POST. */
+  analysisRequestPending: Record<string, boolean>;
+  /** Runs whose poll timed out while still non-terminal, keyed by RunId. */
+  analysisStalled: Record<string, boolean>;
 }
 
 const initialState = (): RunState => ({
@@ -76,6 +82,8 @@ const initialState = (): RunState => ({
   wipOmicsRuns: {},
 
   analysisPolls: {},
+  analysisRequestPending: {},
+  analysisStalled: {},
 });
 
 const useRunStore = defineStore('runStore', {
@@ -233,12 +241,20 @@ const useRunStore = defineStore('runStore', {
     },
 
     async requestFailureAnalysis(labId: string, runId: string): Promise<void> {
+      // Set before the await, not after: AnalysisStatus only reflects the request
+      // once a poll has returned it, which leaves the button live for a full poll
+      // interval and lets a second click enqueue a duplicate.
+      if (this.analysisRequestPending[runId]) return;
+      this.analysisRequestPending[runId] = true;
+      delete this.analysisStalled[runId];
+
       const { $api } = useNuxtApp();
       try {
         await $api.labs.requestLabRunFailureAnalysis(labId, runId);
       } catch (error: any) {
         // Config errors are rejected synchronously by the endpoint, so this is
         // where an invalid model ID surfaces most of the time.
+        delete this.analysisRequestPending[runId];
         useToastStore().error(error?.message || analysisErrorMessage(undefined));
         return;
       }
@@ -247,14 +263,19 @@ const useRunStore = defineStore('runStore', {
 
     startAnalysisPolling(runId: string): void {
       this.stopAnalysisPolling(runId);
+      delete this.analysisStalled[runId];
       const startedAt = Date.now();
 
       const handle = setInterval(async () => {
         // A consumer that dies mid-flight leaves the status on Running forever.
         // Without this the interval would outlive the page.
         if (Date.now() - startedAt > ANALYSIS_POLL_TIMEOUT_MS) {
+          // Do NOT clear the pending flag. The run may still be mid-retry on the
+          // queue; re-enabling the trigger here would let a user enqueue a second
+          // classification for a run already being classified.
           this.stopAnalysisPolling(runId);
-          useToastStore().error('AI failure analysis is taking longer than expected. Check back shortly.');
+          this.analysisStalled[runId] = true;
+          useToastStore().error('AI failure analysis is still processing. Use Check again to refresh.');
           return;
         }
 
@@ -263,9 +284,11 @@ const useRunStore = defineStore('runStore', {
 
         if (status === 'Succeeded') {
           this.stopAnalysisPolling(runId);
+          delete this.analysisRequestPending[runId];
           useToastStore().success('AI failure analysis complete.');
         } else if (status === 'Failed') {
           this.stopAnalysisPolling(runId);
+          delete this.analysisRequestPending[runId];
           const run = this.labRuns[runId];
           useToastStore().error(analysisErrorMessage(run?.AnalysisErrorCode));
         }

@@ -1969,11 +1969,11 @@ components:
           type: string
         Status:
           type: string
+        Owner:
+          type: string
         RunId:
           type: string
         RunName:
-          type: string
-        Owner:
           type: string
         Description:
           description: Optional user-authored note for this run; set at creation time.
@@ -2111,6 +2111,64 @@ components:
             - log-no-error
             - log-unavailable
           type: string
+        AnalysisRequestedBy:
+          description: Cognito username that requested the current analysis. Set by the request handler.
+          type: string
+        AnalysisRunCount:
+          description: |-
+            How many times analysis has completed for this run, including attempts
+            that failed before producing a verdict. Always >= AnalysisHistory.length.
+          type: number
+        AnalysisHistory:
+          description: |-
+            Completed analyses, newest first, up to {@link ANALYSIS_HISTORY_LIMIT}.
+            Entry 0 mirrors the flat `Failure*` fields above — deliberate duplication,
+            so runs predating this field keep rendering with no migration.
+          type: array
+          items:
+            type: object
+            properties:
+              AnalysedAt:
+                type: string
+              Owner:
+                enum:
+                  - AWS
+                  - Ambiguous
+                  - Bioinformatician
+                  - Lab
+                type: string
+              Summary:
+                type: string
+              Action:
+                type: string
+              ClassifiedBy:
+                enum:
+                  - llm
+                  - lookup
+                type: string
+              Evidence:
+                enum:
+                  - enrichment-disabled
+                  - log-excerpt
+                  - log-no-error
+                  - log-unavailable
+                type: string
+              Provider:
+                enum:
+                  - anthropic
+                  - bedrock
+                  - openai
+                type: string
+              ModelId:
+                type: string
+              RequestedBy:
+                type: string
+            required:
+              - Action
+              - AnalysedAt
+              - ClassifiedBy
+              - Owner
+              - Summary
         PollStatus:
           description: |-
             Sparse marker present only while the run is non-terminal. Backs the `PollStatus_Index`
@@ -2254,11 +2312,11 @@ components:
           type: string
         Status:
           type: string
+        Owner:
+          type: string
         RunId:
           type: string
         RunName:
-          type: string
-        Owner:
           type: string
         Description:
           description: Optional user-authored note for this run; set at creation time.
@@ -2343,6 +2401,56 @@ components:
             - log-no-error
             - log-unavailable
           type: string
+        AnalysisRequestedBy:
+          type: string
+        AnalysisRunCount:
+          type: number
+        AnalysisHistory:
+          type: array
+          items:
+            type: object
+            properties:
+              AnalysedAt:
+                type: string
+              Owner:
+                enum:
+                  - AWS
+                  - Ambiguous
+                  - Bioinformatician
+                  - Lab
+                type: string
+              Summary:
+                type: string
+              Action:
+                type: string
+              ClassifiedBy:
+                enum:
+                  - llm
+                  - lookup
+                type: string
+              Evidence:
+                enum:
+                  - enrichment-disabled
+                  - log-excerpt
+                  - log-no-error
+                  - log-unavailable
+                type: string
+              Provider:
+                enum:
+                  - anthropic
+                  - bedrock
+                  - openai
+                type: string
+              ModelId:
+                type: string
+              RequestedBy:
+                type: string
+            required:
+              - Action
+              - AnalysedAt
+              - ClassifiedBy
+              - Owner
+              - Summary
         ProgressPercent:
           type: number
         TasksTotal:
