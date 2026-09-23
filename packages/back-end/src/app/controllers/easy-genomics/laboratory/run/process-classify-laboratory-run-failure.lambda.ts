@@ -8,6 +8,7 @@ import {
   SnsProcessingOperation,
   SnsProcessingTrigger,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/sns-processing-event';
+import { prependAnalysisEntry } from '@easy-genomics/shared-lib/src/app/utils/analysis-history';
 import {
   ClassificationResult,
   classifyHealthOmicsFailure,
@@ -162,6 +163,24 @@ export async function processClassificationEvent(
     const resolved = await resolveClassification(existingRun, laboratory);
 
     const classification = resolved.kind === 'classified' ? resolved : resolved.fallback;
+    const platformConfig = laboratory ? resolvePlatformConfig(laboratory, existingRun.Platform) : undefined;
+
+    // A re-run is an additional opinion, not a correction: classification is not
+    // reproducible, so overwriting would destroy evidence a human may need.
+    const historyEntry = classification
+      ? {
+          AnalysedAt: new Date().toISOString(),
+          Owner: classification.result.owner,
+          Summary: classification.result.summary,
+          Action: classification.result.action,
+          ClassifiedBy: classification.source,
+          ...(resolved.kind === 'classified' && resolved.evidence ? { Evidence: resolved.evidence } : {}),
+          ...(platformConfig?.provider ? { Provider: platformConfig.provider } : {}),
+          ...(platformConfig?.modelId ? { ModelId: platformConfig.modelId } : {}),
+          ...(existingRun.AnalysisRequestedBy ? { RequestedBy: existingRun.AnalysisRequestedBy } : {}),
+        }
+      : undefined;
+
     await laboratoryRunService.updateWithAttributeRemoval(
       {
         ...existingRun,
@@ -174,6 +193,12 @@ export async function processClassificationEvent(
             }
           : {}),
         ...(resolved.kind === 'classified' && resolved.evidence ? { AnalysisEvidence: resolved.evidence } : {}),
+        ...(historyEntry && resolved.kind === 'classified'
+          ? { AnalysisHistory: prependAnalysisEntry(existingRun.AnalysisHistory, historyEntry) }
+          : {}),
+        // Attempts, not answers: a failed analysis is still a run. Incremented
+        // unconditionally so the gap against AnalysisHistory.length is readable.
+        AnalysisRunCount: (existingRun.AnalysisRunCount ?? 0) + 1,
         AnalysisStatus: resolved.kind === 'failed' ? 'Failed' : 'Succeeded',
         ...(resolved.kind === 'failed'
           ? { AnalysisErrorCode: resolved.error.code, AnalysisErrorMessage: resolved.error.message }
@@ -191,7 +216,6 @@ export async function processClassificationEvent(
           : ['AnalysisErrorCode', 'AnalysisErrorMessage', 'AnalysisEvidence'],
     );
 
-    const platformConfig = laboratory ? resolvePlatformConfig(laboratory, existingRun.Platform) : undefined;
     logAnalysisEvent({
       runId: existingRun.RunId,
       laboratoryId: existingRun.LaboratoryId,

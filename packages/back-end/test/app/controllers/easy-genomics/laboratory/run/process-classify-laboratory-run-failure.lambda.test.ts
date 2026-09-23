@@ -692,6 +692,134 @@ describe('process-classify-laboratory-run-failure.lambda', () => {
     });
     logSpy.mockRestore();
   });
+
+  it('appends a history entry carrying evidence, model and requester', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Platform: 'AWS HealthOmics',
+      Status: 'FAILED',
+      FailureReason: 'WORKFLOW_RUN_FAILED',
+      AnalysisRequestedBy: 'lab.manager',
+    });
+    mockFetchRedactedLogExcerpt.mockResolvedValue({ excerpt: 'boom', reason: 'log-excerpt' });
+    mockQueryByLaboratoryId.mockResolvedValue({ ...labMixedProviders, HealthOmicsLogEnrichmentEnabled: true });
+    mockClassify.mockResolvedValue({
+      outcome: 'classified',
+      result: { owner: 'Lab', summary: 'Bad sample sheet', action: 'Fix the sample sheet' },
+    });
+
+    await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any, 'Manual');
+
+    expect(mockUpdateWithRemoval).toHaveBeenCalledWith(
+      expect.objectContaining({
+        AnalysisHistory: [
+          expect.objectContaining({
+            Owner: 'Lab',
+            Summary: 'Bad sample sheet',
+            Action: 'Fix the sample sheet',
+            ClassifiedBy: 'llm',
+            Evidence: 'log-excerpt',
+            Provider: 'bedrock',
+            ModelId: 'anthropic.claude-haiku-4-5-20251001',
+            RequestedBy: 'lab.manager',
+          }),
+        ],
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('keeps the previous answer when a re-run produces a different one', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Platform: 'AWS HealthOmics',
+      Status: 'FAILED',
+      FailureReason: 'WORKFLOW_RUN_FAILED',
+      AnalysisHistory: [
+        {
+          AnalysedAt: '2026-09-22T10:00:00.000Z',
+          Owner: 'Lab',
+          Summary: 'Earlier wording',
+          Action: 'Earlier action',
+          ClassifiedBy: 'llm',
+        },
+      ],
+    });
+    mockClassify.mockResolvedValue({
+      outcome: 'classified',
+      result: { owner: 'Lab', summary: 'Newer wording', action: 'Newer action' },
+    });
+
+    await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any, 'Manual');
+
+    const written = mockUpdateWithRemoval.mock.calls[mockUpdateWithRemoval.mock.calls.length - 1][0];
+    expect(written.AnalysisHistory.map((e: any) => e.Summary)).toEqual(['Newer wording', 'Earlier wording']);
+    expect(written.FailureSummary).toBe('Newer wording');
+  });
+
+  it('does not append when the analysis itself failed', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Platform: 'AWS HealthOmics',
+      Status: 'FAILED',
+      FailureReason: 'WORKFLOW_RUN_FAILED',
+    });
+    mockClassify.mockResolvedValue({
+      outcome: 'failed',
+      error: { code: 'INVALID_MODEL_ID', message: 'bad model', retryable: false },
+    });
+
+    await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any, 'Manual');
+
+    const written = mockUpdateWithRemoval.mock.calls[mockUpdateWithRemoval.mock.calls.length - 1][0];
+    expect(written.AnalysisHistory).toBeUndefined();
+    expect(written.AnalysisStatus).toBe('Failed');
+  });
+
+  it('starts the run counter at 1 on a run that has never been analysed', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Platform: 'AWS HealthOmics',
+      Status: 'FAILED',
+      FailureReason: 'WORKFLOW_RUN_FAILED',
+    });
+    mockClassify.mockResolvedValue({
+      outcome: 'classified',
+      result: { owner: 'Lab', summary: 'A summary', action: 'An action' },
+    });
+
+    await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any, 'Manual');
+
+    const written = mockUpdateWithRemoval.mock.calls[mockUpdateWithRemoval.mock.calls.length - 1][0];
+    expect(written.AnalysisRunCount).toBe(1);
+  });
+
+  it('counts an attempt that failed before producing a verdict', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Platform: 'AWS HealthOmics',
+      Status: 'FAILED',
+      FailureReason: 'WORKFLOW_RUN_FAILED',
+      AnalysisRunCount: 4,
+    });
+    mockClassify.mockResolvedValue({
+      outcome: 'failed',
+      error: { code: 'RATE_LIMITED', message: 'slow down', retryable: true },
+    });
+
+    await processClassificationEvent('UPDATE', { RunId: 'run-1' } as any, 'Manual');
+
+    // The count is attempts, not answers — a failed attempt still happened, and
+    // a gap between this and AnalysisHistory.length is what makes that visible.
+    const written = mockUpdateWithRemoval.mock.calls[mockUpdateWithRemoval.mock.calls.length - 1][0];
+    expect(written.AnalysisRunCount).toBe(5);
+    expect(written.AnalysisHistory).toBeUndefined();
+  });
 });
 
 describe('processClassificationEvent — trigger, toggle, and analysis status', () => {
