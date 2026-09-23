@@ -21,7 +21,10 @@
         "!{projectRoot}/build/**/*",
         "!{projectRoot}/dist/**/*",
         "!{projectRoot}/lib/**/*",
-        "!{projectRoot}/cdk.out/**/*"
+        "!{projectRoot}/cdk.out/**/*",
+        {
+          "env": "SKIP_TESTS"
+        }
       ],
       "outputs": [
         "{projectRoot}/lib",
