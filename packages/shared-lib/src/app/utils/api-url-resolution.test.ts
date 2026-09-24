@@ -14,9 +14,12 @@ describe('resolveApiUrls', () => {
 
   describe('base url precedence', () => {
     it('prefers the environment override over the stack output', () => {
-      const resolved = resolveApiUrls(inputs({ baseUrlEnvOverride: baseUrl, baseUrlStackOutput: easyGenomicsUrl }));
+      // A custom domain, since an override that is a different raw invoke URL is
+      // treated as stale — see the 'stale environment override' cases below.
+      const customDomain = 'https://api.easygenomics.example.org';
+      const resolved = resolveApiUrls(inputs({ baseUrlEnvOverride: customDomain, baseUrlStackOutput: baseUrl }));
 
-      expect(resolved.baseUrl).toEqual(baseUrl);
+      expect(resolved.baseUrl).toEqual(customDomain);
       expect(resolved.baseUrlSource).toEqual('env');
     });
 
@@ -145,6 +148,48 @@ describe('resolveApiUrls', () => {
 
       expect(resolved.baseUrl).toEqual(baseUrl);
       expect(resolved.easyGenomicsUrl).toBeUndefined();
+    });
+  });
+
+  describe('stale environment override', () => {
+    it('throws when the override is an invoke url the main stack does not publish', () => {
+      // A stale export from a previous upgrade, or one copied from the wrong API.
+      expect(() =>
+        resolveApiUrls(
+          inputs({
+            baseUrlEnvOverride: 'https://qig0exg1f2.execute-api.us-west-2.amazonaws.com/prod',
+            baseUrlStackOutput: baseUrl,
+            easyGenomicsStackOutput: easyGenomicsUrl,
+          }),
+        ),
+      ).toThrow(/AWS_API_GATEWAY_URL/);
+    });
+
+    it('accepts an override that matches the stack output', () => {
+      const resolved = resolveApiUrls(inputs({ baseUrlEnvOverride: baseUrl, baseUrlStackOutput: baseUrl }));
+
+      expect(resolved.baseUrl).toEqual(baseUrl);
+      expect(resolved.baseUrlSource).toEqual('env');
+    });
+
+    it('accepts a custom domain override, which is not an invoke url', () => {
+      const resolved = resolveApiUrls(
+        inputs({
+          baseUrlEnvOverride: 'https://api.easygenomics.example.org',
+          baseUrlStackOutput: baseUrl,
+          easyGenomicsStackOutput: easyGenomicsUrl,
+        }),
+      );
+
+      expect(resolved.baseUrl).toEqual('https://api.easygenomics.example.org');
+    });
+
+    it('accepts an override when the stack output could not be read', () => {
+      const resolved = resolveApiUrls(
+        inputs({ baseUrlEnvOverride: 'https://qig0exg1f2.execute-api.us-west-2.amazonaws.com/prod' }),
+      );
+
+      expect(resolved.baseUrl).toEqual('https://qig0exg1f2.execute-api.us-west-2.amazonaws.com/prod');
     });
   });
 

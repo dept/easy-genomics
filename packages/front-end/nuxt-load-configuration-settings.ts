@@ -82,11 +82,11 @@ export async function exportNuxtConfigurationSettings(
 
   // Both REST APIs are created with the same name, so they cannot be told apart by a
   // name lookup. Stack names are unique within an account and region, so the outputs
-  // are. The easy-genomics output is read even when a higher-precedence value already
-  // supplied the URL, because whether the deployment is split is what tells a stale
-  // override apart from a legitimate single-API configuration.
+  // are. Both are read even when a higher-precedence value already supplies the URL:
+  // the deployed values are what let `resolveApiUrls` recognise a stale override and
+  // tell a split deployment from a single-API one.
   const [baseUrlStackOutput, easyGenomicsStackOutput] = await Promise.all([
-    apiGatewayUrl ? undefined : getStackOutput(mainStackName, MAIN_STACK_OUTPUT_KEY),
+    getStackOutput(mainStackName, MAIN_STACK_OUTPUT_KEY),
     getStackOutput(easyGenomicsStackName, EASY_GENOMICS_STACK_OUTPUT_KEY),
   ]);
 

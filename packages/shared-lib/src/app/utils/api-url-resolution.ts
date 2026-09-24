@@ -28,6 +28,15 @@ function trimTrailingSlashes(url: string): string {
   return url.replace(/\/+$/, '');
 }
 
+/**
+ * Whether a URL is a raw API Gateway invoke URL rather than a custom domain. A
+ * custom domain is a legitimate override; a raw invoke URL that disagrees with the
+ * deployed stack is a stale value.
+ */
+function isApiGatewayInvokeUrl(url: string): boolean {
+  return /^https:\/\/[a-z0-9]+\.execute-api\.[a-z0-9-]+\.amazonaws\.com\//.test(url);
+}
+
 function firstAvailable(candidates: [UrlSource, string | undefined][]): [UrlSource, string] | undefined {
   for (const [source, value] of candidates) {
     if (value && value.trim() !== '') {
@@ -55,12 +64,30 @@ export function resolveApiUrls(inputs: ApiUrlInputs): ResolvedApiUrls {
   if (!base) {
     throw new Error(
       `Unable to resolve the back-end API URL: stack '${inputs.mainStackName}' has no '${MAIN_STACK_OUTPUT_KEY}' output ` +
-        'and AWS_API_GATEWAY_URL is not set. Deploy the back-end, or set AWS_API_GATEWAY_URL to the API serving ' +
-        '/aws-healthomics and /nf-tower.',
+        'and AWS_API_GATEWAY_URL is not set. Deploy the back-end first, so the stack publishes the output.',
     );
   }
 
   const [baseUrlSource, baseUrl] = base;
+
+  // An operator told to `export AWS_API_GATEWAY_URL` during an earlier upgrade may
+  // still be carrying it. Left alone a stale one silently sends every HealthOmics and
+  // NF-Tower request to the wrong API — the original defect, reintroduced by the
+  // workaround for it. Only raw invoke URLs are checked: a custom domain legitimately
+  // differs from the stack output, and prod can front this API with one.
+  if (
+    baseUrlSource === 'env' &&
+    inputs.baseUrlStackOutput !== undefined &&
+    isApiGatewayInvokeUrl(baseUrl) &&
+    baseUrl !== trimTrailingSlashes(inputs.baseUrlStackOutput)
+  ) {
+    throw new Error(
+      `AWS_API_GATEWAY_URL is set to ${baseUrl}, but '${inputs.mainStackName}' publishes ` +
+        `${trimTrailingSlashes(inputs.baseUrlStackOutput)} as its '${MAIN_STACK_OUTPUT_KEY}'. ` +
+        'This is usually a stale export left over from an earlier upgrade. Unset AWS_API_GATEWAY_URL ' +
+        'and the deployed value will be used; it no longer needs to be set by hand.',
+    );
+  }
 
   // Absent on a deployment that predates the v1.5 API split. factory.ts then serves
   // /easy-genomics from the base URL, which is correct for a single-API deployment.
@@ -97,7 +124,10 @@ export function resolveApiUrls(inputs: ApiUrlInputs): ResolvedApiUrls {
         `The back-end API URL and the Easy Genomics API URL are identical (${baseUrl}). ` +
           `The back-end URL came from '${baseUrlSource}' and the Easy Genomics URL from '${easyGenomicsUrlSource}'. ` +
           `They must differ: '${inputs.mainStackName}' serves /aws-healthomics and /nf-tower, ` +
-          `'${inputs.easyGenomicsStackName}' serves /easy-genomics.`,
+          `'${inputs.easyGenomicsStackName}' serves /easy-genomics. ` +
+          (baseUrlSource === 'env'
+            ? 'Unset AWS_API_GATEWAY_URL; it no longer needs to be set by hand.'
+            : "Correct 'aws-easy-genomics-api-url' in config/easy-genomics.yaml, or remove it to use the deployed value."),
       );
     }
 
