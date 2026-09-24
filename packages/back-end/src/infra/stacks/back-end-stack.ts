@@ -128,6 +128,7 @@ export class BackEndStack extends Stack {
     // has its own API Gateway in EasyGenomicsApiStack. Reusing the previous
     // construct id preserves the REST API physical id / invoke URL on upgrade.
     this.apiGateway = new SpecRestApiConstruct(this, `${this.props.constructNamespace}-apigw`, {
+      restApiName: `${this.props.namePrefix}-main-back-end-apigw`,
       description: 'Easy Genomics Platform API Gateway (AWS HealthOmics + NF-Tower)',
       lambdaFunctions: new Map<string, IFunction>([
         ...awsHealthOmicsNestedStack.lambda.lambdaFunctions,
