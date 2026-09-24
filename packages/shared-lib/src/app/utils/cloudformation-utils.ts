@@ -44,7 +44,7 @@ export async function getStackOutput(stackName: string, outputKey: string): Prom
   const outputs: Output[] = response.Stacks?.[0]?.Outputs ?? [];
   const output: Output | undefined = outputs.find((o: Output) => o.OutputKey === outputKey);
 
-  return output?.OutputValue ? output.OutputValue.replace(/\/+$/, '') : undefined;
+  return output?.OutputValue || undefined;
 }
 
 /**

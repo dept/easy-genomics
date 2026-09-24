@@ -1,4 +1,4 @@
-import { resolveApiUrls } from './api-url-resolution';
+import { isApiGatewayInvokeUrl, resolveApiUrls } from './api-url-resolution';
 
 describe('resolveApiUrls', () => {
   const mainStackName = 'dev-demo-main-back-end-stack';
@@ -136,6 +136,18 @@ describe('resolveApiUrls', () => {
       ).toThrow(/identical/i);
     });
 
+    it('names AWS_EASY_GENOMICS_API_URL when the colliding value came from the environment', () => {
+      expect(() =>
+        resolveApiUrls(
+          inputs({
+            baseUrlStackOutput: baseUrl,
+            easyGenomicsEnvOverride: baseUrl,
+            easyGenomicsStackOutput: easyGenomicsUrl,
+          }),
+        ),
+      ).toThrow(/Unset AWS_EASY_GENOMICS_API_URL/);
+    });
+
     it('allows equal urls on a deployment that publishes no easy-genomics stack output', () => {
       const resolved = resolveApiUrls(inputs({ baseUrlEnvOverride: baseUrl, easyGenomicsYamlValue: baseUrl }));
 
@@ -158,6 +170,21 @@ describe('resolveApiUrls', () => {
         resolveApiUrls(
           inputs({
             baseUrlEnvOverride: 'https://qig0exg1f2.execute-api.us-west-2.amazonaws.com/prod',
+            baseUrlStackOutput: baseUrl,
+            easyGenomicsStackOutput: easyGenomicsUrl,
+          }),
+        ),
+      ).toThrow(/AWS_API_GATEWAY_URL/);
+    });
+
+    it('throws when the override is a stage-less invoke url the main stack does not publish', () => {
+      // Trailing slashes are trimmed before this runs, so an override written without a
+      // stage arrives as a bare host. Failing to recognise it would skip the guard and
+      // ship the wrong URL silently — the outcome this resolution exists to prevent.
+      expect(() =>
+        resolveApiUrls(
+          inputs({
+            baseUrlEnvOverride: 'https://qig0exg1f2.execute-api.us-west-2.amazonaws.com',
             baseUrlStackOutput: baseUrl,
             easyGenomicsStackOutput: easyGenomicsUrl,
           }),
@@ -193,6 +220,18 @@ describe('resolveApiUrls', () => {
     });
   });
 
+  describe('isApiGatewayInvokeUrl', () => {
+    it.each([
+      ['https://enq0s22xth.execute-api.us-west-2.amazonaws.com/prod', true],
+      ['https://enq0s22xth.execute-api.us-west-2.amazonaws.com', true],
+      ['https://api.easygenomics.example.org', false],
+      ['https://api.easygenomics.example.org/prod', false],
+      ['http://localhost:3001', false],
+    ])('classifies %s as %s', (url, expected) => {
+      expect(isApiGatewayInvokeUrl(url as string)).toEqual(expected);
+    });
+  });
+
   describe('trailing slashes', () => {
     it('trims them from every source', () => {
       const resolved = resolveApiUrls(
@@ -206,7 +245,7 @@ describe('resolveApiUrls', () => {
     it('treats urls differing only by a trailing slash as equal for the guard', () => {
       expect(() =>
         resolveApiUrls(inputs({ baseUrlEnvOverride: baseUrl, easyGenomicsStackOutput: `${baseUrl}/` })),
-      ).toThrow();
+      ).toThrow(/identical/i);
     });
   });
 });

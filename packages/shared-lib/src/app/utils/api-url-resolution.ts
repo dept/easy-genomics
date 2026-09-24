@@ -32,9 +32,13 @@ function trimTrailingSlashes(url: string): string {
  * Whether a URL is a raw API Gateway invoke URL rather than a custom domain. A
  * custom domain is a legitimate override; a raw invoke URL that disagrees with the
  * deployed stack is a stale value.
+ *
+ * The stage suffix is optional: values reaching this have already had trailing
+ * slashes trimmed, so a stage-less override arrives as a bare host and must still
+ * be recognised rather than silently skipping the stale-override guard.
  */
-function isApiGatewayInvokeUrl(url: string): boolean {
-  return /^https:\/\/[a-z0-9]+\.execute-api\.[a-z0-9-]+\.amazonaws\.com\//.test(url);
+export function isApiGatewayInvokeUrl(url: string): boolean {
+  return /^https:\/\/[a-z0-9]+\.execute-api\.[a-z0-9-]+\.amazonaws\.com(\/|$)/.test(url);
 }
 
 function firstAvailable(candidates: [UrlSource, string | undefined][]): [UrlSource, string] | undefined {
@@ -114,10 +118,9 @@ export function resolveApiUrls(inputs: ApiUrlInputs): ResolvedApiUrls {
     // sit behind one base-path-mapped custom domain, where naming that domain twice
     // is correct; such a value matches neither stack output. A stale override or a
     // mistyped yaml entry points at an actual invoke URL, and does.
-    const stackOutputs = [inputs.baseUrlStackOutput, inputs.easyGenomicsStackOutput]
-      .filter((url): url is string => url !== undefined)
-      .map(trimTrailingSlashes);
-    const collidesWithAnInvokeUrl = stackOutputs.includes(baseUrl);
+    const collidesWithAnInvokeUrl =
+      baseUrl === trimTrailingSlashes(inputs.baseUrlStackOutput ?? '') ||
+      baseUrl === trimTrailingSlashes(inputs.easyGenomicsStackOutput ?? '');
 
     if (isSplitDeployment && collidesWithAnInvokeUrl && baseUrl === easyGenomicsUrl) {
       throw new Error(
@@ -127,7 +130,9 @@ export function resolveApiUrls(inputs: ApiUrlInputs): ResolvedApiUrls {
           `'${inputs.easyGenomicsStackName}' serves /easy-genomics. ` +
           (baseUrlSource === 'env'
             ? 'Unset AWS_API_GATEWAY_URL; it no longer needs to be set by hand.'
-            : "Correct 'aws-easy-genomics-api-url' in config/easy-genomics.yaml, or remove it to use the deployed value."),
+            : easyGenomicsUrlSource === 'env'
+              ? 'Unset AWS_EASY_GENOMICS_API_URL; it no longer needs to be set by hand.'
+              : "Correct 'aws-easy-genomics-api-url' in config/easy-genomics.yaml, or remove it to use the deployed value."),
       );
     }
 
