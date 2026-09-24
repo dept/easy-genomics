@@ -18,7 +18,18 @@ import { Construct } from 'constructs';
 import { enrichSpecForApiGateway } from '../utils/openapi-spec-enrichment';
 
 export interface SpecRestApiConstructProps {
+  /**
+   * Names the Usage Plan. `SpecRestApi` cannot set the REST API's own description —
+   * CDK never passes one to the underlying `CfnRestApi` — so that comes from the
+   * spec's `info.description`, which is shared by every API built from it.
+   */
   description: string;
+  /**
+   * Physical `Name` of the REST API. Required because `RestApiBase` otherwise falls
+   * back to the construct id, which is not unique across the stacks that instantiate
+   * this construct.
+   */
+  restApiName: string;
   /**
    * Endpoint-path (no `/{id}`) → Lambda function map, aggregated from the
    * `LambdaConstruct`(s) that own the routes this API serves. The construct
@@ -71,6 +82,7 @@ export class SpecRestApiConstruct extends Construct {
     // Same id as the previous RestApi so the logical id is preserved (see class doc).
     this.restApi = new SpecRestApi(this, id, {
       apiDefinition: ApiDefinition.fromInline(document),
+      restApiName: props.restApiName,
       endpointTypes: [EndpointType.REGIONAL],
       cloudWatchRole: true,
       cloudWatchRoleRemovalPolicy: RemovalPolicy.DESTROY,
