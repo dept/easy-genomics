@@ -73,15 +73,26 @@ export function resolveApiUrls(inputs: ApiUrlInputs): ResolvedApiUrls {
   if (easyGenomics) {
     const [easyGenomicsUrlSource, easyGenomicsUrl] = easyGenomics;
 
-    // Two equal URLs mean every /aws-healthomics and /nf-tower request 404s in the
-    // browser. Whether that is an error depends on the deployment, not on where the
-    // values came from: a split deployment always has two distinct APIs, while a
-    // pre-split one has a single API an operator may legitimately name twice.
-    // easyGenomicsStackOutput is the signal, so the caller must look it up even when
-    // a higher-precedence value already supplied the URL.
+    // Two equal URLs usually mean every /aws-healthomics and /nf-tower request 404s
+    // in the browser, but two supported topologies produce equal values legitimately,
+    // so the guard needs both of the following to hold.
+    //
+    // The deployment must be split. A pre-split deployment has a single API an
+    // operator may reasonably name twice. easyGenomicsStackOutput is that signal,
+    // which is why the caller reads it even when a higher-precedence value already
+    // supplied the URL.
     const isSplitDeployment = inputs.easyGenomicsStackOutput !== undefined;
 
-    if (isSplitDeployment && baseUrl === easyGenomicsUrl) {
+    // And the shared value must be one of the raw invoke URLs. In prod both APIs can
+    // sit behind one base-path-mapped custom domain, where naming that domain twice
+    // is correct; such a value matches neither stack output. A stale override or a
+    // mistyped yaml entry points at an actual invoke URL, and does.
+    const stackOutputs = [inputs.baseUrlStackOutput, inputs.easyGenomicsStackOutput]
+      .filter((url): url is string => url !== undefined)
+      .map(trimTrailingSlashes);
+    const collidesWithAnInvokeUrl = stackOutputs.includes(baseUrl);
+
+    if (isSplitDeployment && collidesWithAnInvokeUrl && baseUrl === easyGenomicsUrl) {
       throw new Error(
         `The back-end API URL and the Easy Genomics API URL are identical (${baseUrl}). ` +
           `The back-end URL came from '${baseUrlSource}' and the Easy Genomics URL from '${easyGenomicsUrlSource}'. ` +

@@ -104,6 +104,35 @@ describe('resolveApiUrls', () => {
       );
     });
 
+    it('allows equal urls that are a custom domain rather than an invoke url', () => {
+      // Supported prod topology: both APIs behind one base-path-mapped custom domain,
+      // so the operator legitimately names the same host twice. The value matches
+      // neither stack output, which is what distinguishes it from a stale override.
+      const customDomain = 'https://api.easygenomics.example.org';
+      const resolved = resolveApiUrls(
+        inputs({
+          baseUrlEnvOverride: customDomain,
+          easyGenomicsYamlValue: customDomain,
+          easyGenomicsStackOutput: easyGenomicsUrl,
+        }),
+      );
+
+      expect(resolved.baseUrl).toEqual(customDomain);
+      expect(resolved.easyGenomicsUrl).toEqual(customDomain);
+    });
+
+    it('throws when the yaml value is mistakenly set to the base stack output', () => {
+      expect(() =>
+        resolveApiUrls(
+          inputs({
+            baseUrlStackOutput: baseUrl,
+            easyGenomicsYamlValue: baseUrl,
+            easyGenomicsStackOutput: easyGenomicsUrl,
+          }),
+        ),
+      ).toThrow(/identical/i);
+    });
+
     it('allows equal urls on a deployment that publishes no easy-genomics stack output', () => {
       const resolved = resolveApiUrls(inputs({ baseUrlEnvOverride: baseUrl, easyGenomicsYamlValue: baseUrl }));
 
