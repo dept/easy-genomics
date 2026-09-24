@@ -103,6 +103,7 @@ export class EasyGenomicsApiStack extends Stack {
     // id, so the deployed API physical id and invoke URL are unchanged on upgrade
     // (Easy Genomics runs in customer-owned accounts — a new URL would break them).
     this.apiGateway = new SpecRestApiConstruct(this, `${this.props.namePrefix}-easy-genomics-apigw`, {
+      restApiName: `${this.props.namePrefix}-easy-genomics-api-apigw`,
       description: 'Easy Genomics API Gateway',
       lambdaFunctions: this.easyGenomicsNestedStack.lambda.lambdaFunctions,
       userPool: this.props.userPool,
