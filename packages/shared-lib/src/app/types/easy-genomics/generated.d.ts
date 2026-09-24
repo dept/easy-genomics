@@ -38,6 +38,10 @@ export interface paths {
     /** Create Workflow Upload Request */
     post: operations["createWorkflowUploadRequest"];
   };
+  "/aws-healthomics/workflow/delete-private-workflow/{id}": {
+    /** Delete Private Workflow */
+    delete: operations["deletePrivateWorkflow"];
+  };
   "/aws-healthomics/workflow/list-private-workflows": {
     /** List Private Workflows */
     get: operations["listPrivateWorkflows"];
@@ -237,6 +241,10 @@ export interface paths {
   "/easy-genomics/laboratory/run/request-estimate-run-cost": {
     /** Request Estimate Run Cost */
     post: operations["requestEstimateRunCost"];
+  };
+  "/easy-genomics/laboratory/run/request-laboratory-run-failure-analysis": {
+    /** Request Laboratory Run Failure Analysis */
+    post: operations["requestLaboratoryRunFailureAnalysis"];
   };
   "/easy-genomics/laboratory/run/request-laboratory-run-status-check": {
     /** Request Laboratory Run Status Check */
@@ -1099,6 +1107,7 @@ export interface components {
       SeqeraLlmProvider?: "bedrock" | "openai" | "anthropic";
       SeqeraLlmModelId?: string;
       HealthOmicsLogEnrichmentEnabled?: boolean;
+      FailureAnalysisEnabled?: boolean;
       HealthOmicsLlmApiKey?: string;
       SeqeraLlmApiKey?: string;
     };
@@ -1178,6 +1187,14 @@ export interface components {
        * the configured LLM for deeper diagnosis. Requires a HealthOmics LLM provider.
        */
       HealthOmicsLogEnrichmentEnabled?: boolean;
+      /**
+       * @description Master switch for AI failure analysis at this lab. `undefined` means
+       * enabled — labs that predate this field keep today's behaviour with no
+       * data migration. When `false`, the manual trigger is unavailable to
+       * everyone (technicians and admins alike) — there is no automatic path;
+       * analysis is always technician-initiated per run.
+       */
+      FailureAnalysisEnabled?: boolean;
       /** @description Boolean indicators returned by read-laboratory; the actual keys never leave SSM. */
       HasHealthOmicsLlmApiKey?: boolean;
       HasSeqeraLlmApiKey?: boolean;
@@ -1224,6 +1241,7 @@ export interface components {
       SeqeraLlmProvider?: "anthropic" | "bedrock" | "openai";
       SeqeraLlmModelId?: string;
       HealthOmicsLogEnrichmentEnabled?: boolean;
+      FailureAnalysisEnabled?: boolean;
       HasNextFlowTowerAccessToken?: boolean;
       HasGitHubAccessToken?: boolean;
       /** @description Boolean indicators. The actual keys live in SSM and are never returned. */
@@ -1267,9 +1285,9 @@ export interface components {
       /** @enum {string} */
       Platform: "AWS HealthOmics" | "Seqera Cloud";
       Status: string;
+      Owner: string;
       RunId: string;
       RunName: string;
-      Owner: string;
       /** @description Optional user-authored note for this run; set at creation time. */
       Description?: string;
       WorkflowName?: string;
@@ -1350,6 +1368,54 @@ export interface components {
        */
       FailureClassifiedBy?: "llm" | "lookup";
       /**
+       * @description Execution state of the AI failure analysis for this run. Absent means it
+       * has never been requested. Written by the classification consumer; polled
+       * by the run detail page after a manual trigger.
+       * @enum {string}
+       */
+      AnalysisStatus?: "Failed" | "Queued" | "Running" | "Succeeded";
+      /** @description One of ClassificationErrorCode. Typed as a string so this schema does not couple to the provider taxonomy. */
+      AnalysisErrorCode?: string;
+      /** @description The provider's own detail. Shown as secondary text under the mapped UI copy, never in place of it. */
+      AnalysisErrorMessage?: string;
+      /** @description ISO timestamp. Load-bearing: lets the UI abandon a Running status stranded by a dead consumer. */
+      AnalysisRequestedAt?: string;
+      /**
+       * @description What evidence the LLM actually had when it produced this classification.
+       * Written only on the LLM path; the deterministic lookup never sets it.
+       * Load-bearing for the UI: an `Ambiguous` verdict reached without a log
+       * excerpt is platform state the user can fix, not a verdict about the run.
+       * @enum {string}
+       */
+      AnalysisEvidence?: "enrichment-disabled" | "log-excerpt" | "log-no-error" | "log-unavailable";
+      /** @description Cognito username that requested the current analysis. Set by the request handler. */
+      AnalysisRequestedBy?: string;
+      /**
+       * @description How many times analysis has completed for this run, including attempts
+       * that failed before producing a verdict. Always >= AnalysisHistory.length.
+       */
+      AnalysisRunCount?: number;
+      /**
+       * @description Completed analyses, newest first, up to {@link ANALYSIS_HISTORY_LIMIT}.
+       * Entry 0 mirrors the flat `Failure*` fields above — deliberate duplication,
+       * so runs predating this field keep rendering with no migration.
+       */
+      AnalysisHistory?: ({
+          AnalysedAt: string;
+          /** @enum {string} */
+          Owner: "AWS" | "Ambiguous" | "Bioinformatician" | "Lab";
+          Summary: string;
+          Action: string;
+          /** @enum {string} */
+          ClassifiedBy: "llm" | "lookup";
+          /** @enum {string} */
+          Evidence?: "enrichment-disabled" | "log-excerpt" | "log-no-error" | "log-unavailable";
+          /** @enum {string} */
+          Provider?: "anthropic" | "bedrock" | "openai";
+          ModelId?: string;
+          RequestedBy?: string;
+        })[];
+      /**
        * @description Sparse marker present only while the run is non-terminal. Backs the `PollStatus_Index`
        * GSI so the notification poller can query "every active run" in O(1) regardless of total
        * run history, instead of scanning or iterating every lab. Removed (not set false) on the
@@ -1419,9 +1485,9 @@ export interface components {
       /** @enum {string} */
       Platform: "AWS HealthOmics" | "Seqera Cloud";
       Status: string;
+      Owner: string;
       RunId: string;
       RunName: string;
-      Owner: string;
       /** @description Optional user-authored note for this run; set at creation time. */
       Description?: string;
       WorkflowName?: string;
@@ -1450,6 +1516,30 @@ export interface components {
       FailureAction?: string;
       /** @enum {string} */
       FailureClassifiedBy?: "llm" | "lookup";
+      /** @enum {string} */
+      AnalysisStatus?: "Failed" | "Queued" | "Running" | "Succeeded";
+      AnalysisErrorCode?: string;
+      AnalysisErrorMessage?: string;
+      AnalysisRequestedAt?: string;
+      /** @enum {string} */
+      AnalysisEvidence?: "enrichment-disabled" | "log-excerpt" | "log-no-error" | "log-unavailable";
+      AnalysisRequestedBy?: string;
+      AnalysisRunCount?: number;
+      AnalysisHistory?: ({
+          AnalysedAt: string;
+          /** @enum {string} */
+          Owner: "AWS" | "Ambiguous" | "Bioinformatician" | "Lab";
+          Summary: string;
+          Action: string;
+          /** @enum {string} */
+          ClassifiedBy: "llm" | "lookup";
+          /** @enum {string} */
+          Evidence?: "enrichment-disabled" | "log-excerpt" | "log-no-error" | "log-unavailable";
+          /** @enum {string} */
+          Provider?: "anthropic" | "bedrock" | "openai";
+          ModelId?: string;
+          RequestedBy?: string;
+        })[];
       ProgressPercent?: number;
       TasksTotal?: number;
       TasksCompleted?: number;
@@ -1559,6 +1649,7 @@ export interface components {
       SeqeraLlmProvider?: "bedrock" | "openai" | "anthropic";
       SeqeraLlmModelId?: string;
       HealthOmicsLogEnrichmentEnabled?: boolean;
+      FailureAnalysisEnabled?: boolean;
       HealthOmicsLlmApiKey?: string;
       SeqeraLlmApiKey?: string;
     };
@@ -3885,6 +3976,31 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
+  /** Delete Private Workflow */
+  deletePrivateWorkflow: {
+    parameters: {
+      query?: {
+        /** @description Laboratory to delete the workflow from */
+        laboratoryId?: string;
+      };
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
   /** List Private Workflows */
   listPrivateWorkflows: {
     parameters: {
@@ -4989,6 +5105,22 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["EstimateRunCostResponse"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Request Laboratory Run Failure Analysis */
+  requestLaboratoryRunFailureAnalysis: {
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
         };
       };
       400: components["responses"]["BadRequest"];

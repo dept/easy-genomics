@@ -249,7 +249,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-if="loading">
+            <tr v-if="loading && !files.length">
               <td colspan="5" class="p-6 text-center text-gray-400">Scanning…</td>
             </tr>
             <tr v-else-if="!filtered.length">

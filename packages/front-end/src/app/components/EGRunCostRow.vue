@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import type { EstimateRunCostResponse } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
   import type { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
+  import { resolveRunCostSource, showRunCostRow } from '@FE/utils/run-cost-row-visibility';
 
   const props = withDefaults(
     defineProps<{
@@ -10,36 +11,49 @@
       labRun?: LaboratoryRun | null;
       /** Loading state while fetching pre-run estimate */
       loading?: boolean;
-      labelClass?: string;
-      valueClass?: string;
+      /**
+       * 'detail' is the wide label/value row used by the run wizard review step;
+       * 'summary' matches the compact right-aligned rows of the run summary card.
+       */
+      variant?: 'detail' | 'summary';
     }>(),
     {
       estimate: null,
       labRun: null,
       loading: false,
-      labelClass: 'w-48 shrink-0 text-black',
-      valueClass: 'min-w-0 flex-1 break-words text-muted text-left',
+      variant: 'detail',
     },
+  );
+
+  const isSummary = computed(() => props.variant === 'summary');
+
+  const rowClass = computed(() =>
+    isSummary.value
+      ? 'flex items-start justify-between gap-4 border-b py-3'
+      : 'text-md flex items-center rounded-lg border-b px-4 py-4 last:border-0',
+  );
+  const labelClass = computed(() => (isSummary.value ? 'text-muted shrink-0 text-sm' : 'w-48 shrink-0 text-black'));
+  const valueClass = computed(() =>
+    isSummary.value ? 'text-sm text-black text-right' : 'min-w-0 flex-1 break-words text-muted text-left',
   );
 
   const costExplorerEnabled = useCostExplorerEnabled();
 
-  type CostSource = 'billed' | 'outcome' | 'preRun' | 'pending' | 'preLaunch';
+  /** Single billed → outcome → pre-run cascade; pending runs never reach the template. */
+  const costSource = computed(() => resolveRunCostSource(props.labRun));
 
-  /** Single billed → outcome → pre-run → pending priority cascade for post-run display. */
-  const costSource = computed<CostSource>(() => {
-    if (!props.labRun) return 'preLaunch';
-    if (props.labRun.BilledCost) return 'billed';
-    if (props.labRun.RunCostOutcome?.ActualComputeCostUsd != null) return 'outcome';
-    if (props.labRun.PreRunCostEstimate) return 'preRun';
-    return 'pending';
-  });
+  /**
+   * Hide the row until there is a real amount. A workflow needs a minimum number of
+   * successful runs before any estimate exists, so there is no placeholder pending state.
+   */
+  const showRow = computed<boolean>(() =>
+    showRunCostRow({ estimate: props.estimate, labRun: props.labRun, loading: props.loading }),
+  );
 
   const isPostRun = computed(() => costSource.value !== 'preLaunch');
   const billed = computed(() => props.labRun?.BilledCost);
   const outcome = computed(() => props.labRun?.RunCostOutcome);
   const preRun = computed(() => props.labRun?.PreRunCostEstimate ?? null);
-  const isBilledPending = computed(() => costSource.value === 'pending');
 
   const rowLabel = computed(() => (costSource.value === 'billed' ? 'Billed cost' : 'Estimated cost'));
   const chipLabel = computed(() => (costSource.value === 'billed' ? 'BILLED' : 'ESTIMATE'));
@@ -61,34 +75,21 @@
         return `≈ ${formatUsd(outcome.value?.ActualComputeCostUsd)}`;
       case 'preRun':
         return `${formatUsd(preRun.value?.LowUsd)} – ${formatUsd(preRun.value?.HighUsd)}`;
-      case 'pending':
-        return costExplorerEnabled.value ? 'Billed cost pending' : 'Billed cost unavailable';
       case 'preLaunch':
-      default:
-        if (!props.estimate) return '—';
-        if (!props.estimate.estimateAvailable || !props.estimate.computeCostUsd) {
-          return 'Cost estimate unavailable';
-        }
-        return `${formatUsd(props.estimate.computeCostUsd.low)} – ${formatUsd(props.estimate.computeCostUsd.high)}`;
+        return `${formatUsd(props.estimate?.computeCostUsd?.low)} – ${formatUsd(props.estimate?.computeCostUsd?.high)}`;
+      case 'pending':
+        return '';
     }
   });
 
   const tooltipTitle = computed(() => {
     if (costSource.value === 'billed') return 'Billed cost from AWS Cost Explorer';
-    if (isBilledPending.value) {
-      return costExplorerEnabled.value ? 'Billed cost pending' : 'Billed cost unavailable';
-    }
     return 'Estimated, not billed.';
   });
 
   const tooltipBody = computed(() => {
     if (costSource.value === 'billed') {
       return 'Grouped by run tags. Pre-run estimate and platform compute estimate shown for comparison. Data may lag 24–48 hours.';
-    }
-    if (isBilledPending.value) {
-      return costExplorerEnabled.value
-        ? 'AWS Cost Explorer billed cost typically appears within 24–48 hours after the run completes. Check back later.'
-        : 'Billed per-run AWS cost requires Cost Explorer (and cost allocation tags) to be enabled for this deployment. Platform and historical estimates are still available when there is run history.';
     }
     if (costSource.value === 'outcome' && outcome.value) {
       return outcome.value.CostSource === 'SEQERA_PROGRESS'
@@ -132,14 +133,27 @@
     return lines;
   });
 
+  /**
+   * One-line provenance shown under the label. Kept source-specific rather than a single
+   * fixed sentence: only the HealthOmics outcome is priced off AWS list rates, while the
+   * pre-run band comes from this workflow's own completed runs.
+   */
+  const captionText = computed<string>(() => {
+    switch (costSource.value) {
+      case 'billed':
+        return 'From AWS Cost Explorer';
+      case 'outcome':
+        return outcome.value?.CostSource === 'SEQERA_PROGRESS'
+          ? 'Seqera compute estimate'
+          : 'Based on AWS list pricing';
+      default:
+        return 'Based on similar completed runs';
+    }
+  });
+
   const footerText = computed(() => {
     if (billed.value?.AsOfDate) {
       return `Data as of ${billed.value.AsOfDate}. AWS billing data typically updates within 24–48 hours.`;
-    }
-    if (isBilledPending.value) {
-      return costExplorerEnabled.value
-        ? 'Billed amounts are synced daily from Cost Explorer once available.'
-        : 'Enable Cost Explorer for this deployment to sync billed AWS charges.';
     }
     if (isPostRun.value && costSource.value !== 'billed' && !costExplorerEnabled.value) {
       return 'Billed AWS charges are not synced until Cost Explorer is enabled for this deployment.';
@@ -149,18 +163,10 @@
 </script>
 
 <template>
-  <div class="cost-row text-md flex items-center rounded-lg border-b px-4 py-4 last:border-0">
-    <dt :class="labelClass">{{ rowLabel }}</dt>
-    <dd :class="valueClass">
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="text-base font-semibold text-gray-900">{{ amountText }}</span>
-        <span
-          v-if="!loading && (estimate?.estimateAvailable || labRun)"
-          class="rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide"
-          :class="chipClass"
-        >
-          {{ chipLabel }}
-        </span>
+  <div v-if="showRow" class="cost-row" :class="rowClass">
+    <dt :class="labelClass">
+      <span class="flex items-center gap-1.5">
+        {{ rowLabel }}
         <!-- Nuxt UI tooltip defaults to h-6 + truncate on a white bg; override so multi-line copy is visible. -->
         <UTooltip
           :popper="{ placement: 'bottom' }"
@@ -187,6 +193,20 @@
             </div>
           </template>
         </UTooltip>
+      </span>
+      <span v-if="isSummary && !loading" class="text-muted mt-0.5 block text-xs">{{ captionText }}</span>
+    </dt>
+
+    <dd :class="valueClass">
+      <div class="flex flex-wrap items-center gap-2" :class="isSummary ? 'justify-end' : ''">
+        <span class="text-base font-semibold text-gray-900">{{ amountText }}</span>
+        <span
+          v-if="!isSummary && !loading && (estimate?.estimateAvailable || labRun)"
+          class="rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide"
+          :class="chipClass"
+        >
+          {{ chipLabel }}
+        </span>
       </div>
     </dd>
   </div>

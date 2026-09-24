@@ -1648,6 +1648,8 @@ components:
           type: string
         HealthOmicsLogEnrichmentEnabled:
           type: boolean
+        FailureAnalysisEnabled:
+          type: boolean
         HealthOmicsLlmApiKey:
           type: string
         SeqeraLlmApiKey:
@@ -1764,6 +1766,14 @@ components:
             CloudWatch engine log, redacts PII + secrets, and sends a bounded excerpt to
             the configured LLM for deeper diagnosis. Requires a HealthOmics LLM provider.
           type: boolean
+        FailureAnalysisEnabled:
+          description: |-
+            Master switch for AI failure analysis at this lab. `undefined` means
+            enabled — labs that predate this field keep today's behaviour with no
+            data migration. When `false`, the manual trigger is unavailable to
+            everyone (technicians and admins alike) — there is no automatic path;
+            analysis is always technician-initiated per run.
+          type: boolean
         HasHealthOmicsLlmApiKey:
           description: Boolean indicators returned by read-laboratory; the actual keys never leave SSM.
           type: boolean
@@ -1858,6 +1868,8 @@ components:
         SeqeraLlmModelId:
           type: string
         HealthOmicsLogEnrichmentEnabled:
+          type: boolean
+        FailureAnalysisEnabled:
           type: boolean
         HasNextFlowTowerAccessToken:
           type: boolean
@@ -1957,11 +1969,11 @@ components:
           type: string
         Status:
           type: string
+        Owner:
+          type: string
         RunId:
           type: string
         RunName:
-          type: string
-        Owner:
           type: string
         Description:
           description: Optional user-authored note for this run; set at creation time.
@@ -2067,6 +2079,96 @@ components:
             - llm
             - lookup
           type: string
+        AnalysisStatus:
+          description: |-
+            Execution state of the AI failure analysis for this run. Absent means it
+            has never been requested. Written by the classification consumer; polled
+            by the run detail page after a manual trigger.
+          enum:
+            - Failed
+            - Queued
+            - Running
+            - Succeeded
+          type: string
+        AnalysisErrorCode:
+          description: One of ClassificationErrorCode. Typed as a string so this schema does not couple to the provider taxonomy.
+          type: string
+        AnalysisErrorMessage:
+          description: The provider's own detail. Shown as secondary text under the mapped UI copy, never in place of it.
+          type: string
+        AnalysisRequestedAt:
+          description: 'ISO timestamp. Load-bearing: lets the UI abandon a Running status stranded by a dead consumer.'
+          type: string
+        AnalysisEvidence:
+          description: |-
+            What evidence the LLM actually had when it produced this classification.
+            Written only on the LLM path; the deterministic lookup never sets it.
+            Load-bearing for the UI: an `Ambiguous` verdict reached without a log
+            excerpt is platform state the user can fix, not a verdict about the run.
+          enum:
+            - enrichment-disabled
+            - log-excerpt
+            - log-no-error
+            - log-unavailable
+          type: string
+        AnalysisRequestedBy:
+          description: Cognito username that requested the current analysis. Set by the request handler.
+          type: string
+        AnalysisRunCount:
+          description: |-
+            How many times analysis has completed for this run, including attempts
+            that failed before producing a verdict. Always >= AnalysisHistory.length.
+          type: number
+        AnalysisHistory:
+          description: |-
+            Completed analyses, newest first, up to {@link ANALYSIS_HISTORY_LIMIT}.
+            Entry 0 mirrors the flat `Failure*` fields above — deliberate duplication,
+            so runs predating this field keep rendering with no migration.
+          type: array
+          items:
+            type: object
+            properties:
+              AnalysedAt:
+                type: string
+              Owner:
+                enum:
+                  - AWS
+                  - Ambiguous
+                  - Bioinformatician
+                  - Lab
+                type: string
+              Summary:
+                type: string
+              Action:
+                type: string
+              ClassifiedBy:
+                enum:
+                  - llm
+                  - lookup
+                type: string
+              Evidence:
+                enum:
+                  - enrichment-disabled
+                  - log-excerpt
+                  - log-no-error
+                  - log-unavailable
+                type: string
+              Provider:
+                enum:
+                  - anthropic
+                  - bedrock
+                  - openai
+                type: string
+              ModelId:
+                type: string
+              RequestedBy:
+                type: string
+            required:
+              - Action
+              - AnalysedAt
+              - ClassifiedBy
+              - Owner
+              - Summary
         PollStatus:
           description: |-
             Sparse marker present only while the run is non-terminal. Backs the `PollStatus_Index`
@@ -2210,11 +2312,11 @@ components:
           type: string
         Status:
           type: string
+        Owner:
+          type: string
         RunId:
           type: string
         RunName:
-          type: string
-        Owner:
           type: string
         Description:
           description: Optional user-authored note for this run; set at creation time.
@@ -2279,6 +2381,76 @@ components:
             - llm
             - lookup
           type: string
+        AnalysisStatus:
+          enum:
+            - Failed
+            - Queued
+            - Running
+            - Succeeded
+          type: string
+        AnalysisErrorCode:
+          type: string
+        AnalysisErrorMessage:
+          type: string
+        AnalysisRequestedAt:
+          type: string
+        AnalysisEvidence:
+          enum:
+            - enrichment-disabled
+            - log-excerpt
+            - log-no-error
+            - log-unavailable
+          type: string
+        AnalysisRequestedBy:
+          type: string
+        AnalysisRunCount:
+          type: number
+        AnalysisHistory:
+          type: array
+          items:
+            type: object
+            properties:
+              AnalysedAt:
+                type: string
+              Owner:
+                enum:
+                  - AWS
+                  - Ambiguous
+                  - Bioinformatician
+                  - Lab
+                type: string
+              Summary:
+                type: string
+              Action:
+                type: string
+              ClassifiedBy:
+                enum:
+                  - llm
+                  - lookup
+                type: string
+              Evidence:
+                enum:
+                  - enrichment-disabled
+                  - log-excerpt
+                  - log-no-error
+                  - log-unavailable
+                type: string
+              Provider:
+                enum:
+                  - anthropic
+                  - bedrock
+                  - openai
+                type: string
+              ModelId:
+                type: string
+              RequestedBy:
+                type: string
+            required:
+              - Action
+              - AnalysedAt
+              - ClassifiedBy
+              - Owner
+              - Summary
         ProgressPercent:
           type: number
         TasksTotal:
@@ -2560,6 +2732,8 @@ components:
         SeqeraLlmModelId:
           type: string
         HealthOmicsLogEnrichmentEnabled:
+          type: boolean
+        FailureAnalysisEnabled:
           type: boolean
         HealthOmicsLlmApiKey:
           type: string
@@ -7617,6 +7791,38 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
+  /aws-healthomics/workflow/delete-private-workflow/{id}:
+    delete:
+      operationId: deletePrivateWorkflow
+      summary: Delete Private Workflow
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: laboratoryId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Laboratory to delete the workflow from
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /aws-healthomics/workflow/list-private-workflows:
     get:
       operationId: listPrivateWorkflows
@@ -9071,6 +9277,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EstimateRunCostResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/run/request-laboratory-run-failure-analysis:
+    post:
+      operationId: requestLaboratoryRunFailureAnalysis
+      summary: Request Laboratory Run Failure Analysis
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

@@ -110,6 +110,15 @@ export interface Laboratory extends BaseAttributes {
    */
   HealthOmicsLogEnrichmentEnabled?: boolean;
 
+  /**
+   * Master switch for AI failure analysis at this lab. `undefined` means
+   * enabled — labs that predate this field keep today's behaviour with no
+   * data migration. When `false`, the manual trigger is unavailable to
+   * everyone (technicians and admins alike) — there is no automatic path;
+   * analysis is always technician-initiated per run.
+   */
+  FailureAnalysisEnabled?: boolean;
+
   /** Boolean indicators returned by read-laboratory; the actual keys never leave SSM. */
   HasHealthOmicsLlmApiKey?: boolean;
   HasSeqeraLlmApiKey?: boolean;

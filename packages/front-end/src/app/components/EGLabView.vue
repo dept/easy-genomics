@@ -7,7 +7,13 @@
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/roles';
   import { ButtonVariantEnum } from '@FE/types/buttons';
   import { DeletedResponse, EditUserResponse } from '@FE/types/api';
-  import { useRunStore, useSeqeraPipelinesStore, useToastStore, useUiStore } from '@FE/stores';
+  import {
+    useFavouriteWorkflowsStore,
+    useRunStore,
+    useSeqeraPipelinesStore,
+    useToastStore,
+    useUiStore,
+  } from '@FE/stores';
   import useUser from '@FE/composables/useUser';
   import { LaboratoryUserDetails } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user-details';
   import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
@@ -22,6 +28,7 @@
   import { TableSort } from './EGTable.vue';
   import { ensureLabInActiveOrg } from '@FE/utils/ensure-lab-in-active-org';
   import { isLaboratoryRunOwnedByUser } from '@FE/utils/laboratory-run-ownership';
+  import { canDeletePrivateOmicsWorkflow } from '@FE/utils/omics-workflow-ownership';
 
   const props = defineProps<{
     superuser?: boolean;
@@ -40,16 +47,18 @@
   const userStore = useUserStore();
   const seqeraPipelinesStore = useSeqeraPipelinesStore();
   const omicsWorkflowsStore = useOmicsWorkflowsStore();
+  const favouriteWorkflowsStore = useFavouriteWorkflowsStore();
   const runsTableRefreshKey = ref(0);
 
   const { stringSortCompare } = useSort();
 
   const labUsers = ref<LabUser[]>([]);
-  const favouriteWorkflows = ref<FavouriteWorkflow[]>([]);
   const seqeraPipelines = computed<SeqeraPipeline[]>(() => seqeraPipelinesStore.pipelinesForLab(props.labId));
   const omicsWorkflows = computed<LabOmicsWorkflow[]>(() => omicsWorkflowsStore.workflowsForLab(props.labId));
   const canAddUsers = computed<boolean>(() => userStore.canAddLabUsers(props.labId));
   const canCreateOmicsWorkflows = computed<boolean>(() => userStore.canEditLabUsers(props.labId));
+  const workflowToDelete = ref<LabOmicsWorkflow | null>(null);
+  const isDeleteWorkflowDialogOpen = ref<boolean>(false);
   const showAddUserModule = ref(false);
   const searchOutput = ref('');
   const runToCancel = ref<LaboratoryRun | null>(null);
@@ -510,45 +519,79 @@
 
   // Omics Workflows Tab
 
-  const omicsWorkflowsTableColumns = [
+  const omicsWorkflowsTableColumns = computed(() => [
     { key: 'Name', label: 'Name' },
     { key: 'source', label: 'Source' },
     { key: 'description', label: 'Description' },
+    ...(canCreateOmicsWorkflows.value ? [{ key: 'actions', label: 'Actions' }] : []),
     { key: 'favourite', label: 'Favorite' },
     { key: 'run', label: 'Run' },
-  ];
+  ]);
+
+  function canDeleteOmicsWorkflow(workflow: LabOmicsWorkflow): boolean {
+    return canDeletePrivateOmicsWorkflow({
+      workflow,
+      canCreateOmicsWorkflows: canCreateOmicsWorkflows.value,
+      userIds: [userStore.currentUserDetails.id, userStore.currentUserDetails.internalId],
+    });
+  }
+
+  function omicsWorkflowsActionItems(workflow: LabOmicsWorkflow) {
+    if (!canDeleteOmicsWorkflow(workflow)) {
+      return [];
+    }
+    return [
+      [
+        {
+          label: 'Delete',
+          click: () => {
+            workflowToDelete.value = workflow;
+            isDeleteWorkflowDialogOpen.value = true;
+          },
+          isHighlighted: true,
+        },
+      ],
+    ];
+  }
+
+  async function handleDeleteOmicsWorkflow(): Promise<void> {
+    const workflow = workflowToDelete.value;
+    const workflowId = workflow?.id;
+    if (!workflowId) {
+      isDeleteWorkflowDialogOpen.value = false;
+      return;
+    }
+
+    uiStore.setRequestPending('deleteOmicsWorkflow');
+    try {
+      await omicsWorkflowsStore.deleteWorkflow(props.labId, workflowId);
+      useToastStore().success(`Deleted "${workflow?.name || 'workflow'}".`);
+      workflowToDelete.value = null;
+      isDeleteWorkflowDialogOpen.value = false;
+    } catch (error) {
+      console.error('Failed to delete workflow', error);
+      useToastStore().error(
+        error instanceof Error && error.message ? error.message : 'Unable to delete this workflow.',
+      );
+    } finally {
+      uiStore.setRequestComplete('deleteOmicsWorkflow');
+    }
+  }
 
   function isWorkflowFavourited(workflowId: string): boolean {
-    return favouriteWorkflows.value.some((w) => w.WorkflowId === workflowId && w.LaboratoryId === props.labId);
+    return favouriteWorkflowsStore.isFavourited(props.labId, workflowId);
   }
 
   async function toggleFavouriteWorkflow(workflow: LabOmicsWorkflow) {
-    const workflowId = workflow.id ?? '';
-    const isFav = isWorkflowFavourited(workflowId);
+    const favourite: FavouriteWorkflow = {
+      WorkflowId: workflow.id ?? '',
+      WorkflowName: workflow.name ?? '',
+      Description: workflow.description ?? undefined,
+      Platform: 'AWS HealthOmics',
+      LaboratoryId: props.labId,
+    };
 
-    let updated: FavouriteWorkflow[];
-    if (isFav) {
-      updated = favouriteWorkflows.value.filter(
-        (w) => !(w.WorkflowId === workflowId && w.LaboratoryId === props.labId),
-      );
-    } else {
-      const newFav: FavouriteWorkflow = {
-        WorkflowId: workflowId,
-        WorkflowName: workflow.name ?? '',
-        Description: workflow.description ?? undefined,
-        Platform: 'AWS HealthOmics',
-        LaboratoryId: props.labId,
-      };
-      updated = [...favouriteWorkflows.value, newFav];
-    }
-
-    try {
-      await $api.users.updateUser(userStore.currentUserDetails.id!, { FavouriteWorkflows: updated });
-      favouriteWorkflows.value = updated;
-      useToastStore().success(isFav ? 'Workflow removed from favorites' : 'Workflow added to favorites');
-    } catch {
-      useToastStore().error(isFav ? 'Failed to remove workflow from favorites' : 'Failed to add workflow to favorites');
-    }
+    await favouriteWorkflowsStore.toggleFavourite(favourite);
   }
 
   function viewRunOmicsWorkflow(workflow: LabOmicsWorkflow) {
@@ -720,15 +763,6 @@
     }
   }
 
-  async function loadFavouriteWorkflows(): Promise<void> {
-    try {
-      const user = await $api.users.getUser();
-      favouriteWorkflows.value = user.FavouriteWorkflows ?? [];
-    } catch (error) {
-      console.error('Error loading favorite workflows', error);
-    }
-  }
-
   // this anticipates these store values being needed on run click
   async function getSeqeraRuns(): Promise<void> {
     useUiStore().setRequestPending('getSeqeraRuns');
@@ -888,7 +922,7 @@
       return;
     }
 
-    promises.push(loadFavouriteWorkflows());
+    promises.push(favouriteWorkflowsStore.load());
 
     if (newLab.NextFlowTowerEnabled) {
       if (newLab.HasNextFlowTowerAccessToken == null) {
@@ -1223,6 +1257,17 @@
         {{ workflow?.description }}
       </template>
 
+      <template #actions-data="{ row: workflow }">
+        <div v-if="canDeleteOmicsWorkflow(workflow)" class="flex justify-end">
+          <EGActionButton
+            menu-label="Workflow actions"
+            :items="omicsWorkflowsActionItems(workflow)"
+            class="ml-2"
+            @click="$event.stopPropagation()"
+          />
+        </div>
+      </template>
+
       <template #run-data="{ row: workflow }">
         <button
           type="button"
@@ -1334,6 +1379,20 @@
     secondary-message="This will stop any progress made."
     v-model="isCancelDialogOpen"
     :buttons-disabled="uiStore.anyRequestPending(['cancelSeqeraRun', 'cancelOmicsRun'])"
+  />
+
+  <EGDialog
+    action-label="Delete workflow"
+    :action-variant="ButtonVariantEnum.enum.destructive"
+    cancel-label="Cancel"
+    :cancel-variant="ButtonVariantEnum.enum.secondary"
+    @action-triggered="handleDeleteOmicsWorkflow"
+    :primary-message="
+      workflowToDelete?.name ? `Delete the “${workflowToDelete.name}” workflow?` : 'Delete this workflow?'
+    "
+    secondary-message="Only workflows you created can be deleted. This cannot be undone."
+    v-model="isDeleteWorkflowDialogOpen"
+    :buttons-disabled="uiStore.isRequestPending('deleteOmicsWorkflow')"
   />
 
   <EGDialog

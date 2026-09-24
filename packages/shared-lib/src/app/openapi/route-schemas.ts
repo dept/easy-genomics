@@ -279,6 +279,7 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
   },
   'POST /easy-genomics/laboratory/run/request-apply-run-retention-policy': {},
   'POST /easy-genomics/laboratory/run/request-laboratory-run-status-check': {},
+  'POST /easy-genomics/laboratory/run/request-laboratory-run-failure-analysis': {},
 
   // ── easy-genomics/data-collections/ ─────────────────────────────────────────
 
@@ -521,6 +522,9 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
 
   'POST /aws-healthomics/workflow/create-private-workflow': {
     query: [{ name: 'laboratoryId', required: false, description: 'Laboratory to create workflow under' }],
+  },
+  'DELETE /aws-healthomics/workflow/delete-private-workflow/{id}': {
+    query: [{ name: 'laboratoryId', required: false, description: 'Laboratory to delete the workflow from' }],
   },
   'POST /aws-healthomics/workflow/create-workflow-upload-request': {
     query: [{ name: 'laboratoryId', required: false, description: 'Laboratory to upload workflow for' }],

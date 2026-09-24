@@ -18,10 +18,11 @@
     LabDetailsFormMode,
   } from '@FE/types/labs';
   import { AutoCompleteOptionsEnum } from '@FE/types/forms';
+  import { DEFAULT_BEDROCK_MODEL_ID, withCustomModelOption } from '@FE/utils/llm-model-options';
   import { FormError } from '#ui/types';
   import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import { ButtonSizeEnum, ButtonVariantEnum } from '@FE/types/buttons';
-  import { useToastStore, useUiStore } from '@FE/stores';
+  import { useLabsStore, useToastStore, useUiStore } from '@FE/stores';
   import { maybeAddFieldValidationErrors } from '@FE/utils/form-utils';
   import { extractApiErrorMessage, formatValidationIssues } from '@FE/utils/api-utils';
   import {
@@ -105,6 +106,7 @@
     SeqeraLlmApiKey: '',
     HealthOmicsLogEnrichmentEnabled: false,
     // Backend kill-switch semantics: absent/undefined means enabled, only `=== false` disables.
+    FailureAnalysisEnabled: true,
     NotificationsEnabled: true,
   };
 
@@ -149,13 +151,23 @@
     { value: 'VPC', label: 'VPC' },
   ];
 
+  // Seqera is soft-deprecated: only labs that already have it enabled keep seeing the
+  // integration section. Based on the server-loaded snapshot (unedited-lab-details), not the
+  // live toggle state, so an admin disabling Seqera on an already-enabled lab doesn't lose the
+  // section mid-edit. Create mode never loads a snapshot, so this is always false there.
+  const isSeqeraAlreadyEnabled = computed(() => uneditedLabDetails.value?.NextFlowTowerEnabled === true);
+
   // Badge state for the always-visible collapsible settings cards — reflects whether the
   // section is actually in effect right now, not just whether its fields are populated.
   const integrationsBadges = computed(() => [
-    {
-      label: `Seqera ${state.value.NextFlowTowerEnabled ? 'On' : 'Off'}`,
-      tone: state.value.NextFlowTowerEnabled ? 'positive' : 'neutral',
-    } as const,
+    ...(isSeqeraAlreadyEnabled.value
+      ? [
+          {
+            label: `Seqera ${state.value.NextFlowTowerEnabled ? 'On' : 'Off'}`,
+            tone: state.value.NextFlowTowerEnabled ? 'positive' : 'neutral',
+          } as const,
+        ]
+      : []),
     {
       label: `HealthOmics ${state.value.AwsHealthOmicsEnabled ? 'On' : 'Off'}`,
       tone: state.value.AwsHealthOmicsEnabled ? 'positive' : 'neutral',
@@ -166,7 +178,9 @@
     return { label: active ? 'On' : 'Off', tone: active ? 'positive' : 'neutral' } as const;
   });
   const aiFailureAnalysisBadge = computed(() => {
-    const active = !!state.value.HealthOmicsLlmProvider || !!state.value.SeqeraLlmProvider;
+    const configured = !!state.value.HealthOmicsLlmProvider || !!state.value.SeqeraLlmProvider;
+    // `!== false` mirrors the back end: an unset field means enabled, no data migration needed.
+    const active = configured && state.value.FailureAnalysisEnabled !== false;
     return { label: active ? 'Enabled' : 'Disabled', tone: active ? 'positive' : 'neutral' } as const;
   });
   const runNotificationsBadge = computed(() => {
@@ -338,7 +352,7 @@
   function modelIdPlaceholderFor(provider: string | undefined): string {
     switch (provider) {
       case 'bedrock':
-        return 'e.g. anthropic.claude-haiku-4-5-20251001';
+        return `e.g. ${DEFAULT_BEDROCK_MODEL_ID}`;
       case 'openai':
         return 'e.g. gpt-4o-mini';
       case 'anthropic':
@@ -365,7 +379,8 @@
     AwsHealthOmicsEnabled: 'Integrations – HealthOmics enabled',
     AwsHealthOmicsNetworkingMode: 'HealthOmics VPC Networking – Networking mode',
     AwsHealthOmicsVpcConfigurationName: 'HealthOmics VPC Networking – VPC configuration name',
-    HealthOmicsLogEnrichmentEnabled: 'AI Failure Analysis (HealthOmics) – Log enrichment enabled',
+    FailureAnalysisEnabled: 'AI Failure Analysis – Enable AI error analysis',
+    HealthOmicsLogEnrichmentEnabled: 'AI Failure Analysis (HealthOmics) – Include run logs in AI analysis',
     HealthOmicsLlmProvider: 'AI Failure Analysis (HealthOmics) – LLM provider',
     HealthOmicsLlmModelId: 'AI Failure Analysis (HealthOmics) – Model ID',
     HealthOmicsLlmApiKey: 'AI Failure Analysis (HealthOmics) – API key',
@@ -400,7 +415,7 @@
   function modelIdHintFor(provider: string | undefined): string {
     switch (provider) {
       case 'bedrock':
-        return 'Foundation model identifier used by Bedrock InvokeModel.';
+        return 'Bedrock model or inference profile ID. Newer models are only served via a profile (us.* prefix).';
       case 'openai':
         return 'Model name as it appears in the OpenAI dashboard.';
       case 'anthropic':
@@ -557,6 +572,12 @@
         state.value = { ...state.value, ...withRetentionDefault };
         // Store the unedited lab details to support the cancel button in Edit mode
         uneditedLabDetails.value = { ...withRetentionDefault };
+        // This form keeps its own local copy of the lab rather than reading through
+        // the shared store, so a save here would otherwise leave labsStore.labs[labId]
+        // holding a stale pre-save record forever — anything elsewhere in the app that
+        // reads the lab from the store (e.g. the run detail page's AI-analysis button
+        // gating) would never see the update without a full page reload.
+        useLabsStore().labs[labDetails.LaboratoryId] = labDetails;
       } else {
         throw new Error('Failed to parse lab details');
       }
@@ -588,6 +609,8 @@
     canSubmit.value = false;
     retentionPreviewCacheMonths.value = null;
     retentionPreviewCounts.value = null;
+    isSaveRetentionChangeDialogOpen.value = false;
+    isRetentionDeleteConfirmDialogOpen.value = false;
   }
 
   const isSubmittingFormData = computed(
@@ -595,6 +618,7 @@
   );
   const isLoadingRetentionPreview = ref(false);
   const isSaveRetentionChangeDialogOpen = ref(false);
+  const isRetentionDeleteConfirmDialogOpen = ref(false);
   const retentionPreviewCacheMonths = ref<number | null>(null);
   const retentionPreviewCounts = ref<{ immediate: number; updated: number } | null>(null);
   const retentionMonthsForDialog = computed<number>(
@@ -614,6 +638,10 @@
     if (!counts) return policyLine;
     return `${policyLine}\n\n${counts.immediate} run${counts.immediate === 1 ? '' : 's'} will be deleted immediately (new expiry is in the past).\n${counts.updated} run${counts.updated === 1 ? '' : 's'} will have their expiration date updated.`;
   });
+
+  // Second-step confirmation agreed with product/design: irreversible deletion + up-to-48h delay.
+  const retentionDeleteConfirmSecondaryMessage =
+    'This cannot be undone. Data scheduled for deletion under the new retention policy can take up to 48 hours to be permanently removed from the system.';
 
   function retentionMonthsKey(): number {
     return state.value.RunRetentionMonths ?? 6;
@@ -694,6 +722,16 @@
     await runSubmitAfterValidation();
   }
 
+  function handleRetentionWarningDialogConfirm() {
+    isSaveRetentionChangeDialogOpen.value = false;
+    // "Never delete" only clears expiry; skip the irreversible-deletion confirmation.
+    if (retentionMonthsForDialog.value === 0) {
+      void handleConfirmSaveRetentionPolicyChange();
+      return;
+    }
+    isRetentionDeleteConfirmDialogOpen.value = true;
+  }
+
   async function handleConfirmSaveRetentionPolicyChange() {
     useUiStore().setRequestPending('updateLab');
     try {
@@ -747,6 +785,7 @@
     } finally {
       useUiStore().setRequestComplete('updateLab');
       isSaveRetentionChangeDialogOpen.value = false;
+      isRetentionDeleteConfirmDialogOpen.value = false;
     }
   }
 
@@ -811,6 +850,48 @@
     useToastStore().success(`${lab.Name} successfully updated`);
   }
 
+  // Turning log enrichment ON widens what leaves the platform — from an AWS error
+  // code to (redacted) log text — so it is confirmed explicitly. Turning it off
+  // narrows egress and needs no confirmation.
+  const isLogEnrichmentDialogOpen = ref(false);
+
+  /** Where a log excerpt would be sent, phrased for the lab admin. */
+  const logEnrichmentDestination = computed<string>(() => {
+    switch (state.value.HealthOmicsLlmProvider) {
+      case 'openai':
+        return 'OpenAI';
+      case 'anthropic':
+        return 'Anthropic';
+      default:
+        return 'Amazon Bedrock';
+    }
+  });
+
+  /** Bedrock calls run under the platform's AWS account, so nothing leaves AWS. */
+  const logEnrichmentLeavesAws = computed<boolean>(
+    () => state.value.HealthOmicsLlmProvider === 'openai' || state.value.HealthOmicsLlmProvider === 'anthropic',
+  );
+
+  const logEnrichmentWarning = computed<string>(() =>
+    logEnrichmentLeavesAws.value
+      ? `A redacted excerpt of the failed run's CloudWatch logs is sent to ${logEnrichmentDestination.value}, outside AWS. Identifiers, paths and secrets are stripped first, but redaction is best-effort.`
+      : `A redacted excerpt of the failed run's CloudWatch logs is sent to ${logEnrichmentDestination.value} under the platform's AWS account. It does not leave AWS, but it is not isolated to your own AWS account.`,
+  );
+
+  function onLogEnrichmentToggle(enabled: boolean): void {
+    if (!enabled) {
+      state.value.HealthOmicsLogEnrichmentEnabled = false;
+      return;
+    }
+    // Hold the toggle off until the admin confirms in the dialog.
+    isLogEnrichmentDialogOpen.value = true;
+  }
+
+  function confirmLogEnrichment(): void {
+    state.value.HealthOmicsLogEnrichmentEnabled = true;
+    isLogEnrichmentDialogOpen.value = false;
+  }
+
   const validate = (state: LabDetails): FormError[] => {
     const errors: FormError[] = [];
 
@@ -870,17 +951,22 @@
       );
     }
 
-    // Model ID is only meaningful once a provider is picked for that integration.
-    if (state.HealthOmicsLlmProvider) {
+    // Model ID is only meaningful once a provider is picked for that integration,
+    // and only while analysis is switched on — a lab turning the feature off must
+    // be able to save without first completing a config it no longer uses.
+    if (state.FailureAnalysisEnabled && state.HealthOmicsLlmProvider) {
       maybeAddFieldValidationErrors(errors, LlmModelIdSchema, 'HealthOmicsLlmModelId', state.HealthOmicsLlmModelId);
     }
-    if (state.SeqeraLlmProvider) {
+    if (state.FailureAnalysisEnabled && state.SeqeraLlmProvider) {
       maybeAddFieldValidationErrors(errors, LlmModelIdSchema, 'SeqeraLlmModelId', state.SeqeraLlmModelId);
     }
 
     // openai/anthropic are BYOK: an API key is required unless one is already saved
     // for the currently-selected provider specifically (see isLlmApiKeyRequired).
-    if (state.HealthOmicsLlmProvider === 'openai' || state.HealthOmicsLlmProvider === 'anthropic') {
+    if (
+      state.FailureAnalysisEnabled &&
+      (state.HealthOmicsLlmProvider === 'openai' || state.HealthOmicsLlmProvider === 'anthropic')
+    ) {
       if (
         isLlmApiKeyRequired(
           state.HealthOmicsLlmProvider,
@@ -939,6 +1025,7 @@
     'SeqeraLlmModelId',
     'SeqeraLlmApiKey',
     'HealthOmicsLogEnrichmentEnabled',
+    'FailureAnalysisEnabled',
     'AwsHealthOmicsNetworkingMode',
     'AwsHealthOmicsVpcConfigurationName',
     'NotificationsEnabled',
@@ -1029,7 +1116,7 @@
       if (newProvider === uneditedLabDetails.value?.HealthOmicsLlmProvider) {
         return;
       }
-      state.value.HealthOmicsLlmModelId = '';
+      state.value.HealthOmicsLlmModelId = newProvider === 'bedrock' ? DEFAULT_BEDROCK_MODEL_ID : '';
       state.value.HealthOmicsLlmApiKey = '';
     },
   );
@@ -1167,7 +1254,11 @@
       <EGCollapsibleSection
         heading-id="lab-settings-integrations-heading"
         title="Integrations"
-        description="Seqera and HealthOmics connections for this lab."
+        :description="
+          isSeqeraAlreadyEnabled
+            ? 'Seqera and HealthOmics connections for this lab.'
+            : 'HealthOmics connections for this lab.'
+        "
         :badges="isLoadingFormData ? [] : integrationsBadges"
       >
         <!-- Don't render Seqera/HealthOmics Off from defaultState while lab details are still loading. -->
@@ -1182,7 +1273,7 @@
           </div>
         </div>
         <template v-else>
-          <section :aria-labelledby="seqeraSectionId">
+          <section v-if="isSeqeraAlreadyEnabled" :aria-labelledby="seqeraSectionId">
             <h3 :id="seqeraSectionId" class="sr-only">Seqera integration</h3>
 
             <!-- Next Flow Tower: Toggle -->
@@ -1388,8 +1479,23 @@
           </div>
 
           <p v-if="!state.AwsHealthOmicsEnabled && !state.NextFlowTowerEnabled" class="text-muted text-xs">
-            Enable HealthOmics or Seqera integration above to configure AI failure analysis for that integration.
+            Enable HealthOmics{{ isSeqeraAlreadyEnabled ? ' or Seqera' : '' }} integration above to configure AI failure
+            analysis for that integration.
           </p>
+
+          <EGFormGroup
+            name="FailureAnalysisEnabled"
+            hint="Let technicians request AI analysis on a failed run. Turn this off to hide the analyzer for this lab."
+          >
+            <div class="flex items-center">
+              <span class="text-sm text-black">AI error analysis</span>
+              <UToggle
+                class="ml-2"
+                v-model="state.FailureAnalysisEnabled"
+                :disabled="!isEditing || isSubmittingFormData"
+              />
+            </div>
+          </EGFormGroup>
 
           <!-- HealthOmics sub-section -->
           <div v-if="state.AwsHealthOmicsEnabled" class="mb-6 rounded border border-gray-200 p-4">
@@ -1413,10 +1519,16 @@
               required
               :hint="modelIdHintFor(state.HealthOmicsLlmProvider)"
             >
-              <EGInput
+              <USelectMenu
                 v-model="state.HealthOmicsLlmModelId"
+                :options="withCustomModelOption(state.HealthOmicsLlmProvider, state.HealthOmicsLlmModelId)"
                 :placeholder="modelIdPlaceholderFor(state.HealthOmicsLlmProvider)"
                 :disabled="!isEditing || isSubmittingFormData"
+                searchable
+                searchable-placeholder="Search or type any model ID…"
+                creatable
+                show-create-option-when="always"
+                size="xl"
               />
             </EGFormGroup>
 
@@ -1459,18 +1571,31 @@
               />
             </EGFormGroup>
 
-            <EGFormGroup
-              v-if="state.HealthOmicsLlmProvider"
-              name="HealthOmicsLogEnrichmentEnabled"
-              hint="Sends a redacted excerpt of the failed run's CloudWatch logs to the AI for deeper analysis. Identifiers, paths, and secrets are stripped before sending."
-            >
+            <EGFormGroup v-if="state.HealthOmicsLlmProvider" name="HealthOmicsLogEnrichmentEnabled">
               <div class="flex items-center">
-                <span class="text-sm text-black">Analyse run logs on failure</span>
+                <span class="text-sm text-black">Include run logs in AI analysis</span>
                 <UToggle
                   class="ml-2"
-                  v-model="state.HealthOmicsLogEnrichmentEnabled"
+                  :model-value="state.HealthOmicsLogEnrichmentEnabled"
+                  @update:model-value="onLogEnrichmentToggle"
                   :disabled="!isEditing || isSubmittingFormData"
                 />
+              </div>
+              <p class="text-muted mt-1 text-xs">
+                Gives the AI the run's logs instead of just its error code, so it can explain failures the error code
+                alone does not describe.
+              </p>
+              <div
+                v-if="state.HealthOmicsLogEnrichmentEnabled"
+                class="mt-2 flex items-start gap-1.5"
+                :class="logEnrichmentLeavesAws ? 'text-alert-danger-dark' : 'text-muted'"
+              >
+                <UIcon
+                  :name="logEnrichmentLeavesAws ? 'i-heroicons-exclamation-triangle' : 'i-heroicons-information-circle'"
+                  class="mt-0.5 h-4 w-4 shrink-0"
+                  aria-hidden="true"
+                />
+                <p class="text-xs">{{ logEnrichmentWarning }}</p>
               </div>
             </EGFormGroup>
           </div>
@@ -1497,10 +1622,16 @@
               required
               :hint="modelIdHintFor(state.SeqeraLlmProvider)"
             >
-              <EGInput
+              <USelectMenu
                 v-model="state.SeqeraLlmModelId"
+                :options="withCustomModelOption(state.SeqeraLlmProvider, state.SeqeraLlmModelId)"
                 :placeholder="modelIdPlaceholderFor(state.SeqeraLlmProvider)"
                 :disabled="!isEditing || isSubmittingFormData"
+                searchable
+                searchable-placeholder="Search or type any model ID…"
+                creatable
+                show-create-option-when="always"
+                size="xl"
               />
             </EGFormGroup>
 
@@ -1757,11 +1888,34 @@
     :action-variant="ButtonVariantEnum.enum.primary"
     cancel-label="Cancel"
     :cancel-variant="ButtonVariantEnum.enum.secondary"
-    @action-triggered="handleConfirmSaveRetentionPolicyChange"
+    @action-triggered="handleRetentionWarningDialogConfirm"
     primary-message="Warning: Data Loss Risk"
     :secondary-message="retentionSaveDialogSecondaryMessage"
     v-model="isSaveRetentionChangeDialogOpen"
     :loading="isSubmittingFormData"
     :buttons-disabled="isSubmittingFormData"
+  />
+
+  <EGDialog
+    action-label="Confirm"
+    :action-variant="ButtonVariantEnum.enum.primary"
+    cancel-label="Cancel"
+    :cancel-variant="ButtonVariantEnum.enum.secondary"
+    @action-triggered="handleConfirmSaveRetentionPolicyChange"
+    primary-message="Are you sure?"
+    :secondary-message="retentionDeleteConfirmSecondaryMessage"
+    v-model="isRetentionDeleteConfirmDialogOpen"
+    :loading="isSubmittingFormData"
+    :buttons-disabled="isSubmittingFormData"
+  />
+
+  <EGDialog
+    action-label="Send logs to the AI"
+    :action-variant="ButtonVariantEnum.enum.primary"
+    @action-triggered="confirmLogEnrichment"
+    primary-message="Include run logs?"
+    title-tag="h4"
+    :secondary-message="logEnrichmentWarning"
+    v-model="isLogEnrichmentDialogOpen"
   />
 </template>

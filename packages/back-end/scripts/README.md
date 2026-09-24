@@ -4,6 +4,52 @@ Utility scripts for one-off data or AWS resource fixes. Run them from the `packa
 otherwise. They expect a `.env.local` file (or equivalent environment variables) and default AWS credentials where
 applicable.
 
+## Deploy-gated migrations
+
+Most scripts in this directory are manual (see below). A small subset are **registered** in
+`deploy-migrations/registry.ts` and run automatically, at most once per environment, as part of `pnpm run deploy` /
+`build-and-deploy` (and therefore also in CI, since `cicd-build-deploy-back-end` runs the same back-end `deploy` task).
+Only routine, idempotent, low-blast-radius scripts should be registered — expensive backfills (Cost Explorer syncs,
+history rebuilds) and anything Tier-3 / irreversible stay manual.
+
+**How it works:** before touching AWS, the CLI loads `.env.local` and reconciles `REGION`/`AWS_REGION`
+(`lib/load-env.ts`'s `loadDotEnvAndReconcileRegion()`) — the AWS SDK only recognizes `AWS_REGION`, but `.env.local`
+conventionally only sets `REGION`, so this must run before `resolveNamePrefix()` or any AWS client is constructed. It
+then filters the registry by `--phase` (`pre` runs before `cdk deploy`, `post` runs after), skips any id already
+recorded in the SSM ledger at `/${NAME_PREFIX}/deploy-migrations/applied`, and calls each pending entry's exported
+`main()` directly — no shell spawn. A failure stops the run immediately (fail-fast) and is not written to the ledger,
+which fails the deploy non-zero.
+
+**To add a migration:**
+
+1. Give the script an exported `async function main(): Promise<void>` that throws on failure (never calls
+   `process.exit`), and guard its own standalone invocation with `if (require.main === module) { main().catch(...) }` so
+   importing it has no side effect.
+2. Add an entry to `DEPLOY_MIGRATIONS` in `deploy-migrations/registry.ts`: a stable `id` (once deployed anywhere, never
+   reuse or change it — the ledger keys on it), a `phase` (`pre` if later code depends on the migrated data, `post` if
+   the migration depends on tables/GSIs that only exist after `cdk deploy`), and `main`.
+3. Keep the script's own standalone `pnpm run <script-name>` entry in `package.json` for manual re-runs — registering a
+   script for auto-run doesn't remove its manual entry point.
+4. A `pre`-phase migration must tolerate its target tables not existing yet: greenfield deploys run `pre`-phase
+   migrations before `cdk deploy` creates any tables, so a scan/list against a not-yet-created table must catch
+   `ResourceNotFoundException`, log, and return rather than throw (see `backfill-laboratory-run-attributes.ts` and
+   `migrate-laboratory-s3-access-seed.ts` for the pattern).
+5. A registered `main()` runs in the same process as the `run-deploy-migrations` CLI and shares its `process.argv` —
+   don't read flags beyond ones the script defines for its own standalone use, since the runner's own flags (`--phase`,
+   `--dry-run`, `--force`) will also be present on `argv` during an auto-run.
+
+**Flags:**
+
+- `--phase pre|post` (required)
+- `--dry-run` — logs which ids are pending vs. already applied; makes no SSM write and calls no registered `main()`.
+- `--force <id>` — re-runs one specific id (which must be registered under the `--phase` given) regardless of ledger
+  state, and updates its `appliedAt` on success.
+
+```bash
+pnpm run run-deploy-migrations -- --phase=pre --dry-run
+pnpm run run-deploy-migrations -- --phase=post --force 2026-08-migrate-laboratory-s3-access-seed
+```
+
 ## `backfill-omics-run-tags.ts`
 
 **Purpose:** Adds tags to existing AWS HealthOmics runs so they match the tags applied when new run executions are

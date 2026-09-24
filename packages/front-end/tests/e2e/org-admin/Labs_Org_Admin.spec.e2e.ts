@@ -43,7 +43,7 @@ test('01 - Remove user from a Laboratory Successfully', async ({ page, baseURL }
       await page.getByRole('menuitem', { name: 'Remove From Lab' }).click();
       await page.getByRole('button', { name: 'Remove User' }).click();
       await page.waitForTimeout(2000);
-      //await page.getByRole('status').locator('div').nth(1).click();
+      // await page.getByRole('status').locator('div').nth(1).click();
       await expect(page.getByText('Successfully removed ' + labManagerName + ' from ' + labName).nth(0)).toBeVisible();
     }
   }
@@ -75,7 +75,7 @@ test('01 - Remove user from a Laboratory Successfully', async ({ page, baseURL }
       await page.getByRole('menuitem', { name: 'Remove From Lab' }).click();
       await page.getByRole('button', { name: 'Remove User' }).click();
       await page.waitForTimeout(2000);
-      //await page.getByRole('status').locator('div').nth(1).click();
+      // await page.getByRole('status').locator('div').nth(1).click();
       await expect(
         page.getByText('Successfully removed ' + labManagerName + ' from ' + labNameUpdated).nth(0),
       ).toBeVisible();
@@ -167,11 +167,8 @@ test('03 - Create a Laboratory Successfully', async ({ page, baseURL }) => {
   await page.getByPlaceholder('Describe your lab and what').fill('Playwright test lab description');
   await page.getByLabel('Default S3 bucket directory').click();
   await page.getByText(envConfig.testS3Url).click();
-  await page.getByLabel('Enable Seqera Integration').check();
-  await page.getByLabel('Workspace ID').click();
-  await page.getByLabel('Workspace ID').fill(envConfig.testWorkspaceId);
-  await page.getByLabel('Personal Access Token').click();
-  await page.getByLabel('Personal Access Token').fill(envConfig.testAccessToken);
+  // Seqera is soft-deprecated for new labs: the "Enable Seqera Integration" toggle is not
+  // offered here, so nothing to check/fill.
   await page.getByRole('button', { name: 'Create Lab' }).click();
   page.getByRole('cell', { name: 'Playwright test lab' });
   page.getByRole('cell', { name: 'Playwright test lab description' });
@@ -210,11 +207,8 @@ test('04 - Update a Laboratory Successfully', async ({ page, baseURL }) => {
     await page.getByPlaceholder('Enter lab name (required and').fill(labNameUpdated);
     await page.getByPlaceholder('Describe your lab and what').click();
     await page.getByPlaceholder('Describe your lab and what').fill('Automation test lab description');
-    await page.getByLabel('Enable Seqera Integration').check();
-    await page.getByLabel('Workspace ID').click();
-    await page.getByLabel('Workspace ID').fill(envConfig.testWorkspaceId);
-    await page.getByLabel('Personal Access Token').click();
-    await page.getByLabel('Personal Access Token').fill(envConfig.testAccessToken);
+    // This lab was created without Seqera enabled (test 03), so the "Enable Seqera Integration"
+    // section is soft-deprecated and hidden here too — nothing to check/fill.
 
     await page.getByRole('button', { name: 'Save Changes' }).click();
     await page.waitForTimeout(2000);
@@ -304,7 +298,7 @@ test('06 - Remove user from a Lab via Edit User Access Successfully', async ({ p
     }
 
     if (UserAddedtoLab2 == false) {
-      //this will delete the user
+      // this will delete the user
       await page.getByRole('row', { name: labNameUpdated }).locator('button').click();
       await page.getByRole('menuitem', { name: 'Remove From Lab' }).click();
       await page.getByRole('button', { name: 'Remove User' }).click();
@@ -426,5 +420,52 @@ test('09 - Add a Lab Technician to a Lab Successfully', async ({ page, baseURL }
     await page.getByRole('option', { name: labTechnicianName }).click();
     await page.getByRole('button', { name: 'Add', exact: true }).click();
     await expect(page.getByText(/Added 1, Skipped 0, Failed 0/)).toBeVisible();
+  }
+});
+
+test('10 - Saving a laboratory with an invalid model ID is rejected', async ({ page, baseURL }) => {
+  // This is the ticket's core bug, verified end to end for free: an invalid Bedrock
+  // model ID fails AWS's InvokeModel request-validation immediately, before any tokens
+  // are processed, so this never reaches a real inference call.
+  await page.goto(`${baseURL}/labs`);
+  await page.waitForLoadState('networkidle');
+
+  let hasUpdatedTestLab = false;
+  try {
+    hasUpdatedTestLab = await page.getByRole('row', { name: labNameUpdated }).isVisible();
+  } catch (error) {
+    console.log(labNameUpdated + ' lab not found', error);
+  }
+
+  if (hasUpdatedTestLab) {
+    await page.getByRole('row', { name: labNameUpdated }).locator('button').click();
+    await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+    await page.waitForTimeout(5 * 1000); // this waits for s3 bucket info to load
+    await page.getByRole('tab', { name: 'Settings' }).click();
+
+    let omicsEnabled = true;
+    try {
+      omicsEnabled = await page.getByLabel('Enable HealthOmics Integration').isChecked();
+    } catch (error) {
+      console.log('OMICS toggle state could not be read', error);
+    }
+
+    if (omicsEnabled === false) {
+      await page.getByLabel('Enable HealthOmics Integration').check();
+    }
+
+    // The Seqera sub-section renders the same "LLM Provider"/"Model ID" labels when
+    // Seqera integration is also enabled on this lab, so .first() targets the
+    // HealthOmics sub-section, which renders first in the form.
+    await page.getByLabel('LLM Provider').first().selectOption('bedrock');
+    await page.getByLabel('Model ID').first().fill('definitely-not-a-real-model');
+
+    await page.getByRole('button', { name: 'Save Changes' }).click();
+
+    await expect(
+      page.getByText(
+        'Laboratory AI failure analysis configuration is invalid: Bedrock does not recognise the configured model ID in this region.',
+      ),
+    ).toBeVisible();
   }
 });

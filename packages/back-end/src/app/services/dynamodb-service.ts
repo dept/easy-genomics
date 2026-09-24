@@ -15,6 +15,7 @@
  *   - etc...
  */
 import {
+  AttributeValue,
   BatchGetItemCommand,
   BatchGetItemCommandInput,
   BatchGetItemCommandOutput,
@@ -57,6 +58,11 @@ enum DynamoDBCommand {
 }
 
 export class DynamoDBService {
+  /** DynamoDB hard limit on keys per BatchGetItem request. */
+  protected static readonly BATCH_GET_ITEM_LIMIT = 100;
+  private static readonly BATCH_GET_ITEM_ATTEMPTS = 3;
+  private static readonly BATCH_GET_RETRY_BASE_MS = 50;
+
   readonly dynamoDBDocClient;
 
   public constructor() {
@@ -87,6 +93,53 @@ export class DynamoDBService {
       batchGetItemCommandInput,
     );
   };
+
+  protected async sleep(ms: number): Promise<void> {
+    if (ms <= 0) return;
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /** Exponential backoff with jitter between UnprocessedKeys retries. */
+  protected batchGetRetryDelayMs(attempt: number): number {
+    const cap = DynamoDBService.BATCH_GET_RETRY_BASE_MS * 2 ** (attempt - 1);
+    return Math.floor(cap * (0.5 + Math.random() * 0.5));
+  }
+
+  /**
+   * BatchGetItem with 100-key chunking and UnprocessedKeys retries.
+   * Keys still unprocessed after the retry budget are returned so callers can fall back.
+   */
+  protected async batchGetAll(
+    tableName: string,
+    keys: Record<string, AttributeValue>[],
+    opts?: { consistentRead?: boolean },
+  ): Promise<{ items: Record<string, AttributeValue>[]; unprocessedKeys: Record<string, AttributeValue>[] }> {
+    const items: Record<string, AttributeValue>[] = [];
+    const leftover: Record<string, AttributeValue>[] = [];
+    const consistentRead = opts?.consistentRead ?? false;
+
+    for (let i = 0; i < keys.length; i += DynamoDBService.BATCH_GET_ITEM_LIMIT) {
+      let pending = keys.slice(i, i + DynamoDBService.BATCH_GET_ITEM_LIMIT);
+      for (let attempt = 0; pending.length > 0 && attempt < DynamoDBService.BATCH_GET_ITEM_ATTEMPTS; attempt++) {
+        if (attempt > 0) {
+          await this.sleep(this.batchGetRetryDelayMs(attempt));
+        }
+        const res: BatchGetItemCommandOutput = await this.batchGetItem({
+          RequestItems: {
+            [tableName]: {
+              Keys: pending,
+              ConsistentRead: consistentRead,
+            },
+          },
+        });
+        items.push(...(res.Responses?.[tableName] || []));
+        pending = res.UnprocessedKeys?.[tableName]?.Keys || [];
+      }
+      leftover.push(...pending);
+    }
+
+    return { items, unprocessedKeys: leftover };
+  }
 
   protected getItem = async (getItemCommandInput: GetItemCommandInput): Promise<GetItemCommandOutput> => {
     return this.dynamoDBRequest<GetItemCommandInput, GetItemCommandOutput>(

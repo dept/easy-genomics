@@ -15,6 +15,9 @@ import {
   DeleteBucketCommandOutput,
   DeleteObjectCommand,
   DeleteObjectCommandInput,
+  DeleteObjectsCommand,
+  DeleteObjectsCommandInput,
+  DeleteObjectsCommandOutput,
   ExpirationStatus,
   GetBucketLocationCommand,
   GetBucketLocationCommandInput,
@@ -73,6 +76,7 @@ export enum S3Command {
   // Manage S3 Bucket objects
   COPY_BUCKET_OBJECT = 'copy-bucket-object',
   DELETE_BUCKET_OBJECT = 'delete-bucket-object',
+  DELETE_BUCKET_OBJECTS = 'delete-bucket-objects',
   LIST_BUCKET_OBJECTS_V2 = 'list-bucket-objects-v2',
   HEAD_OBJECT = 'head-object',
   GET_OBJECT = 'get-object',
@@ -165,6 +169,64 @@ export class S3Service {
     );
   };
 
+  /**
+   * Lists every object under a prefix, following `ContinuationToken` to the end. Callers that
+   * delete by prefix must see the whole listing — a truncated page would leave objects behind and
+   * make "did everything drain?" checks read as success.
+   */
+  public listAllObjectsUnderPrefix = async (
+    bucket: string,
+    prefix: string,
+  ): Promise<Array<{ Key: string; LastModified?: Date }>> => {
+    const out: Array<{ Key: string; LastModified?: Date }> = [];
+    let continuationToken: string | undefined;
+    let isTruncated = true;
+
+    while (isTruncated) {
+      const response = await this.listBucketObjectsV2({
+        Bucket: bucket,
+        Prefix: prefix,
+        MaxKeys: 1000,
+        ContinuationToken: continuationToken,
+      });
+      for (const object of response.Contents || []) {
+        if (object.Key) out.push({ Key: object.Key, LastModified: object.LastModified });
+      }
+      isTruncated = !!response.IsTruncated;
+      continuationToken = response.NextContinuationToken;
+    }
+
+    return out;
+  };
+
+  public listAllObjectKeysUnderPrefix = async (bucket: string, prefix: string): Promise<string[]> => {
+    return (await this.listAllObjectsUnderPrefix(bucket, prefix)).map((object) => object.Key);
+  };
+
+  /** Lists the immediate "directories" under a prefix (S3 common prefixes), following pagination. */
+  public listChildPrefixes = async (bucket: string, prefix: string): Promise<string[]> => {
+    const out: string[] = [];
+    let continuationToken: string | undefined;
+    let isTruncated = true;
+
+    while (isTruncated) {
+      const response = await this.listBucketObjectsV2({
+        Bucket: bucket,
+        Prefix: prefix,
+        Delimiter: '/',
+        MaxKeys: 1000,
+        ContinuationToken: continuationToken,
+      });
+      for (const common of response.CommonPrefixes || []) {
+        if (common.Prefix) out.push(common.Prefix);
+      }
+      isTruncated = !!response.IsTruncated;
+      continuationToken = response.NextContinuationToken;
+    }
+
+    return out;
+  };
+
   public copyBucketObject = async (copyObjectInput: CopyObjectCommandInput): Promise<void> => {
     await this.s3Request<CopyObjectCommandInput, void>(S3Command.COPY_BUCKET_OBJECT, copyObjectInput);
   };
@@ -223,6 +285,14 @@ export class S3Service {
 
   public deleteObject = async (deleteObjectInput: DeleteObjectCommandInput): Promise<any> => {
     return this.s3Request<DeleteObjectCommandInput, any>(S3Command.DELETE_BUCKET_OBJECT, deleteObjectInput);
+  };
+
+  /** Batch delete. S3 accepts at most 1000 keys per request; callers must chunk accordingly. */
+  public deleteObjects = async (deleteObjectsInput: DeleteObjectsCommandInput): Promise<DeleteObjectsCommandOutput> => {
+    return this.s3Request<DeleteObjectsCommandInput, DeleteObjectsCommandOutput>(
+      S3Command.DELETE_BUCKET_OBJECTS,
+      deleteObjectsInput,
+    );
   };
 
   public createMultipartUpload = async (
@@ -316,6 +386,8 @@ export class S3Service {
         return new CopyObjectCommand(data as CopyObjectCommandInput);
       case S3Command.DELETE_BUCKET_OBJECT:
         return new DeleteObjectCommand(data as DeleteObjectCommandInput);
+      case S3Command.DELETE_BUCKET_OBJECTS:
+        return new DeleteObjectsCommand(data as DeleteObjectsCommandInput);
       case S3Command.LIST_BUCKET_OBJECTS_V2:
         return new ListObjectsV2Command(data as ListObjectsV2CommandInput);
       case S3Command.HEAD_OBJECT:

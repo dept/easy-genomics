@@ -350,4 +350,128 @@ describe('LaboratorySampleService.listUnlinkedBucketObjects', () => {
     expect(res.IsTruncated).toBe(false);
     expect(res).not.toHaveProperty('ListingTruncated');
   });
+
+  it('resolves linkage for every listed object in a single batched lookup', async () => {
+    await svc.listUnlinkedBucketObjects(labFixture(), {});
+    expect(mockGetSampleIdsForFileRefs).toHaveBeenCalledTimes(1);
+    expect(mockGetSampleIdsForFileRefs.mock.calls[0][1]).toHaveLength(2);
+  });
+});
+
+describe('LaboratorySampleService.getSampleIdsForFileRefs', () => {
+  const tableName = 'unit-test-laboratory-data-tagging-table';
+  const linkedRef = encodeS3ObjectRef('my-bucket', 'org-1/lab-1/linked.fq.gz');
+  const unlinkedRef = encodeS3ObjectRef('my-bucket', 'org-1/lab-1/unlinked.fq.gz');
+
+  it('uses BatchGetItem and treats missing FILE rows as unlinked', async () => {
+    const svc = new LaboratorySampleService();
+    const mockBatchGetItem = jest.fn().mockResolvedValue({
+      Responses: {
+        [tableName]: [
+          marshall({
+            LaboratoryId: 'lab-1',
+            Sk: `FILE#${linkedRef}`,
+            SampleIds: ['sample-1'],
+          }),
+        ],
+      },
+    });
+    (svc as unknown as { batchGetItem: typeof mockBatchGetItem }).batchGetItem = mockBatchGetItem;
+
+    const result = await svc.getSampleIdsForFileRefs('lab-1', [linkedRef, unlinkedRef]);
+
+    expect(result.get(linkedRef)).toEqual(['sample-1']);
+    expect(result.get(unlinkedRef)).toEqual([]);
+    expect(mockBatchGetItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('chunks more than 100 refs and never sends more than 100 keys per BatchGetItem', async () => {
+    const svc = new LaboratorySampleService();
+    jest.spyOn(svc as unknown as { sleep: () => Promise<void> }, 'sleep').mockResolvedValue(undefined);
+    const refs = Array.from({ length: 250 }, (_, i) => encodeS3ObjectRef('my-bucket', `org-1/lab-1/f${i}.fq.gz`));
+    const linked = new Set(refs.filter((_, i) => i % 10 === 0));
+    const requestedRefs: string[] = [];
+    const mockBatchGetItem = jest
+      .fn()
+      .mockImplementation(async (input: { RequestItems: Record<string, { Keys: unknown[] }> }) => {
+        const keys = input.RequestItems[tableName].Keys;
+        expect(keys.length).toBeLessThanOrEqual(100);
+        requestedRefs.push(
+          ...keys.map((key) => String(unmarshall(key as Record<string, never>).Sk).slice('FILE#'.length)),
+        );
+        return {
+          Responses: {
+            [tableName]: keys.map((key) => {
+              const row = unmarshall(key as Record<string, never>) as { Sk: string };
+              const ref = row.Sk.slice('FILE#'.length);
+              return marshall({
+                LaboratoryId: 'lab-1',
+                Sk: row.Sk,
+                ...(linked.has(ref) ? { SampleIds: ['sample-1'] } : {}),
+              });
+            }),
+          },
+        };
+      });
+    (svc as unknown as { batchGetItem: typeof mockBatchGetItem }).batchGetItem = mockBatchGetItem;
+
+    const result = await svc.getSampleIdsForFileRefs('lab-1', refs);
+
+    expect(mockBatchGetItem).toHaveBeenCalledTimes(3);
+    expect(requestedRefs.sort()).toEqual([...refs].sort());
+    expect(result.get(refs[0])).toEqual(['sample-1']);
+    expect(result.get(refs[1])).toEqual([]);
+    expect(result.size).toBe(250);
+  });
+
+  it('merges items from a partial UnprocessedKeys retry', async () => {
+    const svc = new LaboratorySampleService();
+    jest.spyOn(svc as unknown as { sleep: () => Promise<void> }, 'sleep').mockResolvedValue(undefined);
+    const unlinkedKey = marshall({ LaboratoryId: 'lab-1', Sk: `FILE#${unlinkedRef}` });
+    const mockBatchGetItem = jest
+      .fn()
+      .mockResolvedValueOnce({
+        Responses: {
+          [tableName]: [marshall({ LaboratoryId: 'lab-1', Sk: `FILE#${linkedRef}`, SampleIds: ['sample-1'] })],
+        },
+        UnprocessedKeys: { [tableName]: { Keys: [unlinkedKey] } },
+      })
+      .mockResolvedValueOnce({
+        Responses: {
+          [tableName]: [marshall({ LaboratoryId: 'lab-1', Sk: `FILE#${unlinkedRef}` })],
+        },
+      });
+    (svc as unknown as { batchGetItem: typeof mockBatchGetItem }).batchGetItem = mockBatchGetItem;
+
+    const result = await svc.getSampleIdsForFileRefs('lab-1', [linkedRef, unlinkedRef]);
+
+    expect(mockBatchGetItem).toHaveBeenCalledTimes(2);
+    expect(result.get(linkedRef)).toEqual(['sample-1']);
+    expect(result.get(unlinkedRef)).toEqual([]);
+  });
+
+  it('falls back to GetItem for keys still unprocessed after retries', async () => {
+    const svc = new LaboratorySampleService();
+    jest.spyOn(svc as unknown as { sleep: () => Promise<void> }, 'sleep').mockResolvedValue(undefined);
+    const unprocessedKey = marshall({ LaboratoryId: 'lab-1', Sk: `FILE#${linkedRef}` });
+    const mockBatchGetItem = jest.fn().mockResolvedValue({
+      Responses: { [tableName]: [] },
+      UnprocessedKeys: { [tableName]: { Keys: [unprocessedKey] } },
+    });
+    const mockGetItem = jest.fn().mockResolvedValue({
+      Item: marshall({
+        LaboratoryId: 'lab-1',
+        Sk: `FILE#${linkedRef}`,
+        SampleIds: ['sample-1'],
+      }),
+    });
+    (svc as unknown as { batchGetItem: typeof mockBatchGetItem }).batchGetItem = mockBatchGetItem;
+    (svc as unknown as { getItem: typeof mockGetItem }).getItem = mockGetItem;
+
+    const result = await svc.getSampleIdsForFileRefs('lab-1', [linkedRef]);
+
+    expect(mockBatchGetItem).toHaveBeenCalledTimes(3);
+    expect(mockGetItem).toHaveBeenCalledTimes(1);
+    expect(result.get(linkedRef)).toEqual(['sample-1']);
+  });
 });

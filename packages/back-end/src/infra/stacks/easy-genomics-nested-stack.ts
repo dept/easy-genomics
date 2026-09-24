@@ -50,6 +50,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
   laboratoryRunStreamDlq!: Queue;
   /** DLQ for the run-completion notification sender queue. See constructor for wiring detail. */
   notificationDlq!: Queue;
+  /** DLQ for the AI failure-classification consumer. See constructor for wiring detail. */
+  classificationDlq!: Queue;
 
   constructor(scope: Construct, id: string, props: EasyGenomicsNestedStackProps) {
     super(scope, id);
@@ -60,6 +62,16 @@ export class EasyGenomicsNestedStack extends NestedStack {
     // sender) lands here after 3 attempts for manual inspection instead of blocking the queue.
     this.notificationDlq = new Queue(this, `${this.props.namePrefix}-laboratory-run-notification-dlq`, {
       queueName: `${this.props.namePrefix}-laboratory-run-notification-dlq.fifo`,
+      fifo: true,
+      retentionPeriod: Duration.days(14),
+      enforceSSL: true,
+    });
+
+    // Dead-letter queue for the AI failure-classification consumer. Without it a record
+    // that keeps failing is retried until it expires and then vanishes, leaving the run
+    // stuck at `AnalysisStatus: Queued` with no trace of why.
+    this.classificationDlq = new Queue(this, `${this.props.namePrefix}-laboratory-run-failure-classification-dlq`, {
+      queueName: `${this.props.namePrefix}-laboratory-run-failure-classification-dlq.fifo`,
       fifo: true,
       retentionPeriod: Duration.days(14),
       enforceSSL: true,
@@ -101,6 +113,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
           retentionPeriod: Duration.days(1),
           visibilityTimeout: Duration.minutes(5),
           enforceSSL: true,
+          deadLetterQueue: { queue: this.classificationDlq, maxReceiveCount: 3 },
         },
         ['laboratory-run-notification-queue']: <QueueDetails>{
           fifo: true,
@@ -338,6 +351,12 @@ export class EasyGenomicsNestedStack extends NestedStack {
             SQS_LABORATORY_RUN_UPDATE_QUEUE_URL: this.sqs.sqsQueues.get('laboratory-run-update-queue')?.queueUrl || '',
           },
         },
+        '/easy-genomics/laboratory/run/request-laboratory-run-failure-analysis': {
+          environment: {
+            SQS_LABORATORY_RUN_FAILURE_CLASSIFICATION_QUEUE_URL:
+              this.sqs.sqsQueues.get('laboratory-run-failure-classification-queue')?.queueUrl || '',
+          },
+        },
         // Scheduled poller (every 2 minutes, matching the front-end's own poll cadence) that
         // finds every non-terminal run and re-enqueues a status check, so terminal
         // transitions are detected without an open browser. See process-poll-active-runs.lambda.ts.
@@ -381,14 +400,29 @@ export class EasyGenomicsNestedStack extends NestedStack {
         // Scheduled (daily) S3 deletion sweep that completes the run-retention cascade. Walks
         // every lab's FILE# rows, deletes the underlying S3 object + tagging-table rows for
         // files whose last referencing run has TTL'd out, and skips anything tagged Permanent.
-        // Only `DRY_RUN=false` enables real deletes (unset or any other value stays dry-run).
+        // Then reconciles the bucket against surviving runs to pick up outputs orphaned by runs
+        // that expired before this cascade existed, and drains the RUNOUTPUT# rows, deleting each
+        // expired run's results/ prefix and generated sample sheet unless a surviving run still
+        // publishes into that prefix. A fixed 30-day quiet period keeps the reconciliation away
+        // from uploads whose run has not been launched yet.
+        // `DRY_RUN=false` enables real deletes (any other value, including unset, stays dry-run).
+        // Set to `true` temporarily to audit eligibility without deleting.
+        //
+        // Both output paths are on: go-forward markers (stream-recorded results/ + sample
+        // sheets) and the orphan pass that records leftover folders from runs that expired
+        // before this cascade existed. MAX_ORPHAN_FOLDERS_PER_LAB_SWEEP is pinned here rather
+        // than left to the code default so the backlog drains at a reviewable rate.
+        //
         // Runtime `assertLaboratoryHasS3BucketAccess` / `assertKeyUnderLabPrefix` bound blast radius; IAM
         // still uses `s3://*/*` because lab buckets are provisioned per org at data-setup time.
         '/easy-genomics/data-collections/process-expired-laboratory-data': {
           timeoutSeconds: 900,
           memorySizeMb: 1024,
           environment: {
-            DRY_RUN: 'true',
+            DRY_RUN: 'false',
+            OUTPUT_DELETION_ENABLED: 'true',
+            ORPHAN_RECONCILIATION_ENABLED: 'true',
+            MAX_ORPHAN_FOLDERS_PER_LAB_SWEEP: '100',
           },
           callbacks: [
             (lambdaFunction) => {
@@ -461,6 +495,21 @@ export class EasyGenomicsNestedStack extends NestedStack {
       true,
     );
   }
+
+  /**
+   * Resources a Lambda needs to invoke a lab's configured Bedrock model.
+   *
+   * Each lab picks its own model id, so no single ARN can be pinned. Two ARN
+   * shapes are required because newer models (Claude 4.x, Nova) are only served
+   * through cross-region inference profiles, not by their bare foundation-model
+   * id — granting the profile alone still fails, because Bedrock authorises the
+   * foundation model in whichever destination region it routes the call to.
+   * Foundation-model ARNs have no account part by design.
+   */
+  private bedrockInvokeModelResources = (): string[] => [
+    `arn:aws:bedrock:${this.props.env.region!}:${this.props.env.account!}:inference-profile/*`,
+    'arn:aws:bedrock:*::foundation-model/*',
+  ];
 
   // Easy Genomics specific IAM policies
   private setupIamPolicies = () => {
@@ -818,6 +867,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: [`arn:aws:omics:${this.props.env.region!}:${this.props.env.account!}:configuration/*`],
         actions: ['omics:GetConfiguration'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: this.bedrockInvokeModelResources(),
+        actions: ['bedrock:InvokeModel'],
         effect: Effect.ALLOW,
       }),
     ]);
@@ -1313,6 +1367,28 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
     ]);
 
+    // /easy-genomics/laboratory/run/request-laboratory-run-failure-analysis
+    // Reads the Laboratory row for authorization + LLM config presence, reads and
+    // marks its own laboratory-run row as Queued, then hands the run to the
+    // classification consumer. It never calls an LLM itself.
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/run/request-laboratory-run-failure-analysis', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
+        ],
+        actions: ['dynamodb:Query', 'dynamodb:UpdateItem'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [`${this.sqs.sqsQueues.get('laboratory-run-failure-classification-queue')?.queueArn || ''}`],
+        actions: ['sqs:SendMessage'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
     // /easy-genomics/laboratory/run/process-poll-active-runs
     this.iam.addPolicyStatements('/easy-genomics/laboratory/run/process-poll-active-runs', [
       new PolicyStatement({
@@ -1503,9 +1579,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
-        // Each lab picks its own Bedrock model id; we can't pin a single ARN here.
-        // Bedrock foundation-model ARNs have no account part by design.
-        resources: [`arn:aws:bedrock:${this.props.env.region!}::foundation-model/*`],
+        resources: this.bedrockInvokeModelResources(),
         actions: ['bedrock:InvokeModel'],
         effect: Effect.ALLOW,
       }),
@@ -1531,8 +1605,9 @@ export class EasyGenomicsNestedStack extends NestedStack {
 
     // /easy-genomics/laboratory/run/process-laboratory-run-stream
     // DynamoDB Stream subscriber: reads OLD images (no DDB Query/Get needed beyond stream
-    // permissions), looks up the parent Laboratory record, and patches LaboratoryRunUsages
-    // entries on the data-tagging table. DLQ + SendMessage cover the onFailure routing.
+    // permissions), looks up the parent Laboratory record, patches LaboratoryRunUsages entries
+    // on the data-tagging table, and writes the RUNOUTPUT# row that hands the expired run's
+    // output prefix to the scheduled sweep. DLQ + SendMessage cover the onFailure routing.
     this.iam.addPolicyStatements('/easy-genomics/laboratory/run/process-laboratory-run-stream', [
       new PolicyStatement({
         resources: [
@@ -1556,7 +1631,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
       new PolicyStatement({
         resources: [laboratoryDataTaggingTableArnForRunLambdas],
-        actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem'],
+        actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem'],
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
@@ -2302,10 +2377,27 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: laboratoryDataTaggingDynamoActions,
       }),
       new PolicyStatement({
+        // Expired run outputs are deleted by prefix, which needs the surviving runs' OutputS3Url
+        // values to confirm no live run still publishes into that prefix.
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
         // Wildcard bucket: lab S3Bucket values come from org provisioning. The sweep Lambda
         // calls `assertLaboratoryHasS3BucketAccess` + `assertKeyUnderLabPrefix` before each delete.
         resources: ['arn:aws:s3:::*/*'],
         actions: ['s3:DeleteObject'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        // Bucket-level ARN (no `/*`): required to enumerate a run's results/ prefix before
+        // deleting it. Object deletes are still authorised by the object-ARN statement above.
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
         effect: Effect.ALLOW,
       }),
     ]);

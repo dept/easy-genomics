@@ -16,6 +16,28 @@ import { createOmicsServiceForLab } from '../../../../src/app/services/omics-lab
 import { SsmService } from '../../../../src/app/services/ssm-service';
 import { getNextFlowApiQueryParameters, httpRequest } from '../../../../src/app/utils/rest-api-utils';
 
+function mockOmicsServiceForLab(options?: { storageCapacity?: number }) {
+  const start = new Date('2026-01-01T00:00:00Z');
+  const stop = new Date('2026-01-01T01:00:00Z');
+  (createOmicsServiceForLab as jest.Mock).mockResolvedValue({
+    listAllRunTasks: jest.fn().mockResolvedValue([
+      {
+        instanceType: 'omics.c.large',
+        startTime: start,
+        stopTime: stop,
+        status: 'COMPLETED',
+        cacheHit: false,
+      },
+    ]),
+    getRun: jest.fn().mockResolvedValue({
+      storageType: 'STATIC',
+      ...(options?.storageCapacity !== undefined ? { storageCapacity: options.storageCapacity } : {}),
+      startTime: start,
+      stopTime: stop,
+    }),
+  });
+}
+
 describe('captureRunCostOutcome', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -36,25 +58,7 @@ describe('captureRunCostOutcome', () => {
   });
 
   it('captures HealthOmics compute and storage costs', async () => {
-    const start = new Date('2026-01-01T00:00:00Z');
-    const stop = new Date('2026-01-01T01:00:00Z');
-    (createOmicsServiceForLab as jest.Mock).mockResolvedValue({
-      listAllRunTasks: jest.fn().mockResolvedValue([
-        {
-          instanceType: 'omics.c.large',
-          startTime: start,
-          stopTime: stop,
-          status: 'COMPLETED',
-          cacheHit: false,
-        },
-      ]),
-      getRun: jest.fn().mockResolvedValue({
-        storageType: 'STATIC',
-        storageCapacity: 1200,
-        startTime: start,
-        stopTime: stop,
-      }),
-    });
+    mockOmicsServiceForLab({ storageCapacity: 1200 });
 
     const result = await captureRunCostOutcome({
       Platform: 'AWS HealthOmics',
@@ -68,6 +72,74 @@ describe('captureRunCostOutcome', () => {
     expect(result?.ActualComputeCostUsd).toBeGreaterThan(0);
     expect(result?.ActualStorageCostUsd).toBeGreaterThan(0);
     expect(result?.CostCapturedAt).toBeTruthy();
+  });
+
+  it('returns undefined for HealthOmics when ExternalRunId is missing', async () => {
+    const result = await captureRunCostOutcome({
+      Platform: 'AWS HealthOmics',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+    } as LaboratoryRun);
+
+    expect(result).toBeUndefined();
+    expect(createOmicsServiceForLab).not.toHaveBeenCalled();
+  });
+
+  it('uses cost-capture as Omics userId when UserId is absent', async () => {
+    mockOmicsServiceForLab({ storageCapacity: 1200 });
+
+    await captureRunCostOutcome({
+      Platform: 'AWS HealthOmics',
+      ExternalRunId: 'omics-1',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+    } as LaboratoryRun);
+
+    expect(createOmicsServiceForLab).toHaveBeenCalledWith('lab-1', 'org-1', 'cost-capture');
+  });
+
+  it('omits ActualStorageCostUsd when storage cost cannot be calculated', async () => {
+    // capacity omitted → storage calculator returns undefined
+    mockOmicsServiceForLab();
+
+    const result = await captureRunCostOutcome({
+      Platform: 'AWS HealthOmics',
+      ExternalRunId: 'omics-1',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      UserId: 'user-1',
+    } as LaboratoryRun);
+
+    expect(result?.CostSource).toBe('HEALTHOMICS_TASKS');
+    expect(result?.ActualComputeCostUsd).toBeGreaterThan(0);
+    expect(result?.ActualStorageCostUsd).toBeUndefined();
+    expect(result?.CostCapturedAt).toBeTruthy();
+  });
+
+  it('returns existing HealthOmics outcome when CostCapturedAt is set', async () => {
+    const existing = {
+      ActualComputeCostUsd: 2.5,
+      ActualStorageCostUsd: 0.1,
+      CostSource: 'HEALTHOMICS_TASKS' as const,
+      CostCapturedAt: '2026-01-01T00:00:00Z',
+    };
+    const result = await captureRunCostOutcome({
+      Platform: 'AWS HealthOmics',
+      ExternalRunId: 'omics-1',
+      RunCostOutcome: existing,
+    } as LaboratoryRun);
+
+    expect(result).toEqual(existing);
+    expect(createOmicsServiceForLab).not.toHaveBeenCalled();
+  });
+
+  it('returns undefined for unsupported platform', async () => {
+    const result = await captureRunCostOutcome({
+      Platform: 'Unknown Platform' as any,
+      ExternalRunId: 'x-1',
+    } as LaboratoryRun);
+
+    expect(result).toBeUndefined();
   });
 
   it('maps missing Seqera token to LaboratoryAccessTokenUnavailableError', async () => {

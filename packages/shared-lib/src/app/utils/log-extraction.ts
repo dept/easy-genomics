@@ -23,11 +23,48 @@ const ERROR_MARKER =
 
 const isErrorLine = (line: string): boolean => ERROR_MARKER.test(line);
 
+interface NoiseRule {
+  readonly name: string;
+  readonly pattern: RegExp;
+}
+
+/**
+ * Lines discarded before the error window is chosen.
+ *
+ * Nextflow on AWS HealthOmics logs a bare, headerless JVM stack frame on every
+ * pf4j extension lookup — once per task — which can leave an engine log 99%
+ * frames and crowd the actual cause out of the excerpt. Discarding them is safe
+ * for diagnosis: Nextflow always reports the real failure in its structured
+ * `Caused by:` / `Command error:` block, never in the JVM frames.
+ */
+const NOISE_RULES: readonly NoiseRule[] = [
+  // Bare JVM frames, e.g. "\tat org.pf4j.PluginClassLoader.loadClass(PluginClassLoader.java:169)".
+  { name: 'stack-frame', pattern: /^\s+at\s+[\w$.]+[\w$./]*\(.*\)\s*$/ },
+  // Nextflow's periodic task status dump. Its "error: -" field also false-matches ERROR_MARKER.
+  { name: 'task-status-dump', pattern: /^~>\s*TaskHandler\[/ },
+  // Blank lines, which come in long runs between frame blocks.
+  { name: 'blank', pattern: /^\s*$/ },
+];
+
+const isNoise = (line: string): boolean => NOISE_RULES.some((rule) => rule.pattern.test(line));
+
 const capToTail = (text: string, maxChars: number): string =>
   text.length <= maxChars ? text : `…[truncated]\n${text.slice(text.length - maxChars)}`;
 
 const capToHead = (text: string, maxChars: number): string =>
   text.length <= maxChars ? text : `${text.slice(0, maxChars)}\n…[truncated]`;
+
+/**
+ * Whether the log contains an identifiable failure marker.
+ *
+ * Distinguishes "the engine reported a cause" from "the engine exited without
+ * saying why" — {@link extractErrorWindow} cannot, because it falls back to the
+ * log tail when no marker is present, so a non-empty excerpt proves nothing.
+ */
+export function hasErrorMarker(logText: string | undefined | null): boolean {
+  if (!logText) return false;
+  return logText.split('\n').some((line) => !isNoise(line) && isErrorLine(line));
+}
 
 /**
  * Return the error window of a log as plain text, bounded to `maxChars`.
@@ -38,6 +75,9 @@ const capToHead = (text: string, maxChars: number): string =>
  * - If no marker is found, the tail of the log is returned (failures usually
  *   surface at the end), tail-truncated.
  * - Empty / nullish input returns an empty string.
+ *
+ * Noise (see {@link NOISE_RULES}) is discarded first, so neither the anchor
+ * search nor the character budget is spent on it.
  */
 export function extractErrorWindow(
   logText: string | undefined | null,
@@ -45,11 +85,11 @@ export function extractErrorWindow(
 ): string {
   if (!logText) return '';
 
-  const lines = logText.split('\n');
+  const lines = logText.split('\n').filter((line) => !isNoise(line));
   const firstErrorIndex = lines.findIndex(isErrorLine);
 
   if (firstErrorIndex === -1) {
-    return capToTail(logText.trim(), maxChars);
+    return capToTail(lines.join('\n').trim(), maxChars);
   }
 
   const start = Math.max(0, firstErrorIndex - LEAD_IN_LINES);

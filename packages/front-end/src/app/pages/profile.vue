@@ -152,7 +152,7 @@
         <div class="flex flex-col gap-1">
           <EGText tag="h4" class="font-semibold">Privacy</EGText>
           <EGText tag="p" class="text-muted text-sm">
-            Send anonymous usage data to DEPT to help improve Easy Genomics. No names, emails, file names, sample data
+            Send anonymous usage data to DEPT® to help improve Easy Genomics. No names, emails, file names, sample data
             or run parameters are ever sent.
             <a href="https://easy-genomics.org/privacy" class="text-primary underline" target="_blank" rel="noopener">
               Learn more

@@ -2,6 +2,13 @@ import { TransactionCanceledException } from '@aws-sdk/client-dynamodb';
 import { GetParameterCommandOutput } from '@aws-sdk/client-ssm';
 import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 
+// Shared jest.fn instance captured by the LLMClassificationService factory mock.
+// Defined as `var` so the hoisted jest.mock() factory can reference it — `let`/`const`
+// would be in the temporal dead zone when the factory runs.
+// eslint-disable-next-line no-var
+var mockValidateConfig: jest.Mock;
+mockValidateConfig = jest.fn().mockResolvedValue(null);
+
 import { handler } from '../../../../../src/app/controllers/easy-genomics/laboratory/update-laboratory.lambda';
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
@@ -18,6 +25,11 @@ jest.mock('../../../../../src/app/utils/auth-utils');
 jest.mock('../../../../../src/app/utils/rest-api-utils');
 jest.mock('../../../../../src/app/utils/laboratory-s3-access-utils', () => ({
   assertLaboratoryHasS3BucketAccess: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('../../../../../src/app/services/llm-classification/llm-classification-service', () => ({
+  LLMClassificationService: jest.fn().mockImplementation(() => ({
+    validateConfig: mockValidateConfig,
+  })),
 }));
 
 import { migrateS3AccessOnDefaultModeChange } from '../../../../../src/app/services/easy-genomics/laboratory-s3-access-default-migration';
@@ -97,6 +109,7 @@ describe('update-laboratory.lambda', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockValidateConfig.mockResolvedValue(null);
     mockLabService = LaboratoryService as jest.MockedClass<typeof LaboratoryService>;
     mockSsmService = SsmService as jest.MockedClass<typeof SsmService>;
     mockValidateOrgAdmin = validateOrganizationAdminAccess as any;
@@ -158,6 +171,37 @@ describe('update-laboratory.lambda', () => {
     expect(mockLabService.prototype.update).toHaveBeenCalledWith(
       expect.objectContaining({
         NotificationsEnabled: false,
+      }),
+      expect.anything(),
+    );
+  });
+
+  // Regression: FailureAnalysisEnabled was never included in the explicit field
+  // list this handler builds for laboratoryService.update — a technician could
+  // toggle "AI error analysis" off in Settings, get a success toast, and the
+  // stored value never changed, so the run-page button stayed visible.
+  it('passes FailureAnalysisEnabled through to the service update call', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      FailureAnalysisEnabled: true,
+    });
+
+    (mockLabService.prototype.update as jest.Mock).mockResolvedValue({
+      OrganizationId: 'org-1',
+      LaboratoryId: 'lab-1',
+    });
+
+    const result = await handler(
+      createEvent(LAB_ID, { ...baseRequest, FailureAnalysisEnabled: false }),
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockLabService.prototype.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        FailureAnalysisEnabled: false,
       }),
       expect.anything(),
     );
@@ -593,5 +637,211 @@ describe('update-laboratory.lambda', () => {
       'bucket',
       expect.anything(),
     );
+  });
+
+  describe('LLM config validation', () => {
+    const lab = {
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      HealthOmicsLlmProvider: 'anthropic' as const,
+      HealthOmicsLlmModelId: 'model-a',
+    };
+
+    const updateBody = {
+      ...baseRequest,
+      NextFlowTowerEnabled: false,
+      NextFlowTowerApiBaseUrl: undefined,
+      NextFlowTowerWorkspaceId: undefined,
+      NextFlowTowerAccessToken: undefined,
+      HealthOmicsLlmProvider: 'anthropic',
+      HealthOmicsLlmModelId: 'model-a',
+    };
+
+    beforeEach(() => {
+      (mockLabService.prototype.update as jest.Mock).mockResolvedValue({
+        OrganizationId: ORG_ID,
+        LaboratoryId: LAB_ID,
+      });
+    });
+
+    it('does not probe when the LLM fields are unchanged', async () => {
+      (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue(lab);
+
+      const result = await handler(createEvent(LAB_ID, updateBody), createContext(), () => {});
+
+      expect(result.statusCode).toBe(200);
+      expect(mockValidateConfig).not.toHaveBeenCalled();
+    });
+
+    it('probes when the model id changes', async () => {
+      (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue(lab);
+      mockValidateConfig.mockResolvedValue(null);
+
+      const result = await handler(
+        createEvent(LAB_ID, { ...updateBody, HealthOmicsLlmModelId: 'model-b' }),
+        createContext(),
+        () => {},
+      );
+
+      expect(result.statusCode).toBe(200);
+      expect(mockValidateConfig).toHaveBeenCalled();
+    });
+
+    it('probes when the provider changes', async () => {
+      (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+        ...lab,
+        HealthOmicsLlmProvider: 'bedrock',
+      });
+      mockValidateConfig.mockResolvedValue(null);
+
+      const result = await handler(
+        createEvent(LAB_ID, { ...updateBody, HealthOmicsLlmProvider: 'openai', HealthOmicsLlmApiKey: 'key' }),
+        createContext(),
+        () => {},
+      );
+
+      expect(result.statusCode).toBe(200);
+      expect(mockValidateConfig).toHaveBeenCalled();
+    });
+
+    it('rejects with EG-337 and does not persist when the probe fails', async () => {
+      (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue(lab);
+      mockValidateConfig.mockResolvedValue({
+        code: 'INVALID_MODEL_ID',
+        message: 'Bedrock does not recognise the configured model ID in this region.',
+        retryable: false,
+      });
+
+      const result = await handler(
+        createEvent(LAB_ID, { ...updateBody, HealthOmicsLlmModelId: 'typo-model' }),
+        createContext(),
+        () => {},
+      );
+
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).ErrorCode).toBe('EG-337');
+      expect(mockLabService.prototype.update).not.toHaveBeenCalled();
+    });
+
+    it('toggling FailureAnalysisEnabled alone does not probe', async () => {
+      (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+        ...lab,
+        FailureAnalysisEnabled: true,
+      });
+
+      const result = await handler(
+        createEvent(LAB_ID, { ...updateBody, FailureAnalysisEnabled: false }),
+        createContext(),
+        () => {},
+      );
+
+      expect(result.statusCode).toBe(200);
+      expect(mockValidateConfig).not.toHaveBeenCalled();
+    });
+
+    it('probes when only the Seqera model id changes, independent of HealthOmics', async () => {
+      (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+        ...lab,
+        SeqeraLlmProvider: 'anthropic',
+        SeqeraLlmModelId: 'seqera-model-a',
+      });
+      mockValidateConfig.mockResolvedValue(null);
+
+      const result = await handler(
+        createEvent(LAB_ID, {
+          ...updateBody,
+          SeqeraLlmProvider: 'anthropic',
+          SeqeraLlmModelId: 'seqera-model-b',
+        }),
+        createContext(),
+        () => {},
+      );
+
+      expect(result.statusCode).toBe(200);
+      expect(mockValidateConfig).toHaveBeenCalledTimes(1);
+      expect(mockValidateConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'anthropic', modelId: 'seqera-model-b' }),
+      );
+    });
+
+    it('probes when only the API key is resupplied for an otherwise unchanged config', async () => {
+      (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue(lab);
+      mockValidateConfig.mockResolvedValue(null);
+
+      const result = await handler(
+        createEvent(LAB_ID, { ...updateBody, HealthOmicsLlmApiKey: 'rotated-key' }),
+        createContext(),
+        () => {},
+      );
+
+      expect(result.statusCode).toBe(200);
+      expect(mockValidateConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'anthropic', modelId: 'model-a', apiKey: 'rotated-key' }),
+      );
+    });
+
+    it('probes with the existing key resolved from SSM when only the model id changes and no key is resupplied', async () => {
+      (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+        ...lab,
+        HealthOmicsLlmProvider: 'openai',
+        HasHealthOmicsLlmApiKey: true,
+      });
+      (mockSsmService.prototype.getParameter as jest.Mock).mockResolvedValue({
+        Parameter: { Value: 'stored-key' },
+      });
+      mockValidateConfig.mockResolvedValue(null);
+
+      const result = await handler(
+        createEvent(LAB_ID, {
+          ...updateBody,
+          HealthOmicsLlmProvider: 'openai',
+          HealthOmicsLlmModelId: 'model-b',
+        }),
+        createContext(),
+        () => {},
+      );
+
+      expect(result.statusCode).toBe(200);
+      expect(mockSsmService.prototype.getParameter).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Name: `/easy-genomics/organization/${ORG_ID}/laboratory/${LAB_ID}/llm-api-key-healthomics`,
+        }),
+      );
+      expect(mockValidateConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'openai', modelId: 'model-b', apiKey: 'stored-key' }),
+      );
+      expect(mockLabService.prototype.update).toHaveBeenCalled();
+    });
+
+    it('still rejects as CONFIG_INCOMPLETE when the model id changes and no key exists yet', async () => {
+      (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+        ...lab,
+        HealthOmicsLlmProvider: 'openai',
+        HasHealthOmicsLlmApiKey: false,
+      });
+      mockValidateConfig.mockResolvedValue({
+        code: 'CONFIG_INCOMPLETE',
+        message: 'AI failure analysis is not configured for this laboratory.',
+        retryable: false,
+      });
+
+      const result = await handler(
+        createEvent(LAB_ID, {
+          ...updateBody,
+          HealthOmicsLlmProvider: 'openai',
+          HealthOmicsLlmModelId: 'model-b',
+        }),
+        createContext(),
+        () => {},
+      );
+
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).ErrorCode).toBe('EG-337');
+      expect(mockSsmService.prototype.getParameter).not.toHaveBeenCalled();
+      expect(mockValidateConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'openai', modelId: 'model-b', apiKey: undefined }),
+      );
+      expect(mockLabService.prototype.update).not.toHaveBeenCalled();
+    });
   });
 });

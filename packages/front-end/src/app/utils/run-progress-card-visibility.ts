@@ -20,8 +20,9 @@ export function isTerminalRunStatus(status: string | null | undefined): boolean 
 type RunPlatformAndStatus = Pick<LaboratoryRun, 'Platform' | 'Status'> | null | undefined;
 
 /**
- * Whether the Seqera Task Breakdown card has anything to show: either a failure reason
- * or a task progress payload.
+ * Whether the Seqera Task Breakdown card has anything to show. Failure reason and
+ * failed tasks render in their own cards, so only a task progress payload keeps
+ * this one open; `failureReason` is accepted but ignored for call-site symmetry.
  */
 export function showSeqeraTaskProgressCard(
   run: RunPlatformAndStatus,
@@ -29,13 +30,15 @@ export function showSeqeraTaskProgressCard(
 ): boolean {
   if (run?.Platform !== 'Seqera Cloud') return false;
 
-  return !!content.failureReason || !!content.hasProgress;
+  return !!content.hasProgress;
 }
 
 /**
- * Whether the HealthOmics Task Progress / Failed Tasks card has anything to show. Live
- * progress is only rendered while the run is non-terminal, so it alone does not keep the
- * card open once the run finishes — failure content does.
+ * Whether the HealthOmics Task Progress card has anything to show. Failure reason and
+ * failed tasks moved into their own cards, so this one is now purely live progress —
+ * which stops once the run reaches a terminal status. `failureReason` and
+ * `failedTaskCount` are accepted but ignored, so call sites read the same for both
+ * platforms.
  */
 export function showOmicsTaskProgressCard(
   run: RunPlatformAndStatus,
@@ -43,7 +46,5 @@ export function showOmicsTaskProgressCard(
 ): boolean {
   if (run?.Platform !== 'AWS HealthOmics') return false;
 
-  const { failureReason, failedTaskCount = 0, hasProgress = false } = content;
-
-  return !!failureReason || failedTaskCount > 0 || (hasProgress && !isTerminalRunStatus(run.Status));
+  return !!content.hasProgress && !isTerminalRunStatus(run.Status);
 }

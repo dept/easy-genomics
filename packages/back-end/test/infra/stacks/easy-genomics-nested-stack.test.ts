@@ -488,4 +488,87 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     expect(senderConfig).toBeDefined();
     expect(senderConfig.events).toHaveLength(1);
   });
+  describe('expired laboratory data retention sweep', () => {
+    const SWEEP_ROUTE = '/easy-genomics/data-collections/process-expired-laboratory-data';
+
+    /** Resolves a policy statement to plain JSON so actions/resources can be asserted directly. */
+    const statementsFor = (nestedStack: any, route: string) => {
+      const iamMock = IamConstruct as unknown as jest.Mock;
+      const iam = iamMock.mock.results[0].value;
+      return (iam.getPolicyStatements(route) as any[]).map((statement) =>
+        nestedStack.resolve(statement.toStatementJson()),
+      );
+    };
+
+    const sweepConfig = () => {
+      const lambdaConstructMock = LambdaConstruct as unknown as jest.Mock;
+      return lambdaConstructMock.mock.calls[0][2].lambdaFunctionsResources[SWEEP_ROUTE];
+    };
+
+    it('enables both output deletion and orphan reconciliation on deploy', () => {
+      const app = new App();
+      const parentStack = new Stack(app, 'parent-stack');
+      new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+      expect(sweepConfig().environment.OUTPUT_DELETION_ENABLED).toBe('true');
+      expect(sweepConfig().environment.ORPHAN_RECONCILIATION_ENABLED).toBe('true');
+    });
+
+    it('pins the orphan scan budget rather than relying on the code default', () => {
+      const app = new App();
+      const parentStack = new Stack(app, 'parent-stack');
+      new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+      expect(sweepConfig().environment.MAX_ORPHAN_FOLDERS_PER_LAB_SWEEP).toBe('100');
+    });
+
+    it('runs on a daily schedule', () => {
+      const app = new App();
+      const parentStack = new Stack(app, 'parent-stack');
+      new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+      expect(sweepConfig().callbacks).toHaveLength(1);
+    });
+
+    it('grants s3:ListBucket at the bucket ARN, without which the delete path is a silent no-op', () => {
+      // Listing failures are caught and counted, not thrown, so a missing grant would look healthy.
+      const app = new App();
+      const parentStack = new Stack(app, 'parent-stack');
+      const nestedStack = new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+      const statements = statementsFor(nestedStack, SWEEP_ROUTE);
+      const listBucket = statements.find(
+        (s) => (s.Action as string[])?.includes?.('s3:ListBucket') || s.Action === 's3:ListBucket',
+      );
+
+      expect(listBucket).toBeDefined();
+      expect(listBucket.Resource).toBe('arn:aws:s3:::*');
+    });
+
+    it('grants dynamodb:Query on the run table so the live-run fence can be evaluated', () => {
+      const app = new App();
+      const parentStack = new Stack(app, 'parent-stack');
+      const nestedStack = new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+      const statements = statementsFor(nestedStack, SWEEP_ROUTE);
+      const runTableQuery = statements.find((s) =>
+        JSON.stringify(s.Resource).includes('easy-genomics-laboratory-run-table'),
+      );
+
+      expect(runTableQuery).toBeDefined();
+      expect(runTableQuery.Action).toEqual('dynamodb:Query');
+    });
+
+    it('grants the stream lambda dynamodb:PutItem so it can record RUNOUTPUT# markers', () => {
+      const app = new App();
+      const parentStack = new Stack(app, 'parent-stack');
+      const nestedStack = new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+      const statements = statementsFor(nestedStack, '/easy-genomics/laboratory/run/process-laboratory-run-stream');
+      const taggingWrite = statements.find((s) => (s.Action as string[])?.includes?.('dynamodb:PutItem'));
+
+      expect(taggingWrite).toBeDefined();
+      expect(JSON.stringify(taggingWrite.Resource)).toContain('laboratory-data-tagging-table');
+    });
+  });
 });

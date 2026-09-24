@@ -377,6 +377,31 @@ class LabsModule extends HttpFactory {
     }
     return res;
   }
+
+  /**
+   * Read a single laboratory run. Used to poll analysis status after a manual
+   * AI failure analysis request.
+   */
+  async readLabRun(runId: string): Promise<LaboratoryRun> {
+    const res = await this.call<any>('GET', `/laboratory/run/read-laboratory-run/${runId}`);
+    validateApiResponse(LaboratoryRunSchema, res);
+    return res;
+  }
+
+  /**
+   * Queue an on-demand AI failure analysis for a failed run.
+   */
+  async requestLabRunFailureAnalysis(labId: string, runId: string) {
+    const res = await this.call<any>(
+      'POST',
+      `/laboratory/run/request-laboratory-run-failure-analysis?laboratoryId=${labId}`,
+      { LaboratoryRunId: runId },
+    );
+    if (!res) {
+      throw new Error('Failed to request AI failure analysis');
+    }
+    return res;
+  }
 }
 
 export default LabsModule;

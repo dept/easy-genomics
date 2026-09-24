@@ -1,4 +1,4 @@
-import { DeleteItemCommandOutput, PutItemCommandOutput, QueryCommandOutput } from '@aws-sdk/client-dynamodb';
+import { DeleteItemCommandOutput, PutItemCommandOutput, QueryCommandOutput, ScanCommandOutput } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import {
   LaboratoryWorkflowAccess,
@@ -85,6 +85,52 @@ export class LaboratoryWorkflowAccessService extends DynamoDBService {
 
     if (response.$metadata.httpStatusCode !== 200) {
       throw new Error(`Delete LaboratoryWorkflowAccess failed: HTTP ${response.$metadata.httpStatusCode}`);
+    }
+  };
+
+  /**
+   * Scans for every lab grant on a workflow. There is no WorkflowKey GSI, so this
+   * is a filtered table scan used only when the HealthOmics workflow itself is gone.
+   */
+  public listAllForWorkflow = async (
+    platform: LaboratoryWorkflowAccessPlatform,
+    workflowId: string,
+  ): Promise<LaboratoryWorkflowAccess[]> => {
+    const workflowKey = laboratoryWorkflowAccessSortKey(platform, workflowId);
+    const results: LaboratoryWorkflowAccess[] = [];
+    let lastKey: Record<string, any> | undefined;
+    do {
+      const response: ScanCommandOutput = await this.findAll({
+        TableName: this.TABLE_NAME,
+        FilterExpression: '#WorkflowKey = :workflowKey',
+        ExpressionAttributeNames: {
+          '#WorkflowKey': 'WorkflowKey',
+        },
+        ExpressionAttributeValues: {
+          ':workflowKey': { S: workflowKey },
+        },
+        ...(lastKey ? { ExclusiveStartKey: lastKey } : {}),
+      });
+
+      if (response.$metadata.httpStatusCode !== 200) {
+        throw new Error(`Scan LaboratoryWorkflowAccess for ${workflowKey} failed: HTTP ${response.$metadata.httpStatusCode}`);
+      }
+
+      if (response.Items?.length) {
+        results.push(...response.Items.map((item) => <LaboratoryWorkflowAccess>unmarshall(item)));
+      }
+      lastKey = response.LastEvaluatedKey as Record<string, any> | undefined;
+    } while (lastKey);
+    return results;
+  };
+
+  public removeAllForWorkflow = async (
+    platform: LaboratoryWorkflowAccessPlatform,
+    workflowId: string,
+  ): Promise<void> => {
+    const rows = await this.listAllForWorkflow(platform, workflowId);
+    for (const row of rows) {
+      await this.remove(row.LaboratoryId, platform, workflowId);
     }
   };
 }

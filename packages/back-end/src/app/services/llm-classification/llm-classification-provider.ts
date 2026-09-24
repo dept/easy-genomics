@@ -1,5 +1,7 @@
 import { ClassificationResult, FailureOwner } from '@easy-genomics/shared-lib/src/app/utils/failure-classifier';
 
+import { ClassificationError, ClassificationOutcome } from './classification-outcome';
+
 /**
  * Input the classifier sees per failure. Both platforms feed into the same
  * provider so prompts can be unified; provider-specific shaping happens upstream.
@@ -21,7 +23,9 @@ export interface ClassificationInput {
  * {@link LLMClassificationService} facade and the corresponding IAM/secrets in CDK.
  */
 export interface LLMClassificationProvider {
-  classify(input: ClassificationInput): Promise<ClassificationResult>;
+  classify(input: ClassificationInput): Promise<ClassificationOutcome>;
+  /** Cheap live probe used to validate a lab's provider config before it is stored. */
+  validateConfig(): Promise<ClassificationError | null>;
 }
 
 export type { ClassificationResult, FailureOwner };

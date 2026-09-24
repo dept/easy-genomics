@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE } from '../constants/run-cost';
 import type { RunInputProfile } from '../schema/easy-genomics/laboratory-run-cost';
 
 export type CostEstimateConfidence = 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE';
@@ -109,7 +110,7 @@ export function estimateComputeCostBand(
     .slice(0, k);
 
   const comparableRunCount = scored.length;
-  if (comparableRunCount < 3) {
+  if (comparableRunCount < MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE) {
     return {
       estimateAvailable: false,
       confidence: 'NONE',
@@ -129,7 +130,7 @@ export function estimateComputeCostBand(
   let confidence: CostEstimateConfidence;
   if (comparableRunCount >= 7 && spread <= 0.3 && sameVersion) {
     confidence = 'HIGH';
-  } else if (comparableRunCount >= 3 && spread <= 0.5) {
+  } else if (comparableRunCount >= MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE && spread <= 0.5) {
     confidence = 'MEDIUM';
   } else {
     confidence = 'LOW';

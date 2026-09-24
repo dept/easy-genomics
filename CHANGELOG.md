@@ -7,6 +7,23 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 > For step-by-step upgrade instructions, see [docs/deployment/upgrading.md](./docs/deployment/upgrading.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **Deploying no longer runs the unit test suite.** `pnpm run build-and-deploy` builds each package through its `build`
+  target, which runs Jest and ESLint before packaging. On a machine with less memory than a CI runner the operating
+  system killed the Jest workers part-way through, so the build failed and nothing was deployed. A new
+  **`pnpm run build-and-deploy-no-tests`** command deploys exactly the same artifacts without running the tests or the
+  linter, and is now the command the deployment guides use. `pnpm run build-and-deploy` is unchanged and still runs the
+  full suite first, for developers who want it. The release pipeline is unaffected and still runs every package's tests
+  as its release gate.
+
+- **Jest no longer collects v8 coverage in `shared-lib` and `front-end`, and caps its worker count.** Both packages ran
+  the suite with coverage on and no limit on concurrent workers; back-end already had coverage disabled. Coverage is not
+  gated or uploaded anywhere, so it is dropped in all three packages — run `jest --coverage` locally on demand when a
+  report is needed. Workers are now capped at half the available cores, which bounds peak memory on smaller machines.
+
 ## [v1.5.1] — Private org email assets
 
 Hotfix for v1.5. **Tier 1** upgrade — no DynamoDB, schema, or configuration changes.
@@ -32,10 +49,17 @@ Hotfix for v1.5. **Tier 1** upgrade — no DynamoDB, schema, or configuration ch
 No schema change, no data migration, and no backfill. Organization logo URLs persisted by v1.5 keep resolving: only the
 host is rewritten at read time, and the object stays at its original key.
 
-> **If your v1.5 deploy failed and rolled back, you cannot deploy v1.5.1 over it.** A rolled-back stack can only be
-> deleted, and deleting it leaves the `{namePrefix}-*` DynamoDB tables behind with deletion protection enabled — the
-> next deploy then fails with `ResourceInUseException: Table already exists` until they are dealt with. See
-> [§7.1 Recovering from a failed deploy](./docs/deployment/upgrading.md#71-recovering-from-a-failed-deploy).
+**If your v1.5 deploy failed and rolled back**, check the stack status before doing anything — it decides whether any
+cleanup is needed at all:
+
+- `UPDATE_ROLLBACK_COMPLETE` — an update failed on a deployment that already existed. The stack is intact and updatable,
+  so **deploy v1.5.1 straight over it; nothing needs deleting.** This is the usual case when upgrading.
+- `ROLLBACK_COMPLETE` — the stack's first creation failed. CloudFormation cannot update this state, so the stack must be
+  deleted first, which leaves the `{namePrefix}-*` DynamoDB tables behind with deletion protection enabled.
+
+See [§7.1 Recovering from a failed deploy](./docs/deployment/upgrading.md#71-recovering-from-a-failed-deploy) for both
+paths, including the one case that can still block a redeploy: a table the failed release _added_ is retained rather
+than deleted during a rollback, so it can be left orphaned and must be removed before deploying again.
 
 ## [v1.5] — Back-End API stack split
 

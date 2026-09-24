@@ -27,7 +27,7 @@ const cdkVersion = '2.260.0';
 const nodeVersion = '20.20.2';
 const pnpmVersion = '9.15.0';
 const awsSdkClientOmicsVersion = '^3.1090.0';
-const authorName = 'DEPT Agency';
+const authorName = 'DEPT® Agency';
 const copyrightOwner = authorName;
 const copyrightPeriod = `${new Date().getFullYear()}`;
 
@@ -126,6 +126,19 @@ const jestOptions: JestOptions = {
   extraCliOptions: ['--detectOpenHandles'],
 };
 
+// Jest memory settings, shared by all three packages. The test/infra/** suites synthesize
+// full CDK stacks (~1.4GB heap each); collecting v8 coverage over them multiplied worker
+// memory enough to exceed the 16GB CI runner and to OOM-kill a lab operator's laptop
+// mid-deploy (exit 1, no Jest summary). Coverage is not gated or uploaded anywhere, so it is
+// dropped; run `jest --coverage` locally on demand when a report is needed.
+// workerIdleMemoryLimit recycles a worker between suites, capping what one worker accumulates
+// but not how many run at once; maxWorkers caps the concurrent peak, which is what exhausts a
+// machine with less memory than a CI runner.
+// Spread at each use site: projen appends its own default CLI flags to the array it is given,
+// so sharing one instance across the three packages accumulates the other packages' flags.
+const jestMemoryCliOptions = ['--workerIdleMemoryLimit=2GB'];
+const jestMemoryConfig = { collectCoverage: false, maxWorkers: '50%' };
+
 const licenseOptions: LicenseOptions = {
   spdx: 'Apache-2.0',
   copyrightOwner: copyrightOwner,
@@ -214,6 +227,7 @@ root.addScripts({
     'pnpm nx run-many --targets=deploy --projects=@easy-genomics/back-end --verbose=true --outputStyle=stream && ' +
     'pnpm nx run-many --targets=build --projects=@easy-genomics/shared-lib,@easy-genomics/front-end --verbose=true --outputStyle=stream && ' +
     'pnpm nx run-many --targets=deploy --projects=@easy-genomics/front-end --verbose=true --outputStyle=stream',
+  ['build-and-deploy-no-tests']: 'export SKIP_TESTS=1 && pnpm run build-and-deploy',
   ['prettier']: "prettier --write '{**/*,*}.{js,ts,vue,scss,json,md,html,mdx}'",
   ['upgrade']:
     'pnpm dlx projen upgrade && ' +
@@ -252,6 +266,11 @@ const sharedLib = new typescript.TypeScriptProject({
   outdir: './packages/shared-lib',
   defaultReleaseBranch: defaultReleaseBranch,
   docgen: false,
+  jest: true,
+  jestOptions: {
+    extraCliOptions: [...jestMemoryCliOptions],
+    jestConfig: { ...jestMemoryConfig },
+  },
   sampleCode: false,
   authorName: authorName,
   authorOrganization: true,
@@ -334,16 +353,9 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
   eslint: true,
   jest: true,
   jestOptions: {
-    // Recycle a worker past this heap as a safety net so no single worker accumulates
-    // unbounded memory across suites.
-    extraCliOptions: ['--workerIdleMemoryLimit=2GB'],
+    extraCliOptions: [...jestMemoryCliOptions],
     jestConfig: {
-      // Disable v8 coverage on the build/deploy path. The test/infra/** suites synthesize
-      // full CDK stacks (~1.4GB heap each); collecting coverage over them multiplied worker
-      // memory enough to exceed the 16GB CI runner and OOM-kill the run (exit 1, no Jest
-      // summary). Coverage is not gated or uploaded anywhere, so it is dropped from CI; run
-      // `jest --coverage` locally on demand when a report is needed.
-      collectCoverage: false,
+      ...jestMemoryConfig,
       // Ensure Jest can resolve tsconfig path aliases used by lambda handlers/tests.
       moduleNameMapper: {
         '^@BE/(.*)$': '<rootDir>/src/app/$1',
@@ -452,10 +464,14 @@ backEndApp.addScripts({
   // `cdk deploy` below applies the last remaining index. No-op when every
   // existing table already matches cdk.out or only needs one change.
   ['deploy-dynamodb-gsi-waves']: 'tsx scripts/deploy-dynamodb-gsi-waves.ts',
-  // Idempotent seed of ALLOW rows for each lab's configured S3Bucket. Runs AFTER
-  // `cdk deploy` so the laboratory-s3-access-table exists. Complements the runtime
-  // fallback in `isS3BucketAccessAllowed` for unmigrated labs.
+  // Idempotent seed of ALLOW rows for each lab's configured S3Bucket. Kept as a standalone
+  // script for manual re-runs; `deploy` now runs it through `run-deploy-migrations` instead
+  // of calling it directly (see below), so it only executes once per environment.
   ['migrate-laboratory-s3-access-seed']: 'tsx scripts/migrate-laboratory-s3-access-seed.ts',
+  // Deploy-gated, opt-in migration runner. Registered migrations run at most once per
+  // environment, tracked in an SSM ledger at /${NAME_PREFIX}/deploy-migrations/applied. See
+  // `scripts/deploy-migrations/registry.ts` and `scripts/README.md` for the full contract.
+  ['run-deploy-migrations']: 'tsx scripts/run-deploy-migrations.ts',
   // NOTE: `--all` is required now that the back-end synthesizes multiple
   // top-level stacks (`*-main-back-end-stack`, `*-easy-genomics-api-stack`,
   // and optionally `*-api-domain-stack`). Without it, `cdk deploy` refuses to
@@ -472,11 +488,14 @@ backEndApp.addScripts({
   // every flow already guarantees that (nx deploy dependsOn build; the
   // build-and-deploy scripts chain build first).
   //
-  // After stacks deploy, seed laboratory S3 access rows so existing labs are not
-  // locked out by the new assert gates (runtime fallback covers the brief window).
+  // Registered `pre` migrations run after the preflight guard and before any stack
+  // deploys (they may depend on old table shapes that new code will stop reading), and
+  // registered `post` migrations run after stacks deploy (they may depend on
+  // newly-created tables/GSIs, e.g. the laboratory-s3-access-table).
   ['deploy']:
-    'pnpm cdk bootstrap --app cdk.out && pnpm run preflight-deletion-protection && pnpm run deploy-dynamodb-gsi-waves && pnpm exec projen deploy --app cdk.out --all --progress bar --no-color --no-notices && pnpm run migrate-laboratory-s3-access-seed',
+    'pnpm cdk bootstrap --app cdk.out && pnpm run preflight-deletion-protection && pnpm run deploy-dynamodb-gsi-waves && pnpm run run-deploy-migrations -- --phase=pre && pnpm exec projen deploy --app cdk.out --all --progress bar --no-color --no-notices && pnpm run run-deploy-migrations -- --phase=post',
   ['build-and-deploy']: 'pnpm -w run build-back-end && pnpm run deploy --require-approval any-change', // Run root build-back-end script to inc shared-lib
+  ['build-and-deploy-no-tests']: 'export SKIP_TESTS=1 && pnpm run build-and-deploy',
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
   ['local-server']: 'tsx src/local-server/index.ts',
   ['local-server:watch']: 'tsx watch src/local-server/index.ts',
@@ -521,7 +540,9 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
   eslint: true,
   jest: true,
   jestOptions: {
+    extraCliOptions: [...jestMemoryCliOptions],
     jestConfig: {
+      ...jestMemoryConfig,
       moduleNameMapper: {
         '^@FE/(.*)$': '<rootDir>/src/app/$1',
         '^@SharedLib/(.*)$': '<rootDir>/../shared-lib/src/app/$1',
@@ -644,6 +665,7 @@ frontEndApp.addScripts({
   ['deploy']: 'pnpm cdk bootstrap --app cdk.out && pnpm exec projen deploy --app cdk.out',
   ['build-and-deploy']:
     'pnpm -w run build-front-end && pnpm cdk bootstrap --app cdk.out && pnpm exec projen deploy --app cdk.out --require-approval any-change', // Run root build-front-end script to inc shared-lib
+  ['build-and-deploy-no-tests']: 'export SKIP_TESTS=1 && pnpm run build-and-deploy',
   ['nuxt-dev']: 'pnpm -w run build-front-end && pnpm kill-port 3000 && nuxt dev',
   ['nuxt-load-settings']: 'npx esrun nuxt-load-configuration-settings.ts',
   ['nuxt-generate']: 'nuxt generate',
@@ -877,6 +899,16 @@ root.addFields({
     },
   },
 });
+
+// SKIP_TESTS lets the `build-and-deploy-no-tests` scripts deploy without running Jest or
+// ESLint: a projen task whose condition exits non-zero is skipped. An unset variable means
+// tests run, so CI — which never sets it — keeps the full suite as its release gate. Set it
+// through those scripts rather than by hand. `1` and `true` are the accepted values, matching
+// the repo's other skip flags (SKIP_JWT_VERIFY, SKIP_STACK_RESOURCE_BUDGET).
+const skipTestsCondition = '[ "$SKIP_TESTS" != 1 ] && [ "$SKIP_TESTS" != true ]';
+sharedLib.testTask.addCondition(skipTestsCondition);
+backEndApp.testTask.addCondition(skipTestsCondition);
+frontEndApp.testTask.addCondition(skipTestsCondition);
 
 // Synthesize the project
 root.synth();

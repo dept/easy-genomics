@@ -5,7 +5,7 @@
     "bundle": "pnpm exec projen bundle",
     "compile": "pnpm exec projen compile",
     "default": "pnpm exec projen default",
-    "deploy": "pnpm cdk bootstrap --app cdk.out && pnpm run preflight-deletion-protection && pnpm run deploy-dynamodb-gsi-waves && pnpm exec projen deploy --app cdk.out --all --progress bar --no-color --no-notices && pnpm run migrate-laboratory-s3-access-seed",
+    "deploy": "pnpm cdk bootstrap --app cdk.out && pnpm run preflight-deletion-protection && pnpm run deploy-dynamodb-gsi-waves && pnpm run run-deploy-migrations -- --phase=pre && pnpm exec projen deploy --app cdk.out --all --progress bar --no-color --no-notices && pnpm run run-deploy-migrations -- --phase=post",
     "destroy": "pnpm exec projen destroy",
     "diff": "pnpm exec projen diff",
     "eslint": "pnpm exec projen eslint",
@@ -24,7 +24,9 @@
     "preflight-deletion-protection": "tsx scripts/preflight-deletion-protection.ts",
     "deploy-dynamodb-gsi-waves": "tsx scripts/deploy-dynamodb-gsi-waves.ts",
     "migrate-laboratory-s3-access-seed": "tsx scripts/migrate-laboratory-s3-access-seed.ts",
+    "run-deploy-migrations": "tsx scripts/run-deploy-migrations.ts",
     "build-and-deploy": "pnpm -w run build-back-end && pnpm run deploy --require-approval any-change",
+    "build-and-deploy-no-tests": "export SKIP_TESTS=1 && pnpm run build-and-deploy",
     "lint": "eslint 'src/**/*.{js,ts}' --fix",
     "local-server": "tsx src/local-server/index.ts",
     "local-server:watch": "tsx watch src/local-server/index.ts",
@@ -41,7 +43,7 @@
     "migrate-lab-s3-bucket-refs:dry-run": "tsx scripts/migrate-lab-s3-bucket-refs.ts --dry-run"
   },
   "author": {
-    "name": "DEPT Agency",
+    "name": "DEPT® Agency",
     "organization": true
   },
   "devDependencies": {
@@ -117,6 +119,7 @@
   "jest": {
     "coverageProvider": "v8",
     "collectCoverage": false,
+    "maxWorkers": "50%",
     "moduleNameMapper": {
       "^@BE/(.*)$": "<rootDir>/src/app/$1",
       "^@SharedLib/(.*)$": "<rootDir>/../shared-lib/src/app/$1",

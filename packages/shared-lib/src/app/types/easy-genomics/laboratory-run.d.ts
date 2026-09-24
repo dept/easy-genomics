@@ -31,6 +31,7 @@
  * }
  */
 import { BaseAttributes, RunType } from "../base-entity";
+import { AnalysisHistoryEntry } from "../../schema/easy-genomics/laboratory-run";
 
 export interface LaboratoryRun extends BaseAttributes {
   LaboratoryId: string; // DynamoDB Partition Key (String)
@@ -129,6 +130,36 @@ export interface LaboratoryRun extends BaseAttributes {
    * `llm` = produced by the configured LLM provider (display "AI-assisted" disclaimer).
    */
   FailureClassifiedBy?: 'lookup' | 'llm';
+
+  /**
+   * Execution state of the AI failure analysis for this run. Absent means it
+   * has never been requested. Written by the classification consumer; polled
+   * by the run detail page after a manual trigger.
+   */
+  AnalysisStatus?: 'Queued' | 'Running' | 'Succeeded' | 'Failed';
+
+  /** One of ClassificationErrorCode. Typed as a string so this type does not couple to the provider taxonomy. */
+  AnalysisErrorCode?: string;
+
+  /** The provider's own detail. Shown as secondary text under the mapped UI copy, never in place of it. */
+  AnalysisErrorMessage?: string;
+
+  /** ISO timestamp. Load-bearing: lets the UI abandon a Running status stranded by a dead consumer. */
+  AnalysisRequestedAt?: string;
+
+  /**
+   * What evidence the LLM classifier actually had. Written only on the LLM
+   * path. Lets the UI distinguish a verdict about the run from a gap in the
+   * platform's own inputs.
+   */
+  AnalysisEvidence?: 'log-excerpt' | 'enrichment-disabled' | 'log-unavailable' | 'log-no-error';
+
+  /** Cognito username that requested the current analysis. */
+  AnalysisRequestedBy?: string;
+  /** Completed analyses including failed ones. Always >= AnalysisHistory.length. */
+  AnalysisRunCount?: number;
+  /** Completed analyses, newest first, up to 50. Entry 0 mirrors the flat Failure* fields. */
+  AnalysisHistory?: AnalysisHistoryEntry[];
 
   /**
    * Sparse marker present only while the run is non-terminal. Backs the `PollStatus_Index`
