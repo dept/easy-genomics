@@ -25,7 +25,17 @@ export function loadNuxtSettings() {
   if (fs.existsSync(localEnvPath)) {
     // dotenv skips keys that are already set unless override is true. Without
     // this, .env.nuxt.local cannot replace Cognito IDs rewritten by nuxt-load-settings.
-    dotenv.config({ path: localEnvPath, override: true });
+    const localSettings = dotenv.config({ path: localEnvPath, override: true });
+
+    // .env.nuxt always carries AWS_EASY_GENOMICS_API_URL on a split deployment, and
+    // HttpFactory prefers it over AWS_API_GATEWAY_URL. A local file that redirects only
+    // the base URL would therefore keep sending every /easy-genomics call — writes
+    // included — to the deployed environment while the rest of the app talks to the
+    // override. Redirecting the base URL redirects both unless the file says otherwise.
+    const localKeys = localSettings.parsed ?? {};
+    if ('AWS_API_GATEWAY_URL' in localKeys && !('AWS_EASY_GENOMICS_API_URL' in localKeys)) {
+      process.env.AWS_EASY_GENOMICS_API_URL = '';
+    }
   }
 
   // Env var toggle: use local back-end without renaming/editing .env.nuxt.local
