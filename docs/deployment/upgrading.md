@@ -56,6 +56,21 @@ Complete this before starting any upgrade procedure.
   ```bash
   git describe --tags   # save this; you will need it if you roll back
   ```
+- [ ] **`AWS_API_GATEWAY_URL` is not set in your environment.**
+
+  ```bash
+  unset AWS_API_GATEWAY_URL
+  env | grep AWS_API_GATEWAY_URL   # should print nothing
+  ```
+
+  Check your shell profile and any deploy scripts or notes too, in case the export was made permanent. From v1.5.3 both
+  API URLs are read from the back-end CloudFormation stack outputs, so this variable no longer needs to be set — and if
+  it holds a stale value it overrides the correct one. The build stops with an error naming the variable rather than
+  deploying something broken, but unsetting it first saves a failed run.
+
+  Optional, same reason: you can delete `aws-easy-genomics-api-url` from `config/easy-genomics.yaml`. It is read from
+  the stack as well now. Keep it only if you front the API with a custom domain.
+
 - [ ] **Tier 2 and Tier 3 only:** Notify lab users of a maintenance window (~15 min for Tier 2, longer for Tier 3 — see
       the runbook).
 
@@ -254,11 +269,12 @@ AWS_EASY_GENOMICS_API_URL=https://<id-b>.execute-api.<region>.amazonaws.com/prod
 Despite its name, `AWS_API_GATEWAY_URL` is **not** the platform API. The build prints both values with their source and
 what each one serves, so the build log is the quicker place to check.
 
-**If you set `AWS_API_GATEWAY_URL` by hand during a previous upgrade, unset it.** It is no longer required, it overrides
-the value resolved from the stack, and a stale one silently sends every HealthOmics and NF-Tower request to the wrong
-API. The build now prints a notice when the value came from the environment, and fails outright if the two URLs end up
-identical. Editing `config/.env.nuxt` directly has no effect — the build regenerates it, and a variable already exported
-in your shell wins over the file.
+If either value looks wrong, see the `AWS_API_GATEWAY_URL` item in the
+[pre-upgrade checklist](#2-pre-upgrade-checklist-all-tiers). Editing `config/.env.nuxt` directly has no effect — the
+build regenerates it before reading it, and a variable already exported in your shell wins over the file.
+
+After a deploy, hard-reload the application in your browser (Cmd-Shift-R / Ctrl-Shift-R). The API URL is compiled into
+the JavaScript bundle, so a cached page keeps calling the old API even after a correct deploy.
 
 ### 6.5 CloudWatch error check
 

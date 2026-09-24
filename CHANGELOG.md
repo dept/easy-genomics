@@ -18,8 +18,12 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
   kept working. Both URLs now come from the back-end CloudFormation stack outputs, which are unambiguous, so no URL has
   to be exported or copied into `easy-genomics.yaml` by hand. The build prints each URL with its source and the paths it
   serves, and fails rather than producing a bundle in which the two are identical. Deployments that predate the v1.5 API
-  split are unaffected and continue to run against a single API. If you exported `AWS_API_GATEWAY_URL` to work around
-  this, unset it — see `docs/deployment/upgrading.md` §6.4.
+  split are unaffected and continue to run against a single API.
+
+  **If you exported `AWS_API_GATEWAY_URL` to work around this, unset it before upgrading.** It is no longer needed, it
+  overrides the resolved value, and a stale one reintroduces the fault. The build now refuses to proceed when the
+  variable names an API the stack does not publish, rather than deploying a broken bundle. See the pre-upgrade checklist
+  in `docs/deployment/upgrading.md`.
 
 - **Deploying no longer runs the unit test suite.** `pnpm run build-and-deploy` builds each package through its `build`
   target, which runs Jest and ESLint before packaging. On a machine with less memory than a CI runner the operating
