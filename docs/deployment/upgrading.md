@@ -237,7 +237,30 @@ curl -s -H "Authorization: Bearer $COGNITO_TOKEN" \
   "${API_URL}/easy-genomics/laboratory/list-laboratories" | jq '.totalItems'
 ```
 
-### 6.4 CloudWatch error check
+### 6.4 Front-end API URLs
+
+The front-end talks to two separate APIs, and a build that points both at the same one leaves the platform working while
+every workflow and run page returns 404. Both URLs are resolved automatically from the back-end CloudFormation stack
+outputs, so no action is needed on a healthy upgrade — this check confirms it worked.
+
+Open the generated `config/.env.nuxt` and confirm the two values differ:
+
+```
+AWS_API_GATEWAY_URL=https://<id-a>.execute-api.<region>.amazonaws.com/prod
+AWS_EASY_GENOMICS_API_URL=https://<id-b>.execute-api.<region>.amazonaws.com/prod
+```
+
+`AWS_API_GATEWAY_URL` serves `/aws-healthomics` and `/nf-tower`; `AWS_EASY_GENOMICS_API_URL` serves `/easy-genomics`.
+Despite its name, `AWS_API_GATEWAY_URL` is **not** the platform API. The build prints both values with their source and
+what each one serves, so the build log is the quicker place to check.
+
+**If you set `AWS_API_GATEWAY_URL` by hand during a previous upgrade, unset it.** It is no longer required, it overrides
+the value resolved from the stack, and a stale one silently sends every HealthOmics and NF-Tower request to the wrong
+API. The build now prints a notice when the value came from the environment, and fails outright if the two URLs end up
+identical. Editing `config/.env.nuxt` directly has no effect — the build regenerates it, and a variable already exported
+in your shell wins over the file.
+
+### 6.5 CloudWatch error check
 
 In the AWS Console, go to **CloudWatch → Log Groups**. Filter by `${ENV_TYPE}-${ENV_NAME}` and review the last 15
 minutes across all Lambda log groups. No `ERROR`-level entries should appear after a healthy deploy.

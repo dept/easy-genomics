@@ -11,6 +11,16 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ### Fixed
 
+- **Workflows and runs no longer 404 after a locally built front-end deploy.** The front-end talks to two APIs: one
+  serving `/aws-healthomics` and `/nf-tower`, one serving `/easy-genomics`. Both REST APIs are created with the same
+  name, and the build identified the first by that name, so it could pick the wrong one — every workflow, run and run
+  status request then went to an API that does not serve those paths and returned 404, while the rest of the platform
+  kept working. Both URLs now come from the back-end CloudFormation stack outputs, which are unambiguous, so no URL has
+  to be exported or copied into `easy-genomics.yaml` by hand. The build prints each URL with its source and the paths it
+  serves, and fails rather than producing a bundle in which the two are identical. Deployments that predate the v1.5 API
+  split are unaffected and continue to run against a single API. If you exported `AWS_API_GATEWAY_URL` to work around
+  this, unset it — see `docs/deployment/upgrading.md` §6.4.
+
 - **Deploying no longer runs the unit test suite.** `pnpm run build-and-deploy` builds each package through its `build`
   target, which runs Jest and ESLint before packaging. On a machine with less memory than a CI runner the operating
   system killed the Jest workers part-way through, so the build failed and nothing was deployed. A new
