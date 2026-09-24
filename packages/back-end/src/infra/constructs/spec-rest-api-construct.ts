@@ -19,16 +19,15 @@ import { enrichSpecForApiGateway } from '../utils/openapi-spec-enrichment';
 
 export interface SpecRestApiConstructProps {
   /**
-   * Used for the Usage Plan name only. `SpecRestApi` does not accept a description
-   * — unlike `RestApi`, CDK never passes one to the underlying `CfnRestApi` — so the
-   * deployed API's description comes from the spec's `info.description` and is
-   * identical for every API built from it. Tell the APIs apart by `restApiName`.
+   * Names the Usage Plan. `SpecRestApi` cannot set the REST API's own description —
+   * CDK never passes one to the underlying `CfnRestApi` — so that comes from the
+   * spec's `info.description`, which is shared by every API built from it.
    */
   description: string;
   /**
-   * Physical `Name` of the REST API. Without it `RestApiBase` falls back to the
-   * construct id, and the ids of the two APIs this repo deploys resolve to the same
-   * string — leaving them indistinguishable in the console and in `get-rest-apis`.
+   * Physical `Name` of the REST API. Required because `RestApiBase` otherwise falls
+   * back to the construct id, which is not unique across the stacks that instantiate
+   * this construct.
    */
   restApiName: string;
   /**

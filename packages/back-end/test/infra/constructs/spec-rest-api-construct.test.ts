@@ -48,7 +48,9 @@ describe('SpecRestApiConstruct', () => {
   const synth = (lambdaFunctions: Map<string, IFunction>) => {
     const stack = new Stack(new App(), 'TestStack', { env: { account: '123', region: 'us-west-2' } });
     new SpecRestApiConstruct(stack, 'dev-test-apigw', {
-      restApiName: 'dev-test-apigw',
+      // Deliberately different from the construct id above, so a regression that
+      // drops the prop and falls back to the id is visible.
+      restApiName: 'dev-test-distinct-api-name',
       description: 'Test API Gateway',
       lambdaFunctions,
       userPool: { userPoolArn: 'arn:aws:cognito-idp:us-west-2:123:userpool/pool-1' } as any,
@@ -58,22 +60,18 @@ describe('SpecRestApiConstruct', () => {
     return Template.fromStack(stack);
   };
 
-  it('sets the REST API Name from props rather than the construct id', () => {
-    // Both APIs this repo deploys resolve to the same construct id, so without an
-    // explicit Name they share one and cannot be told apart in the console.
-    const template = synth(fullMap());
-
-    const apis = template.findResources('AWS::ApiGateway::RestApi');
-    const properties = Object.values(apis)[0].Properties;
-
-    expect(properties.Name).toEqual('dev-test-apigw');
-  });
-
   const fullMap = () =>
     new Map<string, IFunction>([
       ['/easy-genomics/foo/create-foo', fakeFunction('arn:aws:lambda:us-west-2:123:function:create-foo')],
       ['/easy-genomics/foo/read-foo', fakeFunction('arn:aws:lambda:us-west-2:123:function:read-foo')],
     ]);
+
+  it('sets the REST API Name from props rather than the construct id', () => {
+    const template = synth(fullMap());
+    template.hasResourceProperties('AWS::ApiGateway::RestApi', {
+      Name: 'dev-test-distinct-api-name',
+    });
+  });
 
   it('creates a single SpecRestApi whose Body carries the spec paths', () => {
     const template = synth(fullMap());
