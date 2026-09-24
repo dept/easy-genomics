@@ -1,3 +1,4 @@
+import { easyGenomicsApiName } from '@easy-genomics/shared-lib/src/app/utils/api-gateway-names';
 import { CfnOutput, Stack } from 'aws-cdk-lib';
 import { AttributeType, StreamViewType, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { NagSuppressions } from 'cdk-nag';
@@ -103,7 +104,7 @@ export class EasyGenomicsApiStack extends Stack {
     // id, so the deployed API physical id and invoke URL are unchanged on upgrade
     // (Easy Genomics runs in customer-owned accounts — a new URL would break them).
     this.apiGateway = new SpecRestApiConstruct(this, `${this.props.namePrefix}-easy-genomics-apigw`, {
-      restApiName: `${this.props.namePrefix}-easy-genomics-api-apigw`,
+      restApiName: easyGenomicsApiName(this.props.namePrefix),
       description: 'Easy Genomics API Gateway',
       lambdaFunctions: this.easyGenomicsNestedStack.lambda.lambdaFunctions,
       userPool: this.props.userPool,
