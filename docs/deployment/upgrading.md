@@ -50,12 +50,51 @@ Complete this before starting any upgrade procedure.
   ```bash
   aws sts get-caller-identity
   ```
+- [ ] **Your credentials can read the back-end stack outputs.** From v1.5.3 the front-end build resolves both API URLs
+      from CloudFormation, so it needs `cloudformation:DescribeStacks` (it no longer needs `apigateway:GET`). Most
+      operators already hold this from deploying the back-end.
+
+  ```bash
+  aws cloudformation describe-stacks --stack-name "${ENV_TYPE}-${ENV_NAME}-main-back-end-stack" \
+    --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayRestApiUrl`].OutputValue' --output text
+  ```
+
+  If this is denied, the build warns and falls back to whatever URLs you supply by hand rather than failing — but it can
+  no longer detect a stale override, so grant the permission if you can.
+
 - [ ] **No workflow runs are actively processing.** In-flight runs may lose status updates during the deploy window.
       Check the Easy Genomics UI and wait for any running jobs to finish or be cancelled.
 - [ ] **Record your current version.**
   ```bash
   git describe --tags   # save this; you will need it if you roll back
   ```
+- [ ] **`AWS_API_GATEWAY_URL` is not set to a raw API Gateway invoke URL.**
+
+  ```bash
+  env | grep AWS_API_GATEWAY_URL   # note the value, if any
+  ```
+
+  Check your shell profile and any deploy scripts or notes too, in case the export was made permanent. What to do
+  depends on the value:
+
+  | Value                                                 | Action                              |
+  | ----------------------------------------------------- | ----------------------------------- |
+  | Not set                                               | Nothing to do.                      |
+  | `https://<id>.execute-api.<region>.amazonaws.com/...` | `unset AWS_API_GATEWAY_URL`         |
+  | Your own domain, e.g. `https://api.yourlab.org`       | **Keep it.** See the warning below. |
+
+  From v1.5.3 both API URLs are read from the back-end CloudFormation stack outputs, so a raw invoke URL no longer needs
+  to be set by hand — and if it holds a stale value it overrides the correct one. The build stops with an error naming
+  the variable rather than deploying something broken, but unsetting it first saves a failed run.
+
+  > **If you front the platform API with a custom domain, keep `AWS_API_GATEWAY_URL` set to that domain.** There is no
+  > `easy-genomics.yaml` field for it, so the export is the only way to supply it. Unsetting it rebuilds the front-end
+  > against the raw invoke URL, which bypasses the domain and anything attached to it (WAF rules, IP allowlists, CORS
+  > expectations). The build recognises a non-invoke-URL value as a custom domain and will not tell you to unset it.
+
+  Optional: you can delete `aws-easy-genomics-api-url` from `config/easy-genomics.yaml`. It is read from the stack as
+  well now. Keep it only if that API is likewise fronted by a custom domain.
+
 - [ ] **Tier 2 and Tier 3 only:** Notify lab users of a maintenance window (~15 min for Tier 2, longer for Tier 3 — see
       the runbook).
 
@@ -237,7 +276,34 @@ curl -s -H "Authorization: Bearer $COGNITO_TOKEN" \
   "${API_URL}/easy-genomics/laboratory/list-laboratories" | jq '.totalItems'
 ```
 
-### 6.4 CloudWatch error check
+### 6.4 Front-end API URLs
+
+The front-end talks to two separate APIs, and a build that points both at the same one leaves the platform working while
+every workflow and run page returns 404. Both URLs are resolved automatically from the back-end CloudFormation stack
+outputs, so no action is needed on a healthy upgrade — this check confirms it worked.
+
+Open the generated `config/.env.nuxt` and confirm the two values differ:
+
+```
+AWS_API_GATEWAY_URL=https://<id-a>.execute-api.<region>.amazonaws.com/prod
+AWS_EASY_GENOMICS_API_URL=https://<id-b>.execute-api.<region>.amazonaws.com/prod
+```
+
+`AWS_API_GATEWAY_URL` serves `/aws-healthomics` and `/nf-tower`; `AWS_EASY_GENOMICS_API_URL` serves `/easy-genomics`.
+Despite its name, `AWS_API_GATEWAY_URL` is **not** the platform API. The build prints both values with their source and
+what each one serves, so the build log is the quicker place to check.
+
+If either value looks wrong, see the `AWS_API_GATEWAY_URL` item in the
+[pre-upgrade checklist](#2-pre-upgrade-checklist-all-tiers). Editing `config/.env.nuxt` directly has no effect — the
+build regenerates it before reading it, and a variable already exported in your shell wins over the file.
+
+On a deployment fronted by a custom domain the two values are your domain and the easy-genomics API URL, not two invoke
+URLs. That is expected; the check is that they are not the _same_ value.
+
+After a deploy, hard-reload the application in your browser (Cmd-Shift-R / Ctrl-Shift-R). The API URL is compiled into
+the JavaScript bundle, so a cached page keeps calling the old API even after a correct deploy.
+
+### 6.5 CloudWatch error check
 
 In the AWS Console, go to **CloudWatch → Log Groups**. Filter by `${ENV_TYPE}-${ENV_NAME}` and review the last 15
 minutes across all Lambda log groups. No `ERROR`-level entries should appear after a healthy deploy.
