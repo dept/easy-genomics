@@ -4,13 +4,20 @@ import {
   AnalyticsDeploymentInfo,
   getAnalyticsDeploymentInfo,
 } from '@easy-genomics/shared-lib/lib/src/app/utils/analytics-utils';
-import { getApiGatewayInfo } from '@easy-genomics/shared-lib/lib/src/app/utils/api-gateway-utils';
+import {
+  EASY_GENOMICS_STACK_OUTPUT_KEY,
+  isApiGatewayInvokeUrl,
+  MAIN_STACK_OUTPUT_KEY,
+  ResolvedApiUrls,
+  resolveApiUrls,
+  UrlSource,
+} from '@easy-genomics/shared-lib/lib/src/app/utils/api-url-resolution';
+import { getStackOutput } from '@easy-genomics/shared-lib/lib/src/app/utils/cloudformation-utils';
 import {
   getCognitoClientUrls,
   getCognitoDomainInfo,
   getCognitoIdpInfo,
 } from '@easy-genomics/shared-lib/lib/src/app/utils/cognito-idp-utils';
-import { ApiGatewayInfo } from '@easy-genomics/shared-lib/src/app/types/api-gateway-info';
 import { CognitoIdpInfo } from '@easy-genomics/shared-lib/src/app/types/cognito-idp-info';
 import { ConfigurationSettings } from '@easy-genomics/shared-lib/src/app/types/configuration';
 import {
@@ -20,12 +27,75 @@ import {
 } from '@easy-genomics/shared-lib/lib/src/app/utils/configuration';
 
 /**
+ * A supplied easy-genomics API URL, carrying where it came from. The two sources
+ * are remediated differently when the guard trips — one is an environment
+ * variable to unset, the other a yaml entry to correct — so the origin has to
+ * travel with the value rather than be inferred.
+ */
+export interface EasyGenomicsUrlOverride {
+  value: string;
+  source: Extract<UrlSource, 'env' | 'yaml'>;
+}
+
+/**
+ * Renders where a resolved URL came from, so a build log shows how a value was
+ * arrived at rather than only what it is.
+ */
+function sourceLabel(source: UrlSource): string {
+  switch (source) {
+    case 'env':
+      return 'environment override';
+    case 'yaml':
+      return 'easy-genomics.yaml';
+    case 'stack-output':
+      return 'stack output';
+  }
+}
+
+/**
+ * Whether an error is CloudFormation refusing the call rather than failing it.
+ */
+function isAuthorizationError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const name = (error as { name?: string }).name ?? '';
+  const statusCode = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+  return name === 'AccessDenied' || name === 'AccessDeniedException' || statusCode === 403;
+}
+
+/**
+ * Reads a stack output, downgrading a permission denial to a warning.
+ *
+ * Credentials that can build the front-end but not call cloudformation:DescribeStacks
+ * were sufficient before the URLs moved to stack outputs. Failing the build outright
+ * would strand those deployments, so a denial degrades to "no deployed value known":
+ * a build with both URLs supplied still succeeds, and one without them still stops at
+ * the existing error in `resolveApiUrls`, which names the stack and the output key.
+ */
+async function readStackOutput(stackName: string, outputKey: string): Promise<string | undefined> {
+  try {
+    return await getStackOutput(stackName, outputKey);
+  } catch (error) {
+    if (isAuthorizationError(error)) {
+      console.warn(
+        `  NOTICE: not permitted to read '${outputKey}' from stack '${stackName}' ` +
+          '(cloudformation:DescribeStacks was denied). Falling back to the supplied API URL values. ' +
+          'Grant cloudformation:DescribeStacks so the deployed URLs are used and a stale override can be detected.',
+      );
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+/**
  * This script is required to simplify the easy-genomics.yaml configuration and deployment workflow for customers and
  * for the Easy Genomics development team to easily work on various parts of the system in parallel.
  *
  * This script reads the {easy-genomics root dir}/config/easy-genomics.yaml file for the configured shared settings to
- * then asynchronously queries the relevant AWS services for the existing:44
- *  - API Gateway URL
+ * then asynchronously query the relevant AWS services for the existing:
+ *  - Back-end API URL and Easy Genomics API URL, from the back-end CloudFormation stack outputs
  *  - Cognito IDP User Pool ID
  *  - Cognito IDP User Pool Client ID
  *
@@ -38,29 +108,47 @@ import {
  * @param awsRegion
  * @param envName
  * @param envType
- * @param easyGenomicsApiUrl Optional override for the easy-genomics API URL (no trailing slash).
+ * @param apiGatewayUrl Optional AWS_API_GATEWAY_URL override for the back-end API URL (no trailing slash).
+ * @param easyGenomicsApiUrl Optional override for the easy-genomics API URL, with the source it came from.
  */
 export async function exportNuxtConfigurationSettings(
   awsRegion: string,
   envName: string,
   envType: string,
   apiGatewayUrl?: string,
-  easyGenomicsApiUrl?: string,
+  easyGenomicsApiUrl?: EasyGenomicsUrlOverride,
   analyticsEnabled: boolean = false,
   analyticsAllowDev: boolean = false,
   costExplorerEnabled: boolean = false,
 ) {
   const namePrefix: string = `${envType}-${envName}`;
-  const apiGatewayRestApiName: string = `${namePrefix}-easy-genomics-apigw`;
+  const mainStackName: string = `${namePrefix}-main-back-end-stack`;
+  const easyGenomicsStackName: string = `${namePrefix}-easy-genomics-api-stack`;
   const cognitoUserPoolName: string = `${namePrefix}-easy-genomics-auth-user-pool`;
   const cognitoUserPoolClientName: string = `${namePrefix}-easy-genomics-auth-user-pool-client`;
 
   // Ensure the AWS Region for the SDK calls to correctly query the correct region.
   process.env.AWS_REGION = awsRegion;
-  const normalizedApiGatewayUrl = apiGatewayUrl?.replace(/\/+$/, '');
-  const apiGatewayInfo: ApiGatewayInfo = normalizedApiGatewayUrl
-    ? { RestApiUrl: normalizedApiGatewayUrl }
-    : await getApiGatewayInfo(apiGatewayRestApiName, awsRegion);
+
+  // Both REST APIs are created with the same name, so they cannot be told apart by a
+  // name lookup. Stack names are unique within an account and region, so the outputs
+  // are. Both are read even when a higher-precedence value already supplies the URL:
+  // the deployed values are what let `resolveApiUrls` recognise a stale override and
+  // tell a split deployment from a single-API one.
+  const [baseUrlStackOutput, easyGenomicsStackOutput] = await Promise.all([
+    readStackOutput(mainStackName, MAIN_STACK_OUTPUT_KEY),
+    readStackOutput(easyGenomicsStackName, EASY_GENOMICS_STACK_OUTPUT_KEY),
+  ]);
+
+  const apiUrls: ResolvedApiUrls = resolveApiUrls({
+    baseUrlEnvOverride: apiGatewayUrl,
+    baseUrlStackOutput,
+    easyGenomicsEnvOverride: easyGenomicsApiUrl?.source === 'env' ? easyGenomicsApiUrl.value : undefined,
+    easyGenomicsYamlValue: easyGenomicsApiUrl?.source === 'yaml' ? easyGenomicsApiUrl.value : undefined,
+    easyGenomicsStackOutput,
+    mainStackName,
+    easyGenomicsStackName,
+  });
   const cognitoIdpInfo: CognitoIdpInfo = await getCognitoIdpInfo(cognitoUserPoolName, cognitoUserPoolClientName);
   const cognitoDomain = await getCognitoDomainInfo(cognitoIdpInfo.UserPoolId || '');
   const clientUrls = await getCognitoClientUrls(cognitoIdpInfo.UserPoolId || '', cognitoIdpInfo.UserPoolClientId || '');
@@ -70,9 +158,24 @@ export async function exportNuxtConfigurationSettings(
   console.log(`  AWS_REGION=${awsRegion}`);
   console.log(`  ENV_NAME=${envName}`);
   console.log(`  ENV_TYPE=${envType}`);
-  console.log(`  AWS_API_GATEWAY_URL=${apiGatewayInfo.RestApiUrl}`);
-  if (easyGenomicsApiUrl) {
-    console.log(`  AWS_EASY_GENOMICS_API_URL=${easyGenomicsApiUrl}`);
+  console.log(`  AWS_API_GATEWAY_URL=${apiUrls.baseUrl}`);
+  console.log(`      (${sourceLabel(apiUrls.baseUrlSource)}) - serves /aws-healthomics, /nf-tower`);
+  if (apiUrls.easyGenomicsUrl) {
+    console.log(`  AWS_EASY_GENOMICS_API_URL=${apiUrls.easyGenomicsUrl}`);
+    console.log(`      (${sourceLabel(apiUrls.easyGenomicsUrlSource!)}) - serves /easy-genomics`);
+  } else {
+    console.log(
+      '  AWS_EASY_GENOMICS_API_URL=<unset> - single-URL mode; /easy-genomics traffic will use AWS_API_GATEWAY_URL',
+    );
+  }
+  if (apiUrls.baseUrlSource === 'env') {
+    console.log(
+      isApiGatewayInvokeUrl(apiUrls.baseUrl)
+        ? '  NOTICE: AWS_API_GATEWAY_URL came from the environment, not from the ' +
+            `'${mainStackName}' stack output. It no longer needs to be set by hand; unset it to use the deployed value.`
+        : '  NOTICE: AWS_API_GATEWAY_URL came from the environment and is not a raw API Gateway invoke URL, so it is ' +
+            'treated as a custom domain fronting the API. Keep it set: the stack output would bypass the domain.',
+    );
   }
   console.log(`  AWS_COGNITO_USER_POOL_ID=${cognitoIdpInfo.UserPoolId}`);
   console.log(`  AWS_COGNITO_USER_POOL_CLIENT_ID=${cognitoIdpInfo.UserPoolClientId}`);
@@ -108,16 +211,18 @@ export async function exportNuxtConfigurationSettings(
 
   console.log(`  COST_EXPLORER_ENABLED=${costExplorerEnabled}`);
 
-  const normalizedEasyGenomicsApiUrl = easyGenomicsApiUrl?.replace(/\/+$/, '');
   const nuxtConfigurationSettings: string =
     '###\n' +
     '# This configuration file is generated by the Front-End nuxt-load-configuration-settings.ts script.\n' +
+    '# Do not edit: the build regenerates this file before `nuxt generate` reads it, so edits are discarded.\n' +
+    '# The API URLs come from the back-end CloudFormation stack outputs. To override one, set the matching\n' +
+    '# environment variable, or `aws-easy-genomics-api-url` in config/easy-genomics.yaml.\n' +
     '###\n' +
     `AWS_REGION=${awsRegion}\n` +
     `ENV_NAME=${envName}\n` +
     `ENV_TYPE=${envType}\n` +
-    `AWS_API_GATEWAY_URL=${apiGatewayInfo.RestApiUrl}\n` +
-    `AWS_EASY_GENOMICS_API_URL=${normalizedEasyGenomicsApiUrl ?? ''}\n` +
+    `AWS_API_GATEWAY_URL=${apiUrls.baseUrl}\n` +
+    `AWS_EASY_GENOMICS_API_URL=${apiUrls.easyGenomicsUrl ?? ''}\n` +
     `AWS_COGNITO_USER_POOL_ID=${cognitoIdpInfo.UserPoolId}\n` +
     `AWS_COGNITO_USER_POOL_CLIENT_ID=${cognitoIdpInfo.UserPoolClientId}\n` +
     `AWS_COGNITO_DOMAIN=${cognitoDomain ?? ''}\n` +
@@ -162,7 +267,7 @@ void (async () => {
         envName,
         envType,
         apiGatewayUrl,
-        easyGenomicsApiUrl,
+        easyGenomicsApiUrl ? { value: easyGenomicsApiUrl, source: 'env' } : undefined,
         analyticsEnabled,
         analyticsAllowDev,
         costExplorerEnabled,
@@ -199,7 +304,7 @@ void (async () => {
         envName,
         envType,
         apiGatewayUrl,
-        easyGenomicsApiUrl,
+        easyGenomicsApiUrl ? { value: easyGenomicsApiUrl, source: 'yaml' } : undefined,
         analyticsEnabled,
         analyticsAllowDev,
         costExplorerEnabled,
@@ -208,7 +313,7 @@ void (async () => {
   } catch (error) {
     if (isCredentialsError(error)) {
       console.error(
-        '\nAWS credentials could not be loaded. This script needs credentials to call API Gateway and Cognito.',
+        '\nAWS credentials could not be loaded. This script needs credentials to call CloudFormation and Cognito.',
       );
       console.error('Configure credentials using one of these methods:\n');
       console.error('  1. Run:  aws configure');

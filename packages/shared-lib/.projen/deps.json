@@ -89,7 +89,8 @@
       "type": "build"
     },
     {
-      "name": "@aws-sdk/client-api-gateway",
+      "name": "@aws-sdk/client-cloudformation",
+      "version": "^3.786.0",
       "type": "runtime"
     },
     {

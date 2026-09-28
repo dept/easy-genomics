@@ -98,6 +98,10 @@ cp config/.env.nuxt.local.example config/.env.nuxt.local
 Set `AWS_API_GATEWAY_URL=http://localhost:3001` (no trailing slash). To use the deployed API again, rename or delete
 `config/.env.nuxt.local`.
 
+On a split deployment `config/.env.nuxt` also carries `AWS_EASY_GENOMICS_API_URL`, and the front-end prefers it for
+every `/easy-genomics` call. Overriding only `AWS_API_GATEWAY_URL` therefore clears it automatically, so all traffic
+goes to the local server. To point the two APIs at different places on purpose, set both keys in the file.
+
 #### 5. (Optional) Add localhost to Cognito callback URLs
 
 For local development, Cognito must allow `http://localhost:3000` (or your dev port) in callback and logout URLs. Update
