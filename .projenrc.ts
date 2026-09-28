@@ -280,7 +280,7 @@ const sharedLib = new typescript.TypeScriptProject({
   projenCommand: root.projenCommand,
   minNodeVersion: root.minNodeVersion,
   deps: [
-    '@aws-sdk/client-api-gateway',
+    '@aws-sdk/client-cloudformation@^3.786.0',
     '@aws-sdk/client-cognito-identity-provider',
     `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-s3',
