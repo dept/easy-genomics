@@ -4,6 +4,7 @@ import {
   AnalyticsDeploymentInfo,
   getAnalyticsDeploymentInfo,
 } from '@easy-genomics/shared-lib/lib/src/app/utils/analytics-utils';
+import { mainBackEndApiName } from '@easy-genomics/shared-lib/lib/src/app/utils/api-gateway-names';
 import { getApiGatewayInfo } from '@easy-genomics/shared-lib/lib/src/app/utils/api-gateway-utils';
 import {
   getCognitoClientUrls,
@@ -51,7 +52,9 @@ export async function exportNuxtConfigurationSettings(
   costExplorerEnabled: boolean = false,
 ) {
   const namePrefix: string = `${envType}-${envName}`;
-  const apiGatewayRestApiName: string = `${namePrefix}-easy-genomics-apigw`;
+  // `AWS_API_GATEWAY_URL` must resolve to the main back-end API, which owns
+  // `/nf-tower` and `/aws-healthomics` — not the dedicated easy-genomics API.
+  const apiGatewayRestApiName: string = mainBackEndApiName(namePrefix);
   const cognitoUserPoolName: string = `${namePrefix}-easy-genomics-auth-user-pool`;
   const cognitoUserPoolClientName: string = `${namePrefix}-easy-genomics-auth-user-pool-client`;
 
