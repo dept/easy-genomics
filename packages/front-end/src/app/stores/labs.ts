@@ -1,5 +1,4 @@
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-import { getCurrentUser } from 'aws-amplify/auth';
 import { defineStore } from 'pinia';
 
 interface LabsStoreState {
@@ -18,13 +17,8 @@ async function shouldSuppressLabLoadErrorToast(): Promise<boolean> {
   if (useUiStore().isLoggingOut) {
     return true;
   }
-  try {
-    await getCurrentUser();
-    return false;
-  } catch {
-    // No session (logout or expiry) — lab fetch failures are expected.
-    return true;
-  }
+  // No session (logout or expiry) — lab fetch failures are expected.
+  return !(await useAuth().isAuthed());
 }
 
 const useLabsStore = defineStore('labsStore', {

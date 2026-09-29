@@ -1,4 +1,4 @@
-import { fetchAuthSession, getCurrentUser, signIn as amplifySignIn, signOut as amplifySignOut } from 'aws-amplify/auth';
+import { fetchAuthSession, getCurrentUser, signIn as amplifySignIn, signOut as amplifySignOut } from 'aws-amplify/auth'; // eslint-disable-line import/no-unresolved -- Amplify v6 subpath export
 import { VALIDATION_MESSAGES } from '@FE/constants/validation';
 import { resetStores, useToastStore, useUiStore } from '@FE/stores';
 
@@ -7,27 +7,32 @@ export default function useAuth() {
     try {
       const authenticatedUser = await getCurrentUser();
       return !!authenticatedUser;
-    } catch (error) {
-      console.error('Error occurred getting the authenticated user.', error);
-      throw error;
+    } catch {
+      return false;
     }
   }
 
   async function signIn(username: string, password: string) {
     try {
       useUiStore().setRequestPending('signIn');
-      const { isSignedIn } = await amplifySignIn({ username, password });
-      if (isSignedIn) {
-        await useUser().setCurrentUserDataFromToken();
-        await useOrgsStore().loadOrgs();
-        // Navigate into the app before emitting analytics so events fire on a
-        // non-sensitive route (auth routes like /signin can carry an email in
-        // the query string).
-        await navigateTo('/');
-        const analytics = useAnalytics();
-        await analytics.identify(useUserStore().currentUserDetails.id);
-        analytics.track('signed_in', { method: 'password' });
+      const { isSignedIn, nextStep } = await amplifySignIn({ username, password });
+      if (!isSignedIn) {
+        // v6 resolves (does not throw) for challenges such as FORCE_CHANGE_PASSWORD
+        // or MFA. The invite flow sets a permanent password, so this is an edge
+        // case — still surface it rather than leaving the form silently stuck.
+        const step = nextStep?.signInStep ?? 'unknown';
+        throw Object.assign(new Error(`Sign-in incomplete: ${step}`), { name: 'SignInIncomplete' });
       }
+
+      await useUser().setCurrentUserDataFromToken();
+      await useOrgsStore().loadOrgs();
+      // Navigate into the app before emitting analytics so events fire on a
+      // non-sensitive route (auth routes like /signin can carry an email in
+      // the query string).
+      await navigateTo('/');
+      const analytics = useAnalytics();
+      await analytics.identify(useUserStore().currentUserDetails.id);
+      analytics.track('signed_in', { method: 'password' });
     } catch (error: any) {
       // v6 surfaces the Cognito exception on `name`; v5 used `code`.
       if (error.name === 'NotAuthorizedException') {
@@ -42,15 +47,19 @@ export default function useAuth() {
     }
   }
 
-  async function getToken(): Promise<string> {
-    const { tokens } = await fetchAuthSession();
+  async function idTokenFromSession(forceRefresh = false): Promise<string> {
+    const { tokens } = await fetchAuthSession(forceRefresh ? { forceRefresh: true } : undefined);
     const idToken = tokens?.idToken?.toString();
     // v5's currentSession() rejected without a session; v6 resolves with no
     // tokens, so raise it here to keep callers' error handling intact.
     if (!idToken) {
-      throw new Error('No ID token in the current session');
+      throw new Error(forceRefresh ? 'No ID token after refresh' : 'No ID token in the current session');
     }
     return idToken;
+  }
+
+  async function getToken(): Promise<string> {
+    return idTokenFromSession(false);
   }
 
   /**
@@ -59,14 +68,7 @@ export default function useAuth() {
    */
   async function getRefreshedToken(): Promise<string> {
     try {
-      const { tokens } = await fetchAuthSession({ forceRefresh: true });
-      const idToken = tokens?.idToken?.toString();
-      // A rejected refresh token resolves with no tokens rather than throwing,
-      // which would otherwise drop the Bearer header silently.
-      if (!idToken) {
-        throw new Error('No ID token after refresh');
-      }
-      return idToken;
+      return await idTokenFromSession(true);
     } catch (error) {
       console.error('Error occurred during token refresh.', error);
       throw error;

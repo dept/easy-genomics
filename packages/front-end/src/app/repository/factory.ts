@@ -143,11 +143,10 @@ class HttpFactory {
   /**
    * Refresh the token if necessary
    *
-   * Amplify does not de-duplicate concurrent refreshes: every
-   * fetchAuthSession({ forceRefresh: true }) issues its own Cognito call. Under
-   * refresh token rotation the losing call raises RefreshTokenReuseException,
-   * which Amplify treats as fatal and clears the session for. This wrapper is
-   * what keeps parallel EG-110 retries down to a single refresh.
+   * Amplify de-dupes the Cognito refresh call itself (deDupeAsyncFunction in
+   * refreshAuthTokens), but not the surrounding token-store write. This wrapper
+   * keeps parallel EG-110 retries on a single end-to-end refresh so a second
+   * call cannot land between refresh resolving and setTokens completing.
    * @returns Promise<string>
    */
   private refreshToken(): Promise<string> {

@@ -1,16 +1,13 @@
 import { Amplify } from 'aws-amplify';
 import { useRuntimeConfig } from 'nuxt/app';
+import { toUrlList } from '@FE/utils/cognito-oauth-urls';
 
-/**
- * Cognito writes its callback/logout URLs into the generated .env as a
- * comma-separated string. v5 accepted that string as-is; v6 requires string[].
- */
-function toUrlList(urls: string | undefined): string[] {
-  return (urls ?? '')
-    .split(',')
-    .map((url) => url.trim())
-    .filter(Boolean);
-}
+// Must load before Amplify.configure() below: the listener subscribes to the core
+// `configure` Hub event and completes the OAuth code exchange. This lives in the
+// plugin (eager app entry) rather than the lazy /auth/callback chunk so the global
+// route guard cannot run before the listener exists.
+// eslint-disable-next-line import/no-unresolved -- Amplify v6 subpath export
+import 'aws-amplify/auth/enable-oauth-listener';
 
 export default defineNuxtPlugin(() => {
   const {

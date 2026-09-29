@@ -598,6 +598,8 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@vueuse/core',
     '@vueuse/integrations',
     '@vueuse/nuxt',
+    // Caret matches other runtime deps. Any 6.x minor bump must re-run the
+    // TESTING.md auth checklist — token-storage defaults have changed within 6.x.
     'aws-amplify@^6.22.0',
     'axios@^1.18.1',
     'cdk-nag',

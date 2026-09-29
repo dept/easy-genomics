@@ -1,6 +1,14 @@
 import { defineNuxtRouteMiddleware } from '#app';
-import { fetchAuthSession } from 'aws-amplify/auth';
+
 const baseURL = window.location.origin;
+
+/**
+ * Paths that must not run the signed-in / signed-out redirect.
+ * `/auth/callback` is included so the OAuth exchange (started by the amplify
+ * plugin listener) can finish without the guard parking on inflight OAuth or
+ * toasting a session error mid-redirect.
+ */
+const AUTH_GUARD_EXEMPT_PATHS = ['/accept-invitation', '/forgot-password', '/reset-password', '/auth/callback'];
 
 /**
  * @description Routing rules for authed/non-authed users, invoked on every route change
@@ -35,17 +43,11 @@ export default defineNuxtRouteMiddleware(async (to) => {
   /**
    * @description Redirects for authed/non-authed users
    */
-  if (!['/accept-invitation', '/forgot-password', '/reset-password'].includes(url.pathname)) {
+  if (!AUTH_GUARD_EXEMPT_PATHS.includes(url.pathname)) {
     try {
-      // fetchAuthSession rather than getCurrentUser: it renews an expired ID
-      // token, so a mid-session expiry does not bounce the user to /signin.
-      const { tokens } = await fetchAuthSession();
-
-      // v5's currentAuthenticatedUser() rejected when there was no session, so
-      // the signed-out redirect below has always been owned by the catch block.
-      if (!tokens?.idToken) {
-        throw new Error('No authenticated session');
-      }
+      // getToken uses fetchAuthSession, which renews an expired ID token so a
+      // mid-session expiry does not bounce the user to /signin.
+      await useAuth().getToken();
 
       // if user is signed in redirect to Labs page
       if (url.pathname === '/signin') {
