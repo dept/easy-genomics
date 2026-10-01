@@ -1801,16 +1801,16 @@ components:
     ReadLaboratory:
       type: object
       properties:
-        OrganizationId:
-          type: string
-        Name:
-          type: string
         LaboratoryId:
           type: string
         Status:
           enum:
             - Active
             - Inactive
+          type: string
+        OrganizationId:
+          type: string
+        Name:
           type: string
         Description:
           type: string
@@ -1956,9 +1956,15 @@ components:
     LaboratoryRun:
       type: object
       properties:
-        OrganizationId:
-          type: string
         LaboratoryId:
+          type: string
+        RunId:
+          type: string
+        RunName:
+          type: string
+        Status:
+          type: string
+        OrganizationId:
           type: string
         UserId:
           type: string
@@ -1967,13 +1973,7 @@ components:
             - AWS HealthOmics
             - Seqera Cloud
           type: string
-        Status:
-          type: string
         Owner:
-          type: string
-        RunId:
-          type: string
-        RunName:
           type: string
         Description:
           description: Optional user-authored note for this run; set at creation time.
@@ -2299,9 +2299,15 @@ components:
     ReadLaboratoryRun:
       type: object
       properties:
-        OrganizationId:
-          type: string
         LaboratoryId:
+          type: string
+        RunId:
+          type: string
+        RunName:
+          type: string
+        Status:
+          type: string
+        OrganizationId:
           type: string
         UserId:
           type: string
@@ -2310,13 +2316,7 @@ components:
             - AWS HealthOmics
             - Seqera Cloud
           type: string
-        Status:
-          type: string
         Owner:
-          type: string
-        RunId:
-          type: string
-        RunName:
           type: string
         Description:
           description: Optional user-authored note for this run; set at creation time.
@@ -2636,6 +2636,66 @@ components:
         - estimateAvailable
         - exclusions
         - label
+    RequestRunExportJobStatusRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          minLength: 1
+        JobId:
+          type: string
+          format: uuid
+      required:
+        - LaboratoryId
+        - JobId
+      additionalProperties: false
+    RequestRunExportJobRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          minLength: 1
+        RunIds:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          minItems: 1
+          maxItems: 25
+        Destination:
+          type: string
+          enum:
+            - Download
+            - S3
+            - Lims
+        DestinationBucket:
+          type: string
+          minLength: 1
+        DestinationPrefix:
+          type: string
+          minLength: 1
+      required:
+        - LaboratoryId
+        - RunIds
+        - Destination
+      additionalProperties: false
+    RequestRunExportPreviewRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          minLength: 1
+        RunIds:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          minItems: 1
+          maxItems: 25
+      required:
+        - LaboratoryId
+        - RunIds
+      additionalProperties: false
     UpdateLaboratoryRunRequest:
       type: object
       properties:
@@ -2860,12 +2920,12 @@ components:
     LaboratoryUserDetails:
       type: object
       properties:
+        LaboratoryId:
+          type: string
         LabManager:
           type: boolean
         LabTechnician:
           type: boolean
-        LaboratoryId:
-          type: string
         UserId:
           type: string
         UserEmail:
@@ -9311,6 +9371,84 @@ paths:
     post:
       operationId: requestLaboratoryRunStatusCheck
       summary: Request Laboratory Run Status Check
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/run/request-run-export-job-status:
+    post:
+      operationId: requestRunExportJobStatus
+      summary: Request Run Export Job Status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestRunExportJobStatusRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/run/request-run-export-job:
+    post:
+      operationId: requestRunExportJob
+      summary: Request Run Export Job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestRunExportJobRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/run/request-run-export-preview:
+    post:
+      operationId: requestRunExportPreview
+      summary: Request Run Export Preview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestRunExportPreviewRequest'
       responses:
         '200':
           description: Success
