@@ -49,7 +49,7 @@ describe('S3Service listing helpers', () => {
       listBucketObjectsV2.mockResolvedValue({ Contents: [{ Key: 'p/a.bam' }, {}], IsTruncated: false });
 
       await expect(svc.listAllObjectsUnderPrefix('my-bucket', 'p/')).resolves.toEqual([
-        { Key: 'p/a.bam', LastModified: undefined },
+        { Key: 'p/a.bam', LastModified: undefined, Size: undefined },
       ]);
     });
   });
@@ -87,5 +87,66 @@ describe('S3Service listing helpers', () => {
 
       await expect(svc.listChildPrefixes('my-bucket', 'p/')).resolves.toEqual([]);
     });
+  });
+});
+
+describe('S3Service.copyObjectBySize', () => {
+  let svc: S3Service;
+
+  beforeEach(() => {
+    svc = new S3Service();
+  });
+
+  it('uses a single CopyObject for files at or under 5 GB', async () => {
+    const copyBucketObject = jest.fn().mockResolvedValue(undefined);
+    (svc as unknown as { copyBucketObject: jest.Mock }).copyBucketObject = copyBucketObject;
+
+    await svc.copyObjectBySize({
+      sourceBucket: 'src',
+      sourceKey: 'a.bam',
+      destBucket: 'dest',
+      destKey: 'out/a.bam',
+      sizeBytes: 5 * 1024 * 1024 * 1024,
+    });
+
+    expect(copyBucketObject).toHaveBeenCalledWith({
+      Bucket: 'dest',
+      Key: 'out/a.bam',
+      CopySource: 'src/a.bam',
+    });
+  });
+
+  it('uses multipart UploadPartCopy for files over 5 GB', async () => {
+    const copyBucketObject = jest.fn();
+    const createMultipartUpload = jest.fn().mockResolvedValue({ UploadId: 'u-1' });
+    const uploadPartCopy = jest.fn().mockResolvedValue({ CopyPartResult: { ETag: '"etag"' } });
+    const completeMultipartUpload = jest.fn().mockResolvedValue({});
+    const abortMultipartUpload = jest.fn().mockResolvedValue({});
+    Object.assign(svc as unknown as Record<string, unknown>, {
+      copyBucketObject,
+      createMultipartUpload,
+      uploadPartCopy,
+      completeMultipartUpload,
+      abortMultipartUpload,
+    });
+
+    const sizeBytes = 5 * 1024 * 1024 * 1024 + 1;
+    await svc.copyObjectBySize({
+      sourceBucket: 'src',
+      sourceKey: 'huge.bam',
+      destBucket: 'dest',
+      destKey: 'out/huge.bam',
+      sizeBytes,
+    });
+
+    expect(copyBucketObject).not.toHaveBeenCalled();
+    expect(createMultipartUpload).toHaveBeenCalled();
+    expect(uploadPartCopy).toHaveBeenCalled();
+    expect(completeMultipartUpload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        UploadId: 'u-1',
+        MultipartUpload: { Parts: expect.arrayContaining([{ ETag: '"etag"', PartNumber: 1 }]) },
+      }),
+    );
   });
 });
