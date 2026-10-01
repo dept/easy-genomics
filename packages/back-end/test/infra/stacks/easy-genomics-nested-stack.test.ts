@@ -51,6 +51,7 @@ jest.mock('../../../src/infra/constructs/sqs-construct', () => ({
         { queueUrl: 'https://sqs/classify', queueArn: 'arn:aws:sqs:classify' },
       ],
       ['folder-download-queue', { queueUrl: 'https://sqs/folder', queueArn: 'arn:aws:sqs:folder' }],
+      ['run-export-queue', { queueUrl: 'https://sqs/export', queueArn: 'arn:aws:sqs:export' }],
     ]),
   })),
 }));
@@ -190,6 +191,21 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
       lambdaProps.lambdaFunctionsResources['/easy-genomics/laboratory/run/process-update-laboratory-run'];
 
     expect(triggerConfig.environment.SQS_LABORATORY_RUN_NOTIFICATION_QUEUE_URL).toBe('https://sqs/run-notify');
+  });
+
+  it('wires the run-export queue into the request and process lambdas', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const lambdaConstructMock = LambdaConstruct as unknown as jest.Mock;
+    const lambdaProps = lambdaConstructMock.mock.calls[0][2];
+    const requestConfig = lambdaProps.lambdaFunctionsResources['/easy-genomics/laboratory/run/request-run-export-job'];
+    const processConfig = lambdaProps.lambdaFunctionsResources['/easy-genomics/laboratory/run/process-run-export-job'];
+
+    expect(requestConfig.environment.SQS_RUN_EXPORT_QUEUE_URL).toBe('https://sqs/export');
+    expect(processConfig.timeoutSeconds).toBe(900);
+    expect(processConfig.events).toHaveLength(1);
   });
 
   it('adds IAM policy statements for top-level bucket objects endpoint', () => {

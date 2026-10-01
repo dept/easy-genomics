@@ -40,6 +40,9 @@ import {
   UploadPartCommand,
   UploadPartCommandInput,
   UploadPartCommandOutput,
+  UploadPartCopyCommand,
+  UploadPartCopyCommandInput,
+  UploadPartCopyCommandOutput,
   ListObjectsV2Command,
   ListObjectsV2CommandInput,
   ListObjectsV2CommandOutput,
@@ -85,6 +88,7 @@ export enum S3Command {
   CREATE_MULTI_PART_UPLOAD = 'create-multi-part-upload',
   ABORT_MULTI_PART_UPLOAD = 'abort-multi-part-upload',
   UPLOAD_PART = 'upload-part',
+  UPLOAD_PART_COPY = 'upload-part-copy',
   LIST_MULTI_PART_UPLOAD_PARTS = 'list-multi-part-upload-parts',
   LIST_MULTI_PART_UPLOAD_REQUESTS = 'list-multi-part-upload-requests',
   COMPLETE_MULTI_PART_UPLOAD = 'complete-multi-part-upload',
@@ -177,8 +181,8 @@ export class S3Service {
   public listAllObjectsUnderPrefix = async (
     bucket: string,
     prefix: string,
-  ): Promise<Array<{ Key: string; LastModified?: Date }>> => {
-    const out: Array<{ Key: string; LastModified?: Date }> = [];
+  ): Promise<Array<{ Key: string; LastModified?: Date; Size?: number }>> => {
+    const out: Array<{ Key: string; LastModified?: Date; Size?: number }> = [];
     let continuationToken: string | undefined;
     let isTruncated = true;
 
@@ -190,7 +194,7 @@ export class S3Service {
         ContinuationToken: continuationToken,
       });
       for (const object of response.Contents || []) {
-        if (object.Key) out.push({ Key: object.Key, LastModified: object.LastModified });
+        if (object.Key) out.push({ Key: object.Key, LastModified: object.LastModified, Size: object.Size });
       }
       isTruncated = !!response.IsTruncated;
       continuationToken = response.NextContinuationToken;
@@ -229,6 +233,75 @@ export class S3Service {
 
   public copyBucketObject = async (copyObjectInput: CopyObjectCommandInput): Promise<void> => {
     await this.s3Request<CopyObjectCommandInput, void>(S3Command.COPY_BUCKET_OBJECT, copyObjectInput);
+  };
+
+  /**
+   * Server-side copy that uses multipart UploadPartCopy for objects over 5 GB,
+   * which CopyObject cannot move in a single request.
+   */
+  public copyObjectBySize = async (params: {
+    sourceBucket: string;
+    sourceKey: string;
+    destBucket: string;
+    destKey: string;
+    sizeBytes: number;
+  }): Promise<void> => {
+    const copySource = `${params.sourceBucket}/${params.sourceKey}`;
+    const maxSingleCopyBytes = 5 * 1024 * 1024 * 1024;
+
+    if (params.sizeBytes <= maxSingleCopyBytes) {
+      await this.copyBucketObject({
+        Bucket: params.destBucket,
+        Key: params.destKey,
+        CopySource: copySource,
+      });
+      return;
+    }
+
+    const partSize = 64 * 1024 * 1024;
+    const multipart = await this.createMultipartUpload({
+      Bucket: params.destBucket,
+      Key: params.destKey,
+    });
+    const uploadId = multipart.UploadId as string | undefined;
+    if (!uploadId) {
+      throw new Error('S3 did not return an UploadId for multipart copy');
+    }
+
+    try {
+      const parts: Array<{ ETag: string; PartNumber: number }> = [];
+      let partNumber = 1;
+      for (let start = 0; start < params.sizeBytes; start += partSize) {
+        const end = Math.min(start + partSize, params.sizeBytes) - 1;
+        const copied = await this.uploadPartCopy({
+          Bucket: params.destBucket,
+          Key: params.destKey,
+          UploadId: uploadId,
+          PartNumber: partNumber,
+          CopySource: copySource,
+          CopySourceRange: `bytes=${start}-${end}`,
+        });
+        if (!copied.CopyPartResult?.ETag) {
+          throw new Error(`S3 multipart copy did not return an ETag for part ${partNumber}`);
+        }
+        parts.push({ ETag: copied.CopyPartResult.ETag, PartNumber: partNumber });
+        partNumber += 1;
+      }
+
+      await this.completeMultipartUpload({
+        Bucket: params.destBucket,
+        Key: params.destKey,
+        UploadId: uploadId,
+        MultipartUpload: { Parts: parts },
+      });
+    } catch (error) {
+      await this.abortMultipartUpload({
+        Bucket: params.destBucket,
+        Key: params.destKey,
+        UploadId: uploadId,
+      }).catch(() => undefined);
+      throw error;
+    }
   };
 
   public getBucketLocation = async (
@@ -306,6 +379,15 @@ export class S3Service {
 
   public uploadPart = async (uploadPartInput: UploadPartCommandInput): Promise<UploadPartCommandOutput> => {
     return this.s3Request<UploadPartCommandInput, UploadPartCommandOutput>(S3Command.UPLOAD_PART, uploadPartInput);
+  };
+
+  public uploadPartCopy = async (
+    uploadPartCopyInput: UploadPartCopyCommandInput,
+  ): Promise<UploadPartCopyCommandOutput> => {
+    return this.s3Request<UploadPartCopyCommandInput, UploadPartCopyCommandOutput>(
+      S3Command.UPLOAD_PART_COPY,
+      uploadPartCopyInput,
+    );
   };
 
   public completeMultipartUpload = async (
@@ -403,6 +485,8 @@ export class S3Service {
         return new AbortMultipartUploadCommand(data as AbortMultipartUploadCommandInput);
       case S3Command.UPLOAD_PART:
         return new UploadPartCommand(data as UploadPartCommandInput);
+      case S3Command.UPLOAD_PART_COPY:
+        return new UploadPartCopyCommand(data as UploadPartCopyCommandInput);
       case S3Command.LIST_MULTI_PART_UPLOAD_PARTS:
         return new ListPartsCommand(data as ListPartsCommandInput);
       case S3Command.LIST_MULTI_PART_UPLOAD_REQUESTS:

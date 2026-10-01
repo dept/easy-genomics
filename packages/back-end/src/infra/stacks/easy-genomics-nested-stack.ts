@@ -134,6 +134,12 @@ export class EasyGenomicsNestedStack extends NestedStack {
           visibilityTimeout: Duration.minutes(15),
           enforceSSL: true,
         },
+        ['run-export-queue']: <QueueDetails>{
+          fifo: true,
+          retentionPeriod: Duration.days(1),
+          visibilityTimeout: Duration.minutes(15),
+          enforceSSL: true,
+        },
       },
     });
 
@@ -394,6 +400,16 @@ export class EasyGenomicsNestedStack extends NestedStack {
         },
         '/easy-genomics/file/process-folder-download-job': {
           events: [new SqsEventSource(this.sqs.sqsQueues.get('folder-download-queue')!, { batchSize: 1 })],
+          timeoutSeconds: 900,
+          memorySizeMb: 3008,
+        },
+        '/easy-genomics/laboratory/run/request-run-export-job': {
+          environment: {
+            SQS_RUN_EXPORT_QUEUE_URL: this.sqs.sqsQueues.get('run-export-queue')?.queueUrl || '',
+          },
+        },
+        '/easy-genomics/laboratory/run/process-run-export-job': {
+          events: [new SqsEventSource(this.sqs.sqsQueues.get('run-export-queue')!, { batchSize: 1 })],
           timeoutSeconds: 900,
           memorySizeMb: 3008,
         },
@@ -1996,6 +2012,102 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
     ]);
 
+    const laboratoryRunTableReadResources = [
+      `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+      `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
+    ];
+    const laboratoryTableReadResources = [
+      `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+      `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+    ];
+
+    // /easy-genomics/laboratory/run/request-run-export-preview
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/run/request-run-export-preview', [
+      new PolicyStatement({
+        resources: laboratoryRunTableReadResources,
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: laboratoryTableReadResources,
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/laboratory/run/request-run-export-job
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/run/request-run-export-job', [
+      new PolicyStatement({
+        resources: laboratoryRunTableReadResources,
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: laboratoryTableReadResources,
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*/*'],
+        actions: ['s3:PutObject'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [`${this.sqs.sqsQueues.get('run-export-queue')?.queueArn || ''}`],
+        actions: ['sqs:SendMessage'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/laboratory/run/request-run-export-job-status
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/run/request-run-export-job-status', [
+      new PolicyStatement({
+        resources: laboratoryTableReadResources,
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*/*'],
+        actions: ['s3:GetObject', 's3:DeleteObject'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/laboratory/run/process-run-export-job
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/run/process-run-export-job', [
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*/*'],
+        actions: [
+          's3:GetObject',
+          's3:PutObject',
+          's3:CopyObject',
+          's3:AbortMultipartUpload',
+          's3:ListMultipartUploadParts',
+        ],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
     // /easy-genomics/upload/create-file-upload-request
     this.iam.addPolicyStatements('/easy-genomics/upload/create-file-upload-request', [
       new PolicyStatement({
@@ -2425,6 +2537,10 @@ export class EasyGenomicsNestedStack extends NestedStack {
       '/easy-genomics/file/request-folder-download-job',
       '/easy-genomics/file/request-folder-download-job-status',
       '/easy-genomics/file/process-folder-download-job',
+      '/easy-genomics/laboratory/run/request-run-export-preview',
+      '/easy-genomics/laboratory/run/request-run-export-job',
+      '/easy-genomics/laboratory/run/request-run-export-job-status',
+      '/easy-genomics/laboratory/run/process-run-export-job',
       '/easy-genomics/upload/create-file-upload-request',
       '/easy-genomics/upload/create-file-upload-sample-sheet',
       '/easy-genomics/data-collections/request-laboratory-bucket-objects',
