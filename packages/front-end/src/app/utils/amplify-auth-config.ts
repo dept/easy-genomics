@@ -10,7 +10,7 @@ export interface AmplifyPublicConfig {
 }
 
 /**
- * Build the Amplify v6 Auth config. OAuth is omitted when there is no hosted-UI
+ * Build the Amplify Auth config. OAuth is omitted when there is no hosted-UI
  * domain or redirect URL — otherwise Amplify throws InvalidRedirectException on
  * every page load in password-only deployments.
  */

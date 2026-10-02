@@ -1,10 +1,8 @@
-import { clearAbandonedOAuthInflight } from '@FE/utils/amplify-oauth-storage';
-
 /**
  * Paths that must not run the signed-in / signed-out redirect.
  * `/auth/callback` is included so the OAuth exchange (started by the amplify
- * plugin listener) can finish without the guard parking on inflight OAuth or
- * toasting a session error mid-redirect.
+ * plugin listener) can finish without the guard toasting a session error
+ * mid-redirect.
  */
 export const AUTH_GUARD_EXEMPT_PATHS = ['/accept-invitation', '/forgot-password', '/reset-password', '/auth/callback'];
 
@@ -12,14 +10,19 @@ export interface AuthGuardTo {
   fullPath: string;
 }
 
+/**
+ * Injected so this helper can be unit-tested without vue-router. Store flags are
+ * getters so they are read after `await getToken()`, matching the previous
+ * middleware (a sign-out that starts during refresh must still suppress the
+ * session-error toast).
+ */
 export interface AuthGuardContext {
   getToken: () => Promise<string>;
   navigateTo: (path: string) => unknown;
-  isLoggingOut: boolean;
+  isLoggingOut: () => boolean;
   toastSessionError: () => void;
-  isSuperuser: boolean;
+  isSuperuser: () => boolean;
   signOut: () => Promise<void>;
-  storage?: Storage;
 }
 
 /**
@@ -28,7 +31,6 @@ export interface AuthGuardContext {
  */
 export async function resolveAuthGuard(to: AuthGuardTo, origin: string, ctx: AuthGuardContext): Promise<unknown> {
   const url = new URL(to.fullPath, origin);
-  clearAbandonedOAuthInflight(url, ctx.storage);
 
   // If the URL contains an email query parameter (incoming from /accept-invitation) do not redirect
   if (url.pathname === '/accept-invitation' && url.search.startsWith('?email=')) {
@@ -69,7 +71,7 @@ export async function resolveAuthGuard(to: AuthGuardTo, origin: string, ctx: Aut
       }
     } catch {
       if (to.fullPath !== '/signin') {
-        if (!ctx.isLoggingOut) {
+        if (!ctx.isLoggingOut()) {
           ctx.toastSessionError();
         }
         return ctx.navigateTo('/signin');
@@ -80,7 +82,7 @@ export async function resolveAuthGuard(to: AuthGuardTo, origin: string, ctx: Aut
   /*
    * @description Handles case where invite link is clicked while signed in as superuser: sign out, then continue
    */
-  if (ctx.isSuperuser && url.pathname === '/accept-invitation') {
+  if (ctx.isSuperuser() && url.pathname === '/accept-invitation') {
     await ctx.signOut();
     return;
   }
@@ -88,10 +90,10 @@ export async function resolveAuthGuard(to: AuthGuardTo, origin: string, ctx: Aut
   /**
    * @description Redirects for superuser/non-superuser - non-superuser cannot access /admin, superuser can only access /admin
    */
-  if (ctx.isSuperuser && !to.fullPath.startsWith('/admin')) {
+  if (ctx.isSuperuser() && !to.fullPath.startsWith('/admin')) {
     return ctx.navigateTo('/admin' + to.fullPath);
   }
-  if (!ctx.isSuperuser && to.fullPath.startsWith('/admin')) {
+  if (!ctx.isSuperuser() && to.fullPath.startsWith('/admin')) {
     return ctx.navigateTo(to.fullPath.replace(/^\/admin/, ''));
   }
 }

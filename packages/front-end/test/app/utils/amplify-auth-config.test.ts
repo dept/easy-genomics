@@ -1,5 +1,3 @@
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import { buildAmplifyAuthConfig } from '../../../src/app/utils/amplify-auth-config';
 
 const baseConfig = {
@@ -40,16 +38,5 @@ describe('buildAmplifyAuthConfig', () => {
     });
 
     expect(config.Auth.Cognito.loginWith).toBeUndefined();
-  });
-});
-
-describe('amplify plugin source', () => {
-  it('imports the oauth listener before calling Amplify.configure', () => {
-    const src = readFileSync(join(__dirname, '../../../src/app/plugins/amplify.ts'), 'utf8');
-    const listener = src.indexOf("import 'aws-amplify/auth/enable-oauth-listener'");
-    const configure = src.indexOf('Amplify.configure(buildAmplifyAuthConfig');
-    expect(listener).toBeGreaterThan(-1);
-    expect(configure).toBeGreaterThan(-1);
-    expect(listener).toBeLessThan(configure);
   });
 });

@@ -1,7 +1,23 @@
 import { ErrorCodeKeys } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/errors';
 import { useRuntimeConfig } from 'nuxt/app';
-import { createSingleFlight } from '@FE/utils/single-flight';
+
 const { getToken, getRefreshedToken } = useAuth();
+
+// Module-scoped so every HttpFactory subclass shares one in-flight refresh.
+// Amplify de-dupes the Cognito HTTP call, but not the token-store write.
+let refreshInFlight: Promise<string> | null = null;
+
+function refreshToken(): Promise<string> {
+  if (refreshInFlight) {
+    return refreshInFlight;
+  }
+
+  refreshInFlight = getRefreshedToken().finally(() => {
+    refreshInFlight = null;
+  });
+
+  return refreshInFlight;
+}
 
 class HttpFactory {
   // `BASE_API_URL` points at the AWS HealthOmics + NF-Tower REST API (what the
@@ -18,10 +34,6 @@ class HttpFactory {
   private defaultApiUrl = `${this.easyGenomicsApiUrl || this.baseApiUrl}/easy-genomics`;
   private nfTowerApiUrl = `${this.baseApiUrl}/nf-tower`;
   private omicsApiUrl = `${this.baseApiUrl}/aws-healthomics`;
-
-  // Amplify de-dupes the Cognito HTTP call, but not the token-store write.
-  // Single-flight keeps parallel EG-110 retries on one end-to-end refresh.
-  private refreshToken = createSingleFlight(getRefreshedToken);
 
   /**
    * Default API request handler
@@ -81,8 +93,11 @@ class HttpFactory {
       // and access to various services and large response payloads.
       let token: string | undefined;
       try {
-        token = shouldRefresh ? await this.refreshToken() : await getToken();
+        token = shouldRefresh ? await refreshToken() : await getToken();
       } catch (tokenError) {
+        if (shouldRefresh) {
+          throw tokenError;
+        }
         console.warn(`Failed to get token; reason: ${tokenError}; continuing without Bearer or X-API header`);
       }
       if (token) {
@@ -112,7 +127,7 @@ class HttpFactory {
       const jsonResponse = await response.json();
       return jsonResponse as T;
     } catch (error: any) {
-      if (error.message === 'EG-110') {
+      if (error.message === 'EG-110' && !shouldRefresh) {
         return this.performRequest(method, url, data, true);
       }
       throw new Error(`Request error: ${error.message}`);

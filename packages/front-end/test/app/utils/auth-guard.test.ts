@@ -6,11 +6,10 @@ function ctx(overrides: Partial<Parameters<typeof resolveAuthGuard>[2]> = {}) {
   return {
     getToken: jest.fn().mockResolvedValue('jwt'),
     navigateTo: jest.fn(),
-    isLoggingOut: false,
+    isLoggingOut: () => false,
     toastSessionError: jest.fn(),
-    isSuperuser: false,
+    isSuperuser: () => false,
     signOut: jest.fn().mockResolvedValue(undefined),
-    storage: undefined,
     ...overrides,
   };
 }
@@ -32,11 +31,24 @@ describe('resolveAuthGuard', () => {
   it('does not toast when signing out', async () => {
     const guard = ctx({
       getToken: jest.fn().mockRejectedValue(new Error('no session')),
-      isLoggingOut: true,
+      isLoggingOut: () => true,
     });
     await resolveAuthGuard({ fullPath: '/labs' }, origin, guard);
     expect(guard.toastSessionError).not.toHaveBeenCalled();
     expect(guard.navigateTo).toHaveBeenCalledWith('/signin');
+  });
+
+  it('reads isLoggingOut after getToken so a mid-navigation sign-out does not toast', async () => {
+    let loggingOut = false;
+    const guard = ctx({
+      getToken: jest.fn().mockImplementation(async () => {
+        loggingOut = true;
+        throw new Error('no session');
+      }),
+      isLoggingOut: () => loggingOut,
+    });
+    await resolveAuthGuard({ fullPath: '/labs' }, origin, guard);
+    expect(guard.toastSessionError).not.toHaveBeenCalled();
   });
 
   it('does not redirect a signed-out user already on /signin', async () => {
@@ -86,7 +98,7 @@ describe('resolveAuthGuard', () => {
   });
 
   it('sends a superuser to /admin plus the requested path', async () => {
-    const guard = ctx({ isSuperuser: true });
+    const guard = ctx({ isSuperuser: () => true });
     await resolveAuthGuard({ fullPath: '/labs' }, origin, guard);
     expect(guard.navigateTo).toHaveBeenCalledWith('/admin/labs');
   });
@@ -98,7 +110,7 @@ describe('resolveAuthGuard', () => {
   });
 
   it('signs a superuser out when they hit an invite link', async () => {
-    const guard = ctx({ isSuperuser: true });
+    const guard = ctx({ isSuperuser: () => true });
     await resolveAuthGuard({ fullPath: '/accept-invitation?invite=token' }, origin, guard);
     expect(guard.signOut).toHaveBeenCalled();
   });

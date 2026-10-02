@@ -10,9 +10,9 @@ export default defineNuxtRouteMiddleware(async (to) => {
   return resolveAuthGuard(to, baseURL, {
     getToken: () => useAuth().getToken(),
     navigateTo,
-    isLoggingOut: useUiStore().isLoggingOut,
+    isLoggingOut: () => useUiStore().isLoggingOut,
     toastSessionError: () => useToastStore().error('Session error. You have been signed out.'),
-    isSuperuser: useUserStore().isSuperuser,
+    isSuperuser: () => useUserStore().isSuperuser,
     signOut: () => useAuth().signOut(),
   });
 });

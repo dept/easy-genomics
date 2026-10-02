@@ -15,9 +15,17 @@ Amplify JS v5 reaches end of support on 1 March 2027. The front-end used Amplify
 and 11 `Auth.*` call sites. This change moves to `aws-amplify` v6 and drops `amazon-cognito-identity-js` and the unused
 `@aws-amplify/ui-vue`.
 
-Auth call sites now have unit coverage in `test/app/composables/useAuth.test.ts` and the auth utils under
-`test/app/utils/` (`auth-guard`, `amplify-auth-config`, `amplify-oauth-storage`, `single-flight`, `string-utils`).
-End-to-end sign-in and Google SSO still need a deployed Cognito pool.
+Auth call sites now have unit coverage in `test/app/composables/useAuth.test.ts`, `test/app/repository/factory.test.ts`,
+`test/app/stores/labs.test.ts`, `test/app/plugins/amplify.test.ts`, and the auth utils under `test/app/utils/`
+(`auth-guard`, `amplify-auth-config`, `amplify-oauth-storage`, `string-utils`). End-to-end sign-in and Google SSO still
+need a deployed Cognito pool.
+
+Code constraints from the migration spike (full Q&A lives in the feature spec, not this repository):
+
+- `getRefreshedToken` throws when Amplify returns no tokens after refresh, otherwise the Bearer header is dropped.
+- Concurrent EG-110 retries share one module-scoped refresh in `factory.ts` so the token-store write is not raced.
+- The OAuth listener is imported in `plugins/amplify.ts` before `Amplify.configure`.
+- Sign-in distinguishes `NotAuthorizedException` on `error.name`, not `error.code`.
 
 ### Automated checks
 
@@ -32,7 +40,8 @@ End-to-end sign-in and Google SSO still need a deployed Cognito pool.
 ### Manual steps
 
 Run against a deployed environment with a real Cognito pool. Not yet executed. Google SSO, password sign-in, token
-refresh, route guards, forced re-login, and `pnpm run test-e2e` on quality are merge-blocking.
+refresh, route guards, session carry-over, and `pnpm run test-e2e` on quality are merge-blocking. The boxes below cover
+runtime verification only; Jest/lint/build are recorded in Automated checks.
 
 - [ ] **Password sign-in, correct credentials** — sign in at `/signin`; lands on `/labs` with orgs loaded.
 - [ ] **Password sign-in, wrong credentials** — shows "Incorrect email or password. Please try again.", _not_ the
@@ -40,88 +49,40 @@ refresh, route guards, forced re-login, and `pnpm run test-e2e` on quality are m
 - [ ] **Google SSO** — "Sign in with Google" completes through `auth/callback.vue` and lands on `/`. Confirm in the
       network tab that a request to `/oauth2/token` is actually made. **Test a production build, not `nuxt dev`.** The
       listener lives in `plugins/amplify.ts` (eager entry, before `Amplify.configure`); `/auth/callback` is exempt from
-      the route guard; `completeOAuthSignIn()` is unit-tested.
+      the route guard. Failed exchange toasts and redirects to `/signin` (`handleOAuthCallback`, unit-tested).
 - [ ] **Abandoned Google SSO** — click "Sign in with Google", then Back from the hosted UI. Password sign-in and
-      navigation must not hang. Inflight OAuth markers are cleared on `/signin` (and any non-callback URL) and again at
-      the start of password `signIn`.
+      navigation must not hang. Amplify's 5-minute `inflightOAuthDeadline` is the backstop; the app does not clear
+      Amplify's inflight flag from other tabs. Do not start a second-tab sign-in while consent is still open.
 - [ ] **Transparent token refresh** — with a session open, wait for the ID token to expire (or shorten pool token
       validity), then navigate. The user stays signed in, is not bounced to `/signin`, and sees no error toast.
 - [ ] **Concurrent refresh** — trigger parallel requests that hit an `EG-110` retry (e.g. switch organisation, then
-      immediately navigate). Amplify de-dupes the Cognito call; `createSingleFlight` serialises the token-store write
-      (unit-tested).
+      immediately navigate). Amplify de-dupes the Cognito call; `factory.ts` serialises the token-store write across
+      HttpFactory subclasses (unit-tested).
 - [ ] **Sign out** — `signOut` → `/signin` clears the user store, resets analytics, and shows no spurious error toasts
       (the EGV-231 regression).
 - [ ] **Route guarding** — signed-in on `/signin` → `/labs`; signed-out on an authed page → `/signin`;
       `/accept-invitation` and `/reset-password` token handling; superuser `/admin` redirects; `/auth/callback` is not
       bounced to `/signin` mid-exchange. Covered by `test/app/utils/auth-guard.test.ts`; still confirm in the browser.
-- [ ] **Forced re-login on deploy** — confirm an existing v5 session is signed out once after deploy, and only once.
-- [ ] **Full E2E suite** on `quality` across all four user types (`pnpm run test-e2e`).
+- [ ] **Session after deploy** — confirm an existing v5 session either continues or asks for a single sign-in, then
+      persists. Do not treat a forced re-login as guaranteed until this has been checked against a real pool.
+- [ ] **Full E2E suite** on `quality` across all four user types (`pnpm run test-e2e`). Google SSO happy path stays
+      manual-only (hosted UI); no Playwright case in this change.
 
 ### Operator comms (paste at v1.6 deploy)
 
-The spike confirmed existing sessions are invalidated. Draft release-note text is in `CHANGELOG.md` under
-`[Unreleased]`. Paste the following into the operator Slack channel when this front-end ships:
+Draft release-note text is in `CHANGELOG.md` under `[Unreleased]`. Paste the following into the operator Slack channel
+when this front-end ships:
 
 > _Easy Genomics — Amplify v6 auth upgrade (v1.6)_
 >
-> The next front-end deploy upgrades the Cognito client library (Amplify JS v5 → v6). After deploy, **every currently
-> signed-in user will be signed out once** and must log in again. That is expected: v6 does not recognise v5 session
-> keys.
+> The next front-end deploy upgrades the Cognito client library (Amplify JS v5 → v6). After deploy, **you may be asked
+> to sign in once**. Existing sessions are expected to carry over; if you are signed out, sign in again and the session
+> should persist as before.
 >
-> No accounts, passwords, or data are affected. After that one sign-in, sessions persist as before.
+> No accounts, passwords, or data are affected.
 >
 > If someone is bounced to `/signin` on every subsequent page load, that is _not_ this migration — escalate it as a
 > token-storage regression. Google SSO should still complete through `/auth/callback` onto `/`.
 >
-> No Cognito / CDK / user-pool change. Support line if asked: “authentication library upgrade — sign in once, no other
-> action needed.”
-
-### Spike findings
-
-The migration spike's questions, answered against `aws-amplify@6.22.0` / `@aws-amplify/auth@6.21.1`.
-
-**1. Does `fetchAuthSession({ forceRefresh: true })` fully replace `getRefreshedToken()`?** Yes. It returns a freshly
-minted ID token from the same Cognito user pool, so the API Gateway authorizer accepts it unchanged. One behavioural
-difference matters: when the refresh token is rejected, Amplify resolves with _no_ tokens instead of throwing
-(`TokenOrchestrator.handleErrors` returns `null` for `NotAuthorizedException`). `getRefreshedToken` therefore checks for
-a missing token explicitly and throws, otherwise the Bearer header would be dropped silently.
-
-**2. Does v6 de-duplicate concurrent refreshes? Can the `tokenRefreshPromise` wrapper in `factory.ts` be deleted?**
-Amplify de-dupes the Cognito refresh HTTP call (`deDupeAsyncFunction` around `refreshAuthTokens`). It does **not**
-de-dupe the surrounding token-store write. **Keep the wrapper** so parallel EG-110 retries share one end-to-end refresh
-and a second call cannot land between refresh resolving and `setTokens` completing.
-
-**3. Does `signInWithRedirect({ provider: 'Google' })` preserve the flow, and does `auth/callback.vue` still complete
-the code exchange?** The redirect itself ports cleanly, but **the callback is a load-order problem, not only a
-tree-shaking one.** The listener must be imported in `plugins/amplify.ts` (eager app entry) _before_
-`Amplify.configure()`, so it is subscribed to the `configure` Hub event before the global route guard runs.
-`/auth/callback` is exempt from that guard so a failed or in-flight exchange is not toasted as a session error.
-`callback.vue` waits on `useAuth().getToken()`.
-
-**4. Does the `Amplify.configure` shape translate cleanly? Does any CDK output or env var need renaming?** No renaming
-is needed, but a **type change does** bite. v6 nests config under `Auth.Cognito` with `userPoolClientId` and
-`loginWith.oauth` (and infers region from the user pool ID), which is a mechanical translation. However, v6 requires
-`redirectSignIn`/`redirectSignOut` to be `string[]` where v5 accepted a string. `nuxt-load-configuration-settings.ts`
-writes these into the generated `.env` by interpolating an array, so they arrive as a comma-separated _string_. Passing
-that straight through breaks the OAuth redirect, so the plugin now splits on commas. This one is easy to miss because it
-only affects the SSO path.
-
-**5. Does the v5 → v6 storage-key change sign every existing user out on deploy?** Expected yes — one forced re-login.
-v6 reworked token storage and does not migrate v5 keys. Confirm on deploy (manual step above) and call it out in the
-v1.6 release notes and the operator Slack message. Note that v6.22 already defaults to `localStorage` via
-`CognitoUserPoolsTokenProvider`, matching v5, so no explicit `setKeyValueStorage` wiring is needed — the cookie-storage
-default reported against early v6 releases does not apply.
-
-**6. Does `error.code === 'NotAuthorizedException'` still discriminate a wrong password?** No. v6 surfaces the Cognito
-exception on `error.name`; `error.code` is `undefined`, so the check silently fell through to the generic network toast.
-`useAuth.signIn` now tests `error.name`.
-
-**7. Is the `@aws-amplify/storage>fast-xml-parser` pnpm override still needed?** No — it is now dead config and has been
-removed. It existed because `@aws-amplify/storage@5.9.12` pinned `fast-xml-parser@^4.2.5`, which needed a floor
-(`>=4.5.5`) to clear the 4.x CVEs while staying below the breaking 5.x. v6's `@aws-amplify/storage@6.17.0` moved to
-`^5.7.2`, which the existing repo-wide `"fast-xml-parser": ">=5.7.0"` override already covers.
-
-**8. Does the react-native peer subtree disappear on v6?** No. `react-native@0.75.4` is still resolved in
-`pnpm-lock.yaml` after the upgrade. `@aws-amplify/auth@6.21.1` declares `@aws-amplify/react-native` as an _optional_
-peer, so the subtree is not pulled in by Amplify's own dependency edges, but it remains in the lockfile. Shrinking it is
-not something this change can deliver.
+> No Cognito / CDK / user-pool change. Support line if asked: “authentication library upgrade — sign in if prompted, no
+> other action needed.”

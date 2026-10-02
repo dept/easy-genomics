@@ -14,8 +14,8 @@ draft release note for operators.
 
 ### Changed
 
-- **Front-end authentication upgraded from AWS Amplify JS v5 to v6.** Amplify is used only for Cognito sign-in, sign-out,
-  Google SSO, and token refresh. There is no back-end, user-pool, or CDK change.
+- **Front-end authentication upgraded from AWS Amplify JS v5 to v6.** Amplify is used only for Cognito sign-in,
+  sign-out, Google SSO, and token refresh. There is no back-end, user-pool, or CDK change.
 
 ### Fixed
 
@@ -48,11 +48,12 @@ draft release note for operators.
 
 ### Migration
 
-**Every signed-in user will be asked to sign in once after this front-end is deployed.** Amplify v6 stores session tokens
-under different browser keys and does not migrate v5 sessions, so existing logins are not recognised. No accounts, data,
-or passwords are affected. After that one sign-in, sessions persist as before.
+**You may be asked to sign in once after this front-end is deployed.** Amplify v6 uses the same
+`CognitoIdentityServiceProvider.<clientId>.<username>.*` localStorage layout as v5, so existing sessions are expected to
+carry over; confirm against a real user pool before treating a forced re-login as guaranteed. No accounts, data, or
+passwords are affected. After any one-time sign-in, sessions persist as before.
 
-If a user is signed out again on every page load after that first login, that is *not* this migration effect — treat it
+If a user is signed out again on every page load after that first login, that is _not_ this migration effect — treat it
 as a token-storage regression.
 
 ## [v1.5.1] — Private org email assets

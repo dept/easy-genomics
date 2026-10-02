@@ -6,13 +6,7 @@
   });
 
   onMounted(async () => {
-    try {
-      await useAuth().completeOAuthSignIn();
-    } catch (error) {
-      console.error('OAuth callback error:', error);
-      useToastStore().error('Sign-in could not be completed. Please try again.');
-      await navigateTo('/signin');
-    }
+    await useAuth().handleOAuthCallback();
   });
 </script>
 

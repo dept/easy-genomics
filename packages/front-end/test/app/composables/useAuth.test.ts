@@ -7,7 +7,6 @@ const mockSignIn = jest.fn();
 const mockSignInWithRedirect = jest.fn();
 const mockSignOut = jest.fn();
 const mockResetStores = jest.fn();
-const mockClearInflight = jest.fn();
 
 jest.mock('aws-amplify/auth', () => ({
   fetchAuthSession: (...args: unknown[]) => mockFetchAuthSession(...args),
@@ -15,10 +14,6 @@ jest.mock('aws-amplify/auth', () => ({
   signIn: (...args: unknown[]) => mockSignIn(...args),
   signInWithRedirect: (...args: unknown[]) => mockSignInWithRedirect(...args),
   signOut: (...args: unknown[]) => mockSignOut(...args),
-}));
-
-jest.mock('@FE/utils/amplify-oauth-storage', () => ({
-  clearInflightOAuthStorage: (...args: unknown[]) => mockClearInflight(...args),
 }));
 
 const toastError = jest.fn();
@@ -95,7 +90,6 @@ describe('useAuth', () => {
 
       await signIn('a@b.com', 'secret');
 
-      expect(mockClearInflight).toHaveBeenCalled();
       expect(mockSignIn).toHaveBeenCalledWith({ username: 'a@b.com', password: 'secret' });
       expect(setCurrentUserDataFromToken).toHaveBeenCalled();
       expect(loadOrgs).toHaveBeenCalled();
@@ -137,6 +131,17 @@ describe('useAuth', () => {
 
       await expect(useAuth().completeOAuthSignIn()).rejects.toThrow('No ID token in the current session');
       expect(navigateTo).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleOAuthCallback', () => {
+    it('toasts and redirects to /signin when the exchange fails', async () => {
+      mockFetchAuthSession.mockResolvedValue({ tokens: undefined });
+
+      await useAuth().handleOAuthCallback();
+
+      expect(toastError).toHaveBeenCalledWith('Sign-in could not be completed. Please try again.');
+      expect(navigateTo).toHaveBeenCalledWith('/signin');
     });
   });
 
@@ -201,6 +206,19 @@ describe('useAuth', () => {
       expect(mockSignOut).toHaveBeenCalled();
       expect(userReset).toHaveBeenCalled();
       expect(setLoggingOut).toHaveBeenCalledWith(false);
+    });
+
+    it('clears the logging-out flag and rethrows when Cognito sign-out fails', async () => {
+      mockSignOut.mockRejectedValue(new Error('network'));
+      await expect(useAuth().signOut()).rejects.toThrow('network');
+      expect(setLoggingOut).toHaveBeenCalledWith(false);
+    });
+
+    it('keeps the logging-out flag when keepLoggingOutFlag is set', async () => {
+      mockSignOut.mockResolvedValue(undefined);
+      await useAuth().signOut({ keepLoggingOutFlag: true });
+      expect(setLoggingOut).toHaveBeenCalledWith(true);
+      expect(setLoggingOut).not.toHaveBeenCalledWith(false);
     });
   });
 
