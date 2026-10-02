@@ -1,24 +1,12 @@
 <script setup lang="ts">
-  import { Auth } from 'aws-amplify';
-
+  // OAuth code exchange is started by plugins/amplify.ts (eager listener import
+  // before Amplify.configure). This page only waits for the resulting session.
   definePageMeta({
     layout: 'empty',
   });
 
   onMounted(async () => {
-    try {
-      // This completes the OAuth code exchange internally
-      const user = await Auth.currentAuthenticatedUser();
-
-      if (user) {
-        await useUser().setCurrentUserDataFromToken();
-        await useOrgsStore().loadOrgs();
-        await navigateTo('/');
-      }
-    } catch (error) {
-      console.error('OAuth callback error:', error);
-      await navigateTo('/signin');
-    }
+    await useAuth().handleOAuthCallback();
   });
 </script>
 
