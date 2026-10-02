@@ -2,11 +2,10 @@
   import { z } from 'zod';
   import { resetStores, useUiStore } from '@FE/stores';
   import { VALIDATION_MESSAGES } from '@FE/constants/validation';
-  import { signInWithRedirect } from 'aws-amplify/auth';
 
   definePageMeta({ layout: 'signin' });
 
-  const { signIn } = useAuth();
+  const { signIn, signInWithGoogle } = useAuth();
   const route = useRoute();
   const { GOOGLE_SIGNIN_ENABLED } = useRuntimeConfig().public;
   const isFormDisabled = ref(true);
@@ -31,10 +30,6 @@
   watchEffect(() => {
     isFormDisabled.value = !formSchema.safeParse(state.value).success;
   });
-
-  async function signInWithGoogle() {
-    await signInWithRedirect({ provider: 'Google' });
-  }
 </script>
 
 <template>

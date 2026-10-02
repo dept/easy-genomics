@@ -89,7 +89,7 @@
     "@vueuse/core": "^11.3.0",
     "@vueuse/integrations": "^10.11.1",
     "@vueuse/nuxt": "^11.3.0",
-    "aws-amplify": "^6.22.0",
+    "aws-amplify": "6.22.0",
     "aws-cdk-lib": "^2.260.0",
     "axios": "^1.18.1",
     "cdk-nag": "^2.35.67",
@@ -128,7 +128,8 @@
     "moduleNameMapper": {
       "^@FE/(.*)$": "<rootDir>/src/app/$1",
       "^@SharedLib/(.*)$": "<rootDir>/../shared-lib/src/app/$1",
-      "^@BE/(.*)$": "<rootDir>/../back-end/src/app/$1"
+      "^@BE/(.*)$": "<rootDir>/../back-end/src/app/$1",
+      "^aws-amplify/auth$": "<rootDir>/node_modules/aws-amplify/dist/esm/auth/index.mjs"
     },
     "testMatch": [
       "<rootDir>/@(src|test)/**/*(*.)@(spec|test).ts?(x)",

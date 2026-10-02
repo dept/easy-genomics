@@ -1,6 +1,13 @@
-import { fetchAuthSession, getCurrentUser, signIn as amplifySignIn, signOut as amplifySignOut } from 'aws-amplify/auth'; // eslint-disable-line import/no-unresolved -- Amplify v6 subpath export
+import {
+  fetchAuthSession,
+  getCurrentUser,
+  signIn as amplifySignIn,
+  signInWithRedirect,
+  signOut as amplifySignOut,
+} from 'aws-amplify/auth';
 import { VALIDATION_MESSAGES } from '@FE/constants/validation';
 import { resetStores, useToastStore, useUiStore } from '@FE/stores';
+import { clearInflightOAuthStorage } from '@FE/utils/amplify-oauth-storage';
 
 export default function useAuth() {
   async function isAuthed() {
@@ -15,6 +22,9 @@ export default function useAuth() {
   async function signIn(username: string, password: string) {
     try {
       useUiStore().setRequestPending('signIn');
+      // An abandoned Google SSO leaves Amplify's inflight-OAuth marker set for
+      // 5 minutes; clear it before password sign-in so fetchAuthSession cannot park.
+      clearInflightOAuthStorage();
       const { isSignedIn, nextStep } = await amplifySignIn({ username, password });
       if (!isSignedIn) {
         // v6 resolves (does not throw) for challenges such as FORCE_CHANGE_PASSWORD
@@ -37,6 +47,8 @@ export default function useAuth() {
       // v6 surfaces the Cognito exception on `name`; v5 used `code`.
       if (error.name === 'NotAuthorizedException') {
         useToastStore().error('Incorrect email or password. Please try again.');
+      } else if (error.name === 'SignInIncomplete') {
+        useToastStore().error('Additional sign-in steps are required. Please contact your administrator.');
       } else {
         useToastStore().error(VALIDATION_MESSAGES.network);
       }
@@ -47,8 +59,12 @@ export default function useAuth() {
     }
   }
 
+  async function signInWithGoogle() {
+    await signInWithRedirect({ provider: 'Google' });
+  }
+
   async function idTokenFromSession(forceRefresh = false): Promise<string> {
-    const { tokens } = await fetchAuthSession(forceRefresh ? { forceRefresh: true } : undefined);
+    const { tokens } = await fetchAuthSession({ forceRefresh });
     const idToken = tokens?.idToken?.toString();
     // v5's currentSession() rejected without a session; v6 resolves with no
     // tokens, so raise it here to keep callers' error handling intact.
@@ -73,6 +89,17 @@ export default function useAuth() {
       console.error('Error occurred during token refresh.', error);
       throw error;
     }
+  }
+
+  /**
+   * Finish Google SSO after /auth/callback: wait for the exchanged session,
+   * hydrate stores, and enter the app.
+   */
+  async function completeOAuthSignIn() {
+    await getToken();
+    await useUser().setCurrentUserDataFromToken();
+    await useOrgsStore().loadOrgs();
+    await navigateTo('/');
   }
 
   /**
@@ -114,10 +141,12 @@ export default function useAuth() {
   }
 
   return {
+    completeOAuthSignIn,
     getToken,
     getRefreshedToken,
     isAuthed,
     signIn,
+    signInWithGoogle,
     signOut,
     signOutAndRedirect,
   };

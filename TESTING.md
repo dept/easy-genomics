@@ -15,15 +15,16 @@ Amplify JS v5 reaches end of support on 1 March 2027. The front-end used Amplify
 and 11 `Auth.*` call sites. This change moves to `aws-amplify` v6 and drops `amazon-cognito-identity-js` and the unused
 `@aws-amplify/ui-vue`.
 
-Auth call sites now have unit coverage in `test/app/composables/useAuth.test.ts` and
-`test/app/utils/cognito-oauth-urls.test.ts`. End-to-end sign-in and Google SSO still need a deployed Cognito pool.
+Auth call sites now have unit coverage in `test/app/composables/useAuth.test.ts` and the auth utils under
+`test/app/utils/` (`auth-guard`, `amplify-auth-config`, `amplify-oauth-storage`, `single-flight`, `string-utils`).
+End-to-end sign-in and Google SSO still need a deployed Cognito pool.
 
 ### Automated checks
 
 | Check                                                                               | Result                                                                            |
 | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | `pnpm lint` (front-end)                                                             | Passes                                                                            |
-| `pnpm test` (front-end)                                                             | Passes — 31 suites, 260 tests                                                     |
+| `pnpm test` (front-end)                                                             | Passes                                                                            |
 | `npx nuxt build` (production)                                                       | Succeeds                                                                          |
 | `grep -rn "amazon-cognito-identity-js\|@aws-amplify/ui-vue" packages/front-end/src` | No matches                                                                        |
 | `npx tsc --noEmit`                                                                  | 43 pre-existing `TS6059` rootDir warnings about test files; none from this change |
@@ -38,20 +39,21 @@ refresh, route guards, forced re-login, and `pnpm run test-e2e` on quality are m
       generic network toast. Covered by unit tests; still confirm in the browser.
 - [ ] **Google SSO** — "Sign in with Google" completes through `auth/callback.vue` and lands on `/`. Confirm in the
       network tab that a request to `/oauth2/token` is actually made. **Test a production build, not `nuxt dev`.** The
-      listener now lives in `plugins/amplify.ts` (eager entry, before `Amplify.configure`) so the global route guard
-      cannot run before the exchange starts; `/auth/callback` is also exempt from that guard.
+      listener lives in `plugins/amplify.ts` (eager entry, before `Amplify.configure`); `/auth/callback` is exempt from
+      the route guard; `completeOAuthSignIn()` is unit-tested.
 - [ ] **Abandoned Google SSO** — click "Sign in with Google", then Back from the hosted UI. Password sign-in and
-      navigation must not hang for five minutes.
+      navigation must not hang. Inflight OAuth markers are cleared on `/signin` (and any non-callback URL) and again at
+      the start of password `signIn`.
 - [ ] **Transparent token refresh** — with a session open, wait for the ID token to expire (or shorten pool token
       validity), then navigate. The user stays signed in, is not bounced to `/signin`, and sees no error toast.
 - [ ] **Concurrent refresh** — trigger parallel requests that hit an `EG-110` retry (e.g. switch organisation, then
-      immediately navigate). Amplify de-dupes the Cognito call; `HttpFactory.refreshToken` still serialises the
-      surrounding token-store write.
+      immediately navigate). Amplify de-dupes the Cognito call; `createSingleFlight` serialises the token-store write
+      (unit-tested).
 - [ ] **Sign out** — `signOut` → `/signin` clears the user store, resets analytics, and shows no spurious error toasts
       (the EGV-231 regression).
 - [ ] **Route guarding** — signed-in on `/signin` → `/labs`; signed-out on an authed page → `/signin`;
       `/accept-invitation` and `/reset-password` token handling; superuser `/admin` redirects; `/auth/callback` is not
-      bounced to `/signin` mid-exchange.
+      bounced to `/signin` mid-exchange. Covered by `test/app/utils/auth-guard.test.ts`; still confirm in the browser.
 - [ ] **Forced re-login on deploy** — confirm an existing v5 session is signed out once after deploy, and only once.
 - [ ] **Full E2E suite** on `quality` across all four user types (`pnpm run test-e2e`).
 

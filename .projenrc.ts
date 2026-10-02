@@ -547,6 +547,7 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
         '^@FE/(.*)$': '<rootDir>/src/app/$1',
         '^@SharedLib/(.*)$': '<rootDir>/../shared-lib/src/app/$1',
         '^@BE/(.*)$': '<rootDir>/../back-end/src/app/$1',
+        '^aws-amplify/auth$': '<rootDir>/node_modules/aws-amplify/dist/esm/auth/index.mjs',
       },
     },
   },
@@ -598,9 +599,9 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@vueuse/core',
     '@vueuse/integrations',
     '@vueuse/nuxt',
-    // Caret matches other runtime deps. Any 6.x minor bump must re-run the
-    // TESTING.md auth checklist — token-storage defaults have changed within 6.x.
-    'aws-amplify@^6.22.0',
+    // Exact pin: token-storage defaults have changed within 6.x minors, and the
+    // front-end upgrade task would otherwise float aws-amplify unattended.
+    'aws-amplify@6.22.0',
     'axios@^1.18.1',
     'cdk-nag',
     'class-variance-authority',

@@ -7,11 +7,7 @@
 
   onMounted(async () => {
     try {
-      await useAuth().getToken();
-
-      await useUser().setCurrentUserDataFromToken();
-      await useOrgsStore().loadOrgs();
-      await navigateTo('/');
+      await useAuth().completeOAuthSignIn();
     } catch (error) {
       console.error('OAuth callback error:', error);
       useToastStore().error('Sign-in could not be completed. Please try again.');

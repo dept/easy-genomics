@@ -1,5 +1,6 @@
 import { ErrorCodeKeys } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/errors';
 import { useRuntimeConfig } from 'nuxt/app';
+import { createSingleFlight } from '@FE/utils/single-flight';
 const { getToken, getRefreshedToken } = useAuth();
 
 class HttpFactory {
@@ -18,8 +19,9 @@ class HttpFactory {
   private nfTowerApiUrl = `${this.baseApiUrl}/nf-tower`;
   private omicsApiUrl = `${this.baseApiUrl}/aws-healthomics`;
 
-  private isRefreshingToken = false;
-  private tokenRefreshPromise: Promise<string> | null = null;
+  // Amplify de-dupes the Cognito HTTP call, but not the token-store write.
+  // Single-flight keeps parallel EG-110 retries on one end-to-end refresh.
+  private refreshToken = createSingleFlight(getRefreshedToken);
 
   /**
    * Default API request handler
@@ -138,29 +140,6 @@ class HttpFactory {
     } else {
       throw new Error(errorMessage);
     }
-  }
-
-  /**
-   * Refresh the token if necessary
-   *
-   * Amplify de-dupes the Cognito refresh call itself (deDupeAsyncFunction in
-   * refreshAuthTokens), but not the surrounding token-store write. This wrapper
-   * keeps parallel EG-110 retries on a single end-to-end refresh so a second
-   * call cannot land between refresh resolving and setTokens completing.
-   * @returns Promise<string>
-   */
-  private refreshToken(): Promise<string> {
-    if (this.isRefreshingToken) {
-      return this.tokenRefreshPromise!;
-    }
-
-    this.isRefreshingToken = true;
-    this.tokenRefreshPromise = getRefreshedToken().finally(() => {
-      this.isRefreshingToken = false;
-      this.tokenRefreshPromise = null;
-    });
-
-    return this.tokenRefreshPromise;
   }
 }
 
