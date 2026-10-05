@@ -24,6 +24,7 @@
   import { ButtonSizeEnum, ButtonVariantEnum } from '@FE/types/buttons';
   import { useLabsStore, useToastStore, useUiStore } from '@FE/stores';
   import { maybeAddFieldValidationErrors } from '@FE/utils/form-utils';
+  import { splitCommaSeparatedList } from '@FE/utils/string-utils';
   import { extractApiErrorMessage, formatValidationIssues } from '@FE/utils/api-utils';
   import {
     CreateLaboratory,
@@ -226,10 +227,7 @@
   const eventFilterFailureChecked = computed(() => notificationEventFilter.value !== 'successes_only');
 
   function parseAdditionalEmailsInput(raw: string): string[] {
-    return raw
-      .split(',')
-      .map((email) => email.trim())
-      .filter((email) => email.length > 0);
+    return splitCommaSeparatedList(raw);
   }
 
   function additionalEmailsEqual(a: string, b: string): boolean {
