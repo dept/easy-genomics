@@ -295,6 +295,39 @@ describe('create-run-execution.lambda', () => {
     expect(startRunInput.configurationName).toBeUndefined();
   });
 
+  it('coerces numeric-looking parameter strings to numbers for StartRun', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+    });
+
+    (mockOmicsService.prototype.startRun as jest.Mock).mockResolvedValue({ id: 'run-123' });
+
+    const body = {
+      ...baseRequest,
+      parameters: JSON.stringify({
+        outdir: 's3://bucket/output',
+        threads: '8',
+        threshold: '0.05',
+        sampleId: '007',
+        genome: 'hg38',
+        version: '5.3.7',
+      }),
+    };
+
+    const result = await handler(createEvent(body), createContext(), () => {});
+
+    expect(result.statusCode).toBe(200);
+    const startRunInput = (mockOmicsService.prototype.startRun as jest.Mock).mock.calls[0][0];
+    expect(startRunInput.parameters.threads).toBe(8);
+    expect(startRunInput.parameters.threshold).toBe(0.05);
+    expect(startRunInput.parameters.sampleId).toBe('007');
+    expect(startRunInput.parameters.genome).toBe('hg38');
+    expect(startRunInput.parameters.version).toBe('5.3.7');
+    expect(startRunInput.parameters.outdir).toBe('/mnt/workflow/pubdir');
+  });
+
   it('rejects invalid request body', async () => {
     const event = createEvent({}, {});
 

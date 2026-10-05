@@ -9,6 +9,7 @@ import {
 } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { CreateRunRequest } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import { coerceNumericWorkflowParams } from '@easy-genomics/shared-lib/src/app/utils/coerce-numeric-workflow-params';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
@@ -171,7 +172,12 @@ export const handler: Handler = async (
       omicsUserId,
     );
 
-    const parameters = JSON.parse(request.parameters!.toString());
+    const parsedParameters = JSON.parse(request.parameters!.toString());
+    // Untyped form fields arrive as strings; coerce numeric literals so StartRun gets JSON numbers.
+    const parameters =
+      parsedParameters && typeof parsedParameters === 'object' && !Array.isArray(parsedParameters)
+        ? coerceNumericWorkflowParams(parsedParameters as Record<string, unknown>)
+        : parsedParameters;
 
     // Ensure the lab has a run cache so failed runs can be resumed on retry (best-effort).
     const cacheId: string | undefined = await ensureLaboratoryRunCache(

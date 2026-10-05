@@ -3,6 +3,10 @@
     isRunSpecificParam,
     type WorkflowRunPresetParams,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-run-preset';
+  import {
+    coerceNumericWorkflowParams,
+    isVersionLikeParam,
+  } from '@easy-genomics/shared-lib/src/app/utils/coerce-numeric-workflow-params';
   import { ButtonSizeEnum } from '@FE/types/buttons';
   import { useToastStore } from '@FE/stores';
 
@@ -129,11 +133,6 @@
   let paramsReady = false;
   const fieldErrors = reactive<Record<string, string>>({});
 
-  function isVersionLike(value: unknown): boolean {
-    if (typeof value !== 'string') return false;
-    return /^\d+(?:\.\d+)+$/.test(value.trim());
-  }
-
   function validateField(field: SchemaItem, value: any): string | null {
     const isEmpty = value === '' || value === undefined || value === null;
 
@@ -146,12 +145,12 @@
     }
 
     if (field.type === 'integer') {
-      const supportsVersionLikeValue = isVersionLike(value);
+      const supportsVersionLikeValue = isVersionLikeParam(value);
       if (!supportsVersionLikeValue && (!Number.isInteger(Number(value)) || isNaN(Number(value)))) {
         return 'Must be a whole number or version (e.g. 5.3.7)';
       }
     } else if (field.type === 'number') {
-      const supportsVersionLikeValue = isVersionLike(value);
+      const supportsVersionLikeValue = isVersionLikeParam(value);
       if (!supportsVersionLikeValue && isNaN(Number(value))) {
         return 'Must be a valid number or version (e.g. 5.3.7)';
       }
@@ -272,10 +271,11 @@
   }
 
   async function onSubmit() {
-    runStore.updateWipOmicsRunParams(props.omicsRunTempId, localProps.params);
-
     const paramsRequired = wipOmicsRun.value?.paramsRequired || [];
-    const missingParams = paramsRequired.filter((paramName: string) => !localProps.params[paramName]);
+    const missingParams = paramsRequired.filter((paramName: string) => {
+      const value = localProps.params[paramName];
+      return value === '' || value === undefined || value === null;
+    });
 
     if (missingParams.length > 0) {
       useToastStore().error(`The '${missingParams.shift()}' field is required. Please try again.`);
@@ -289,6 +289,12 @@
       );
       return;
     }
+
+    // ParameterTemplate fields are untyped text inputs; send JSON numbers when the value is numeric.
+    const paramTypes = Object.fromEntries(orderedSchema.value.map((field) => [field.name, field.type]));
+    const coercedParams = coerceNumericWorkflowParams(localProps.params as Record<string, unknown>, paramTypes);
+    Object.assign(localProps.params, coercedParams);
+    runStore.updateWipOmicsRunParams(props.omicsRunTempId, coercedParams);
 
     emit('next-step');
   }

@@ -2,6 +2,7 @@
   import { useRunStore, useToastStore, useLabsStore } from '@FE/stores';
   import { ButtonSizeEnum } from '@FE/types/buttons';
   import type { EstimateRunCostResponse } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
+  import { coerceNumericWorkflowParams } from '@easy-genomics/shared-lib/src/app/utils/coerce-numeric-workflow-params';
 
   const props = defineProps<{
     schema: object;
@@ -34,16 +35,22 @@
 
   const schema = JSON.parse(JSON.stringify(props.schema));
 
-  function withoutEmptyFields(o: object): object {
-    const r = {};
+  function withoutEmptyFields(o: object): Record<string, unknown> {
+    const r: Record<string, unknown> = {};
 
     for (const key in o) {
-      if (!!o[key]) {
-        r[key] = o[key];
+      const value = (o as Record<string, unknown>)[key];
+      // Keep numeric 0 and boolean false; only drop blank / missing values.
+      if (value !== '' && value !== undefined && value !== null) {
+        r[key] = value;
       }
     }
 
     return r;
+  }
+
+  function paramsForLaunch(): Record<string, unknown> {
+    return coerceNumericWorkflowParams(withoutEmptyFields(props.params));
   }
 
   onMounted(async () => {
@@ -55,7 +62,7 @@
         workflowVersionName: props.workflowVersionName,
         inputFileKeys: wipOmicsRun.value?.inputFileKeys,
         sampleSheetS3Url: (props.params as any)?.input,
-        settings: withoutEmptyFields(props.params),
+        settings: paramsForLaunch(),
       });
     } catch (error) {
       console.warn('Pre-run cost estimate unavailable:', error);
@@ -79,12 +86,13 @@
       }
 
       let startOmicsRes;
+      const launchParams = paramsForLaunch();
       try {
         startOmicsRes = await $api.omicsRuns.createExecution(
           props.labId,
           props.workflowId,
           props.runName,
-          withoutEmptyFields(props.params),
+          launchParams,
           props.workflowVersionName,
           props.workflowOwnerId,
           props.transactionId,
@@ -116,7 +124,7 @@
           'InputS3Url': props.params.input.substring(0, props.params.input.lastIndexOf('/')),
           'OutputS3Url': props.params.outdir,
           'SampleSheetS3Url': props.params.input,
-          'Settings': JSON.stringify(props.params),
+          'Settings': JSON.stringify(launchParams),
         };
         await $api.labs.createLabRun(labRunRequest);
       } catch (error) {
