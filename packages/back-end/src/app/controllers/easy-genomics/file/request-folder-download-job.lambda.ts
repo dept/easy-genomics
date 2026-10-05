@@ -1,4 +1,3 @@
-import { Readable } from 'stream';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { RequestFolderDownloadJobSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-folder-download-job';
@@ -20,6 +19,7 @@ import {
   validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
 import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
+import { s3BodyToString } from '@BE/utils/s3-object-body';
 import { normalizeS3Prefix, parseS3Uri } from '@BE/utils/s3-uri-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -33,21 +33,6 @@ const MAX_DOWNLOAD_SIZE_BYTES = 3 * 1024 * 1024 * 1024; // 3GB
 const FOLDER_SIZE_EXCEEDED_MESSAGE =
   'This folder is too large to download as a single ZIP file. You can download files individually, or contact support for assistance retrieving the full dataset.';
 const DOWNLOAD_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
-
-const streamToString = async (body: unknown): Promise<string> => {
-  if (!body) return '';
-  const bodyWithTransform = body as { transformToString?: () => Promise<string> };
-  if (typeof bodyWithTransform.transformToString === 'function') {
-    return bodyWithTransform.transformToString();
-  }
-
-  const readable = body as Readable;
-  const chunks: Buffer[] = [];
-  for await (const chunk of readable) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks).toString('utf-8');
-};
 
 const getRequestedPrefixSize = async (bucket: string, prefix: string): Promise<number> => {
   let totalBytes = 0;
@@ -100,7 +85,7 @@ const cleanupExpiredDownloadArtifacts = async (bucket: string, laboratoryOwnedPr
           Bucket: bucket,
           Key: statusKey,
         });
-        const statusJson = await streamToString(statusObject.Body);
+        const statusJson = await s3BodyToString(statusObject.Body);
         if (!statusJson) continue;
         const status = JSON.parse(statusJson) as { ExpiresAt?: string; ArchiveS3Key?: string };
         if (!status.ExpiresAt) continue;

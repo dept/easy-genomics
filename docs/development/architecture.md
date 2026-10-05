@@ -170,6 +170,7 @@ graph TB
         SQS6["laboratory-run-notification-queue"]
         SQS7["user-invite-queue"]
         SQS8["folder-download-queue"]
+        SQS9["run-export-queue"]
     end
 
     subgraph "Front-End Hosting"
@@ -336,6 +337,10 @@ graph LR
         R5["delete-laboratory-run"]
         R6["process-update-laboratory-run ⚡SQS"]
         R7["request-status-check"]
+        R8["request-run-export-preview"]
+        R9["request-run-export-job"]
+        R10["request-run-export-job-status"]
+        R11["process-run-export-job ⚡SQS"]
     end
 
     subgraph "File Operations"
@@ -509,6 +514,7 @@ sequenceDiagram
 | laboratory-run-notification-queue           | process-notify-laboratory-run-completion | Run completion → notification                       |
 | user-invite-queue                           | process-create-user-invites              | POST /user-invitation                               |
 | folder-download-queue                       | process-folder-download-job              | POST /request-folder-download-job                   |
+| run-export-queue                            | process-run-export-job                   | POST /laboratory/run/request-run-export-job         |
 
 `laboratory-run-table` DynamoDB Stream → `process-laboratory-run-stream` (TTL-expired records → cascading S3 deletion)
 is a separate event source, not a queue.
@@ -547,6 +553,7 @@ graph TB
                 C2["useMultiplatform.ts<br/>(Seqera + HealthOmics)"]
                 C3["useFileDownload.ts"]
                 C4["usePipeline.ts"]
+                C5["useRunExport.ts"]
             end
 
             subgraph "Repository Layer (API)"
@@ -739,6 +746,37 @@ sequenceDiagram
     PL->>S3: List + zip objects
     PL->>S3: Upload zip
     PL-->>FE: presigned URL for zip
+```
+
+### Run result export flow
+
+Completed Pipeline Runs can be exported as a ZIP (≤ 5 GB combined) or copied server-side to a lab-granted S3 / LIMS
+bucket. Destinations are always written under `{OrganizationId}/{LaboratoryId}/`. The worker re-loads each run and
+re-checks grants so a stale SQS payload cannot write outside the lab.
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as Nuxt App
+    participant LAM as run-export Lambdas
+    participant SQS as run-export-queue
+    participant PL as process-run-export-job
+    participant S3 as S3
+
+    U->>FE: Select completed runs
+    FE->>LAM: POST /laboratory/run/request-run-export-preview
+    LAM-->>FE: size + CanDownloadAsZip
+    FE->>LAM: POST /laboratory/run/request-run-export-job
+    LAM->>SQS: Publish job
+    SQS-->>PL: triggers
+    alt ZIP download
+        PL->>S3: Zip outputs under per-run folders
+        FE->>LAM: POST /laboratory/run/request-run-export-job-status
+        LAM-->>FE: presigned ZIP URL
+    else S3 / LIMS
+        PL->>S3: CopyObject / UploadPartCopy
+        LAM-->>FE: destination s3 URI
+    end
 ```
 
 ### User Invitation Flow

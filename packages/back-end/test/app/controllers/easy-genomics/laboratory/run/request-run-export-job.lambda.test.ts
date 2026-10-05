@@ -9,12 +9,23 @@ jest.mock('../../../../../../src/app/utils/auth-utils');
 jest.mock('../../../../../../src/app/utils/laboratory-s3-access-utils', () => ({
   assertLaboratoryHasS3BucketAccess: jest.fn().mockResolvedValue(undefined),
 }));
+jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-data-tagging-service', () => ({
+  LaboratoryDataTaggingService: jest.fn().mockImplementation(() => ({
+    assertKeyUnderLabPrefix: (laboratory: { OrganizationId: string; LaboratoryId: string }, key: string) => {
+      const root = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
+      if (!key.startsWith(root)) {
+        throw new Error(`S3 key is outside the laboratory prefix: ${key}`);
+      }
+    },
+  })),
+}));
 
 import { LaboratoryRunService } from '../../../../../../src/app/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '../../../../../../src/app/services/easy-genomics/laboratory-service';
 import { S3Service } from '../../../../../../src/app/services/s3-service';
 import { SqsService } from '../../../../../../src/app/services/sqs-service';
 import { validateOrganizationAdminAccess } from '../../../../../../src/app/utils/auth-utils';
+import { assertLaboratoryHasS3BucketAccess } from '../../../../../../src/app/utils/laboratory-s3-access-utils';
 
 describe('request-run-export-job Lambda', () => {
   let mockQueryByLaboratoryId: jest.Mock;
@@ -142,6 +153,11 @@ describe('request-run-export-job Lambda', () => {
     expect(message.Sources).toHaveLength(2);
     expect(message.DestBucket).toBe('lims-bucket');
     expect(message.DestPrefix).toBe('org-1/lab-1/exports/bundle-2-runs/');
+    expect(assertLaboratoryHasS3BucketAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ LaboratoryId: 'lab-1' }),
+      'lims-bucket',
+      expect.anything(),
+    );
   });
 
   it('rejects ZIP download when the selected runs are larger than 5GB', async () => {
@@ -185,6 +201,81 @@ describe('request-run-export-job Lambda', () => {
       createMockEvent({
         LaboratoryId: 'lab-1',
         RunIds: [],
+        Destination: 'Download',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(400);
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('rejects empty exportable output', async () => {
+    mockListAllObjectsUnderPrefix.mockResolvedValue([{ Key: 'org-1/lab-1/results/work/tmp.bin', Size: 50 }]);
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
+        Destination: 'Download',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(400);
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the expanded object count exceeds the cap', async () => {
+    mockListAllObjectsUnderPrefix.mockResolvedValue(
+      Array.from({ length: 10_001 }, (_, index) => ({
+        Key: `org-1/lab-1/results/file-${index}.vcf`,
+        Size: 1,
+      })),
+    );
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
+        Destination: 'S3',
+        DestinationBucket: 'lims-bucket',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(400);
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('nests a caller prefix under the laboratory path', async () => {
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
+        Destination: 'S3',
+        DestinationBucket: 'lims-bucket',
+        DestinationPrefix: 'incoming/tb/',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    const message = JSON.parse(mockSendMessage.mock.calls[0][0].MessageBody);
+    expect(message.DestPrefix).toBe('org-1/lab-1/incoming/tb/');
+  });
+
+  it('rejects download when the laboratory has no S3 bucket', async () => {
+    mockQueryByLaboratoryId.mockResolvedValue({ ...laboratory, S3Bucket: undefined });
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
         Destination: 'Download',
       }),
       createMockContext(),

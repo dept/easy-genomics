@@ -8,6 +8,11 @@ jest.mock('../../../../../../src/app/utils/auth-utils');
 jest.mock('../../../../../../src/app/utils/laboratory-s3-access-utils', () => ({
   assertLaboratoryHasS3BucketAccess: jest.fn().mockResolvedValue(undefined),
 }));
+jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-data-tagging-service', () => ({
+  LaboratoryDataTaggingService: jest.fn().mockImplementation(() => ({
+    assertKeyUnderLabPrefix: jest.fn(),
+  })),
+}));
 
 import { LaboratoryRunService } from '../../../../../../src/app/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '../../../../../../src/app/services/easy-genomics/laboratory-service';
@@ -132,5 +137,25 @@ describe('request-run-export-preview Lambda', () => {
     );
 
     expect(result.statusCode).toBe(403);
+  });
+
+  it('rejects when the expanded object count exceeds the cap', async () => {
+    mockListAllObjectsUnderPrefix.mockResolvedValue(
+      Array.from({ length: 10_001 }, (_, index) => ({
+        Key: `org-1/lab-1/results/file-${index}.vcf`,
+        Size: 1,
+      })),
+    );
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(400);
   });
 });

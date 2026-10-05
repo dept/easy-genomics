@@ -4,6 +4,7 @@ import {
   isSampleSheetKey,
   isWithinRunFolder,
   lastPathSegment,
+  encodeS3CopySource,
   normalizeS3Prefix,
   parseS3ObjectUri,
   parseS3Uri,
@@ -129,5 +130,13 @@ describe('isSampleSheetKey', () => {
     expect(isSampleSheetKey(`${runFolder}results/samplesheet.csv`, runFolder)).toBe(false);
     expect(isSampleSheetKey(`${runFolder}reads_R1.fq.gz`, runFolder)).toBe(false);
     expect(isSampleSheetKey('other/samplesheet.csv', runFolder)).toBe(false);
+  });
+});
+
+describe('encodeS3CopySource', () => {
+  it('encodes spaces, hashes, percents, and plus signs in the key', () => {
+    expect(encodeS3CopySource('lab-bucket', 'org/lab/file name#1+%.bam')).toBe(
+      'lab-bucket/org/lab/file%20name%231%2B%25.bam',
+    );
   });
 });

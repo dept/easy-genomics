@@ -6,6 +6,7 @@ import {
   destinationObjectKey,
   filterExportableRunObjects,
   isCompletedRunStatus,
+  labScopedExportPrefix,
   listExportableRunObjects,
   resolveRunOutputLocation,
   sanitizeExportPrefix,
@@ -51,6 +52,10 @@ describe('run-export-utils', () => {
     it('throws when no output location is stored', () => {
       expect(() => resolveRunOutputLocation({} as any)).toThrow(InvalidRequestError);
     });
+
+    it('throws for a bucket-rooted URI with no key', () => {
+      expect(() => resolveRunOutputLocation({ OutputS3Url: 's3://lab-bucket' } as any)).toThrow(InvalidRequestError);
+    });
   });
 
   describe('shouldSkipRunExportKey', () => {
@@ -94,6 +99,14 @@ describe('run-export-utils', () => {
         { Key: 'org/lab/run/results/a.vcf', Size: 10 },
       ]);
     });
+
+    it('rejects an empty run prefix so the whole bucket is never listed', async () => {
+      const s3 = { listAllObjectsUnderPrefix: jest.fn() };
+      await expect(listExportableRunObjects({ s3, bucket: 'lab-bucket', runPrefix: '' })).rejects.toThrow(
+        InvalidRequestError,
+      );
+      expect(s3.listAllObjectsUnderPrefix).not.toHaveBeenCalled();
+    });
   });
 
   describe('sanitizeExportPrefix', () => {
@@ -129,6 +142,20 @@ describe('run-export-utils', () => {
     });
   });
 
+  describe('labScopedExportPrefix', () => {
+    it('keeps a prefix already under the laboratory root', () => {
+      expect(
+        labScopedExportPrefix({ OrganizationId: 'org-1', LaboratoryId: 'lab-1' }, 'org-1/lab-1/custom/', 'fallback/'),
+      ).toBe('org-1/lab-1/custom/');
+    });
+
+    it('nests a relative prefix under the laboratory root', () => {
+      expect(
+        labScopedExportPrefix({ OrganizationId: 'org-1', LaboratoryId: 'lab-1' }, 'incoming/tb/', 'fallback/'),
+      ).toBe('org-1/lab-1/incoming/tb/');
+    });
+  });
+
   describe('assertDestinationDoesNotOverlapSource', () => {
     it('allows a different bucket', () => {
       expect(() =>
@@ -148,6 +175,17 @@ describe('run-export-utils', () => {
           sourcePrefix: 'org/lab/run/',
           destBucket: 'src',
           destPrefix: 'org/lab/run/exports/',
+        }),
+      ).toThrow(InvalidRequestError);
+    });
+
+    it('rejects an empty source prefix on the same bucket', () => {
+      expect(() =>
+        assertDestinationDoesNotOverlapSource({
+          sourceBucket: 'src',
+          sourcePrefix: '',
+          destBucket: 'src',
+          destPrefix: 'org/lab/exports/',
         }),
       ).toThrow(InvalidRequestError);
     });

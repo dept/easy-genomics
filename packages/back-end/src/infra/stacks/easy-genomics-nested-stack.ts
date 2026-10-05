@@ -135,6 +135,9 @@ export class EasyGenomicsNestedStack extends NestedStack {
           enforceSSL: true,
         },
         ['run-export-queue']: <QueueDetails>{
+          // ~10 nested-stack resources (queue + 4 Functions/Roles + event source).
+          // Log retention stays in the sibling stack. Runtime prefix/grant checks
+          // bound writes; IAM stays bucket-wildcard because destinations are lab-granted.
           fifo: true,
           retentionPeriod: Duration.days(1),
           visibilityTimeout: Duration.minutes(15),
@@ -2090,6 +2093,16 @@ export class EasyGenomicsNestedStack extends NestedStack {
 
     // /easy-genomics/laboratory/run/process-run-export-job
     this.iam.addPolicyStatements('/easy-genomics/laboratory/run/process-run-export-job', [
+      new PolicyStatement({
+        resources: laboratoryRunTableReadResources,
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: laboratoryTableReadResources,
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
       new PolicyStatement({
         resources: ['arn:aws:s3:::*'],
         actions: ['s3:ListBucket'],

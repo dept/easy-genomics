@@ -66,6 +66,7 @@ import {
   S3ServiceException,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { encodeS3CopySource } from '@BE/utils/s3-uri-utils';
 
 export enum S3Command {
   // Manage S3 Bucket
@@ -246,7 +247,7 @@ export class S3Service {
     destKey: string;
     sizeBytes: number;
   }): Promise<void> => {
-    const copySource = `${params.sourceBucket}/${params.sourceKey}`;
+    const copySource = encodeS3CopySource(params.sourceBucket, params.sourceKey);
     const maxSingleCopyBytes = 5 * 1024 * 1024 * 1024;
 
     if (params.sizeBytes <= maxSingleCopyBytes) {

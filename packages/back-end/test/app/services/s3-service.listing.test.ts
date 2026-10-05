@@ -116,6 +116,25 @@ describe('S3Service.copyObjectBySize', () => {
     });
   });
 
+  it('URL-encodes CopySource keys that contain spaces or special characters', async () => {
+    const copyBucketObject = jest.fn().mockResolvedValue(undefined);
+    (svc as unknown as { copyBucketObject: jest.Mock }).copyBucketObject = copyBucketObject;
+
+    await svc.copyObjectBySize({
+      sourceBucket: 'src',
+      sourceKey: 'org/lab/file name#1.bam',
+      destBucket: 'dest',
+      destKey: 'out/file.bam',
+      sizeBytes: 10,
+    });
+
+    expect(copyBucketObject).toHaveBeenCalledWith({
+      Bucket: 'dest',
+      Key: 'out/file.bam',
+      CopySource: 'src/org/lab/file%20name%231.bam',
+    });
+  });
+
   it('uses multipart UploadPartCopy for files over 5 GB', async () => {
     const copyBucketObject = jest.fn();
     const createMultipartUpload = jest.fn().mockResolvedValue({ UploadId: 'u-1' });
