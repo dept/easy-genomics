@@ -13,6 +13,7 @@ import SeqeraRunsModules from '@FE/repository/modules/seqera-runs';
 import UploadsModule from '@FE/repository/modules/uploads';
 import UsersModule from '@FE/repository/modules/users';
 import WorkflowAccessModule from '@FE/repository/modules/workflow-access';
+import WorkflowKeyOutputsModule from '@FE/repository/modules/workflow-key-outputs';
 import WorkflowRunPresetsModule from '@FE/repository/modules/workflow-run-presets';
 
 interface IApiInstance {
@@ -31,6 +32,7 @@ interface IApiInstance {
   workflowAccess: WorkflowAccessModule;
   s3Access: S3AccessModule;
   workflowRunPresets: WorkflowRunPresetsModule;
+  workflowKeyOutputs: WorkflowKeyOutputsModule;
 }
 
 interface FetchOptions {
@@ -57,6 +59,7 @@ const createApiInstance = (apiFetcher: any): IApiInstance => ({
   workflowAccess: new WorkflowAccessModule(apiFetcher),
   s3Access: new S3AccessModule(apiFetcher),
   workflowRunPresets: new WorkflowRunPresetsModule(apiFetcher),
+  workflowKeyOutputs: new WorkflowKeyOutputsModule(apiFetcher),
 });
 
 export default defineNuxtPlugin((nuxtApp) => {

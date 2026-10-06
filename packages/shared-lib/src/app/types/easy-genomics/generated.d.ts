@@ -426,6 +426,18 @@ export interface paths {
     /** Update User Request */
     put: operations["updateUserRequest"];
   };
+  "/easy-genomics/workflow-key-outputs/edit-workflow-key-outputs": {
+    /** Edit Workflow Key Outputs */
+    post: operations["editWorkflowKeyOutputs"];
+  };
+  "/easy-genomics/workflow-key-outputs/list-workflow-key-outputs": {
+    /** List Workflow Key Outputs */
+    get: operations["listWorkflowKeyOutputs"];
+  };
+  "/easy-genomics/workflow-key-outputs/request-preview-workflow-key-outputs": {
+    /** Request Preview Workflow Key Outputs */
+    post: operations["requestPreviewWorkflowKeyOutputs"];
+  };
   "/easy-genomics/workflow-run-preset/create-workflow-run-preset": {
     /** Create Workflow Run Preset */
     post: operations["createWorkflowRunPreset"];
@@ -2016,6 +2028,80 @@ export interface components {
       NotifyOnOwnRuns?: boolean;
       /** @enum {string} */
       NotificationEventFilter?: "all_terminal" | "failures_only" | "successes_only";
+    };
+    EditWorkflowKeyOutputsRequest: {
+      /** Format: uuid */
+      LaboratoryId: string;
+      WorkflowId: string;
+      WorkflowName?: string;
+      Platform?: string;
+      SourceRunId?: string;
+      KeyOutputs: {
+          /** Format: uuid */
+          KeyOutputId?: string;
+          Label: string;
+          Pattern: string;
+          ExamplePath?: string;
+        }[];
+    };
+    /**
+     * @description One role in the key-outputs definition. `Pattern` is a path glob relative to
+     * the run's File Manager root (`*` matches within a single path segment).
+     */
+    WorkflowKeyOutput: {
+      KeyOutputId: string;
+      Label: string;
+      Pattern: string;
+      /** @description Relative path of the file the user ticked when this role was inferred. */
+      ExamplePath?: string;
+    };
+    WorkflowKeyOutputs: {
+      LaboratoryId: string;
+      WorkflowId: string;
+      WorkflowName?: string;
+      Platform?: string;
+      /** @description Last completed run the lab used to pick files for this definition. */
+      SourceRunId?: string;
+      KeyOutputs: components["schemas"]["WorkflowKeyOutput"][];
+      CreatedAt?: string;
+      CreatedBy?: string;
+      ModifiedAt?: string;
+      ModifiedBy?: string;
+    };
+    ListWorkflowKeyOutputsResponse: {
+      LaboratoryId: string;
+      WorkflowId: string;
+      WorkflowName?: string;
+      Platform?: string;
+      SourceRunId?: string;
+      KeyOutputs: components["schemas"]["WorkflowKeyOutput"][];
+      CreatedAt?: string;
+      ModifiedAt?: string;
+    };
+    RequestPreviewWorkflowKeyOutputsRequest: {
+      /** Format: uuid */
+      LaboratoryId: string;
+      RunId: string;
+      ObjectKeys?: string[];
+      KeyOutputs?: {
+          /** Format: uuid */
+          KeyOutputId?: string;
+          Label: string;
+          Pattern: string;
+          ExamplePath?: string;
+        }[];
+    };
+    /** @description A role returned by preview, including how many files on this run match. */
+    PreviewWorkflowKeyOutput: {
+      MatchCount: number;
+      KeyOutputId: string;
+      Label: string;
+      Pattern: string;
+      /** @description Relative path of the file the user ticked when this role was inferred. */
+      ExamplePath?: string;
+    };
+    PreviewWorkflowKeyOutputsResponse: {
+      KeyOutputs: components["schemas"]["PreviewWorkflowKeyOutput"][];
     };
     CreateWorkflowRunPresetRequest: {
       /** Format: uuid */
@@ -6081,6 +6167,72 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["User"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Edit Workflow Key Outputs */
+  editWorkflowKeyOutputs: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EditWorkflowKeyOutputsRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["WorkflowKeyOutputs"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** List Workflow Key Outputs */
+  listWorkflowKeyOutputs: {
+    parameters: {
+      query: {
+        /** @description Laboratory owning the key-outputs definition */
+        laboratoryId: string;
+        /** @description Workflow the definition applies to */
+        workflowId: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["ListWorkflowKeyOutputsResponse"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Request Preview Workflow Key Outputs */
+  requestPreviewWorkflowKeyOutputs: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RequestPreviewWorkflowKeyOutputsRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["PreviewWorkflowKeyOutputsResponse"];
         };
       };
       400: components["responses"]["BadRequest"];

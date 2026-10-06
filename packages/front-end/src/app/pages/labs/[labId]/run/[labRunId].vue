@@ -8,7 +8,7 @@
   import { getRunDetailProgressPollIntervalMs } from '@easy-genomics/shared-lib/src/app/utils/laboratory-run-progress-polling';
   import { ReadRunTasks } from '@easy-genomics/shared-lib/src/app/types/aws-healthomics/aws-healthomics-api';
   import { TaskListItem, GetRunResponse } from '@aws-sdk/client-omics';
-  import { useLabsStore, useRunStore, useUiStore } from '@FE/stores';
+  import { useLabsStore, useRunStore, useUiStore, useWorkflowKeyOutputsStore } from '@FE/stores';
   import { ensureLabInActiveOrg } from '@FE/utils/ensure-lab-in-active-org';
   import {
     isTerminalRunStatus,
@@ -40,6 +40,8 @@
     getRunDetailProgressPollIntervalMs(lab.value?.RunDetailProgressPollIntervalSeconds),
   );
   const labRun = computed<LaboratoryRun | null>(() => runStore.labRuns[labRunId] ?? null);
+  const isDeclaringKeyOutputs = ref(false);
+  const keyOutputsStore = useWorkflowKeyOutputsStore();
   // Prefer OutputS3Url as the authoritative reference for the File Manager root when available (supports custom output dirs).
   // Fall back to InputS3Url for legacy runs where OutputS3Url was not set.
   const inputS3Url = computed<string | null>(() => labRun.value?.InputS3Url ?? null);
@@ -50,6 +52,28 @@
   );
   const s3Prefix = computed<string | null>(
     () => effectiveRootS3Url.value?.match(/(?<=^s3:\/\/[a-z0-9][a-z0-9-]{1,61}[a-z0-9]\/)(.*)/g)?.toString() ?? null,
+  );
+  const canDeclareKeyOutputs = computed<boolean>(() => {
+    const run = labRun.value;
+    if (!run) return false;
+    if (run.Platform !== 'AWS HealthOmics') return false;
+    if (!['COMPLETED', 'SUCCEEDED'].includes(run.Status)) return false;
+    if (!run.WorkflowExternalId) return false;
+    return Boolean(s3Bucket.value && s3Prefix.value);
+  });
+  const hasKeyOutputs = computed<boolean>(() => {
+    const workflowId = labRun.value?.WorkflowExternalId;
+    if (!workflowId) return false;
+    return (keyOutputsStore.definitionFor(labId, workflowId)?.KeyOutputs.length ?? 0) > 0;
+  });
+
+  watch(
+    () => [canDeclareKeyOutputs.value, labRun.value?.WorkflowExternalId] as const,
+    ([canDeclare, workflowId]) => {
+      if (!canDeclare || !workflowId) return;
+      void keyOutputsStore.load(labId, workflowId);
+    },
+    { immediate: true },
   );
 
   const outputPath = computed<string[] | null>(() => {
@@ -719,17 +743,42 @@
 
       <!-- File Manager -->
       <div v-if="item.key === 'fileManager'" class="space-y-3">
-        <EGFileExplorer
-          v-if="s3Bucket && s3Prefix"
+        <EGDeclareKeyOutputsEditor
+          v-if="isDeclaringKeyOutputs && labRun && s3Bucket && s3Prefix"
           :lab-id="labId"
-          :run-id="labRunId"
+          :lab-name="lab?.Name ?? ''"
+          :run="labRun"
           :s3-bucket="s3Bucket"
           :s3-prefix="s3Prefix"
           :start-path="outputPath"
+          @cancel="isDeclaringKeyOutputs = false"
+          @saved="isDeclaringKeyOutputs = false"
         />
-        <p v-else-if="labRun && !isLoading" class="text-muted rounded-lg border border-dashed p-6 text-center text-sm">
-          No S3 location is recorded for this run, so files cannot be listed.
-        </p>
+        <template v-else>
+          <div v-if="canDeclareKeyOutputs" class="flex justify-end">
+            <button
+              type="button"
+              class="text-primary hover:text-primary-dark text-sm font-medium hover:underline"
+              @click="isDeclaringKeyOutputs = true"
+            >
+              {{ hasKeyOutputs ? 'Edit key outputs' : 'Define key outputs' }}
+            </button>
+          </div>
+          <EGFileExplorer
+            v-if="s3Bucket && s3Prefix"
+            :lab-id="labId"
+            :run-id="labRunId"
+            :s3-bucket="s3Bucket"
+            :s3-prefix="s3Prefix"
+            :start-path="outputPath"
+          />
+          <p
+            v-else-if="labRun && !isLoading"
+            class="text-muted rounded-lg border border-dashed p-6 text-center text-sm"
+          >
+            No S3 location is recorded for this run, so files cannot be listed.
+          </p>
+        </template>
       </div>
     </template>
   </EGDetailTabs>
