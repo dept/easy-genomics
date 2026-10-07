@@ -257,4 +257,60 @@ describe('request-laboratory-bucket-objects Lambda', () => {
     expect(response.statusCode).not.toBe(200);
     expect(mockListBucketObjectsV2).not.toHaveBeenCalled();
   });
+
+  it('rejects an S3Prefix outside the laboratory root with 403 and never lists', async () => {
+    mockValidateOrgAdmin.mockReturnValue(true);
+    mockQueryByLaboratoryId.mockResolvedValue(mockLaboratory);
+
+    const response = await handler(
+      createMockEvent({ LaboratoryId: 'test-lab-id', S3Bucket: 'test-bucket', S3Prefix: 'sample-3-18/' }),
+      createMockContext(),
+      jest.fn(),
+    );
+
+    expect(response.statusCode).toBe(403);
+    expect(mockListBucketObjectsV2).not.toHaveBeenCalled();
+  });
+
+  it('lists the requested absolute S3Prefix when it is inside the laboratory root', async () => {
+    mockValidateOrgAdmin.mockReturnValue(true);
+    mockQueryByLaboratoryId.mockResolvedValue(mockLaboratory);
+    mockListBucketObjectsV2.mockResolvedValue({ Contents: [], CommonPrefixes: [], IsTruncated: false });
+
+    const response = await handler(
+      createMockEvent({ LaboratoryId: 'test-lab-id', S3Bucket: 'test-bucket', S3Prefix: `${labRoot}aws-healthomics` }),
+      createMockContext(),
+      jest.fn(),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body).ResolvedPrefix).toBe(`${labRoot}aws-healthomics/`);
+  });
+
+  it('defaults to the laboratory root when S3Prefix is omitted', async () => {
+    mockValidateOrgAdmin.mockReturnValue(true);
+    mockQueryByLaboratoryId.mockResolvedValue(mockLaboratory);
+    mockListBucketObjectsV2.mockResolvedValue({ Contents: [], CommonPrefixes: [], IsTruncated: false });
+
+    const response = await handler(
+      createMockEvent({ LaboratoryId: 'test-lab-id', S3Bucket: 'test-bucket' }),
+      createMockContext(),
+      jest.fn(),
+    );
+
+    expect(JSON.parse(response.body).ResolvedPrefix).toBe(labRoot);
+  });
+
+  it('rejects the retired RelativePrefix field as an invalid request', async () => {
+    mockValidateOrgAdmin.mockReturnValue(true);
+    mockQueryByLaboratoryId.mockResolvedValue(mockLaboratory);
+
+    const response = await handler(
+      createMockEvent({ LaboratoryId: 'test-lab-id', RelativePrefix: 'aws-healthomics/' }),
+      createMockContext(),
+      jest.fn(),
+    );
+
+    expect(response.statusCode).toBe(400);
+  });
 });

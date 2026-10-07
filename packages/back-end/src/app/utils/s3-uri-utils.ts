@@ -1,3 +1,5 @@
+import { UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+
 export type ParsedS3Uri = { bucket: string; prefix: string };
 
 const S3_SCHEME = 's3://';
@@ -45,6 +47,22 @@ export function normalizeS3Prefix(prefix: string): string {
 
 export function laboratoryPrefix(laboratory: { OrganizationId: string; LaboratoryId: string }): string {
   return `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
+}
+
+/**
+ * Resolves the absolute prefix a laboratory may list. Defaults to the laboratory root;
+ * anything outside `{OrganizationId}/{LaboratoryId}/` is rejected.
+ */
+export function resolveLaboratoryListingPrefix(
+  laboratory: { OrganizationId: string; LaboratoryId: string },
+  requestedPrefix?: string,
+): string {
+  const laboratoryRoot = laboratoryPrefix(laboratory);
+  const resolvedPrefix = normalizeS3Prefix(requestedPrefix || laboratoryRoot);
+  if (!resolvedPrefix.startsWith(laboratoryRoot)) {
+    throw new UnauthorizedAccessError("S3 prefix must be inside this laboratory's folder");
+  }
+  return resolvedPrefix;
 }
 
 /**

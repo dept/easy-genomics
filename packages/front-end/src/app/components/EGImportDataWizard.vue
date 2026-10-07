@@ -15,8 +15,10 @@
   import { delimiterForFilename, parseDelimitedText } from '@easy-genomics/shared-lib/src/app/utils/delimited-text';
   import { TAG_PRESET_COLORS } from '@easy-genomics/shared-lib/src/app/constants/data-collections';
   import { useToastStore, useUiStore } from '@FE/stores';
+  import { buildS3CopyJobs } from '@FE/utils/data-collections-copy-jobs';
   import { basenameFromS3Key } from '@FE/utils/data-collections-file-type';
   import { exceedsBatchNameMaxLength } from '@FE/utils/data-collections-name-validation';
+  import { buildLaboratorySourcePrefix } from '@FE/utils/data-collections-source-prefix';
   import { matchSheetToSamples, type SheetTagMatchResult } from '@FE/utils/sheet-tag-matching';
 
   type ImportSourceKind = 's3' | 'upload';
@@ -150,8 +152,8 @@
     if (importSource.value === 'upload') {
       return `Upload from computer (${pendingUploadFiles.value.length} files)`;
     }
-    const prefix = sourcePrefix.value.replace(/^\/*/, '').replace(/\/?$/, '/');
-    return `s3://${sourceBucket.value}/${prefix}`;
+    if (!props.lab) return `s3://${sourceBucket.value}/`;
+    return `s3://${sourceBucket.value}/${buildLaboratorySourcePrefix(props.lab, sourcePrefix.value)}`;
   });
 
   const canContinueStep1 = computed(() => {
@@ -294,11 +296,10 @@
     }
     uiStore.setRequestPending('dataCollectionsList');
     try {
-      const prefix = sourcePrefix.value.replace(/^\/*/, '');
       const res = await $api.dataCollections.requestLaboratoryBucketObjects({
         LaboratoryId: props.labId,
         S3Bucket: sourceBucket.value,
-        RelativePrefix: prefix || undefined,
+        S3Prefix: buildLaboratorySourcePrefix(props.lab, sourcePrefix.value),
         MaxTotalKeys: 5000,
       });
       sourceFiles.value = (res.Contents || []).map((o) => o.Key!);
@@ -396,17 +397,10 @@
 
       const copyJobs =
         importSource.value === 's3'
-          ? activeSets.value.flatMap((s) =>
-              s.files.map((f) => {
-                const base = basenameFromS3Key(f.fileName);
-                const srcPrefix = sourcePrefix.value.replace(/^\/*/, '').replace(/\/?$/, '/');
-                const srcKey = `${srcPrefix}${base}`;
-                return {
-                  SourceBucket: sourceBucket.value,
-                  SourceKey: srcKey,
-                  DestKey: `${destPrefix}${base}`,
-                };
-              }),
+          ? buildS3CopyJobs(
+              activeSets.value.flatMap((s) => s.files),
+              sourceBucket.value,
+              destPrefix,
             )
           : undefined;
 
@@ -469,7 +463,9 @@
           >
             <div class="mb-1 text-sm font-medium">Amazon S3</div>
             <div class="mb-2 text-xs text-gray-500">Connected</div>
-            <p class="text-xs text-gray-500">Point at a bucket/prefix where sequencer or partner files are dropped.</p>
+            <p class="text-xs text-gray-500">
+              Import files from a folder inside this lab's directory in a granted bucket.
+            </p>
           </button>
 
           <button
@@ -494,9 +490,12 @@
               placeholder="Select a bucket"
             />
           </UFormGroup>
-          <UFormGroup label="Prefix" hint="path within the lab folder">
-            <UInput v-model="sourcePrefix" placeholder="imports/partner-drop/" class="font-mono" />
+          <UFormGroup label="Prefix" hint="folder inside this lab's directory">
+            <UInput v-model="sourcePrefix" placeholder="imports/" class="font-mono" />
           </UFormGroup>
+          <p v-if="sourceBucket" class="text-text-muted mt-1 break-all font-mono text-xs" role="status">
+            Searches {{ confirmSourceLabel }}
+          </p>
           <p v-if="!grantedBuckets.length" class="text-text-muted mt-2 text-xs" role="status">
             No authorized S3 buckets for this lab. Ask an organization admin to grant bucket access.
           </p>

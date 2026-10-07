@@ -21,7 +21,10 @@ import HttpFactory from '@FE/repository/factory';
 
 export type RequestLaboratoryBucketObjectsBody = {
   LaboratoryId: string;
-  RelativePrefix?: string;
+  /** When omitted, the laboratory default S3 bucket is used. */
+  S3Bucket?: string;
+  /** Absolute key prefix inside `${OrganizationId}/${LaboratoryId}/`. */
+  S3Prefix?: string;
   /** Cap on file objects returned (default 15000, max 50000). */
   MaxTotalKeys?: number;
   /** Cap on transaction folders walked (default 10000, max 50000). */

@@ -1112,7 +1112,7 @@ components:
         S3Bucket:
           type: string
           minLength: 1
-        RelativePrefix:
+        S3Prefix:
           type: string
         MaxTotalKeys:
           type: integer
@@ -1372,7 +1372,7 @@ components:
         LaboratoryId:
           type: string
           minLength: 1
-        RelativePrefix:
+        S3Prefix:
           type: string
         MaxTotalKeys:
           type: integer
