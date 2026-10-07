@@ -15,6 +15,7 @@
   import { delimiterForFilename, parseDelimitedText } from '@easy-genomics/shared-lib/src/app/utils/delimited-text';
   import { TAG_PRESET_COLORS } from '@easy-genomics/shared-lib/src/app/constants/data-collections';
   import { useToastStore, useUiStore } from '@FE/stores';
+  import { buildS3CopyJobs } from '@FE/utils/data-collections-copy-jobs';
   import { basenameFromS3Key } from '@FE/utils/data-collections-file-type';
   import { exceedsBatchNameMaxLength } from '@FE/utils/data-collections-name-validation';
   import { buildLaboratorySourcePrefix } from '@FE/utils/data-collections-source-prefix';
@@ -396,17 +397,10 @@
 
       const copyJobs =
         importSource.value === 's3'
-          ? activeSets.value.flatMap((s) =>
-              s.files.map((f) => {
-                const base = basenameFromS3Key(f.fileName);
-                const srcPrefix = sourcePrefix.value.replace(/^\/*/, '').replace(/\/?$/, '/');
-                const srcKey = `${srcPrefix}${base}`;
-                return {
-                  SourceBucket: sourceBucket.value,
-                  SourceKey: srcKey,
-                  DestKey: `${destPrefix}${base}`,
-                };
-              }),
+          ? buildS3CopyJobs(
+              activeSets.value.flatMap((s) => s.files),
+              sourceBucket.value,
+              destPrefix,
             )
           : undefined;
 
