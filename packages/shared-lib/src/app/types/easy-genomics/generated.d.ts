@@ -901,7 +901,7 @@ export interface components {
     RequestLaboratoryBucketObjectsRequest: {
       LaboratoryId: string;
       S3Bucket?: string;
-      RelativePrefix?: string;
+      S3Prefix?: string;
       MaxTotalKeys?: number;
       MaxTransactionFolders?: number;
       MaxKeys?: number;
@@ -1008,7 +1008,7 @@ export interface components {
     };
     RequestUnlinkedBucketObjectsRequest: {
       LaboratoryId: string;
-      RelativePrefix?: string;
+      S3Prefix?: string;
       MaxTotalKeys?: number;
       MaxTransactionFolders?: number;
       MaxKeys?: number;
