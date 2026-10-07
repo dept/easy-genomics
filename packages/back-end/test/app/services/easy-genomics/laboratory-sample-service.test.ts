@@ -20,6 +20,7 @@ import {
   S3BucketAccessDeniedError,
   S3KeyOutOfPrefixError,
   SequenceCollectionNotFoundError,
+  UnauthorizedAccessError,
 } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { encodeS3ObjectRef } from '../../../../src/app/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratorySampleService } from '../../../../src/app/services/easy-genomics/laboratory-sample-service';
@@ -355,6 +356,18 @@ describe('LaboratorySampleService.listUnlinkedBucketObjects', () => {
     await svc.listUnlinkedBucketObjects(labFixture(), {});
     expect(mockGetSampleIdsForFileRefs).toHaveBeenCalledTimes(1);
     expect(mockGetSampleIdsForFileRefs.mock.calls[0][1]).toHaveLength(2);
+  });
+
+  it('rejects an s3Prefix outside the laboratory root with UnauthorizedAccessError', async () => {
+    await expect(svc.listUnlinkedBucketObjects(labFixture(), { s3Prefix: 'elsewhere/' })).rejects.toThrow(
+      UnauthorizedAccessError,
+    );
+    expect(mockListTransactionInputs).not.toHaveBeenCalled();
+  });
+
+  it('lists from the laboratory root when no s3Prefix is given', async () => {
+    await svc.listUnlinkedBucketObjects(labFixture(), {});
+    expect(mockListTransactionInputs).toHaveBeenCalledWith(expect.objectContaining({ labPrefix: 'org-1/lab-1/' }));
   });
 });
 

@@ -41,6 +41,7 @@ import {
 } from './laboratory-data-tagging-service';
 import { DynamoDBService } from '../dynamodb-service';
 import { S3Service } from '../s3-service';
+import { resolveLaboratoryListingPrefix } from '@BE/utils/s3-uri-utils';
 
 const TABLE_NAME = `${process.env.NAME_PREFIX}-laboratory-data-tagging-table`;
 const GSI1_NAME = 'Gsi1Pk_Index';
@@ -651,7 +652,7 @@ export class LaboratorySampleService extends DynamoDBService {
   public async listUnlinkedBucketObjects(
     laboratory: Laboratory,
     opts: {
-      relativePrefix?: string;
+      s3Prefix?: string;
       maxTotalKeys?: number;
       maxTransactionFolders?: number;
       pageSize?: number;
@@ -660,11 +661,7 @@ export class LaboratorySampleService extends DynamoDBService {
     const s3Bucket = laboratory.S3Bucket || '';
     if (!s3Bucket) throw new Error('Laboratory has no S3 bucket configured');
 
-    const labRoot = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
-    const relative = (opts.relativePrefix || '').replace(/^\/*/, '');
-    let normalizedPrefix = `${labRoot}${relative}`;
-    if (!normalizedPrefix.endsWith('/')) normalizedPrefix = `${normalizedPrefix}/`;
-    if (!normalizedPrefix.startsWith(labRoot)) throw new Error('Prefix is outside laboratory scope');
+    const normalizedPrefix = resolveLaboratoryListingPrefix(laboratory, opts.s3Prefix);
 
     const pageSize = Math.min(opts.pageSize ?? 1000, 1000);
     const maxTotalKeys = Math.min(opts.maxTotalKeys ?? 15_000, 50_000);
