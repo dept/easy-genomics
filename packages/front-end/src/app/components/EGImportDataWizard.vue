@@ -469,7 +469,9 @@
           >
             <div class="mb-1 text-sm font-medium">Amazon S3</div>
             <div class="mb-2 text-xs text-gray-500">Connected</div>
-            <p class="text-xs text-gray-500">Point at a bucket/prefix where sequencer or partner files are dropped.</p>
+            <p class="text-xs text-gray-500">
+              Import files from a folder inside this lab's directory in a granted bucket.
+            </p>
           </button>
 
           <button
@@ -494,9 +496,12 @@
               placeholder="Select a bucket"
             />
           </UFormGroup>
-          <UFormGroup label="Prefix" hint="path within the lab folder">
-            <UInput v-model="sourcePrefix" placeholder="imports/partner-drop/" class="font-mono" />
+          <UFormGroup label="Prefix" hint="folder inside this lab's directory">
+            <UInput v-model="sourcePrefix" placeholder="imports/" class="font-mono" />
           </UFormGroup>
+          <p v-if="sourceBucket" class="text-text-muted mt-1 break-all font-mono text-xs" role="status">
+            Searches {{ confirmSourceLabel }}
+          </p>
           <p v-if="!grantedBuckets.length" class="text-text-muted mt-2 text-xs" role="status">
             No authorized S3 buckets for this lab. Ask an organization admin to grant bucket access.
           </p>
