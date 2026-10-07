@@ -73,3 +73,34 @@ describe('buildContentsSummary', () => {
     ).toBe('3 files · R1 + R2 + ref');
   });
 });
+
+describe('groupFilenamesByRegex case-insensitivity', () => {
+  it('matches an uppercase extension and a lowercase read token under an existing preset', () => {
+    const { sets, unmatched } = groupFilenamesByRegex(
+      ['CA-IL-260806_R1_001.FASTQ.GZ', 'CA-IL-260806_r2_001.fastq.gz'],
+      REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern,
+    );
+    expect(unmatched).toEqual([]);
+    expect(sets).toHaveLength(1);
+    expect(sets[0].sampleId).toBe('CA-IL-260806');
+    expect(sets[0].files.map((f) => f.role)).toEqual(['read1', 'read2']);
+    expect(sets[0].status).toBe('paired');
+  });
+
+  it('honours a custom regex verbatim and still reads its named groups', () => {
+    const { sets, unmatched } = groupFilenamesByRegex(
+      ['ABC.r1.fq', 'ABC.R2.fq', 'notes.txt'],
+      '(?<sample>[a-z]+)\\.(?<read>R[12])\\.fq',
+    );
+    expect(unmatched).toEqual(['notes.txt']);
+    expect(sets).toHaveLength(1);
+    expect(sets[0].sampleId).toBe('ABC');
+    expect(sets[0].files.map((f) => f.role)).toEqual(['read1', 'read2']);
+  });
+
+  it('still reports an invalid custom regex as all-unmatched', () => {
+    const { sets, unmatched } = groupFilenamesByRegex(['a_R1.fastq.gz'], '(?<sample>[');
+    expect(sets).toEqual([]);
+    expect(unmatched).toEqual(['a_R1.fastq.gz']);
+  });
+});

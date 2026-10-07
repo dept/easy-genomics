@@ -80,7 +80,8 @@ export function groupFilenamesByRegex(
 ): { sets: ProposedSample[]; unmatched: string[] } {
   let regex: RegExp;
   try {
-    regex = new RegExp(regexPattern);
+    // Case-insensitive to match data-collection-sample-sheet's read-direction and extension checks.
+    regex = new RegExp(regexPattern, 'i');
   } catch {
     return { sets: [], unmatched: [...fileNames] };
   }
