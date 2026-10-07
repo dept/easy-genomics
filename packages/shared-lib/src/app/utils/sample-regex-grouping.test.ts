@@ -104,3 +104,51 @@ describe('groupFilenamesByRegex case-insensitivity', () => {
     expect(unmatched).toEqual(['a_R1.fastq.gz']);
   });
 });
+
+describe('existing presets after widening', () => {
+  const firstMatch = (pattern: string, fileName: string) => {
+    const { sets } = groupFilenamesByRegex([fileName], pattern);
+    return sets.length ? { sampleId: sets[0].sampleId, role: sets[0].files[0].role } : undefined;
+  };
+
+  it.each([
+    ['S_R1_001.fq.gz', 'read1'],
+    ['S_R2.fastq', 'read2'],
+    ['S_R1_.fq', 'read1'],
+    ['S_R1_002.fastq.gz', 'read1'],
+  ])('_R1 and _R2 accepts %s', (fileName, role) => {
+    expect(firstMatch(REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern, fileName)).toEqual({ sampleId: 'S', role });
+  });
+
+  it('matches the trailing-separator files from the dev reproduction', () => {
+    const { sets, unmatched } = groupFilenamesByRegex(
+      ['ZRXSXL_R1_.fastq.gz', 'ZRXSXL_R2_.fastq.gz', 'IRRGTLK_R2_.fastq', '0FALKI_R1_002.fastq.gz'],
+      REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern,
+    );
+    expect(unmatched).toEqual([]);
+    expect(sets.map((s) => s.sampleId)).toEqual(['0FALKI', 'IRRGTLK', 'ZRXSXL']);
+    expect(sets[2].status).toBe('paired');
+  });
+
+  it.each([
+    ['dash_1_2', 'sample-1.fastq.gz', 'sample', 'read1'],
+    ['dash_1_2', 'other-1.fastq.gz', 'other', 'read1'],
+    ['underscore_1_2', 'sample_2.fastq.gz', 'sample', 'read2'],
+    ['underscore_1_2', 'A_1_B_2.fastq.gz', 'A_1_B', 'read2'],
+    ['dash_r1_r2', 'sample-R2.fastq.gz', 'sample', 'read2'],
+    ['dash_r1_r2', 'a-b_c-R2_001.fastq.gz', 'a-b_c', 'read2'],
+    ['underscore_r1_r2', 'WI-0001_R1_001.fastq.gz', 'WI-0001', 'read1'],
+    ['underscore_r1_r2', 'CA-IL-260806_S1_L001_R1_001.fastq.gz', 'CA-IL-260806_S1_L001', 'read1'],
+    ['underscore_r1_r2', 'Undetermined_S0_L001_R1_001.fastq.gz', 'Undetermined_S0_L001', 'read1'],
+  ] as const)("%s keeps today's result for %s", (presetKey, fileName, sampleId, role) => {
+    expect(firstMatch(REGEX_GROUPING_PRESETS[presetKey].pattern, fileName)).toEqual({ sampleId, role });
+  });
+
+  it('_1 and _2 leaves an Illumina name with an earlier _2 unmatched rather than misreading it', () => {
+    const { unmatched } = groupFilenamesByRegex(
+      ['sample_2_S2_L001_R1_001.fastq.gz'],
+      REGEX_GROUPING_PRESETS.underscore_1_2.pattern,
+    );
+    expect(unmatched).toEqual(['sample_2_S2_L001_R1_001.fastq.gz']);
+  });
+});

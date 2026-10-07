@@ -22,19 +22,19 @@ export type RegexGroupingPreset = {
 export const REGEX_GROUPING_PRESETS = {
   underscore_r1_r2: {
     label: '_R1 and _R2',
-    pattern: '(?<sample>.+?)_(?<read>R[12])(?:_001)?\\.fastq\\.gz',
+    pattern: '(?<sample>.+?)_(?<read>R[12])(?:_\\d*)?\\.(?:fastq|fq)(?:\\.gz)?',
   },
   dash_r1_r2: {
     label: '-R1 and -R2',
-    pattern: '(?<sample>.+?)-(?<read>R[12])(?:_001)?\\.fastq\\.gz',
+    pattern: '(?<sample>.+?)-(?<read>R[12])(?:_\\d*)?\\.(?:fastq|fq)(?:\\.gz)?',
   },
   underscore_1_2: {
     label: '_1 and _2',
-    pattern: '(?<sample>.+?)_(?<read>[12])(?:_001)?\\.fastq\\.gz',
+    pattern: '(?<sample>.+?)_(?<read>[12])(?:_\\d*)?\\.(?:fastq|fq)(?:\\.gz)?',
   },
   dash_1_2: {
     label: '-1 and -2',
-    pattern: '(?<sample>.+?)-(?<read>[12])(?:_001)?\\.fastq\\.gz',
+    pattern: '(?<sample>.+?)-(?<read>[12])(?:_\\d*)?\\.(?:fastq|fq)(?:\\.gz)?',
   },
 } as const satisfies Record<string, RegexGroupingPreset>;
 
