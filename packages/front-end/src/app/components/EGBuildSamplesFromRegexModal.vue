@@ -2,6 +2,7 @@
   import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import type { SampleLayout } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
   import {
+    DEFAULT_REGEX_GROUPING_PRESET_KEY,
     REGEX_GROUPING_PRESETS,
     type RegexGroupingPresetKey,
   } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
@@ -26,8 +27,8 @@
   const uiStore = useUiStore();
 
   const step = ref(1);
-  const presetKey = ref<RegexGroupingPresetKey>('underscore_r1_r2');
-  const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern);
+  const presetKey = ref<RegexGroupingPresetKey>(DEFAULT_REGEX_GROUPING_PRESET_KEY);
+  const regexPattern = ref(REGEX_GROUPING_PRESETS[DEFAULT_REGEX_GROUPING_PRESET_KEY].pattern);
   const fileKeys = toRef(props, 'fileKeys');
   const { proposedSets, unmatchedFiles, refreshPreview } = useRegexGroupingPreview(fileKeys, regexPattern);
   const excludedSamples = ref<Set<string>>(new Set());
@@ -38,8 +39,8 @@
     (open) => {
       if (!open) return;
       step.value = 1;
-      presetKey.value = 'underscore_r1_r2';
-      regexPattern.value = REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern;
+      presetKey.value = DEFAULT_REGEX_GROUPING_PRESET_KEY;
+      regexPattern.value = REGEX_GROUPING_PRESETS[DEFAULT_REGEX_GROUPING_PRESET_KEY].pattern;
       excludedSamples.value = new Set();
       refreshPreview();
     },

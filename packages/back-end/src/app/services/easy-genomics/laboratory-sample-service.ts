@@ -258,7 +258,8 @@ export class LaboratorySampleService extends DynamoDBService {
         labPrefix,
         pageSize: 1000,
       });
-      const regex = new RegExp(opts.filenameRegex);
+      // Case-insensitive to match the grouping preview (groupFilenamesByRegex), which the user saw before submitting.
+      const regex = new RegExp(opts.filenameRegex, 'i');
       for (const obj of contents) {
         if (!obj.Key) continue;
         const base = obj.Key.split('/').pop() || obj.Key;
