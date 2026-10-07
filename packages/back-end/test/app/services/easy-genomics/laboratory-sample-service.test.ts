@@ -475,3 +475,54 @@ describe('LaboratorySampleService.getSampleIdsForFileRefs', () => {
     expect(result.get(linkedRef)).toEqual(['sample-1']);
   });
 });
+
+describe('LaboratorySampleService.createOrExtendSample regex expansion', () => {
+  let svc: LaboratorySampleService;
+  let createSampleSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratorySampleService();
+    jest.spyOn(svc, 'assertLaboratoryHasS3BucketAccess').mockResolvedValue(undefined);
+    (svc as unknown as { dataCollectionService: { listTransactionInputs: jest.Mock } }).dataCollectionService = {
+      listTransactionInputs: jest.fn().mockResolvedValue({
+        contents: [
+          { Key: 'org-1/lab-1/run-a/S1_R1_001.FASTQ.GZ' },
+          { Key: 'org-1/lab-1/run-a/s1_r2_001.fastq.gz' },
+          { Key: 'org-1/lab-1/run-a/S2_R1_001.fastq.gz' },
+        ],
+        listingTruncated: false,
+      }),
+    };
+    createSampleSpy = jest.spyOn(svc, 'createSample').mockResolvedValue({ SampleId: 'sample-1' } as never);
+  });
+
+  it('adds listed keys whose case differs from the typed regex', async () => {
+    await svc.createOrExtendSample(labFixture(), 'user-1', 'my-bucket', {
+      keys: [],
+      layout: 'paired_end',
+      name: 'S1',
+      filenameRegex: 'S1_R[12]_001\\.fastq\\.gz',
+      expandRegexFromListing: true,
+    });
+
+    expect(createSampleSpy).toHaveBeenCalledTimes(1);
+    expect(createSampleSpy.mock.calls[0][3].keys).toEqual([
+      'org-1/lab-1/run-a/S1_R1_001.FASTQ.GZ',
+      'org-1/lab-1/run-a/s1_r2_001.fastq.gz',
+    ]);
+  });
+
+  it('still rejects an unsafe regex before listing', async () => {
+    await expect(
+      svc.createOrExtendSample(labFixture(), 'user-1', 'my-bucket', {
+        keys: [],
+        layout: 'paired_end',
+        name: 'S1',
+        filenameRegex: '(a+)+$',
+        expandRegexFromListing: true,
+      }),
+    ).rejects.toThrow('Filename regex is not allowed');
+    expect(createSampleSpy).not.toHaveBeenCalled();
+  });
+});
