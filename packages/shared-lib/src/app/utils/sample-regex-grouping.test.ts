@@ -1,4 +1,9 @@
-import { buildContentsSummary, groupFilenamesByRegex, REGEX_GROUPING_PRESETS } from './sample-regex-grouping';
+import {
+  buildContentsSummary,
+  DEFAULT_REGEX_GROUPING_PRESET_KEY,
+  groupFilenamesByRegex,
+  REGEX_GROUPING_PRESETS,
+} from './sample-regex-grouping';
 
 describe('groupFilenamesByRegex', () => {
   it('groups dash 1/2 pairs', () => {
@@ -150,5 +155,67 @@ describe('existing presets after widening', () => {
       REGEX_GROUPING_PRESETS.underscore_1_2.pattern,
     );
     expect(unmatched).toEqual(['sample_2_S2_L001_R1_001.fastq.gz']);
+  });
+});
+
+describe('default any-separator preset', () => {
+  const defaultPattern = () => REGEX_GROUPING_PRESETS[DEFAULT_REGEX_GROUPING_PRESET_KEY].pattern;
+
+  it('is the separator-agnostic preset and is listed first', () => {
+    expect(DEFAULT_REGEX_GROUPING_PRESET_KEY).toBe('any_separator_r1_r2');
+    expect(REGEX_GROUPING_PRESETS.any_separator_r1_r2.label).toBe('R1 and R2 (any separator)');
+    expect(Object.keys(REGEX_GROUPING_PRESETS)[0]).toBe('any_separator_r1_r2');
+  });
+
+  it('pairs underscore- and dash-separated samples from one bucket', () => {
+    const { sets, unmatched } = groupFilenamesByRegex(
+      [
+        'FHKL-LB-0012_R1_001.fastq.gz',
+        'FHKL-LB-0012_R2_001.fastq.gz',
+        'WI-0001-R1_001.fastq.gz',
+        'WI-0001-R2_001.fastq.gz',
+      ],
+      defaultPattern(),
+    );
+    expect(unmatched).toEqual([]);
+    expect(sets.map((s) => [s.sampleId, s.status])).toEqual([
+      ['FHKL-LB-0012', 'paired'],
+      ['WI-0001', 'paired'],
+    ]);
+  });
+
+  it('takes the last read token, so a sample number before it stays in the sample ID', () => {
+    const { sets } = groupFilenamesByRegex(
+      ['sample_2_S2_L001_R1_001.fastq.gz', 'sample_2_S2_L001_R2_001.fastq.gz'],
+      defaultPattern(),
+    );
+    expect(sets).toHaveLength(1);
+    expect(sets[0].sampleId).toBe('sample_2_S2_L001');
+    expect(sets[0].files.map((f) => f.role)).toEqual(['read1', 'read2']);
+  });
+
+  it.each([
+    ['ZRXSXL_R1_.fastq.gz', 'ZRXSXL', 'read1'],
+    ['0FALKI_R1_002.fastq.gz', '0FALKI', 'read1'],
+    ['IRRGTLK_R2_.fastq', 'IRRGTLK', 'read2'],
+    ['CA-IL-260806_R1_001.fq.gz', 'CA-IL-260806', 'read1'],
+    ['S1.R2.FQ.GZ', 'S1', 'read2'],
+  ])('groups %s', (fileName, sampleId, role) => {
+    const { sets } = groupFilenamesByRegex([fileName], defaultPattern());
+    expect(sets.map((s) => [s.sampleId, s.files[0].role])).toEqual([[sampleId, role]]);
+  });
+
+  it('leaves bare-number files to the _1/_2 presets', () => {
+    const fileNames = ['SAMPLE-2.fastq.gz', 'sample_1.fastq.gz'];
+    const { sets, unmatched } = groupFilenamesByRegex(fileNames, defaultPattern());
+    expect(sets).toEqual([]);
+    expect(unmatched).toEqual(fileNames);
+  });
+
+  it('leaves non-FASTQ files, sidecars and Illumina sample-number names unmatched', () => {
+    const fileNames = ['samplesheet-1.csv', 'x_R1_001.fastq.gz.md5', 'ZRXSXL_S1_.fastq.gz', 'ZRXSXL_S2_.fastq.gz'];
+    const { sets, unmatched } = groupFilenamesByRegex(fileNames, defaultPattern());
+    expect(sets).toEqual([]);
+    expect(unmatched).toEqual(fileNames);
   });
 });

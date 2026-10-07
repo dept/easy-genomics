@@ -20,6 +20,10 @@ export type RegexGroupingPreset = {
 };
 
 export const REGEX_GROUPING_PRESETS = {
+  any_separator_r1_r2: {
+    label: 'R1 and R2 (any separator)',
+    pattern: '(?<sample>.+?)[._-](?<read>R[12])(?:_\\d*)?\\.(?:fastq|fq)(?:\\.gz)?$',
+  },
   underscore_r1_r2: {
     label: '_R1 and _R2',
     pattern: '(?<sample>.+?)_(?<read>R[12])(?:_\\d*)?\\.(?:fastq|fq)(?:\\.gz)?',
@@ -39,6 +43,8 @@ export const REGEX_GROUPING_PRESETS = {
 } as const satisfies Record<string, RegexGroupingPreset>;
 
 export type RegexGroupingPresetKey = keyof typeof REGEX_GROUPING_PRESETS;
+
+export const DEFAULT_REGEX_GROUPING_PRESET_KEY: RegexGroupingPresetKey = 'any_separator_r1_r2';
 
 function isFasta(name: string): boolean {
   return /\.(fasta|fa|fna)(?:\\.gz)?$/i.test(name);
