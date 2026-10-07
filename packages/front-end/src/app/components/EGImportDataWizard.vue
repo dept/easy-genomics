@@ -17,6 +17,7 @@
   import { useToastStore, useUiStore } from '@FE/stores';
   import { basenameFromS3Key } from '@FE/utils/data-collections-file-type';
   import { exceedsBatchNameMaxLength } from '@FE/utils/data-collections-name-validation';
+  import { buildLaboratorySourcePrefix } from '@FE/utils/data-collections-source-prefix';
   import { matchSheetToSamples, type SheetTagMatchResult } from '@FE/utils/sheet-tag-matching';
 
   type ImportSourceKind = 's3' | 'upload';
@@ -150,8 +151,8 @@
     if (importSource.value === 'upload') {
       return `Upload from computer (${pendingUploadFiles.value.length} files)`;
     }
-    const prefix = sourcePrefix.value.replace(/^\/*/, '').replace(/\/?$/, '/');
-    return `s3://${sourceBucket.value}/${prefix}`;
+    if (!props.lab) return `s3://${sourceBucket.value}/`;
+    return `s3://${sourceBucket.value}/${buildLaboratorySourcePrefix(props.lab, sourcePrefix.value)}`;
   });
 
   const canContinueStep1 = computed(() => {
@@ -294,11 +295,10 @@
     }
     uiStore.setRequestPending('dataCollectionsList');
     try {
-      const prefix = sourcePrefix.value.replace(/^\/*/, '');
       const res = await $api.dataCollections.requestLaboratoryBucketObjects({
         LaboratoryId: props.labId,
         S3Bucket: sourceBucket.value,
-        RelativePrefix: prefix || undefined,
+        S3Prefix: buildLaboratorySourcePrefix(props.lab, sourcePrefix.value),
         MaxTotalKeys: 5000,
       });
       sourceFiles.value = (res.Contents || []).map((o) => o.Key!);
