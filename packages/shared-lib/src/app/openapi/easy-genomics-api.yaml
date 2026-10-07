@@ -3665,6 +3665,204 @@ components:
             - failures_only
             - successes_only
       additionalProperties: false
+    EditWorkflowKeyOutputsRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          format: uuid
+        WorkflowId:
+          type: string
+          minLength: 1
+        WorkflowName:
+          type: string
+          minLength: 1
+        Platform:
+          type: string
+          minLength: 1
+        SourceRunId:
+          type: string
+          minLength: 1
+        KeyOutputs:
+          type: array
+          items:
+            type: object
+            properties:
+              KeyOutputId:
+                type: string
+                format: uuid
+              Label:
+                type: string
+                minLength: 1
+                maxLength: 80
+              Pattern:
+                type: string
+                minLength: 1
+                maxLength: 1024
+                pattern: ^(?!\/)(?!.*\/\/).+$
+              ExamplePath:
+                type: string
+                minLength: 1
+                maxLength: 1024
+            required:
+              - Label
+              - Pattern
+            additionalProperties: false
+          maxItems: 50
+      required:
+        - LaboratoryId
+        - WorkflowId
+        - KeyOutputs
+      additionalProperties: false
+    WorkflowKeyOutput:
+      description: |-
+        One role in the key-outputs definition. `Pattern` is a path glob relative to
+        the run's File Manager root (`*` matches within a single path segment).
+      type: object
+      properties:
+        KeyOutputId:
+          type: string
+        Label:
+          type: string
+        Pattern:
+          type: string
+        ExamplePath:
+          description: Relative path of the file the user ticked when this role was inferred.
+          type: string
+      required:
+        - KeyOutputId
+        - Label
+        - Pattern
+    WorkflowKeyOutputs:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+        WorkflowId:
+          type: string
+        WorkflowName:
+          type: string
+        Platform:
+          type: string
+        SourceRunId:
+          description: Last completed run the lab used to pick files for this definition.
+          type: string
+        KeyOutputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowKeyOutput'
+        CreatedAt:
+          type: string
+        CreatedBy:
+          type: string
+        ModifiedAt:
+          type: string
+        ModifiedBy:
+          type: string
+      required:
+        - KeyOutputs
+        - LaboratoryId
+        - WorkflowId
+    ListWorkflowKeyOutputsResponse:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+        WorkflowId:
+          type: string
+        WorkflowName:
+          type: string
+        Platform:
+          type: string
+        SourceRunId:
+          type: string
+        KeyOutputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowKeyOutput'
+        CreatedAt:
+          type: string
+        ModifiedAt:
+          type: string
+      required:
+        - KeyOutputs
+        - LaboratoryId
+        - WorkflowId
+    RequestPreviewWorkflowKeyOutputsRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          format: uuid
+        RunId:
+          type: string
+          minLength: 1
+        ObjectKeys:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 1024
+          maxItems: 50
+        KeyOutputs:
+          type: array
+          items:
+            type: object
+            properties:
+              KeyOutputId:
+                type: string
+                format: uuid
+              Label:
+                type: string
+                minLength: 1
+                maxLength: 80
+              Pattern:
+                type: string
+                minLength: 1
+                maxLength: 1024
+                pattern: ^(?!\/)(?!.*\/\/).+$
+              ExamplePath:
+                type: string
+                minLength: 1
+                maxLength: 1024
+            required:
+              - Label
+              - Pattern
+            additionalProperties: false
+          maxItems: 50
+      required:
+        - LaboratoryId
+        - RunId
+      additionalProperties: false
+    PreviewWorkflowKeyOutput:
+      description: A role returned by preview, including how many files on this run match.
+      type: object
+      properties:
+        MatchCount:
+          type: number
+        KeyOutputId:
+          type: string
+        Label:
+          type: string
+        Pattern:
+          type: string
+        ExamplePath:
+          description: Relative path of the file the user ticked when this role was inferred.
+          type: string
+      required:
+        - KeyOutputId
+        - Label
+        - MatchCount
+        - Pattern
+    PreviewWorkflowKeyOutputsResponse:
+      type: object
+      properties:
+        KeyOutputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/PreviewWorkflowKeyOutput'
+      required:
+        - KeyOutputs
     CreateWorkflowRunPresetRequest:
       type: object
       properties:
@@ -10523,6 +10721,94 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/workflow-key-outputs/edit-workflow-key-outputs:
+    post:
+      operationId: editWorkflowKeyOutputs
+      summary: Edit Workflow Key Outputs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditWorkflowKeyOutputsRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowKeyOutputs'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/workflow-key-outputs/list-workflow-key-outputs:
+    get:
+      operationId: listWorkflowKeyOutputs
+      summary: List Workflow Key Outputs
+      parameters:
+        - name: laboratoryId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Laboratory owning the key-outputs definition
+        - name: workflowId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Workflow the definition applies to
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListWorkflowKeyOutputsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/workflow-key-outputs/request-preview-workflow-key-outputs:
+    post:
+      operationId: requestPreviewWorkflowKeyOutputs
+      summary: Request Preview Workflow Key Outputs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestPreviewWorkflowKeyOutputsRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewWorkflowKeyOutputsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

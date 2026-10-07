@@ -155,6 +155,7 @@ graph TB
         DDB8["lab-workflow-access-table"]
         DDB9["lab-s3-access-table"]
         DDB10["workflow-run-preset-table"]
+        DDB10b["workflow-key-outputs-table"]
         DDB11["workflow-schema-table<br/>(HealthOmics cache)"]
         DDB12["authentication-log-table"]
         S3LAB["S3 Lab Data Bucket<br/>{account}-{env}-lab-bucket"]

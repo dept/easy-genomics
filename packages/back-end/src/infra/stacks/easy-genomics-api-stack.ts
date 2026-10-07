@@ -464,5 +464,21 @@ export class EasyGenomicsApiStack extends Stack {
       lsi: baseLSIAttributes,
     });
     this.dynamoDBTables.set(workflowRunPresetTableName, workflowRunPresetTable);
+
+    // Lab-wide key output definitions for a workflow, inferred from files ticked
+    // on a completed run. One item per laboratory + workflow.
+    const workflowKeyOutputsTableName = `${this.props.namePrefix}-workflow-key-outputs-table`;
+    const workflowKeyOutputsTable = this.dynamoDB.createTable(workflowKeyOutputsTableName, {
+      partitionKey: {
+        name: 'LaboratoryId',
+        type: AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'WorkflowId',
+        type: AttributeType.STRING,
+      },
+      lsi: baseLSIAttributes,
+    });
+    this.dynamoDBTables.set(workflowKeyOutputsTableName, workflowKeyOutputsTable);
   };
 }

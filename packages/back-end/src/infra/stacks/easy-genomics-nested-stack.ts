@@ -2523,6 +2523,61 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
     ]);
 
+    // ── easy-genomics/workflow-key-outputs ─────────────────────────────────────
+    // Same authorisation shape as workflow run presets: resolve the Laboratory,
+    // then read or write the per-lab workflow definition. Preview also lists the
+    // completed run's output objects to infer globs and match counts.
+    const workflowKeyOutputsTableArn = `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-workflow-key-outputs-table`;
+    const workflowKeyOutputsTableAnyIndex = `${workflowKeyOutputsTableArn}/index/*`;
+    const workflowKeyOutputsDynamoResources = [workflowKeyOutputsTableArn, workflowKeyOutputsTableAnyIndex];
+
+    const laboratoryReadForWorkflowKeyOutputs = [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+    ];
+
+    this.iam.addPolicyStatements('/easy-genomics/workflow-key-outputs/list-workflow-key-outputs', [
+      ...laboratoryReadForWorkflowKeyOutputs,
+      new PolicyStatement({
+        resources: workflowKeyOutputsDynamoResources,
+        actions: ['dynamodb:GetItem'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    this.iam.addPolicyStatements('/easy-genomics/workflow-key-outputs/edit-workflow-key-outputs', [
+      ...laboratoryReadForWorkflowKeyOutputs,
+      new PolicyStatement({
+        resources: workflowKeyOutputsDynamoResources,
+        actions: ['dynamodb:GetItem', 'dynamodb:PutItem'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    this.iam.addPolicyStatements('/easy-genomics/workflow-key-outputs/request-preview-workflow-key-outputs', [
+      ...laboratoryReadForWorkflowKeyOutputs,
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+        ],
+        actions: ['dynamodb:GetItem'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket'],
+        effect: Effect.ALLOW,
+      }),
+      laboratoryS3AccessReadPolicy,
+      laboratoryS3AccessCatalogCheckPolicy,
+    ]);
+
     // /easy-genomics/laboratory/run/process-sync-run-costs
     // Daily Cost Explorer sync. Scoped ce:GetCostAndUsage only — never grant ce:* to lab roles.
     // Only when cost-explorer.enabled (Lambda itself is also skipped when disabled).
