@@ -2,6 +2,10 @@ import type { UnlinkedBucketObjectsResponse } from '@easy-genomics/shared-lib/sr
 import { defineStore } from 'pinia';
 import useLabsStore from './labs';
 import useToastStore from './toast';
+import type {
+  LaboratoryBucketObjectsResponse,
+  RequestLaboratoryBucketObjectsBody,
+} from '@FE/repository/modules/data-collections';
 import { resolveUnlinkedScanAction } from '@FE/utils/data-collections-unlinked-scan';
 import { shouldIgnoreUnlinkedBucketObjectsError } from '@FE/utils/laboratory-s3';
 
@@ -141,6 +145,19 @@ const useDataCollectionsStore = defineStore('dataCollectionsStore', {
         useToastStore().error('Failed to load unlinked files.');
       } finally {
         this.unlinkedScanLoading[labId] = false;
+      }
+    },
+
+    /** Lists the import wizard's source folder. Returns null once the failure has been toasted. */
+    async fetchLaboratoryBucketObjects(
+      body: RequestLaboratoryBucketObjectsBody,
+    ): Promise<LaboratoryBucketObjectsResponse | null> {
+      try {
+        const { $api } = useNuxtApp();
+        return await $api.dataCollections.requestLaboratoryBucketObjects(body);
+      } catch (e: unknown) {
+        useToastStore().error(e instanceof Error ? e.message : 'Failed to list source files');
+        return null;
       }
     },
   },
