@@ -8,8 +8,10 @@
  * numeric-looking IDs stay strings. Untyped fields, and fields typed as number or
  * integer, are coerced when the value is an unambiguous numeric literal.
  *
- * Two-part dotted values such as `5.3` are decimals (coerced to numbers), not
- * versions. Version-like values need at least two separators (`5.3.7`).
+ * Two-part dotted values such as `5.3` are decimals (coerced to numbers).
+ * Version-like values need at least two separators (`5.3.7`). A decimal that
+ * ends in `0` (`1.10`, `2.0`) stays a string: that trailing zero is a version
+ * signal, and converting it would drop the spelling.
  */
 
 const NUMERIC_STRING = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/;
@@ -20,10 +22,17 @@ export function isVersionLikeParam(value: unknown): boolean {
   return typeof value === 'string' && VERSION_LIKE.test(value.trim());
 }
 
+/** `1.10` and `2.0`. Integers such as `10` are not included. */
+export function isTrailingZeroDecimalParam(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  return NUMERIC_STRING.test(trimmed) && trimmed.includes('.') && trimmed.endsWith('0');
+}
+
 /**
  * Converts a single parameter value to a number when it is safe to do so.
- * Leaves version-like values (`5.3.7`), leading-zero IDs (`007`), and explicit
- * string-typed fields unchanged.
+ * Leaves version-like values (`5.3.7`), decimals with a trailing zero (`1.10`, `2.0`),
+ * leading-zero IDs (`007`), and explicit string-typed fields unchanged.
  */
 export function coerceNumericParamValue(value: unknown, type?: string): unknown {
   if (typeof value !== 'string') return value;
@@ -31,7 +40,7 @@ export function coerceNumericParamValue(value: unknown, type?: string): unknown 
   const trimmed = value.trim();
   if (trimmed === '') return value;
   if (type === 'string' || type === 'boolean') return value;
-  if (isVersionLikeParam(trimmed)) return trimmed;
+  if (isVersionLikeParam(trimmed) || isTrailingZeroDecimalParam(trimmed)) return trimmed;
   if (!NUMERIC_STRING.test(trimmed)) return value;
 
   const num = Number(trimmed);

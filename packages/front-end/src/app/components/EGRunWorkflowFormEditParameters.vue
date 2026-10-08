@@ -5,6 +5,7 @@
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-run-preset';
   import {
     isBlankWorkflowParam,
+    isTrailingZeroDecimalParam,
     isVersionLikeParam,
   } from '@easy-genomics/shared-lib/src/app/utils/coerce-numeric-workflow-params';
   import { ButtonSizeEnum } from '@FE/types/buttons';
@@ -134,18 +135,13 @@
   const fieldErrors = reactive<Record<string, string>>({});
 
   function validateField(field: SchemaItem, value: any): string | null {
-    const isEmpty = value === '' || value === undefined || value === null;
-
-    if (isEmpty && field.optional !== false) {
+    // Required-field check is handled separately. Keep 0 and false.
+    if (isBlankWorkflowParam(value)) {
       return null;
     }
 
-    if (isEmpty) {
-      return null; // Required-field check is handled separately
-    }
-
     if (field.type === 'integer') {
-      const supportsVersionLikeValue = isVersionLikeParam(value);
+      const supportsVersionLikeValue = isVersionLikeParam(value) || isTrailingZeroDecimalParam(value);
       if (!supportsVersionLikeValue && (!Number.isInteger(Number(value)) || isNaN(Number(value)))) {
         return 'Must be a whole number or version (e.g. 5.3.7)';
       }

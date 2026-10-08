@@ -314,6 +314,7 @@ describe('create-run-execution.lambda', () => {
         accession: '123',
         genome: 'hg38',
         version: '5.3.7',
+        assembly: '1.10',
       }),
     };
 
@@ -327,6 +328,7 @@ describe('create-run-execution.lambda', () => {
     expect(startRunInput.parameters.accession).toBe(123);
     expect(startRunInput.parameters.genome).toBe('hg38');
     expect(startRunInput.parameters.version).toBe('5.3.7');
+    expect(startRunInput.parameters.assembly).toBe('1.10');
     expect(startRunInput.parameters.outdir).toBe('/mnt/workflow/pubdir');
   });
 

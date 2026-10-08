@@ -2,6 +2,7 @@ import {
   coerceNumericParamValue,
   coerceNumericWorkflowParams,
   isBlankWorkflowParam,
+  isTrailingZeroDecimalParam,
   isVersionLikeParam,
   omitEmptyWorkflowParams,
   prepareWorkflowLaunchParams,
@@ -23,6 +24,22 @@ describe('isVersionLikeParam', () => {
   });
 });
 
+describe('isTrailingZeroDecimalParam', () => {
+  it('recognises decimals whose spelling ends in zero', () => {
+    expect(isTrailingZeroDecimalParam('1.10')).toBe(true);
+    expect(isTrailingZeroDecimalParam('2.0')).toBe(true);
+    expect(isTrailingZeroDecimalParam(' 0.10 ')).toBe(true);
+  });
+
+  it('rejects integers, plain decimals and non-strings', () => {
+    expect(isTrailingZeroDecimalParam('10')).toBe(false);
+    expect(isTrailingZeroDecimalParam('100')).toBe(false);
+    expect(isTrailingZeroDecimalParam('1.1')).toBe(false);
+    expect(isTrailingZeroDecimalParam('5.3.7')).toBe(false);
+    expect(isTrailingZeroDecimalParam(2)).toBe(false);
+  });
+});
+
 describe('coerceNumericParamValue', () => {
   it('coerces integer and decimal strings when untyped', () => {
     expect(coerceNumericParamValue('42')).toBe(42);
@@ -39,6 +56,18 @@ describe('coerceNumericParamValue', () => {
     expect(coerceNumericParamValue('10', undefined)).toBe(10);
     expect(coerceNumericParamValue('10', 'string')).toBe('10');
     expect(coerceNumericParamValue('10', 'boolean')).toBe('10');
+  });
+
+  it('keeps decimals with a trailing zero as strings', () => {
+    expect(coerceNumericParamValue('1.10')).toBe('1.10');
+    expect(coerceNumericParamValue('2.0')).toBe('2.0');
+    expect(coerceNumericParamValue('10.00')).toBe('10.00');
+    expect(coerceNumericParamValue('0.10')).toBe('0.10');
+    expect(coerceNumericParamValue(' 2.0 ')).toBe('2.0');
+    expect(coerceNumericParamValue('1.10', 'number')).toBe('1.10');
+    expect(coerceNumericParamValue('10')).toBe(10);
+    expect(coerceNumericParamValue('100')).toBe(100);
+    expect(coerceNumericParamValue('1.1')).toBe(1.1);
   });
 
   it('leaves non-numeric and ambiguous strings alone', () => {
