@@ -500,7 +500,12 @@
               placeholder="Select a bucket"
             />
           </UFormGroup>
-          <UFormGroup label="Prefix" hint="folder inside this lab's directory">
+          <UFormGroup
+            label="Prefix"
+            hint="folder inside this lab's directory"
+            required
+            :help="sourcePrefix.trim() ? undefined : 'Enter a folder to continue.'"
+          >
             <UInput v-model="sourcePrefix" placeholder="imports/" class="font-mono" />
           </UFormGroup>
           <p v-if="sourceBucket" class="text-text-muted mt-1 break-all font-mono text-xs" role="status">
