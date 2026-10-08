@@ -1,7 +1,10 @@
 import {
   coerceNumericParamValue,
   coerceNumericWorkflowParams,
+  isBlankWorkflowParam,
   isVersionLikeParam,
+  omitEmptyWorkflowParams,
+  prepareWorkflowLaunchParams,
 } from './coerce-numeric-workflow-params';
 
 describe('isVersionLikeParam', () => {
@@ -14,6 +17,7 @@ describe('isVersionLikeParam', () => {
   it('rejects decimals, integers and non-strings', () => {
     expect(isVersionLikeParam('42')).toBe(false);
     expect(isVersionLikeParam('3.14')).toBe(false);
+    expect(isVersionLikeParam('5.3')).toBe(false);
     expect(isVersionLikeParam('0.5')).toBe(false);
     expect(isVersionLikeParam(42)).toBe(false);
   });
@@ -23,6 +27,7 @@ describe('coerceNumericParamValue', () => {
   it('coerces integer and decimal strings when untyped', () => {
     expect(coerceNumericParamValue('42')).toBe(42);
     expect(coerceNumericParamValue(' 3.14 ')).toBe(3.14);
+    expect(coerceNumericParamValue('5.3')).toBe(5.3);
     expect(coerceNumericParamValue('-7')).toBe(-7);
     expect(coerceNumericParamValue('0')).toBe(0);
     expect(coerceNumericParamValue('0.5')).toBe(0.5);
@@ -73,6 +78,66 @@ describe('coerceNumericWorkflowParams', () => {
       outdir: 's3://bucket/out',
       version: '5.3.7',
       empty: '',
+    });
+  });
+});
+
+describe('isBlankWorkflowParam', () => {
+  it('treats empty string, null and undefined as blank, but not 0 or false', () => {
+    expect(isBlankWorkflowParam('')).toBe(true);
+    expect(isBlankWorkflowParam(null)).toBe(true);
+    expect(isBlankWorkflowParam(undefined)).toBe(true);
+    expect(isBlankWorkflowParam(0)).toBe(false);
+    expect(isBlankWorkflowParam(false)).toBe(false);
+    expect(isBlankWorkflowParam('0')).toBe(false);
+  });
+});
+
+describe('omitEmptyWorkflowParams', () => {
+  it('keeps numeric 0 and boolean false, and drops blank values', () => {
+    expect(
+      omitEmptyWorkflowParams({
+        threads: 0,
+        flag: false,
+        empty: '',
+        missing: undefined,
+        gone: null,
+        name: 'sample',
+      }),
+    ).toEqual({
+      threads: 0,
+      flag: false,
+      name: 'sample',
+    });
+  });
+
+  it('returns an empty object for non-object input', () => {
+    expect(omitEmptyWorkflowParams(undefined)).toEqual({});
+    expect(omitEmptyWorkflowParams(null)).toEqual({});
+  });
+});
+
+describe('prepareWorkflowLaunchParams', () => {
+  it('omits blanks then coerces numeric literals, honouring per-field types', () => {
+    expect(
+      prepareWorkflowLaunchParams(
+        {
+          threads: '8',
+          threshold: 0,
+          flag: false,
+          sampleId: '123',
+          version: '5.3.7',
+          empty: '',
+          missing: undefined,
+        },
+        { sampleId: 'string' },
+      ),
+    ).toEqual({
+      threads: 8,
+      threshold: 0,
+      flag: false,
+      sampleId: '123',
+      version: '5.3.7',
     });
   });
 });

@@ -2,7 +2,7 @@
   import { useRunStore, useToastStore, useLabsStore } from '@FE/stores';
   import { ButtonSizeEnum } from '@FE/types/buttons';
   import type { EstimateRunCostResponse } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
-  import { coerceNumericWorkflowParams } from '@easy-genomics/shared-lib/src/app/utils/coerce-numeric-workflow-params';
+  import { prepareWorkflowLaunchParams } from '@easy-genomics/shared-lib/src/app/utils/coerce-numeric-workflow-params';
 
   const props = defineProps<{
     schema: object;
@@ -35,22 +35,8 @@
 
   const schema = JSON.parse(JSON.stringify(props.schema));
 
-  function withoutEmptyFields(o: object): Record<string, unknown> {
-    const r: Record<string, unknown> = {};
-
-    for (const key in o) {
-      const value = (o as Record<string, unknown>)[key];
-      // Keep numeric 0 and boolean false; only drop blank / missing values.
-      if (value !== '' && value !== undefined && value !== null) {
-        r[key] = value;
-      }
-    }
-
-    return r;
-  }
-
   function paramsForLaunch(): Record<string, unknown> {
-    return coerceNumericWorkflowParams(withoutEmptyFields(props.params));
+    return prepareWorkflowLaunchParams(props.params);
   }
 
   onMounted(async () => {

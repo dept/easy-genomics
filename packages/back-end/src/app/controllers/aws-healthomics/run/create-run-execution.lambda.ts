@@ -173,7 +173,8 @@ export const handler: Handler = async (
     );
 
     const parsedParameters = JSON.parse(request.parameters!.toString());
-    // Untyped form fields arrive as strings; coerce numeric literals so StartRun gets JSON numbers.
+    // HealthOmics parameterTemplate is untyped, so clients send JSON strings. Coerce
+    // unambiguous numeric literals for StartRun; already-numeric values pass through.
     const parameters =
       parsedParameters && typeof parsedParameters === 'object' && !Array.isArray(parsedParameters)
         ? coerceNumericWorkflowParams(parsedParameters as Record<string, unknown>)

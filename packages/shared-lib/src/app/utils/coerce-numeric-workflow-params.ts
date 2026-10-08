@@ -4,9 +4,12 @@
  * expect a JSON number (Nextflow `val` ints, WDL Int/Float, etc.) then fail because
  * StartRun receives `"42"` instead of `42`.
  *
- * When a Nextflow JSON Schema is present, `types` can pin a field to `string` so
+ * Callers that have a JSON Schema may pass `types` to pin a field to `string` so
  * numeric-looking IDs stay strings. Untyped fields, and fields typed as number or
  * integer, are coerced when the value is an unambiguous numeric literal.
+ *
+ * Two-part dotted values such as `5.3` are decimals (coerced to numbers), not
+ * versions. Version-like values need at least two separators (`5.3.7`).
  */
 
 const NUMERIC_STRING = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/;
@@ -47,4 +50,34 @@ export function coerceNumericWorkflowParams(
     coerced[key] = coerceNumericParamValue(value, types?.[key]);
   }
   return coerced;
+}
+
+/** Required-field / empty-filter helper: keep numeric 0 and boolean false. */
+export function isBlankWorkflowParam(value: unknown): boolean {
+  return value === '' || value === undefined || value === null;
+}
+
+export function omitEmptyWorkflowParams(params: unknown): Record<string, unknown> {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) {
+    return {};
+  }
+
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params as Record<string, unknown>)) {
+    if (!isBlankWorkflowParam(value)) {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+/**
+ * Launch payload: drop blank fields, then coerce unambiguous numeric literals.
+ * Use this at the FE launch boundary (cost estimate, StartRun, Settings).
+ */
+export function prepareWorkflowLaunchParams(
+  params: unknown,
+  types?: Record<string, string | undefined>,
+): Record<string, unknown> {
+  return coerceNumericWorkflowParams(omitEmptyWorkflowParams(params), types);
 }

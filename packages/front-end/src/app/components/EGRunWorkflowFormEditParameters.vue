@@ -4,7 +4,7 @@
     type WorkflowRunPresetParams,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-run-preset';
   import {
-    coerceNumericWorkflowParams,
+    isBlankWorkflowParam,
     isVersionLikeParam,
   } from '@easy-genomics/shared-lib/src/app/utils/coerce-numeric-workflow-params';
   import { ButtonSizeEnum } from '@FE/types/buttons';
@@ -253,7 +253,7 @@
     () =>
       Object.fromEntries(
         Object.entries(localProps.params).filter(
-          ([name, value]) => !isRunSpecificParam(name) && value !== '' && value !== undefined && value !== null,
+          ([name, value]) => !isRunSpecificParam(name) && !isBlankWorkflowParam(value),
         ),
       ) as WorkflowRunPresetParams,
   );
@@ -272,10 +272,9 @@
 
   async function onSubmit() {
     const paramsRequired = wipOmicsRun.value?.paramsRequired || [];
-    const missingParams = paramsRequired.filter((paramName: string) => {
-      const value = localProps.params[paramName];
-      return value === '' || value === undefined || value === null;
-    });
+    const missingParams = paramsRequired.filter((paramName: string) =>
+      isBlankWorkflowParam(localProps.params[paramName]),
+    );
 
     if (missingParams.length > 0) {
       useToastStore().error(`The '${missingParams.shift()}' field is required. Please try again.`);
@@ -290,12 +289,7 @@
       return;
     }
 
-    // ParameterTemplate fields are untyped text inputs; send JSON numbers when the value is numeric.
-    const paramTypes = Object.fromEntries(orderedSchema.value.map((field) => [field.name, field.type]));
-    const coercedParams = coerceNumericWorkflowParams(localProps.params as Record<string, unknown>, paramTypes);
-    Object.assign(localProps.params, coercedParams);
-    runStore.updateWipOmicsRunParams(props.omicsRunTempId, coercedParams);
-
+    runStore.updateWipOmicsRunParams(props.omicsRunTempId, localProps.params);
     emit('next-step');
   }
 
