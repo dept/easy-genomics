@@ -77,6 +77,7 @@ describe('edit-s3-access-batch.lambda', () => {
 
     mockLabService.prototype.queryByOrganizationId = jest.fn();
     mockLabService.prototype.update = jest.fn().mockResolvedValue(undefined);
+    mockAccessService.prototype.listByLaboratoryId = jest.fn().mockResolvedValue([]);
     mockAccessService.prototype.upsert = jest.fn().mockResolvedValue(undefined);
     mockAccessService.prototype.remove = jest.fn().mockResolvedValue(undefined);
   });
@@ -199,5 +200,204 @@ describe('edit-s3-access-batch.lambda', () => {
     const result = await handler(createEvent(ORG_ID, { assignments: [] }), createContext(), () => {});
 
     expect(result.statusCode).toBe(403);
+  });
+
+  describe('allowedPrefix', () => {
+    const grantWithPrefix = (allowedPrefix: string) => ({
+      assignments: [{ laboratoryId: LAB_ID, bucketName: 'bucket-a', granted: true, allowedPrefix }],
+    });
+    const grantWithoutPrefix = {
+      assignments: [{ laboratoryId: LAB_ID, bucketName: 'bucket-a', granted: true }],
+    };
+    const storedRow = (allowedPrefix?: string) => ({
+      LaboratoryId: LAB_ID,
+      BucketName: 'bucket-a',
+      OrganizationId: ORG_ID,
+      Effect: 'ALLOW',
+      ...(allowedPrefix ? { AllowedPrefix: allowedPrefix } : {}),
+    });
+    const givenStoredRows = (...rows: unknown[]) =>
+      (mockAccessService.prototype.listByLaboratoryId as jest.Mock).mockResolvedValue(rows);
+    const givenLabs = (overrides: Partial<Record<string, unknown>> = {}) =>
+      (mockLabService.prototype.queryByOrganizationId as jest.Mock).mockResolvedValue([makeLab(overrides)]);
+    const send = (body: unknown) => handler(createEvent(ORG_ID, body), createContext(), () => {});
+
+    describe('as a system admin', () => {
+      beforeEach(() => {
+        (validateSystemAdminAccess as jest.Mock).mockReturnValue(true);
+        (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(false);
+      });
+
+      it.each([false, true])(
+        'writes an ALLOW row carrying the normalised prefix (default-on: %p)',
+        async (defaultOn) => {
+          givenLabs({ S3Bucket: 'bucket-a', EnableNewBucketsByDefault: defaultOn });
+
+          const result = await send(grantWithPrefix('sample-3-18'));
+
+          expect(result.statusCode).toBe(200);
+          expect(mockAccessService.prototype.upsert).toHaveBeenCalledWith({
+            LaboratoryId: LAB_ID,
+            BucketName: 'bucket-a',
+            OrganizationId: ORG_ID,
+            Effect: 'ALLOW',
+            AllowedPrefix: 'sample-3-18/',
+          });
+          expect(mockAccessService.prototype.remove).not.toHaveBeenCalled();
+        },
+      );
+
+      it('may change a stored prefix, without reading the stored rows', async () => {
+        givenLabs();
+        givenStoredRows(storedRow('old-folder/'));
+
+        const result = await send(grantWithPrefix('new-folder/'));
+
+        expect(result.statusCode).toBe(200);
+        expect(mockAccessService.prototype.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({ AllowedPrefix: 'new-folder/' }),
+        );
+        expect(mockAccessService.prototype.listByLaboratoryId).not.toHaveBeenCalled();
+      });
+
+      it('clears a stored prefix when the grant is re-sent without one (strict mode)', async () => {
+        givenLabs();
+        givenStoredRows(storedRow('sample-3-18/'));
+
+        const result = await send(grantWithoutPrefix);
+
+        expect(result.statusCode).toBe(200);
+        expect(mockAccessService.prototype.upsert).toHaveBeenCalledWith({
+          LaboratoryId: LAB_ID,
+          BucketName: 'bucket-a',
+          OrganizationId: ORG_ID,
+          Effect: 'ALLOW',
+        });
+      });
+
+      it('returns 400 and writes nothing for a prefix inside an organization folder', async () => {
+        givenLabs();
+
+        const result = await send(grantWithPrefix(`${ORG_ID}/${LAB_ID}/`));
+
+        expect(result.statusCode).toBe(400);
+        expect(mockAccessService.prototype.upsert).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('as an organization admin', () => {
+      it('is rejected when setting a prefix on a bucket that has none', async () => {
+        givenLabs();
+        givenStoredRows(storedRow());
+
+        const result = await send(grantWithPrefix('sample-3-18/'));
+
+        expect(result.statusCode).toBe(403);
+        expect(mockAccessService.prototype.upsert).not.toHaveBeenCalled();
+        expect(mockAccessService.prototype.remove).not.toHaveBeenCalled();
+      });
+
+      it('is rejected when changing a stored prefix', async () => {
+        givenLabs();
+        givenStoredRows(storedRow('old-folder/'));
+
+        const result = await send(grantWithPrefix('new-folder/'));
+
+        expect(result.statusCode).toBe(403);
+        expect(mockAccessService.prototype.upsert).not.toHaveBeenCalled();
+      });
+
+      it('is rejected when a grant without a prefix would clear a stored one', async () => {
+        givenLabs({ EnableNewBucketsByDefault: true });
+        givenStoredRows(storedRow('sample-3-18/'));
+
+        const result = await send(grantWithoutPrefix);
+
+        expect(result.statusCode).toBe(403);
+        expect(mockAccessService.prototype.remove).not.toHaveBeenCalled();
+        expect(mockAccessService.prototype.upsert).not.toHaveBeenCalled();
+      });
+
+      it('is rejected for the whole batch when only one assignment changes a prefix', async () => {
+        givenLabs();
+
+        const result = await send({
+          assignments: [
+            { laboratoryId: LAB_ID, bucketName: 'bucket-b', granted: true },
+            { laboratoryId: LAB_ID, bucketName: 'bucket-a', granted: true, allowedPrefix: 'sample-3-18/' },
+          ],
+        });
+
+        expect(result.statusCode).toBe(403);
+        expect(mockAccessService.prototype.upsert).not.toHaveBeenCalled();
+      });
+
+      it('may re-send a grant whose prefix is unchanged, however the trailing slash is written', async () => {
+        givenLabs();
+        givenStoredRows(storedRow('sample-3-18/'));
+
+        const result = await send(grantWithPrefix('sample-3-18'));
+
+        expect(result.statusCode).toBe(200);
+        expect(mockAccessService.prototype.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({ AllowedPrefix: 'sample-3-18/' }),
+        );
+      });
+
+      it('may grant a bucket that has no prefix, sending none', async () => {
+        givenLabs();
+        givenStoredRows(storedRow());
+
+        const result = await send(grantWithoutPrefix);
+
+        expect(result.statusCode).toBe(200);
+        expect(mockAccessService.prototype.upsert).toHaveBeenCalledWith(
+          expect.not.objectContaining({ AllowedPrefix: expect.anything() }),
+        );
+      });
+
+      it('may revoke a bucket that has a stored prefix: the DENY row carries none (default-on)', async () => {
+        givenLabs({ EnableNewBucketsByDefault: true });
+        givenStoredRows(storedRow('sample-3-18/'));
+
+        const result = await send({
+          assignments: [
+            { laboratoryId: LAB_ID, bucketName: 'bucket-a', granted: false, allowedPrefix: 'sample-3-18/' },
+          ],
+        });
+
+        expect(result.statusCode).toBe(200);
+        expect(mockAccessService.prototype.upsert).toHaveBeenCalledWith({
+          LaboratoryId: LAB_ID,
+          BucketName: 'bucket-a',
+          OrganizationId: ORG_ID,
+          Effect: 'DENY',
+        });
+      });
+
+      it('may revoke a bucket that has a stored prefix: the row is deleted (strict mode)', async () => {
+        givenLabs();
+        givenStoredRows(storedRow('sample-3-18/'));
+
+        const result = await send({
+          assignments: [
+            { laboratoryId: LAB_ID, bucketName: 'bucket-a', granted: false, allowedPrefix: 'sample-3-18/' },
+          ],
+        });
+
+        expect(result.statusCode).toBe(200);
+        expect(mockAccessService.prototype.remove).toHaveBeenCalledWith(LAB_ID, 'bucket-a');
+        expect(mockAccessService.prototype.upsert).not.toHaveBeenCalled();
+      });
+    });
+
+    it('returns 403 and writes nothing when a lab manager tries to set a prefix', async () => {
+      (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(false);
+
+      const result = await send(grantWithPrefix('sample-3-18/'));
+
+      expect(result.statusCode).toBe(403);
+      expect(mockAccessService.prototype.upsert).not.toHaveBeenCalled();
+    });
   });
 });

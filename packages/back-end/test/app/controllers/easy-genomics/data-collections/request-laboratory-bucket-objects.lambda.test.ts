@@ -5,7 +5,8 @@ jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../src/app/services/s3-service');
 jest.mock('../../../../../src/app/utils/auth-utils');
 jest.mock('../../../../../src/app/utils/laboratory-s3-access-utils', () => ({
-  assertLaboratoryHasS3BucketAccess: jest.fn().mockResolvedValue(undefined),
+  ...jest.requireActual('../../../../../src/app/utils/laboratory-s3-access-utils'),
+  assertLaboratoryHasS3BucketAccess: jest.fn().mockResolvedValue([]),
 }));
 
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
@@ -16,6 +17,7 @@ import {
   validateOrganizationAdminAccess,
   validateSystemAdminAccess,
 } from '../../../../../src/app/utils/auth-utils';
+import { assertLaboratoryHasS3BucketAccess } from '../../../../../src/app/utils/laboratory-s3-access-utils';
 
 describe('request-laboratory-bucket-objects Lambda', () => {
   let mockValidateSystemAdmin: jest.MockedFunction<typeof validateSystemAdminAccess>;
@@ -312,5 +314,88 @@ describe('request-laboratory-bucket-objects Lambda', () => {
     );
 
     expect(response.statusCode).toBe(400);
+  });
+
+  describe('allowed prefix', () => {
+    const accessRowWithAllowedPrefix = (bucketName: string) => ({
+      LaboratoryId: 'test-lab-id',
+      BucketName: bucketName,
+      OrganizationId: 'test-org-id',
+      Effect: 'ALLOW',
+      AllowedPrefix: 'sample-3-18/',
+    });
+
+    beforeEach(() => {
+      mockValidateLabTechnician.mockReturnValue(true);
+      mockQueryByLaboratoryId.mockResolvedValue(mockLaboratory);
+      mockListBucketObjectsV2.mockResolvedValue({ Contents: [], CommonPrefixes: [], IsTruncated: false });
+    });
+
+    it('lists a prefix inside the allowed prefix recorded for the selected bucket', async () => {
+      (assertLaboratoryHasS3BucketAccess as jest.Mock).mockResolvedValueOnce([
+        accessRowWithAllowedPrefix('test-bucket'),
+      ]);
+
+      const response = await handler(
+        createMockEvent({ LaboratoryId: 'test-lab-id', S3Bucket: 'test-bucket', S3Prefix: 'sample-3-18/run-1' }),
+        createMockContext(),
+        jest.fn(),
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(response.body).ResolvedPrefix).toBe('sample-3-18/run-1/');
+      expect(mockListBucketObjectsV2).toHaveBeenCalledWith(
+        expect.objectContaining({ Bucket: 'test-bucket', Prefix: 'sample-3-18/run-1/' }),
+      );
+    });
+
+    it('rejects a folder that only shares the allowed prefix as a string', async () => {
+      (assertLaboratoryHasS3BucketAccess as jest.Mock).mockResolvedValueOnce([
+        accessRowWithAllowedPrefix('test-bucket'),
+      ]);
+
+      const response = await handler(
+        createMockEvent({ LaboratoryId: 'test-lab-id', S3Bucket: 'test-bucket', S3Prefix: 'sample-3-18-other/' }),
+        createMockContext(),
+        jest.fn(),
+      );
+
+      expect(response.statusCode).toBe(403);
+      expect(mockListBucketObjectsV2).not.toHaveBeenCalled();
+    });
+
+    it('rejects an allowed prefix that was recorded for a different bucket', async () => {
+      (assertLaboratoryHasS3BucketAccess as jest.Mock).mockResolvedValueOnce([
+        accessRowWithAllowedPrefix('other-bucket'),
+      ]);
+
+      const response = await handler(
+        createMockEvent({ LaboratoryId: 'test-lab-id', S3Bucket: 'test-bucket', S3Prefix: 'sample-3-18/' }),
+        createMockContext(),
+        jest.fn(),
+      );
+
+      expect(response.statusCode).toBe(403);
+      expect(mockListBucketObjectsV2).not.toHaveBeenCalled();
+    });
+
+    it('still lists inside the laboratory root when the bucket has an allowed prefix', async () => {
+      (assertLaboratoryHasS3BucketAccess as jest.Mock).mockResolvedValueOnce([
+        accessRowWithAllowedPrefix('test-bucket'),
+      ]);
+
+      const response = await handler(
+        createMockEvent({
+          LaboratoryId: 'test-lab-id',
+          S3Bucket: 'test-bucket',
+          S3Prefix: `${labRoot}aws-healthomics/`,
+        }),
+        createMockContext(),
+        jest.fn(),
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(response.body).ResolvedPrefix).toBe(`${labRoot}aws-healthomics/`);
+    });
   });
 });

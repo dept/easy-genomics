@@ -1,11 +1,13 @@
-import { S3BucketAccessDeniedError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { S3BucketAccessDeniedError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import type {
+  BatchLaboratoryS3AccessAssignment,
   LaboratoryS3Access,
   S3BucketCatalogEntry,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-s3-access';
 import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { isDataTaggedS3Bucket } from '@BE/services/easy-genomics/s3-bucket-catalog-service';
+import { normalizeS3Prefix } from '@BE/utils/s3-uri-utils';
 
 /** Legacy rows and explicit ALLOW. */
 export function rowIsAllow(row: LaboratoryS3Access): boolean {
@@ -123,4 +125,26 @@ export async function assertLaboratoryHasS3BucketAccess(
     throw new S3BucketAccessDeniedError();
   }
   return rows;
+}
+/**
+ * An allowed prefix moves a lab's read boundary outside its own folder, so setting, changing or clearing one is a
+ * system-admin decision. Callers without that role may only re-send a grant carrying the prefix already stored.
+ */
+export async function assertAllowedPrefixesUnchanged(
+  assignments: BatchLaboratoryS3AccessAssignment[],
+  accessService: LaboratoryS3AccessService,
+): Promise<void> {
+  const grants = assignments.filter((assignment) => assignment.granted);
+  const rowsByLaboratory = new Map<string, LaboratoryS3Access[]>();
+  for (const laboratoryId of new Set(grants.map((grant) => grant.laboratoryId))) {
+    rowsByLaboratory.set(laboratoryId, await accessService.listByLaboratoryId(laboratoryId));
+  }
+
+  for (const grant of grants) {
+    const storedPrefix = findAllowedPrefix(rowsByLaboratory.get(grant.laboratoryId) ?? [], grant.bucketName) ?? '';
+    const requestedPrefix = grant.allowedPrefix ? normalizeS3Prefix(grant.allowedPrefix) : '';
+    if (storedPrefix !== requestedPrefix) {
+      throw new UnauthorizedAccessError('Only a system administrator can set, change or clear an allowed folder');
+    }
+  }
 }
