@@ -36,6 +36,8 @@ const baseSpec = () => ({
 const arnFor = (endpointKey: string) => `arn:aws:lambda:us-west-2:123:function:fn${endpointKey.replace(/\W/g, '')}`;
 
 const baseOptions = (overrides: Partial<EnrichSpecOptions> = {}): EnrichSpecOptions => ({
+  apiTitle: 'dev-test-easy-genomics-api-apigw',
+  apiDescription: 'Easy Genomics API Gateway',
   includePathPrefixes: ['/easy-genomics'],
   resolveLambdaArn: (endpointKey) => arnFor(endpointKey),
   cognitoProviderArns: ['arn:aws:cognito-idp:us-west-2:123:userpool/pool-1'],
@@ -226,5 +228,28 @@ describe('enrichSpecForApiGateway', () => {
         'x-amazon-apigateway-integration'
       ],
     ).toBeUndefined();
+  });
+});
+
+describe('per-API identity', () => {
+  // API Gateway names an imported API from the body, not the CloudFormation `Name`
+  // property, so this is the assertion that corresponds to the deployed name.
+  it('overrides the shared spec title and description with this API\'s own', () => {
+    const { document } = enrichSpecForApiGateway(baseSpec(), baseOptions({
+      apiTitle: 'dev-test-main-back-end-apigw',
+      apiDescription: 'Easy Genomics Platform API Gateway (AWS HealthOmics + NF-Tower)',
+    }));
+
+    expect(document.info.title).toBe('dev-test-main-back-end-apigw');
+    expect(document.info.description).toBe('Easy Genomics Platform API Gateway (AWS HealthOmics + NF-Tower)');
+  });
+
+  it('leaves the source spec untouched so the other API is unaffected', () => {
+    const source = baseSpec();
+    const before = JSON.stringify(source);
+
+    enrichSpecForApiGateway(source, baseOptions({ apiTitle: 'dev-test-other-apigw' }));
+
+    expect(JSON.stringify(source)).toBe(before);
   });
 });

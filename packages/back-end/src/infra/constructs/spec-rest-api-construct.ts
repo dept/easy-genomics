@@ -19,15 +19,24 @@ import { enrichSpecForApiGateway } from '../utils/openapi-spec-enrichment';
 
 export interface SpecRestApiConstructProps {
   /**
-   * Names the Usage Plan. `SpecRestApi` cannot set the REST API's own description —
-   * CDK never passes one to the underlying `CfnRestApi` — so that comes from the
-   * spec's `info.description`, which is shared by every API built from it.
+   * Describes this REST API, and names its Usage Plan.
+   *
+   * Reaches the deployed API through the spec's `info.description`, which this
+   * construct overrides per API — NOT through the CloudFormation `Description`
+   * property, which CDK's `SpecRestApi` never sets.
    */
   description: string;
   /**
-   * Physical `Name` of the REST API. Required because `RestApiBase` otherwise falls
-   * back to the construct id, which is not unique across the stacks that instantiate
-   * this construct.
+   * Physical name of this REST API. Must be unique across the stacks that
+   * instantiate this construct: `RestApiBase` otherwise falls back to the construct
+   * id, and those ids collide.
+   *
+   * Applied two ways, deliberately. It is passed to `SpecRestApi` as `restApiName`
+   * (the CloudFormation `Name`) AND written into the imported document's
+   * `info.title`. **The `info.title` is the one that takes effect**: API Gateway
+   * names an API imported from an OpenAPI body after the body, and silently ignores
+   * `Name` — a change to `Name` alone deploys `UPDATE_COMPLETE` and renames nothing.
+   * Both are set so a create and an update cannot disagree.
    */
   restApiName: string;
   /**
@@ -69,6 +78,8 @@ export class SpecRestApiConstruct extends Construct {
     const stack = Stack.of(this);
 
     const { document, usedEndpoints } = enrichSpecForApiGateway(loadEasyGenomicsApiSpec(props.specPath), {
+      apiTitle: props.restApiName,
+      apiDescription: props.description,
       includePathPrefixes: props.includePathPrefixes,
       cognitoProviderArns: [props.userPool.userPoolArn],
       region: stack.region,

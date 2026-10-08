@@ -66,10 +66,29 @@ describe('SpecRestApiConstruct', () => {
       ['/easy-genomics/foo/read-foo', fakeFunction('arn:aws:lambda:us-west-2:123:function:read-foo')],
     ]);
 
-  it('sets the REST API Name from props rather than the construct id', () => {
+  // API Gateway names an API imported from an OpenAPI body after the body's
+  // `info.title` and ignores the `Name` property, so asserting `Name` alone would
+  // pass against a change that deploys UPDATE_COMPLETE and renames nothing. That is
+  // exactly what happened on the first attempt at this fix. `info.title` is the
+  // assertion that corresponds to the deployed name; `Name` is checked too only so
+  // a create and an update cannot disagree.
+  it('names the REST API from props in the imported body, not just the Name property', () => {
     const template = synth(fullMap());
+
     template.hasResourceProperties('AWS::ApiGateway::RestApi', {
       Name: 'dev-test-distinct-api-name',
+      Body: Match.objectLike({
+        info: Match.objectLike({ title: 'dev-test-distinct-api-name' }),
+      }),
+    });
+  });
+
+  it('describes the REST API from props in the imported body', () => {
+    const template = synth(fullMap());
+    template.hasResourceProperties('AWS::ApiGateway::RestApi', {
+      Body: Match.objectLike({
+        info: Match.objectLike({ description: 'Test API Gateway' }),
+      }),
     });
   });
 

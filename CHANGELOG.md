@@ -14,17 +14,23 @@ draft release note for operators.
 
 ### Changed
 
-- **The two back-end REST APIs now have distinct names.** Both were deployed as `{namePrefix}-easy-genomics-apigw`, and
-  their descriptions are identical too, so there was no way to tell them apart in the API Gateway console. They are now
-  named after the stack that publishes each one's URL: `{namePrefix}-main-back-end-apigw` (serving `/aws-healthomics`
-  and `/nf-tower`) and `{namePrefix}-easy-genomics-api-apigw` (serving `/easy-genomics`).
+- **The two back-end REST APIs now have distinct names and descriptions.** Both were deployed as
+  `{namePrefix}-easy-genomics-apigw` with the same description, so there was no way to tell them apart in the API
+  Gateway console. They are now named after the stack that publishes each one's URL —
+  `{namePrefix}-main-back-end-apigw` (serving `/aws-healthomics` and `/nf-tower`) and
+  `{namePrefix}-easy-genomics-api-apigw` (serving `/easy-genomics`) — and each carries a description saying which paths
+  it serves.
 
   This also separates their CloudWatch metrics. API Gateway dimensions metrics by `ApiName`, so while the two shared a
   name their `Count`, `Latency` and `4XX`/`5XX` series were silently aggregated and could not be alarmed on
   individually.
 
-  **No invoke URL changes and nothing is replaced** — only the `Name` property is updated, and the CloudFormation
-  logical ids are untouched. Expect two in-place `AWS::ApiGateway::RestApi` updates in your `cdk diff`.
+  **No invoke URL changes and nothing is replaced** — the CloudFormation logical ids are untouched, so each API keeps
+  its physical id and its invoke URL. Expect two in-place `AWS::ApiGateway::RestApi` updates in your `cdk diff`.
+
+  **If you have CloudWatch alarms or dashboards on these APIs, repoint them.** API Gateway dimensions its metrics by
+  `ApiName`, so renaming moves each API's `Count`, `Latency` and `4XX`/`5XX` series to the new name. Anything built
+  against `{namePrefix}-easy-genomics-apigw` will not error — it will simply stop reporting data.
 
 - **Front-end authentication upgraded from AWS Amplify JS v5 to v6.** Amplify is used only for Cognito sign-in,
   sign-out, Google SSO, and token refresh. There is no back-end, user-pool, or CDK change.
