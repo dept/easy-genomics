@@ -10,6 +10,8 @@
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
   import {
     DEFAULT_REGEX_GROUPING_PRESET_KEY,
+    findDuplicateSampleNames,
+    folderBelowLabRoot,
     REGEX_GROUPING_PRESETS,
     type RegexGroupingPresetKey,
   } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
@@ -115,7 +117,7 @@
     return trimmed.length > 0 && !newBatchNameInvalid.value;
   });
 
-  const activeSets = computed(() => proposedSets.value.filter((s) => !excludedSamples.value.has(s.sampleId)));
+  const activeSets = computed(() => proposedSets.value.filter((s) => !excludedSamples.value.has(s.groupKey)));
 
   const stats = computed(() => {
     const paired = activeSets.value.filter((s) => s.status === 'paired').length;
@@ -123,6 +125,10 @@
     const review = activeSets.value.filter((s) => s.status === 'needs_review').length;
     return { paired, single, review, total: activeSets.value.length };
   });
+  const duplicateSampleNames = computed(() => findDuplicateSampleNames(activeSets.value));
+  const repeatedSampleIds = computed(
+    () => new Set(findDuplicateSampleNames(proposedSets.value).map((duplicate) => duplicate.sampleId.toLowerCase())),
+  );
 
   const sheetHeaders = computed<string[]>(() => tagSheetRows.value[0] ?? []);
   const columnOptions = computed(() =>
@@ -312,10 +318,10 @@
     }
   }
 
-  function toggleExclude(sampleId: string): void {
+  function toggleExclude(groupKey: string): void {
     const next = new Set(excludedSamples.value);
-    if (next.has(sampleId)) next.delete(sampleId);
-    else next.add(sampleId);
+    if (next.has(groupKey)) next.delete(groupKey);
+    else next.add(groupKey);
     excludedSamples.value = next;
   }
 
@@ -637,6 +643,7 @@
             {{ stats.review }} needs review
           </span>
         </div>
+        <EGDuplicateSampleNamesNotice :duplicates="duplicateSampleNames" notice-class="mx-4 mt-4" />
         <div class="flex-1 overflow-y-auto">
           <table class="w-full text-sm">
             <thead class="sticky top-0 bg-gray-50">
@@ -650,18 +657,26 @@
             <tbody>
               <tr
                 v-for="s in proposedSets"
-                :key="s.sampleId"
+                :key="s.groupKey"
                 class="border-t"
-                :class="{ 'opacity-40': excludedSamples.has(s.sampleId) }"
+                :class="{ 'opacity-40': excludedSamples.has(s.groupKey) }"
               >
-                <td class="p-3 font-medium">{{ s.sampleId }}</td>
+                <td class="p-3 font-medium">
+                  {{ s.sampleId }}
+                  <span
+                    v-if="repeatedSampleIds.has(s.sampleId.toLowerCase()) && folderBelowLabRoot(s.folder)"
+                    class="block break-all font-mono text-xs font-normal text-gray-400"
+                  >
+                    {{ folderBelowLabRoot(s.folder) }}
+                  </span>
+                </td>
                 <td class="p-3 font-mono text-xs">
                   {{ s.files.map((f) => basenameFromS3Key(f.fileName)).join(', ') }}
                 </td>
                 <td class="p-3 text-xs">{{ s.status }}</td>
                 <td class="p-3 text-right">
-                  <button type="button" class="text-xs text-red-600" @click="toggleExclude(s.sampleId)">
-                    {{ excludedSamples.has(s.sampleId) ? 'Include' : 'Exclude' }}
+                  <button type="button" class="text-xs text-red-600" @click="toggleExclude(s.groupKey)">
+                    {{ excludedSamples.has(s.groupKey) ? 'Include' : 'Exclude' }}
                   </button>
                 </td>
               </tr>

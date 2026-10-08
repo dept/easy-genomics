@@ -142,4 +142,20 @@ describe('matchSheetToSamples', () => {
     expect(result.tagsToCreate).toEqual([{ name: 'E.coli', sampleCount: 1 }]);
     expect(result.typoWarnings).toEqual([{ name: 'E.coli', nearest: 'E. coli', distance: 1 }]);
   });
+
+  it('keeps a name shared by several proposed samples once, so the wizard tags every one of them', () => {
+    const result = matchSheetToSamples({
+      rows: [
+        ['sample_id', 'organism'],
+        ['ZRXSXL', 'E. coli'],
+      ],
+      nameColumnIndex: 0,
+      tagColumnIndex: 1,
+      sampleNames: ['ZRXSXL', 'ZRXSXL'],
+      existingTags: [],
+    });
+    expect(result.perSample).toEqual({ ZRXSXL: ['E. coli'] });
+    expect(result.unmatchedSampleNames).toEqual([]);
+    expect(result.unmatchedRows).toEqual([]);
+  });
 });
