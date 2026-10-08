@@ -14,10 +14,11 @@
   } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
   import { delimiterForFilename, parseDelimitedText } from '@easy-genomics/shared-lib/src/app/utils/delimited-text';
   import { TAG_PRESET_COLORS } from '@easy-genomics/shared-lib/src/app/constants/data-collections';
-  import { useToastStore, useUiStore } from '@FE/stores';
+  import { useDataCollectionsStore, useToastStore, useUiStore } from '@FE/stores';
   import { buildS3CopyJobs } from '@FE/utils/data-collections-copy-jobs';
   import { basenameFromS3Key } from '@FE/utils/data-collections-file-type';
   import { exceedsBatchNameMaxLength } from '@FE/utils/data-collections-name-validation';
+  import { describeSourceListing, type SourceListingNotice } from '@FE/utils/data-collections-source-listing';
   import { buildLaboratorySourcePrefix } from '@FE/utils/data-collections-source-prefix';
   import { matchSheetToSamples, type SheetTagMatchResult } from '@FE/utils/sheet-tag-matching';
 
@@ -44,6 +45,7 @@
   const { $api } = useNuxtApp();
   const toast = useToastStore();
   const uiStore = useUiStore();
+  const dataCollectionsStore = useDataCollectionsStore();
 
   const IMPORT_STEPS = ['Source', 'Group files', 'Tags', 'Review samples', 'Confirm'] as const;
 
@@ -55,6 +57,7 @@
   const presetKey = ref<RegexGroupingPresetKey>('underscore_r1_r2');
   const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern);
   const sourceFiles = ref<string[]>([]);
+  const sourceListingNotice = ref<SourceListingNotice | null>(null);
   const { proposedSets, unmatchedFiles, refreshPreview, resetPreview } = useRegexGroupingPreview(
     sourceFiles,
     regexPattern,
@@ -90,6 +93,10 @@
 
   watch(presetKey, (k) => {
     regexPattern.value = REGEX_GROUPING_PRESETS[k].pattern;
+  });
+
+  watch([importSource, sourceBucket, sourcePrefix], () => {
+    sourceListingNotice.value = null;
   });
 
   watch(step, (n) => {
@@ -294,19 +301,22 @@
       toast.error('Selected source bucket is not authorized for this laboratory');
       return;
     }
+    sourceListingNotice.value = null;
     uiStore.setRequestPending('dataCollectionsList');
     try {
-      const res = await $api.dataCollections.requestLaboratoryBucketObjects({
+      const listing = await dataCollectionsStore.fetchLaboratoryBucketObjects({
         LaboratoryId: props.labId,
         S3Bucket: sourceBucket.value,
         S3Prefix: buildLaboratorySourcePrefix(props.lab, sourcePrefix.value),
         MaxTotalKeys: 5000,
       });
-      sourceFiles.value = (res.Contents || []).map((o) => o.Key!);
+      if (!listing) return;
+
+      sourceFiles.value = (listing.Contents || []).map((o) => o.Key!);
       refreshPreview();
+      sourceListingNotice.value = describeSourceListing(listing);
+      if (sourceListingNotice.value?.kind === 'empty') return;
       step.value = 2;
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Failed to list source files');
     } finally {
       uiStore.setRequestComplete('dataCollectionsList');
     }
@@ -490,11 +500,19 @@
               placeholder="Select a bucket"
             />
           </UFormGroup>
-          <UFormGroup label="Prefix" hint="folder inside this lab's directory">
+          <UFormGroup
+            label="Prefix"
+            hint="folder inside this lab's directory"
+            required
+            :help="sourcePrefix.trim() ? undefined : 'Enter a folder to continue.'"
+          >
             <UInput v-model="sourcePrefix" placeholder="imports/" class="font-mono" />
           </UFormGroup>
           <p v-if="sourceBucket" class="text-text-muted mt-1 break-all font-mono text-xs" role="status">
             Searches {{ confirmSourceLabel }}
+          </p>
+          <p v-if="sourceListingNotice?.kind === 'empty'" class="mt-2 break-all text-xs text-amber-600" role="status">
+            {{ sourceListingNotice.message }}
           </p>
           <p v-if="!grantedBuckets.length" class="text-text-muted mt-2 text-xs" role="status">
             No authorized S3 buckets for this lab. Ask an organization admin to grant bucket access.
@@ -573,6 +591,9 @@
         <p class="mt-4 text-sm text-gray-500">
           From {{ sourceFiles.length }} files →
           <strong>{{ proposedSets.length }} samples</strong>
+        </p>
+        <p v-if="sourceListingNotice?.kind === 'truncated'" class="mt-2 text-sm text-amber-600" role="status">
+          {{ sourceListingNotice.message }}
         </p>
         <EGRegexUnmatchedNotice
           :unmatched-files="unmatchedFiles"
