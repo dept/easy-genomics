@@ -15,7 +15,7 @@
   import { delimiterForFilename, parseDelimitedText } from '@easy-genomics/shared-lib/src/app/utils/delimited-text';
   import { TAG_PRESET_COLORS } from '@easy-genomics/shared-lib/src/app/constants/data-collections';
   import { useToastStore, useUiStore } from '@FE/stores';
-  import { buildS3CopyJobs } from '@FE/utils/data-collections-copy-jobs';
+  import { buildImportDestKey, buildS3CopyJobs } from '@FE/utils/data-collections-copy-jobs';
   import { basenameFromS3Key } from '@FE/utils/data-collections-file-type';
   import { exceedsBatchNameMaxLength } from '@FE/utils/data-collections-name-validation';
   import { buildLaboratorySourcePrefix } from '@FE/utils/data-collections-source-prefix';
@@ -319,14 +319,14 @@
     excludedSamples.value = next;
   }
 
-  function resolveDestKeyForFile(fileName: string, destPrefix: string): string {
-    const base = basenameFromS3Key(fileName);
+  function resolveDestKeyForFile(fileName: string, listedSourcePrefix: string, destPrefix: string): string {
     if (importSource.value === 'upload') {
+      const base = basenameFromS3Key(fileName);
       const key = uploadedKeysByName.value[base];
       if (!key) throw new Error(`Missing uploaded key for ${base}`);
       return key;
     }
-    return `${destPrefix}${base}`;
+    return buildImportDestKey(fileName, listedSourcePrefix, destPrefix);
   }
 
   async function handleTagSheetFile(event: Event): Promise<void> {
@@ -384,13 +384,14 @@
     try {
       const labRoot = `${props.lab.OrganizationId}/${props.lab.LaboratoryId}/`;
       const destPrefix = `${labRoot}imports/${importLabel.value}/`;
+      const listedSourcePrefix = buildLaboratorySourcePrefix(props.lab, sourcePrefix.value);
 
       const resolvedTagIds = await resolveSampleTagIds();
 
       const sequenceSets = activeSets.value.map((s) => ({
         Name: s.sampleId,
         Layout: s.layout as SampleLayout,
-        Keys: s.files.map((f) => resolveDestKeyForFile(f.fileName, destPrefix)),
+        Keys: s.files.map((f) => resolveDestKeyForFile(f.fileName, listedSourcePrefix, destPrefix)),
         TagIds: resolvedTagIds[s.sampleId],
         FilenameRegex: regexPattern.value,
       }));
@@ -400,6 +401,7 @@
           ? buildS3CopyJobs(
               activeSets.value.flatMap((s) => s.files),
               sourceBucket.value,
+              listedSourcePrefix,
               destPrefix,
             )
           : undefined;
