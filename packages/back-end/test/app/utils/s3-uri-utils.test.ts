@@ -1,6 +1,7 @@
 import { UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import {
   isBelowRunFolderRoot,
+  isInsideLaboratoryReadablePrefix,
   isRunFolderName,
   isSampleSheetKey,
   isWithinRunFolder,
@@ -171,5 +172,53 @@ describe('resolveLaboratoryListingPrefix', () => {
     expect(() => resolveLaboratoryListingPrefix(listingLaboratory, '/test-org-id/test-lab-id/x/')).toThrow(
       UnauthorizedAccessError,
     );
+  });
+
+  describe('with an allowed prefix', () => {
+    it('accepts a prefix inside the allowed prefix and normalises it', () => {
+      expect(resolveLaboratoryListingPrefix(listingLaboratory, 'sample-3-18/run-1', 'sample-3-18/')).toBe(
+        'sample-3-18/run-1/',
+      );
+    });
+
+    it('accepts the allowed prefix itself, written without its trailing slash', () => {
+      expect(resolveLaboratoryListingPrefix(listingLaboratory, 'sample-3-18', 'sample-3-18/')).toBe('sample-3-18/');
+    });
+
+    it('rejects a folder that only shares the allowed prefix as a string', () => {
+      expect(() => resolveLaboratoryListingPrefix(listingLaboratory, 'sample-3-18-other/', 'sample-3-18/')).toThrow(
+        UnauthorizedAccessError,
+      );
+    });
+
+    it('still accepts a prefix inside the laboratory root', () => {
+      expect(
+        resolveLaboratoryListingPrefix(listingLaboratory, 'test-org-id/test-lab-id/aws-healthomics/', 'sample-3-18/'),
+      ).toBe('test-org-id/test-lab-id/aws-healthomics/');
+    });
+
+    it('still defaults to the laboratory root, never the allowed prefix', () => {
+      expect(resolveLaboratoryListingPrefix(listingLaboratory, undefined, 'sample-3-18/')).toBe(
+        'test-org-id/test-lab-id/',
+      );
+    });
+  });
+});
+
+describe('isInsideLaboratoryReadablePrefix', () => {
+  const lab = { OrganizationId: 'org-1', LaboratoryId: 'lab-1' };
+
+  it('accepts keys under the laboratory root with or without an allowed prefix', () => {
+    expect(isInsideLaboratoryReadablePrefix('org-1/lab-1/a.fq.gz', lab)).toBe(true);
+    expect(isInsideLaboratoryReadablePrefix('org-1/lab-1/a.fq.gz', lab, 'sample-3-18/')).toBe(true);
+  });
+
+  it('accepts keys under the allowed prefix only when one is given', () => {
+    expect(isInsideLaboratoryReadablePrefix('sample-3-18/S1_R1.fastq.gz', lab, 'sample-3-18/')).toBe(true);
+    expect(isInsideLaboratoryReadablePrefix('sample-3-18/S1_R1.fastq.gz', lab)).toBe(false);
+  });
+
+  it('rejects a sibling folder that shares the allowed prefix as a string', () => {
+    expect(isInsideLaboratoryReadablePrefix('sample-3-18-other/S1.fq.gz', lab, 'sample-3-18/')).toBe(false);
   });
 });

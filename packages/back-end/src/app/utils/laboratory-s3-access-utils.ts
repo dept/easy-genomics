@@ -66,6 +66,12 @@ export function isS3BucketAccessAllowed(
   return !denyBucketNames(accessRows).has(bucketName);
 }
 
+/** The extra folder an admin allowed for this lab in `bucketName`. Only ALLOW rows carry one. */
+export function findAllowedPrefix(accessRows: LaboratoryS3Access[], bucketName: string): string | undefined {
+  const row = accessRows.find((candidate) => candidate.BucketName === bucketName && rowIsAllow(candidate));
+  return row?.AllowedPrefix || undefined;
+}
+
 export function grantedBucketNamesForLaboratory(
   laboratory: Pick<Laboratory, 'EnableNewBucketsByDefault' | 'S3Bucket'>,
   accessRows: LaboratoryS3Access[],
@@ -88,13 +94,14 @@ export function grantedBucketNamesForLaboratory(
  * Deny unless `bucketName` is a data-tagged catalog bucket and the lab is allowed
  * to use it. When `catalog` is omitted, membership is checked via a single-bucket
  * tag lookup (cheaper than listing the full catalog on every request).
+ * Returns the lab's access rows, so callers can read the bucket's allowed prefix without a second query.
  */
 export async function assertLaboratoryHasS3BucketAccess(
   laboratory: Pick<Laboratory, 'LaboratoryId' | 'EnableNewBucketsByDefault' | 'S3Bucket'>,
   bucketName: string,
   accessService: LaboratoryS3AccessService,
   catalog?: S3BucketCatalogEntry[],
-): Promise<void> {
+): Promise<LaboratoryS3Access[]> {
   if (!bucketName) {
     throw new S3BucketAccessDeniedError();
   }
@@ -115,4 +122,5 @@ export async function assertLaboratoryHasS3BucketAccess(
   if (!isS3BucketAccessAllowed(laboratory, rows, bucketName)) {
     throw new S3BucketAccessDeniedError();
   }
+  return rows;
 }
