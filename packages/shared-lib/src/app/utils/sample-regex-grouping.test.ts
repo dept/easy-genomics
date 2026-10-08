@@ -219,3 +219,74 @@ describe('default any-separator preset', () => {
     expect(unmatched).toEqual(fileNames);
   });
 });
+
+describe('groupFilenamesByRegex across folders', () => {
+  const pattern = REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern;
+
+  it('keeps same-named samples in different folders apart', () => {
+    const { sets, unmatched } = groupFilenamesByRegex(
+      [
+        'org/lab/aws-healthomics/txn-a/ZRXSXL_R1_001.fastq.gz',
+        'org/lab/aws-healthomics/txn-a/ZRXSXL_R2_001.fastq.gz',
+        'org/lab/aws-healthomics/txn-b/ZRXSXL_R1_001.fastq.gz',
+        'org/lab/aws-healthomics/txn-b/ZRXSXL_R2_001.fastq.gz',
+      ],
+      pattern,
+    );
+    expect(unmatched).toEqual([]);
+    expect(sets.map((s) => s.sampleId)).toEqual(['ZRXSXL', 'ZRXSXL']);
+    expect(sets.map((s) => s.folder)).toEqual(['org/lab/aws-healthomics/txn-a/', 'org/lab/aws-healthomics/txn-b/']);
+    expect(sets.map((s) => s.groupKey)).toEqual([
+      'org/lab/aws-healthomics/txn-a/ZRXSXL',
+      'org/lab/aws-healthomics/txn-b/ZRXSXL',
+    ]);
+    expect(sets.map((s) => s.files.length)).toEqual([2, 2]);
+    expect(sets.map((s) => s.status)).toEqual(['paired', 'paired']);
+    expect(sets.map((s) => s.layout)).toEqual(['paired_end', 'paired_end']);
+  });
+
+  it('splits the dev-site reproduction into one paired sample per folder (34 folders x 2 files)', () => {
+    const folders = Array.from({ length: 34 }, (_, i) => `org/lab/aws-healthomics/txn-${String(i).padStart(2, '0')}/`);
+    const fileNames = folders.flatMap((folder) => [
+      `${folder}ZRXSXL_R1_001.fastq.gz`,
+      `${folder}ZRXSXL_R2_001.fastq.gz`,
+    ]);
+    const { sets, unmatched } = groupFilenamesByRegex(fileNames, pattern);
+    expect(unmatched).toEqual([]);
+    expect(sets).toHaveLength(34);
+    expect(sets.map((s) => s.folder)).toEqual(folders);
+    for (const set of sets) {
+      expect(set.sampleId).toBe('ZRXSXL');
+      expect(set.status).toBe('paired');
+      expect(set.files.map((f) => f.role)).toEqual(['read1', 'read2']);
+    }
+  });
+
+  it('still pairs R1 and R2 inside one folder', () => {
+    const { sets } = groupFilenamesByRegex(
+      ['org/lab/run-1/S1_R1_001.fastq.gz', 'org/lab/run-1/S1_R2_001.fastq.gz'],
+      pattern,
+    );
+    expect(sets).toHaveLength(1);
+    expect(sets[0].sampleId).toBe('S1');
+    expect(sets[0].folder).toBe('org/lab/run-1/');
+    expect(sets[0].status).toBe('paired');
+    expect(sets[0].files.map((f) => f.fileName)).toEqual([
+      'org/lab/run-1/S1_R1_001.fastq.gz',
+      'org/lab/run-1/S1_R2_001.fastq.gz',
+    ]);
+  });
+
+  it('groups bare file names (the upload source) with an empty folder, as before', () => {
+    const { sets } = groupFilenamesByRegex(['S1_R1_001.fastq.gz', 'S1_R2_001.fastq.gz', 'S2_R1_001.fastq.gz'], pattern);
+    expect(sets.map((s) => s.sampleId)).toEqual(['S1', 'S2']);
+    expect(sets.map((s) => s.folder)).toEqual(['', '']);
+    expect(sets.map((s) => s.groupKey)).toEqual(['S1', 'S2']);
+    expect(sets.map((s) => s.status)).toEqual(['paired', 'single_end']);
+  });
+
+  it('orders same-named samples by folder so they sit next to each other', () => {
+    const { sets } = groupFilenamesByRegex(['b/X_R1.fastq.gz', 'a/Y_R1.fastq.gz', 'a/X_R1.fastq.gz'], pattern);
+    expect(sets.map((s) => s.groupKey)).toEqual(['a/X', 'b/X', 'a/Y']);
+  });
+});

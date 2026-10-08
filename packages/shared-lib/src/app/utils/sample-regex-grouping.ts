@@ -8,7 +8,11 @@ export type ProposedSampleFile = {
 };
 
 export type ProposedSample = {
+  /** Unique per proposal (`folder + sampleId`); use it for list keys and exclusion sets, never as a name. */
+  groupKey: string;
   sampleId: string;
+  /** Directory part of the files' keys, ending in `/`; `''` for bare file names. */
+  folder: string;
   files: ProposedSampleFile[];
   status: SampleGroupingStatus;
   layout: SampleLayout;
@@ -92,7 +96,7 @@ export function groupFilenamesByRegex(
     return { sets: [], unmatched: [...fileNames] };
   }
 
-  const bySample = new Map<string, ProposedSampleFile[]>();
+  const groups = new Map<string, { sampleId: string; folder: string; files: ProposedSampleFile[] }>();
   const unmatched: string[] = [];
 
   for (const fileName of fileNames) {
@@ -103,23 +107,28 @@ export function groupFilenamesByRegex(
       continue;
     }
     const sampleId = match.groups.sample;
+    // S3 keys are unique only within a folder, so one sample ID can recur across runs; the folder keeps them apart.
+    const folder = fileName.slice(0, fileName.length - base.length);
+    const groupKey = `${folder}${sampleId}`;
     const role = classifyFileRole(base, match.groups as Record<string, string | undefined>);
-    const existing = bySample.get(sampleId) || [];
-    existing.push({ fileName, role });
-    bySample.set(sampleId, existing);
+    const group = groups.get(groupKey) ?? { sampleId, folder, files: [] };
+    group.files.push({ fileName, role });
+    groups.set(groupKey, group);
   }
 
   const sets: ProposedSample[] = [];
-  for (const [sampleId, files] of bySample) {
+  for (const [groupKey, { sampleId, folder, files }] of groups) {
     sets.push({
+      groupKey,
       sampleId,
+      folder,
       files,
       status: inferStatus(files),
       layout: inferLayout(files),
     });
   }
 
-  sets.sort((a, b) => a.sampleId.localeCompare(b.sampleId));
+  sets.sort((a, b) => a.sampleId.localeCompare(b.sampleId) || a.folder.localeCompare(b.folder));
   return { sets, unmatched };
 }
 
