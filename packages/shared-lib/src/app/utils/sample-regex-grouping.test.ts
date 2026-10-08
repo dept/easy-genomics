@@ -1,6 +1,8 @@
 import {
   buildContentsSummary,
   DEFAULT_REGEX_GROUPING_PRESET_KEY,
+  findDuplicateSampleNames,
+  folderBelowLabRoot,
   groupFilenamesByRegex,
   REGEX_GROUPING_PRESETS,
 } from './sample-regex-grouping';
@@ -288,5 +290,47 @@ describe('groupFilenamesByRegex across folders', () => {
   it('orders same-named samples by folder so they sit next to each other', () => {
     const { sets } = groupFilenamesByRegex(['b/X_R1.fastq.gz', 'a/Y_R1.fastq.gz', 'a/X_R1.fastq.gz'], pattern);
     expect(sets.map((s) => s.groupKey)).toEqual(['a/X', 'b/X', 'a/Y']);
+  });
+});
+
+describe('findDuplicateSampleNames', () => {
+  const pattern = REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern;
+
+  it('reports a name proposed from two folders, with both folders', () => {
+    const { sets } = groupFilenamesByRegex(
+      ['run-b/ZRXSXL_R1.fastq.gz', 'run-a/ZRXSXL_R1.fastq.gz', 'run-a/OTHER_R1.fastq.gz'],
+      pattern,
+    );
+    expect(findDuplicateSampleNames(sets)).toEqual([{ sampleId: 'ZRXSXL', folders: ['run-a/', 'run-b/'] }]);
+  });
+
+  it('reports nothing once the user has excluded all but one of the repeats', () => {
+    const { sets } = groupFilenamesByRegex(['run-a/ZRXSXL_R1.fastq.gz', 'run-b/ZRXSXL_R1.fastq.gz'], pattern);
+    const active = sets.filter((s) => s.groupKey !== 'run-b/ZRXSXL');
+    expect(findDuplicateSampleNames(active)).toEqual([]);
+  });
+
+  it('reports nothing for bare file names, which cannot repeat', () => {
+    const { sets } = groupFilenamesByRegex(['S1_R1.fastq.gz', 'S1_R2.fastq.gz', 'S2_R1.fastq.gz'], pattern);
+    expect(findDuplicateSampleNames(sets)).toEqual([]);
+  });
+
+  it('treats names that differ only in case as the same name', () => {
+    const { sets } = groupFilenamesByRegex(['run-a/ZRXSXL_R1.fastq.gz', 'run-b/zrxsxl_R1.fastq.gz'], pattern);
+    const duplicates = findDuplicateSampleNames(sets);
+    expect(duplicates).toHaveLength(1);
+    expect(duplicates[0].sampleId.toLowerCase()).toBe('zrxsxl');
+    expect(duplicates[0].folders.sort()).toEqual(['run-a/', 'run-b/']);
+  });
+});
+
+describe('folderBelowLabRoot', () => {
+  it('strips the leading organization and laboratory segments', () => {
+    expect(folderBelowLabRoot('org-1/lab-1/aws-healthomics/txn-a/')).toBe('aws-healthomics/txn-a/');
+  });
+
+  it('returns an empty string for the lab root and for bare file names', () => {
+    expect(folderBelowLabRoot('org-1/lab-1/')).toBe('');
+    expect(folderBelowLabRoot('')).toBe('');
   });
 });

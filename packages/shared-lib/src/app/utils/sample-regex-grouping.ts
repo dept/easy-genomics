@@ -132,6 +132,30 @@ export function groupFilenamesByRegex(
   return { sets, unmatched };
 }
 
+/** Display form of a folder: drops the leading `<OrganizationId>/<LaboratoryId>/` that every lab key starts with. */
+export function folderBelowLabRoot(folder: string): string {
+  return folder.split('/').slice(2).join('/');
+}
+
+export type DuplicateSampleName = {
+  sampleId: string;
+  folders: string[];
+};
+
+/** Sample IDs proposed from more than one folder, so the review step can flag them before import. Case-insensitive, like the grouping regex. */
+export function findDuplicateSampleNames(sets: ProposedSample[]): DuplicateSampleName[] {
+  const byLowercaseName = new Map<string, DuplicateSampleName>();
+  for (const set of sets) {
+    const key = set.sampleId.toLowerCase();
+    const entry = byLowercaseName.get(key) ?? { sampleId: set.sampleId, folders: [] };
+    entry.folders.push(set.folder);
+    byLowercaseName.set(key, entry);
+  }
+  return [...byLowercaseName.values()]
+    .filter((entry) => entry.folders.length > 1)
+    .sort((a, b) => a.sampleId.localeCompare(b.sampleId));
+}
+
 export function buildContentsSummary(files: ProposedSampleFile[]): string {
   const count = files.length;
   const hasR1 = files.some((f) => f.role === 'read1');
