@@ -12,6 +12,7 @@ import {
   WorkflowPlatform,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import type { LaboratoryS3Access } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-s3-access';
 import {
   ListSampleTagsResponse,
   ListSamplesByTagResponse,
@@ -207,11 +208,14 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     }
   }
 
-  public async assertLaboratoryHasS3BucketAccess(laboratory: Laboratory, bucket: string): Promise<void> {
+  public async assertLaboratoryHasS3BucketAccess(
+    laboratory: Laboratory,
+    bucket: string,
+  ): Promise<LaboratoryS3Access[]> {
     if (!bucket) {
       throw new S3BucketMismatchError();
     }
-    await assertLabS3Access(laboratory, bucket, s3AccessService);
+    return assertLabS3Access(laboratory, bucket, s3AccessService);
   }
 
   public async listTags(laboratoryId: string): Promise<ListLaboratoryDataTagsResponse> {

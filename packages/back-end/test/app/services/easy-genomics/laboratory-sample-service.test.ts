@@ -121,6 +121,135 @@ describe('LaboratorySampleService.bulkCreateSamples', () => {
 
     expect(setBatchForSamplesSpy).not.toHaveBeenCalled();
   });
+
+  describe('copy jobs from an allowed folder', () => {
+    const accessRows = (bucketName: string) => [
+      { LaboratoryId: 'lab-1', BucketName: 'my-bucket', OrganizationId: 'org-1', Effect: 'ALLOW' },
+      {
+        LaboratoryId: 'lab-1',
+        BucketName: bucketName,
+        OrganizationId: 'org-1',
+        Effect: 'ALLOW',
+        AllowedPrefix: 'sample-3-18/',
+      },
+    ];
+
+    it('copies a source key inside the allowed folder of its own source bucket', async () => {
+      mockListByLaboratoryId.mockResolvedValue(accessRows('partner-bucket'));
+
+      await svc.bulkCreateSamples(labFixture(), 'user-1', 'my-bucket', {
+        importLabel: 'sample-3-18',
+        samples: [],
+        copyJobs: [
+          {
+            sourceBucket: 'partner-bucket',
+            sourceKey: 'sample-3-18/S1_R1.fastq.gz',
+            destKey: 'org-1/lab-1/imports/sample-3-18/S1_R1.fastq.gz',
+          },
+        ],
+      });
+
+      expect(mockCopy).toHaveBeenCalledWith({
+        Bucket: 'my-bucket',
+        Key: 'org-1/lab-1/imports/sample-3-18/S1_R1.fastq.gz',
+        CopySource: 'partner-bucket/sample-3-18/S1_R1.fastq.gz',
+      });
+    });
+
+    it("rejects a source key under another bucket's allowed folder", async () => {
+      mockListByLaboratoryId.mockResolvedValue(accessRows('partner-bucket'));
+
+      await expect(
+        svc.bulkCreateSamples(labFixture(), 'user-1', 'my-bucket', {
+          importLabel: 'sample-3-18',
+          samples: [],
+          copyJobs: [
+            {
+              sourceBucket: 'my-bucket',
+              sourceKey: 'sample-3-18/S1_R1.fastq.gz',
+              destKey: 'org-1/lab-1/imports/x/S1.fq.gz',
+            },
+          ],
+        }),
+      ).rejects.toThrow(S3KeyOutOfPrefixError);
+      expect(mockCopy).not.toHaveBeenCalled();
+    });
+
+    it('rejects a source folder that only shares the allowed prefix as a string', async () => {
+      mockListByLaboratoryId.mockResolvedValue(accessRows('my-bucket'));
+
+      await expect(
+        svc.bulkCreateSamples(labFixture(), 'user-1', 'my-bucket', {
+          importLabel: 'x',
+          samples: [],
+          copyJobs: [
+            {
+              sourceBucket: 'my-bucket',
+              sourceKey: 'sample-3-18-other/S1.fq.gz',
+              destKey: 'org-1/lab-1/imports/x/S1.fq.gz',
+            },
+          ],
+        }),
+      ).rejects.toThrow(S3KeyOutOfPrefixError);
+    });
+
+    it('still rejects a destination key inside the allowed folder', async () => {
+      mockListByLaboratoryId.mockResolvedValue(accessRows('my-bucket'));
+
+      await expect(
+        svc.bulkCreateSamples(labFixture(), 'user-1', 'my-bucket', {
+          importLabel: 'x',
+          samples: [],
+          copyJobs: [
+            { sourceBucket: 'my-bucket', sourceKey: 'sample-3-18/S1.fq.gz', destKey: 'sample-3-18/copy/S1.fq.gz' },
+          ],
+        }),
+      ).rejects.toThrow(S3KeyOutOfPrefixError);
+      expect(mockCopy).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('LaboratorySampleService.createOrExtendSample expanding from the listing', () => {
+  it('lists only the laboratory root, even when the bucket has an allowed folder', async () => {
+    mockListByLaboratoryId.mockResolvedValue([
+      {
+        LaboratoryId: 'lab-1',
+        BucketName: 'my-bucket',
+        OrganizationId: 'org-1',
+        Effect: 'ALLOW',
+        AllowedPrefix: 'sample-3-18/',
+      },
+    ]);
+    const svc = new LaboratorySampleService();
+    const listTransactionInputs = jest.fn().mockResolvedValue({
+      contents: [{ Key: 'org-1/lab-1/run-1/S1_R1.fq.gz' }],
+      listingTruncated: false,
+    });
+    (svc as unknown as { dataCollectionService: { listTransactionInputs: jest.Mock } }).dataCollectionService = {
+      listTransactionInputs,
+    };
+    const createSampleSpy = jest.spyOn(svc, 'createSample').mockResolvedValue({ SampleId: 'sample-1' } as never);
+
+    await svc.createOrExtendSample(labFixture(), 'user-1', 'my-bucket', {
+      keys: [],
+      layout: 'single_end',
+      name: 'S1',
+      // Ungrouped on purpose: isFilenameRegexSafe rejects every grouping preset today.
+      filenameRegex: 'S1_R1\\.fq\\.gz',
+      expandRegexFromListing: true,
+    });
+
+    expect(listTransactionInputs).toHaveBeenCalledWith(
+      expect.objectContaining({ bucket: 'my-bucket', labPrefix: 'org-1/lab-1/' }),
+    );
+    expect(createSampleSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      'user-1',
+      'my-bucket',
+      expect.objectContaining({ keys: ['org-1/lab-1/run-1/S1_R1.fq.gz'] }),
+    );
+  });
 });
 
 describe('LaboratorySampleService.deleteSequenceCollection', () => {
