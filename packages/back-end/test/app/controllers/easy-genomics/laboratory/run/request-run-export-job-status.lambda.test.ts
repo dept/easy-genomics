@@ -207,4 +207,53 @@ describe('request-run-export-job-status Lambda', () => {
     expect(result.statusCode).toBe(400);
     expect(mockGetObject).not.toHaveBeenCalled();
   });
+
+  it('returns 403 when the caller has no laboratory access', async () => {
+    (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(false);
+
+    const result = await handler(
+      createMockEvent({ LaboratoryId: 'lab-1', JobId: jobId }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(403);
+    expect(mockGetObject).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty status object body', async () => {
+    mockGetObject.mockResolvedValue({ Body: undefined });
+
+    const result = await handler(
+      createMockEvent({ LaboratoryId: 'lab-1', JobId: jobId }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(400);
+    expect(mockGetPreSignedDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it('rejects a completed S3 destination outside the laboratory prefix', async () => {
+    mockGetObject.mockResolvedValue(
+      statusBody({
+        JobId: jobId,
+        LaboratoryId: 'lab-1',
+        Status: 'COMPLETED',
+        Destination: 'S3',
+        DestBucket: 'lims-bucket',
+        DestPrefix: 'other-org/other-lab/exports/',
+        CreatedAt: new Date().toISOString(),
+      }),
+    );
+
+    const result = await handler(
+      createMockEvent({ LaboratoryId: 'lab-1', JobId: jobId }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).not.toBe(200);
+    expect(JSON.parse(result.body).DestinationS3Uri).toBeUndefined();
+  });
 });

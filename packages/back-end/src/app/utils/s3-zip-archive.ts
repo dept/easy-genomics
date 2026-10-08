@@ -1,10 +1,21 @@
 import { PassThrough, type Readable } from 'stream';
 import type { S3Client } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
+import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import archiver from 'archiver';
 import { S3Service } from '@BE/services/s3-service';
 
 const MULTIPART_PART_SIZE_BYTES = 8 * 1024 * 1024;
+
+/** Flatten `.` / `..` so zip members cannot escape the archive root. */
+export function sanitizeZipArchivePath(archivePath: string): string {
+  const cleaned = archivePath.replace(/\\/g, '/').replace(/^\/+/, '');
+  const segments = cleaned.split('/').filter((segment) => segment && segment !== '.' && segment !== '..');
+  if (segments.length === 0) {
+    throw new InvalidRequestError('Invalid zip archive path');
+  }
+  return segments.join('/');
+}
 
 export type S3ZipArchiveEntry = {
   sourceBucket: string;
@@ -50,7 +61,7 @@ export async function zipS3ObjectsToArchive(params: {
         Key: entry.sourceKey,
       });
       if (!object.Body) continue;
-      archive.append(object.Body as unknown as Readable, { name: entry.archivePath });
+      archive.append(object.Body as unknown as Readable, { name: sanitizeZipArchivePath(entry.archivePath) });
     }
 
     await archive.finalize();

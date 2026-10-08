@@ -86,3 +86,29 @@ when this front-end ships:
 >
 > No Cognito / CDK / user-pool change. Support line if asked: “authentication library upgrade — sign in if prompted, no
 > other action needed.”
+
+---
+
+## Run result export APIs (backend)
+
+Preview, enqueue, and poll endpoints copy or zip outputs from completed laboratory runs. There is no UI on this branch,
+so Playwright E2E is deferred to the front-end follow-up. Unit tests cover auth 403, source/destination lab-prefix
+confinement, ZIP size, empty output, expiry, and SQS worker failure paths.
+
+### Manual steps
+
+Run against a deployed environment with at least two completed runs in one lab. Not yet executed.
+
+- [ ] **Preview** — POST `/laboratory/run/request-run-export-preview` for completed runs; `CanDownloadAsZip` is true
+      under 5 GB and false above it; `work/` and `.exports/` objects are omitted.
+- [ ] **Unauthorized caller** — a user without org/lab access gets 403 on preview, enqueue, and status; no SQS message.
+- [ ] **Cross-lab source** — a completed run whose `OutputS3Url` sits under another org/lab prefix is rejected (403);
+      listing/copy does not run.
+- [ ] **ZIP download** — enqueue `Destination: Download`, poll status until COMPLETED, download the presigned ZIP.
+      Single-run filename includes the run name; files sit under one `{runName}-{runId}/` folder.
+- [ ] **S3 copy** — enqueue without `DestinationPrefix`; objects land at
+      `{org}/{lab}/exports/{runName}-{runId}/...` (not a double-nested run folder). Custom prefixes stay under the lab
+      root and still get a per-run subfolder.
+- [ ] **ZIP over 5 GB** — enqueue Download for oversized output returns 400; S3/LIMS still works.
+- [ ] **Expired job** — after one hour, status poll returns 400 and the archive/status objects are deleted.
+- [ ] **E2E** — add a Playwright happy path (preview → enqueue → status) with the UI PR.

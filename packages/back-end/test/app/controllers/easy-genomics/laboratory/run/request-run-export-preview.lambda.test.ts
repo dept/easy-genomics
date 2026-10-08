@@ -10,7 +10,12 @@ jest.mock('../../../../../../src/app/utils/laboratory-s3-access-utils', () => ({
 }));
 jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-data-tagging-service', () => ({
   LaboratoryDataTaggingService: jest.fn().mockImplementation(() => ({
-    assertKeyUnderLabPrefix: jest.fn(),
+    assertKeyUnderLabPrefix: (laboratory: { OrganizationId: string; LaboratoryId: string }, key: string) => {
+      const root = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
+      if (!key.startsWith(root)) {
+        throw new Error(`S3 key is outside the laboratory prefix: ${key}`);
+      }
+    },
   })),
 }));
 
@@ -107,6 +112,62 @@ describe('request-run-export-preview Lambda', () => {
       CanDownloadAsZip: true,
     });
     expect(mockListAllObjectsUnderPrefix).toHaveBeenCalledWith('lab-bucket', 'org-1/lab-1/results/');
+  });
+
+  it('sets CanDownloadAsZip false when exportable output exceeds 5GB', async () => {
+    mockListAllObjectsUnderPrefix.mockResolvedValue([
+      { Key: 'org-1/lab-1/results/huge.bam', Size: 6 * 1024 * 1024 * 1024 },
+    ]);
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(JSON.parse(result.body)).toMatchObject({
+      FileCount: 1,
+      CanDownloadAsZip: false,
+    });
+  });
+
+  it('returns 403 when the caller has no laboratory access', async () => {
+    (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(false);
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(403);
+    expect(mockListAllObjectsUnderPrefix).not.toHaveBeenCalled();
+  });
+
+  it('rejects a run whose output prefix is outside the laboratory path', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      ...completedRun,
+      OutputS3Url: 's3://lab-bucket/other-org/other-lab/secrets/',
+    });
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(403);
+    expect(mockListAllObjectsUnderPrefix).not.toHaveBeenCalled();
   });
 
   it('rejects runs that are not complete', async () => {

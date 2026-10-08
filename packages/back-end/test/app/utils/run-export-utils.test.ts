@@ -64,6 +64,7 @@ describe('run-export-utils', () => {
     it('skips work scratch, download artifacts, and directory markers', () => {
       expect(shouldSkipRunExportKey(`${prefix}work/tmp.bam`, prefix)).toBe(true);
       expect(shouldSkipRunExportKey(`${prefix}.downloads/jobs/a.json`, prefix)).toBe(true);
+      expect(shouldSkipRunExportKey(`${prefix}.exports/archives/x.zip`, prefix)).toBe(true);
       expect(shouldSkipRunExportKey(`${prefix}results/`, prefix)).toBe(true);
     });
 
@@ -120,13 +121,11 @@ describe('run-export-utils', () => {
   });
 
   describe('defaultExportPrefix', () => {
-    it('namespaces S3 and LIMS copies under the lab prefix', () => {
+    it('namespaces S3 and LIMS copies under the lab prefix without a per-run folder', () => {
       const laboratory = { OrganizationId: 'org-1', LaboratoryId: 'lab-1' };
       const run = { RunId: 'run-1', RunName: 'TB Panel' };
-      expect(defaultExportPrefix({ laboratory, run, destination: 'S3' })).toBe('org-1/lab-1/exports/TB_Panel-run-1/');
-      expect(defaultExportPrefix({ laboratory, run, destination: 'Lims' })).toBe(
-        'org-1/lab-1/lims-export/TB_Panel-run-1/',
-      );
+      expect(defaultExportPrefix({ laboratory, run, destination: 'S3' })).toBe('org-1/lab-1/exports/');
+      expect(defaultExportPrefix({ laboratory, run, destination: 'Lims' })).toBe('org-1/lab-1/lims-export/');
     });
   });
 

@@ -153,6 +153,106 @@ describe('process-run-export-job Lambda', () => {
     const completedStatus = JSON.parse(mockPutObject.mock.calls.at(-1)[0].Body);
     expect(completedStatus.Status).toBe('COMPLETED');
     expect(completedStatus.FilesCopied).toBe(1);
+    expect(completedStatus.RunName).toBe('TB Panel');
+  });
+
+  it('copies a default single-run destination under one run folder, not two', async () => {
+    await handler(createSqsEvent({ ...baseJob, DestPrefix: 'org-1/lab-1/exports/' }), {} as any, () => {});
+
+    expect(mockCopyObjectBySize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        destKey: 'org-1/lab-1/exports/TB_Panel-run-1/a.vcf',
+      }),
+    );
+  });
+
+  it('returns an error when the SQS OrganizationId does not match the laboratory', async () => {
+    const result = await handler(createSqsEvent({ ...baseJob, OrganizationId: 'other-org' }), {} as any, () => {});
+
+    expect(result.statusCode).not.toBe(200);
+    expect(mockCopyObjectBySize).not.toHaveBeenCalled();
+  });
+
+  it('returns an error when StatusBucket does not match the laboratory bucket', async () => {
+    const result = await handler(
+      createSqsEvent({ ...baseJob, StatusBucket: 'attacker-bucket' }),
+      {} as any,
+      () => {},
+    );
+
+    expect(result.statusCode).not.toBe(200);
+    expect(mockCopyObjectBySize).not.toHaveBeenCalled();
+  });
+
+  it('skips zip when ArchiveKey is outside the laboratory prefix', async () => {
+    await handler(
+      createSqsEvent({
+        ...baseJob,
+        Destination: 'Download',
+        ArchiveKey: 'other-org/other-lab/.exports/archives/job.zip',
+        DestBucket: undefined,
+        DestPrefix: undefined,
+      }),
+      {} as any,
+      () => {},
+    );
+
+    expect(mockArchive.append).not.toHaveBeenCalled();
+    expect(mockGetObject).not.toHaveBeenCalled();
+  });
+
+  it('writes FAILED when the destination overlaps a re-resolved run prefix', async () => {
+    await handler(
+      createSqsEvent({
+        ...baseJob,
+        DestBucket: 'lab-bucket',
+        DestPrefix: 'org-1/lab-1/results/copy/',
+      }),
+      {} as any,
+      () => {},
+    );
+
+    expect(mockCopyObjectBySize).not.toHaveBeenCalled();
+    const failedStatus = JSON.parse(mockPutObject.mock.calls.at(-1)[0].Body);
+    expect(failedStatus.Status).toBe('FAILED');
+    expect(failedStatus.ErrorMessage).toContain('overlap');
+  });
+
+  it('writes FAILED when S3 export is missing DestPrefix', async () => {
+    await handler(createSqsEvent({ ...baseJob, DestPrefix: undefined }), {} as any, () => {});
+
+    expect(mockCopyObjectBySize).not.toHaveBeenCalled();
+    const failedStatus = JSON.parse(mockPutObject.mock.calls.at(-1)[0].Body);
+    expect(failedStatus.Status).toBe('FAILED');
+  });
+
+  it('returns an error for a malformed SQS body', async () => {
+    const result = await handler({ Records: [{ body: 'not-json' }] } as SQSEvent, {} as any, () => {});
+
+    expect(result.statusCode).not.toBe(200);
+    expect(mockPutObject).not.toHaveBeenCalled();
+  });
+
+  it('flattens zip-slip segments in object keys', async () => {
+    mockListAllObjectsUnderPrefix.mockResolvedValue([
+      { Key: 'org-1/lab-1/results/../../secret.txt', Size: 10 },
+    ]);
+
+    await handler(
+      createSqsEvent({
+        ...baseJob,
+        Destination: 'Download',
+        ArchiveKey: 'org-1/lab-1/.exports/archives/job.zip',
+        DestBucket: undefined,
+        DestPrefix: undefined,
+      }),
+      {} as any,
+      () => {},
+    );
+
+    expect(mockArchive.append).toHaveBeenCalledWith(expect.anything(), {
+      name: 'TB_Panel-run-1/secret.txt',
+    });
   });
 
   it('writes FAILED status when the copy throws', async () => {

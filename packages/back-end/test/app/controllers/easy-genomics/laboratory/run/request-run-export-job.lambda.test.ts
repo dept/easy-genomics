@@ -124,6 +124,94 @@ describe('request-run-export-job Lambda', () => {
         SourcePrefix: 'org-1/lab-1/results/',
       },
     ]);
+    const pendingStatus = JSON.parse(mockPutObject.mock.calls[0][0].Body);
+    expect(pendingStatus.RunIds).toEqual(['run-1']);
+    expect(pendingStatus.RunName).toBe('TB Panel');
+  });
+
+  it('namespaces a single-run S3 copy under the lab exports root', async () => {
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
+        Destination: 'S3',
+        DestinationBucket: 'lims-bucket',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    const message = JSON.parse(mockSendMessage.mock.calls[0][0].MessageBody);
+    expect(message.DestPrefix).toBe('org-1/lab-1/exports/');
+  });
+
+  it('returns 403 when the caller has no laboratory access', async () => {
+    (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(false);
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
+        Destination: 'Download',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(403);
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('rejects a run whose output prefix is outside the laboratory path', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      ...completedRun,
+      OutputS3Url: 's3://lab-bucket/other-org/other-lab/secrets/',
+    });
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
+        Destination: 'Download',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(403);
+    expect(mockListAllObjectsUnderPrefix).not.toHaveBeenCalled();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('rejects S3 export without a destination bucket', async () => {
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
+        Destination: 'S3',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(400);
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('rejects more than 25 run ids', async () => {
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: Array.from({ length: 26 }, (_, index) => `run-${index}`),
+        Destination: 'Download',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(400);
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it('enqueues an S3 copy job for multiple runs with a bundle prefix', async () => {

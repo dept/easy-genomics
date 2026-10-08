@@ -43,6 +43,7 @@ import {
   type StoredRunExportJobStatus,
 } from '@BE/utils/run-export-utils';
 import { s3BodyToString } from '@BE/utils/s3-object-body';
+import { laboratoryPrefix } from '@BE/utils/s3-uri-utils';
 import { zipS3ObjectsToArchive } from '@BE/utils/s3-zip-archive';
 
 export type CollectedRunExport = {
@@ -104,7 +105,7 @@ export class RunExportService {
 
     const destination = await this.resolveCopyDestination(laboratory, request, collected);
     const jobId = uuidv4();
-    const laboratoryOwnedPrefix = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
+    const laboratoryOwnedPrefix = laboratoryPrefix(laboratory);
     const statusKey = `${laboratoryOwnedPrefix}${RUN_EXPORT_JOBS_PREFIX}/${jobId}.json`;
     const archiveKey =
       request.Destination === 'Download'
@@ -117,13 +118,15 @@ export class RunExportService {
     }
 
     const sources = collected.map((item) => item.source);
+    const runIds = sources.map((source) => source.RunId);
     await this.writeStatus({
       s3Bucket: statusBucket,
       statusKey,
       status: {
         JobId: jobId,
         LaboratoryId: laboratory.LaboratoryId,
-        RunIds: sources.map((source) => source.RunId),
+        RunIds: runIds,
+        RunName: sources.length === 1 ? sources[0].RunName : undefined,
         Destination: request.Destination,
         Status: 'PENDING',
         ArchiveS3Key: archiveKey,
@@ -136,7 +139,7 @@ export class RunExportService {
 
     const queueUrl = process.env.SQS_RUN_EXPORT_QUEUE_URL || '';
     if (!queueUrl) {
-      throw new Error('Missing SQS_RUN_EXPORT_QUEUE_URL environment variable');
+      throw new InvalidRequestError('Missing SQS_RUN_EXPORT_QUEUE_URL environment variable');
     }
 
     const message: RunExportJobMessage = {
@@ -170,7 +173,7 @@ export class RunExportService {
     const s3Bucket = requireLaboratoryS3Bucket(laboratory);
     await assertLaboratoryHasS3BucketAccess(laboratory, s3Bucket, this.s3Access);
 
-    const statusKey = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/${RUN_EXPORT_JOBS_PREFIX}/${jobId}.json`;
+    const statusKey = `${laboratoryPrefix(laboratory)}${RUN_EXPORT_JOBS_PREFIX}/${jobId}.json`;
     this.tagging.assertKeyUnderLabPrefix(laboratory, statusKey);
 
     const statusObject = await this.s3.getObject({ Bucket: s3Bucket, Key: statusKey });
@@ -236,15 +239,13 @@ export class RunExportService {
       throw new InvalidRequestError('Export job status bucket does not match the laboratory bucket');
     }
     this.tagging.assertKeyUnderLabPrefix(laboratory, job.StatusKey);
-    if (job.ArchiveKey) {
-      this.tagging.assertKeyUnderLabPrefix(laboratory, job.ArchiveKey);
-    }
 
+    const runIds = job.Sources.map((source) => source.RunId);
     const createdAt = new Date().toISOString();
     const processingStatus: StoredRunExportJobStatus = {
       JobId: job.JobId,
       LaboratoryId: job.LaboratoryId,
-      RunIds: (job.Sources || []).map((source) => source.RunId),
+      RunIds: runIds,
       Destination: job.Destination,
       Status: 'PROCESSING',
       ArchiveS3Key: job.ArchiveKey,
@@ -256,10 +257,11 @@ export class RunExportService {
     await this.writeStatus({ s3Bucket: statusBucket, statusKey: job.StatusKey, status: processingStatus });
 
     try {
-      const collected = await this.collectRuns(
-        laboratory,
-        (job.Sources || []).map((source) => source.RunId),
-      );
+      if (job.ArchiveKey) {
+        this.tagging.assertKeyUnderLabPrefix(laboratory, job.ArchiveKey);
+      }
+      const collected = await this.collectRuns(laboratory, runIds);
+      processingStatus.RunName = collected.length === 1 ? collected[0].source.RunName : undefined;
       if (collected.reduce((sum, item) => sum + item.objects.length, 0) === 0) {
         throw new InvalidRequestError(RUN_OUTPUT_EMPTY_MESSAGE);
       }
@@ -320,6 +322,9 @@ export class RunExportService {
       assertCompletedRun(run);
 
       const sourceLocation = resolveRunOutputLocation(run);
+      if (!sourceLocation.prefix.startsWith(laboratoryPrefix(laboratory))) {
+        throw new UnauthorizedAccessError();
+      }
       await assertLaboratoryHasS3BucketAccess(laboratory, sourceLocation.bucket, this.s3Access);
       const objects = await listExportableRunObjects({
         s3: this.s3,
@@ -383,26 +388,24 @@ export class RunExportService {
 
   private async zipOutputs(job: RunExportJobMessage, collected: CollectedRunExport[]): Promise<number> {
     if (!job.ArchiveKey) {
-      throw new Error('Missing archive key for ZIP export');
+      throw new InvalidRequestError('Missing archive key for ZIP export');
     }
     const entries = collected.flatMap((item) => {
       const zipRootFolder = uniqueRunExportFolder({ RunId: item.source.RunId, RunName: item.source.RunName });
       return item.objects
         .map((object) => {
-          const relativeName = object.Key.startsWith(item.source.SourcePrefix)
-            ? object.Key.slice(item.source.SourcePrefix.length)
-            : object.Key;
-          if (!relativeName) return undefined;
+          const archivePath = destinationObjectKey(object.Key, item.source.SourcePrefix, `${zipRootFolder}/`);
+          if (!archivePath || archivePath.endsWith('/')) return undefined;
           return {
             sourceBucket: item.source.SourceBucket,
             sourceKey: object.Key,
-            archivePath: `${zipRootFolder}/${relativeName}`,
+            archivePath,
           };
         })
         .filter((entry): entry is NonNullable<typeof entry> => !!entry);
     });
     if (entries.length === 0) {
-      throw new Error('The selected runs do not contain exportable files');
+      throw new InvalidRequestError(RUN_OUTPUT_EMPTY_MESSAGE);
     }
     await zipS3ObjectsToArchive({
       s3: this.s3,

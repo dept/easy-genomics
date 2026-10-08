@@ -2,6 +2,7 @@ import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib
 import { APIGatewayProxyResult, Handler } from 'aws-lambda';
 import { SQSEvent } from 'aws-lambda/trigger/sqs';
 import { S3Service } from '@BE/services/s3-service';
+import { normalizeS3Prefix } from '@BE/utils/s3-uri-utils';
 import { zipS3ObjectsToArchive, type S3ZipArchiveEntry } from '@BE/utils/s3-zip-archive';
 import { parseSqsJsonBody } from '@BE/utils/sqs-json-body';
 
@@ -30,7 +31,6 @@ type StoredFolderDownloadJobStatus = {
   ErrorMessage?: string;
 };
 
-const normalizePrefix = (prefix: string): string => (prefix.endsWith('/') ? prefix : `${prefix}/`);
 const getZipRootFolderName = (prefix: string): string => {
   const trimmedPrefix = prefix.replace(/\/+$/, '');
   const lastSegment = trimmedPrefix.split('/').filter(Boolean).pop() || 'folder-download';
@@ -54,7 +54,7 @@ const parseSnsWrappedMessage = (body: string): FolderDownloadJobMessage =>
   parseSqsJsonBody<FolderDownloadJobMessage>(body);
 
 const zipS3Prefix = async (job: FolderDownloadJobMessage): Promise<void> => {
-  const normalizedPrefix = normalizePrefix(job.RequestedPrefix);
+  const normalizedPrefix = normalizeS3Prefix(job.RequestedPrefix);
   const zipRootFolder = getZipRootFolderName(normalizedPrefix);
   const entries: S3ZipArchiveEntry[] = [];
 
@@ -108,7 +108,7 @@ export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxy
         JobId: job.JobId,
         LaboratoryId: job.LaboratoryId,
         Status: 'PROCESSING',
-        RequestedPrefix: normalizePrefix(job.RequestedPrefix),
+        RequestedPrefix: normalizeS3Prefix(job.RequestedPrefix),
         ArchiveS3Key: job.ArchiveKey,
         CreatedAt: createdAt,
       };

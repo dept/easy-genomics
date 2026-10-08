@@ -300,7 +300,7 @@ export class S3Service {
         Bucket: params.destBucket,
         Key: params.destKey,
         UploadId: uploadId,
-      }).catch(() => undefined);
+      }).catch(() => undefined); // best-effort abort; surface the original copy failure
       throw error;
     }
   };

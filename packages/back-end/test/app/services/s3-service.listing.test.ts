@@ -168,4 +168,31 @@ describe('S3Service.copyObjectBySize', () => {
       }),
     );
   });
+
+  it('aborts a multipart copy when a part fails', async () => {
+    const abortMultipartUpload = jest.fn().mockResolvedValue({});
+    Object.assign(svc as unknown as Record<string, unknown>, {
+      copyBucketObject: jest.fn(),
+      createMultipartUpload: jest.fn().mockResolvedValue({ UploadId: 'u-1' }),
+      uploadPartCopy: jest.fn().mockRejectedValue(new Error('part copy failed')),
+      completeMultipartUpload: jest.fn(),
+      abortMultipartUpload,
+    });
+
+    await expect(
+      svc.copyObjectBySize({
+        sourceBucket: 'src',
+        sourceKey: 'huge.bam',
+        destBucket: 'dest',
+        destKey: 'out/huge.bam',
+        sizeBytes: 5 * 1024 * 1024 * 1024 + 1,
+      }),
+    ).rejects.toThrow('part copy failed');
+
+    expect(abortMultipartUpload).toHaveBeenCalledWith({
+      Bucket: 'dest',
+      Key: 'out/huge.bam',
+      UploadId: 'u-1',
+    });
+  });
 });

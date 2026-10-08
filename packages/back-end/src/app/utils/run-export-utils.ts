@@ -1,13 +1,8 @@
 import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
-import {
-  RUN_EXPORT_MAX_RUNS,
-  RunExportDestination,
-} from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run/request-run-export-job';
+import { RunExportDestination } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run/request-run-export-job';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import { laboratoryPrefix, normalizeS3Prefix, parseS3ObjectUri } from '@BE/utils/s3-uri-utils';
-
-export { RUN_EXPORT_MAX_RUNS };
 
 export const COMPLETED_RUN_STATUSES = new Set(['SUCCEEDED', 'COMPLETED']);
 export const RUN_EXPORT_ZIP_SIZE_LIMIT_BYTES = 5 * 1024 * 1024 * 1024; // 5GB
@@ -22,7 +17,6 @@ export const ZIP_TOO_LARGE_MESSAGE =
 export const RUN_NOT_COMPLETE_MESSAGE = 'Results can only be saved from a completed run.';
 export const RUN_OUTPUT_MISSING_MESSAGE = 'This run does not have a stored output location.';
 export const RUN_OUTPUT_EMPTY_MESSAGE = 'The selected runs do not contain any exportable output files.';
-export const RUN_EXPORT_TOO_MANY_MESSAGE = `Select at most ${RUN_EXPORT_MAX_RUNS} runs at a time.`;
 export const RUN_EXPORT_TOO_MANY_OBJECTS_MESSAGE = `Select fewer runs. At most ${RUN_EXPORT_MAX_EXPANDED_OBJECTS} objects can be exported at once.`;
 export const LABORATORY_BUCKET_REQUIRED_MESSAGE = 'Laboratory does not have an S3 bucket configured';
 
@@ -180,14 +174,20 @@ export function uniqueRunExportFolder(run: Pick<LaboratoryRun, 'RunId'> & { RunN
   return `${safeRunFolderName(run.RunName, run.RunId)}-${run.RunId}`;
 }
 
+function labExportRoot(
+  laboratory: Pick<Laboratory, 'OrganizationId' | 'LaboratoryId'>,
+  destination: Exclude<RunExportDestination, 'Download'>,
+): string {
+  const root = destination === 'Lims' ? 'lims-export' : 'exports';
+  return `${laboratoryPrefix(laboratory)}${root}/`;
+}
+
 export function defaultExportPrefix(params: {
   laboratory: Pick<Laboratory, 'OrganizationId' | 'LaboratoryId'>;
   run: Pick<LaboratoryRun, 'RunId' | 'RunName'>;
   destination: Exclude<RunExportDestination, 'Download'>;
 }): string {
-  const folder = uniqueRunExportFolder(params.run);
-  const root = params.destination === 'Lims' ? 'lims-export' : 'exports';
-  return `${params.laboratory.OrganizationId}/${params.laboratory.LaboratoryId}/${root}/${folder}/`;
+  return labExportRoot(params.laboratory, params.destination);
 }
 
 export function defaultBundleExportPrefix(params: {
@@ -195,8 +195,7 @@ export function defaultBundleExportPrefix(params: {
   destination: Exclude<RunExportDestination, 'Download'>;
   runCount: number;
 }): string {
-  const root = params.destination === 'Lims' ? 'lims-export' : 'exports';
-  return `${params.laboratory.OrganizationId}/${params.laboratory.LaboratoryId}/${root}/bundle-${params.runCount}-runs/`;
+  return `${labExportRoot(params.laboratory, params.destination)}bundle-${params.runCount}-runs/`;
 }
 
 export function assertDestinationDoesNotOverlapSource(params: {
@@ -211,7 +210,7 @@ export function assertDestinationDoesNotOverlapSource(params: {
   }
   const source = normalizeS3Prefix(params.sourcePrefix);
   const dest = normalizeS3Prefix(params.destPrefix);
-  if (source === '/' || dest.startsWith(source) || source.startsWith(dest)) {
+  if (dest.startsWith(source) || source.startsWith(dest)) {
     throw new InvalidRequestError('Destination must not overlap the run output location');
   }
 }
