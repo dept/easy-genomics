@@ -2662,6 +2662,11 @@ components:
           type: array
           items:
             type: string
+        allowedPrefixes:
+          type: object
+          description: >-
+            Granted bucket name → its allowed prefix. Buckets without one are absent; a missing map means no bucket has
+            one.
       required:
         - buckets
     UpdateLaboratoryRequest:
@@ -3029,6 +3034,10 @@ components:
                 minLength: 1
               granted:
                 type: boolean
+              allowedPrefix:
+                type: string
+                minLength: 1
+                maxLength: 512
             required:
               - laboratoryId
               - bucketName
@@ -3051,6 +3060,13 @@ components:
           enum:
             - ALLOW
             - DENY
+          type: string
+        AllowedPrefix:
+          description: >-
+            ALLOW rows only: an absolute prefix (ends in "/") outside `{OrganizationId}/{LaboratoryId}/` that Data
+            Collections
+
+            may also list and import from in this bucket. Removed whenever the row is revoked or rewritten without it.
           type: string
         CreatedAt:
           type: string
