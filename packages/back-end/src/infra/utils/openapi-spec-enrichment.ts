@@ -16,6 +16,19 @@ const HTTP_METHODS = ['get', 'put', 'post', 'patch', 'delete', 'head', 'options'
 const RESOURCE_ID_SUFFIX = '/{id}';
 
 export interface EnrichSpecOptions {
+  /**
+   * `info.title` and `info.description` for this API's document.
+   *
+   * API Gateway takes a REST API's name and description from the imported OpenAPI
+   * body, not from the `Name`/`Description` properties of the CloudFormation
+   * resource — its own docs note that `Name` is required only when the API is *not*
+   * based on an OpenAPI specification. Setting `Name` on a `SpecRestApi` therefore
+   * updates the template, deploys cleanly, and changes nothing. Every API built from
+   * the shared spec inherits the same title and description unless they are
+   * overridden here, which is why both previously deployed indistinguishable.
+   */
+  apiTitle: string;
+  apiDescription: string;
   /** Only paths starting with one of these prefixes are served by this API (e.g. ['/easy-genomics']). */
   includePathPrefixes: string[];
   /**
@@ -76,6 +89,11 @@ export function enrichSpecForApiGateway(spec: Record<string, any>, opts: EnrichS
   // still parses the document, so downgrade it to valid 3.0 to avoid a deploy-time
   // rejection. Runtime behaviour is unchanged.
   downgradeToOpenApi30(document);
+
+  // Name and describe THIS API. The shared spec gives every API the same
+  // `info.title`, and API Gateway names the imported API from it, so without this
+  // both APIs deploy as the same name regardless of the `Name` property.
+  document.info = { ...document.info, title: opts.apiTitle, description: opts.apiDescription };
 
   const schemes = document.components?.securitySchemes;
   if (!schemes || !schemes[schemeName]) {
