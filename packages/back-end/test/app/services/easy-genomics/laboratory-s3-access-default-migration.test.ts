@@ -92,4 +92,48 @@ describe('migrateS3AccessOnDefaultModeChange', () => {
     );
     expect(mockRemove).toHaveBeenCalledWith(laboratoryId, 'bucket-b');
   });
+
+  it('false → true: keeps an ALLOW row that carries an allowed prefix', async () => {
+    mockListByLaboratoryId.mockResolvedValue([
+      {
+        LaboratoryId: laboratoryId,
+        OrganizationId: organizationId,
+        BucketName: 'bucket-a',
+        Effect: 'ALLOW',
+        AllowedPrefix: 'sample-3-18/',
+      },
+    ]);
+
+    await migrateS3AccessOnDefaultModeChange({
+      organizationId,
+      laboratoryId,
+      previousDefaultOn: false,
+      nextDefaultOn: true,
+    });
+
+    expect(mockRemove).not.toHaveBeenCalledWith(laboratoryId, 'bucket-a');
+    expect(mockUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ BucketName: 'bucket-a' }));
+  });
+
+  it('true → false: does not overwrite an ALLOW row that carries an allowed prefix', async () => {
+    mockListByLaboratoryId.mockResolvedValue([
+      {
+        LaboratoryId: laboratoryId,
+        OrganizationId: organizationId,
+        BucketName: 'bucket-a',
+        Effect: 'ALLOW',
+        AllowedPrefix: 'sample-3-18/',
+      },
+    ]);
+
+    await migrateS3AccessOnDefaultModeChange({
+      organizationId,
+      laboratoryId,
+      previousDefaultOn: true,
+      nextDefaultOn: false,
+    });
+
+    expect(mockUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ BucketName: 'bucket-a' }));
+    expect(mockUpsert).toHaveBeenCalledWith(expect.objectContaining({ BucketName: 'bucket-b', Effect: 'ALLOW' }));
+  });
 });

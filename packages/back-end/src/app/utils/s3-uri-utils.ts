@@ -50,17 +50,32 @@ export function laboratoryPrefix(laboratory: { OrganizationId: string; Laborator
 }
 
 /**
- * Resolves the absolute prefix a laboratory may list. Defaults to the laboratory root;
- * anything outside `{OrganizationId}/{LaboratoryId}/` is rejected.
+ * True when `keyOrPrefix` is inside the laboratory root or inside `allowedPrefix`, the prefix stored on the lab's
+ * S3-access row for the same bucket. Both roots end in "/", so a sibling folder sharing the name never matches.
+ */
+export function isInsideLaboratoryReadablePrefix(
+  keyOrPrefix: string,
+  laboratory: { OrganizationId: string; LaboratoryId: string },
+  allowedPrefix?: string,
+): boolean {
+  if (keyOrPrefix.startsWith(laboratoryPrefix(laboratory))) return true;
+  return !!allowedPrefix && keyOrPrefix.startsWith(normalizeS3Prefix(allowedPrefix));
+}
+
+/**
+ * Resolves the absolute prefix a laboratory may list. Defaults to the laboratory root; anything outside
+ * `{OrganizationId}/{LaboratoryId}/` and outside the stored `allowedPrefix` for this bucket is rejected.
  */
 export function resolveLaboratoryListingPrefix(
   laboratory: { OrganizationId: string; LaboratoryId: string },
   requestedPrefix?: string,
+  allowedPrefix?: string,
 ): string {
-  const laboratoryRoot = laboratoryPrefix(laboratory);
-  const resolvedPrefix = normalizeS3Prefix(requestedPrefix || laboratoryRoot);
-  if (!resolvedPrefix.startsWith(laboratoryRoot)) {
-    throw new UnauthorizedAccessError("S3 prefix must be inside this laboratory's folder");
+  const resolvedPrefix = normalizeS3Prefix(requestedPrefix || laboratoryPrefix(laboratory));
+  if (!isInsideLaboratoryReadablePrefix(resolvedPrefix, laboratory, allowedPrefix)) {
+    throw new UnauthorizedAccessError(
+      "S3 prefix must be inside this laboratory's folder or the allowed folder for this bucket",
+    );
   }
   return resolvedPrefix;
 }

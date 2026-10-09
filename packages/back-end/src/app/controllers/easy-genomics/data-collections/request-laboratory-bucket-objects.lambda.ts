@@ -12,7 +12,7 @@ import {
   validateOrganizationAdminAccess,
   validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
-import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
+import { assertLaboratoryHasS3BucketAccess, findAllowedPrefix } from '@BE/utils/laboratory-s3-access-utils';
 import { resolveLaboratoryListingPrefix } from '@BE/utils/s3-uri-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -46,9 +46,13 @@ export const handler: Handler = async (
       throw new InvalidRequestError('Laboratory has no S3 bucket configured');
     }
 
-    await assertLaboratoryHasS3BucketAccess(laboratory, s3Bucket, s3AccessService);
+    const accessRows = await assertLaboratoryHasS3BucketAccess(laboratory, s3Bucket, s3AccessService);
 
-    const normalizedPrefix = resolveLaboratoryListingPrefix(laboratory, body.S3Prefix);
+    const normalizedPrefix = resolveLaboratoryListingPrefix(
+      laboratory,
+      body.S3Prefix,
+      findAllowedPrefix(accessRows, s3Bucket),
+    );
 
     const pageSize = Math.min(body.MaxKeys ?? 1000, 1000);
     const maxTotalKeys = Math.min(body.MaxTotalKeys ?? 15_000, 50000);
