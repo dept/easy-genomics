@@ -334,3 +334,36 @@ describe('folderBelowLabRoot', () => {
     expect(folderBelowLabRoot('')).toBe('');
   });
 });
+
+describe('sidecar files under every preset', () => {
+  const presetFixtures = [
+    ['any_separator_r1_r2', 'x_R1_001.fastq.gz', 'x'],
+    ['underscore_r1_r2', 'x_R1_001.fastq.gz', 'x'],
+    ['dash_r1_r2', 'x-R1_001.fastq.gz', 'x'],
+    ['underscore_1_2', 'x_1.fq.gz', 'x'],
+    ['dash_1_2', 'x-2.fastq', 'x'],
+  ] as const;
+  const sidecarSuffixes = ['.md5', '.sha256', '.tmp', '.bak'];
+
+  it.each(presetFixtures)('%s still matches %s as sample %s', (presetKey, fastqName, sampleId) => {
+    const { sets, unmatched } = groupFilenamesByRegex([fastqName], REGEX_GROUPING_PRESETS[presetKey].pattern);
+    expect(unmatched).toEqual([]);
+    expect(sets.map((set) => set.sampleId)).toEqual([sampleId]);
+  });
+
+  it.each(presetFixtures)('%s leaves sidecars of %s unmatched', (presetKey, fastqName) => {
+    const sidecars = sidecarSuffixes.map((suffix) => `${fastqName}${suffix}`);
+    const { sets, unmatched } = groupFilenamesByRegex(
+      [fastqName, ...sidecars],
+      REGEX_GROUPING_PRESETS[presetKey].pattern,
+    );
+    expect(unmatched).toEqual(sidecars);
+    expect(sets).toHaveLength(1);
+    expect(sets[0].files).toHaveLength(1);
+  });
+
+  it('keeps an upper-case extension matching', () => {
+    const { unmatched } = groupFilenamesByRegex(['x_R1_001.FASTQ.GZ'], REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern);
+    expect(unmatched).toEqual([]);
+  });
+});
