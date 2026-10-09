@@ -43,6 +43,14 @@ export function normalizeS3Prefix(prefix: string): string {
   return prefix.endsWith('/') ? prefix : `${prefix}/`;
 }
 
+/**
+ * CopySource must be URL-encoded per segment. A raw `bucket/key with #` silently
+ * copies the wrong object (or none) because `#`, `%`, `+`, and spaces are special.
+ */
+export function encodeS3CopySource(bucket: string, key: string): string {
+  return [bucket, ...key.split('/')].map(encodeURIComponent).join('/');
+}
+
 export function laboratoryPrefix(laboratory: { OrganizationId: string; LaboratoryId: string }): string {
   return `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
 }
