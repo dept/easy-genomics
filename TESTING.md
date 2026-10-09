@@ -93,7 +93,9 @@ when this front-end ships:
 
 Preview, enqueue, and poll endpoints copy or zip outputs from completed laboratory runs. There is no UI on this branch,
 so Playwright E2E is deferred to the front-end follow-up. Unit tests cover auth 403, source/destination lab-prefix
-confinement, ZIP size, empty output, expiry, and SQS worker failure paths.
+confinement, ZIP size, empty output, expiry, SQS worker failure paths, lab manager/technician grants, IAM, and multipart
+copy ranges. The worker uses a per-job FIFO group and a DLQ (`maxReceiveCount: 3`) so one large copy cannot block the
+lab for a day. Expired `.exports/` jobs/archives are swept on the next enqueue.
 
 ### Manual steps
 
@@ -106,9 +108,12 @@ Run against a deployed environment with at least two completed runs in one lab. 
       listing/copy does not run.
 - [ ] **ZIP download** — enqueue `Destination: Download`, poll status until COMPLETED, download the presigned ZIP.
       Single-run filename includes the run name; files sit under one `{runName}-{runId}/` folder.
-- [ ] **S3 copy** — enqueue without `DestinationPrefix`; objects land at
-      `{org}/{lab}/exports/{runName}-{runId}/...` (not a double-nested run folder). Custom prefixes stay under the lab
-      root and still get a per-run subfolder.
+- [ ] **S3 copy** — enqueue without `DestinationPrefix`; objects land at `{org}/{lab}/exports/{runName}-{runId}/...`
+      (not a double-nested run folder). Custom prefixes stay under the lab root and still get a per-run subfolder.
 - [ ] **ZIP over 5 GB** — enqueue Download for oversized output returns 400; S3/LIMS still works.
 - [ ] **Expired job** — after one hour, status poll returns 400 and the archive/status objects are deleted.
+- [ ] **Cleanup sweep** — request a second export after the first ZIP expires; the previous archive under
+      `.exports/archives/` is gone.
+- [ ] **Large S3 copy timeout** — a huge multi-run S3 export fails with a timeout message rather than leaving PROCESSING
+      forever; other labs/jobs can still enqueue.
 - [ ] **E2E** — add a Playwright happy path (preview → enqueue → status) with the UI PR.

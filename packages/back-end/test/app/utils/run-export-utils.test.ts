@@ -121,11 +121,12 @@ describe('run-export-utils', () => {
   });
 
   describe('defaultExportPrefix', () => {
-    it('namespaces S3 and LIMS copies under the lab prefix without a per-run folder', () => {
+    it('namespaces S3 and LIMS copies under a per-job folder', () => {
       const laboratory = { OrganizationId: 'org-1', LaboratoryId: 'lab-1' };
-      const run = { RunId: 'run-1', RunName: 'TB Panel' };
-      expect(defaultExportPrefix({ laboratory, run, destination: 'S3' })).toBe('org-1/lab-1/exports/');
-      expect(defaultExportPrefix({ laboratory, run, destination: 'Lims' })).toBe('org-1/lab-1/lims-export/');
+      expect(defaultExportPrefix({ laboratory, destination: 'S3', jobId: 'job-1' })).toBe('org-1/lab-1/exports/job-1/');
+      expect(defaultExportPrefix({ laboratory, destination: 'Lims', jobId: 'job-1' })).toBe(
+        'org-1/lab-1/lims-export/job-1/',
+      );
     });
   });
 
@@ -136,8 +137,9 @@ describe('run-export-utils', () => {
           laboratory: { OrganizationId: 'org-1', LaboratoryId: 'lab-1' },
           destination: 'S3',
           runCount: 3,
+          jobId: 'job-1',
         }),
-      ).toBe('org-1/lab-1/exports/bundle-3-runs/');
+      ).toBe('org-1/lab-1/exports/bundle-3-runs-job-1/');
     });
   });
 

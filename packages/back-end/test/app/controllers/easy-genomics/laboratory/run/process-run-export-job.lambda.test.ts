@@ -150,6 +150,9 @@ describe('process-run-export-job Lambda', () => {
       'lims-bucket',
       expect.anything(),
     );
+    const processingStatus = JSON.parse(mockPutObject.mock.calls[0][0].Body);
+    expect(processingStatus.Status).toBe('PROCESSING');
+    expect(processingStatus.ExpiresAt).toBeDefined();
     const completedStatus = JSON.parse(mockPutObject.mock.calls.at(-1)[0].Body);
     expect(completedStatus.Status).toBe('COMPLETED');
     expect(completedStatus.FilesCopied).toBe(1);
@@ -166,22 +169,33 @@ describe('process-run-export-job Lambda', () => {
     );
   });
 
-  it('returns an error when the SQS OrganizationId does not match the laboratory', async () => {
+  it('writes FAILED when the SQS OrganizationId does not match the laboratory', async () => {
     const result = await handler(createSqsEvent({ ...baseJob, OrganizationId: 'other-org' }), {} as any, () => {});
 
-    expect(result.statusCode).not.toBe(200);
+    expect(result.statusCode).toBe(200);
     expect(mockCopyObjectBySize).not.toHaveBeenCalled();
+    const failedStatus = JSON.parse(mockPutObject.mock.calls.at(-1)[0].Body);
+    expect(failedStatus.Status).toBe('FAILED');
   });
 
-  it('returns an error when StatusBucket does not match the laboratory bucket', async () => {
-    const result = await handler(
-      createSqsEvent({ ...baseJob, StatusBucket: 'attacker-bucket' }),
-      {} as any,
-      () => {},
-    );
+  it('writes FAILED when StatusBucket does not match the laboratory bucket', async () => {
+    const result = await handler(createSqsEvent({ ...baseJob, StatusBucket: 'attacker-bucket' }), {} as any, () => {});
 
-    expect(result.statusCode).not.toBe(200);
+    expect(result.statusCode).toBe(200);
     expect(mockCopyObjectBySize).not.toHaveBeenCalled();
+    const failedStatus = JSON.parse(mockPutObject.mock.calls.at(-1)[0].Body);
+    expect(failedStatus.Status).toBe('FAILED');
+  });
+
+  it('writes FAILED when the worker is about to time out', async () => {
+    const context = { getRemainingTimeInMillis: () => 5_000 };
+    const result = await handler(createSqsEvent(baseJob), context as any, () => {});
+
+    expect(result.statusCode).toBe(200);
+    expect(mockCopyObjectBySize).not.toHaveBeenCalled();
+    const failedStatus = JSON.parse(mockPutObject.mock.calls.at(-1)[0].Body);
+    expect(failedStatus.Status).toBe('FAILED');
+    expect(failedStatus.ErrorMessage).toContain('timeout');
   });
 
   it('skips zip when ArchiveKey is outside the laboratory prefix', async () => {
@@ -226,17 +240,13 @@ describe('process-run-export-job Lambda', () => {
     expect(failedStatus.Status).toBe('FAILED');
   });
 
-  it('returns an error for a malformed SQS body', async () => {
-    const result = await handler({ Records: [{ body: 'not-json' }] } as SQSEvent, {} as any, () => {});
-
-    expect(result.statusCode).not.toBe(200);
+  it('rethrows a malformed SQS body so SQS can retry onto the DLQ', async () => {
+    await expect(handler({ Records: [{ body: 'not-json' }] } as SQSEvent, {} as any, () => {})).rejects.toThrow();
     expect(mockPutObject).not.toHaveBeenCalled();
   });
 
   it('flattens zip-slip segments in object keys', async () => {
-    mockListAllObjectsUnderPrefix.mockResolvedValue([
-      { Key: 'org-1/lab-1/results/../../secret.txt', Size: 10 },
-    ]);
+    mockListAllObjectsUnderPrefix.mockResolvedValue([{ Key: 'org-1/lab-1/results/../../secret.txt', Size: 10 }]);
 
     await handler(
       createSqsEvent({

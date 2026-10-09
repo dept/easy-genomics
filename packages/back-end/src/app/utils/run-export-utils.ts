@@ -11,6 +11,7 @@ export const RUN_EXPORT_ARCHIVES_PREFIX = '.exports/archives';
 export const RUN_EXPORT_STATUS_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 export const RUN_EXPORT_SKIP_PATH_SEGMENTS = new Set(['work', '.downloads', '.exports']);
 export const RUN_EXPORT_MAX_EXPANDED_OBJECTS = 10_000;
+export const RUN_EXPORT_WORKER_ABORT_REMAINING_MS = 30_000;
 
 export const ZIP_TOO_LARGE_MESSAGE =
   'The selected runs are too large to download as a single ZIP. Export them to an S3 bucket or LIMS landing zone instead.';
@@ -19,6 +20,8 @@ export const RUN_OUTPUT_MISSING_MESSAGE = 'This run does not have a stored outpu
 export const RUN_OUTPUT_EMPTY_MESSAGE = 'The selected runs do not contain any exportable output files.';
 export const RUN_EXPORT_TOO_MANY_OBJECTS_MESSAGE = `Select fewer runs. At most ${RUN_EXPORT_MAX_EXPANDED_OBJECTS} objects can be exported at once.`;
 export const LABORATORY_BUCKET_REQUIRED_MESSAGE = 'Laboratory does not have an S3 bucket configured';
+export const RUN_EXPORT_TIMEOUT_MESSAGE =
+  'The export did not finish before the worker timeout. Select fewer or smaller runs.';
 
 export type RunOutputLocation = {
   bucket: string;
@@ -58,12 +61,10 @@ export type RunExportJobMessage = {
 export type StoredRunExportJobStatus = {
   JobId: string;
   LaboratoryId: string;
-  RunId?: string;
   RunIds?: string[];
   RunName?: string;
   Destination?: RunExportDestination;
   Status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
-  SourcePrefix?: string;
   ArchiveS3Key?: string;
   DestBucket?: string;
   DestPrefix?: string;
@@ -73,6 +74,8 @@ export type StoredRunExportJobStatus = {
   CompletedAt?: string;
   ErrorMessage?: string;
 };
+
+export type RemainingTimeFn = () => number;
 
 export function uniqueRunIds(runIds: string[]): string[] {
   return [...new Set(runIds)];
@@ -111,10 +114,15 @@ export function resolveRunOutputLocation(run: LaboratoryRun): RunOutputLocation 
   };
 }
 
+export function relativeKey(sourceKey: string, sourcePrefix: string): string {
+  return sourceKey.startsWith(sourcePrefix) ? sourceKey.slice(sourcePrefix.length) : sourceKey;
+}
+
 export function shouldSkipRunExportKey(key: string, sourcePrefix: string): boolean {
   if (!key || key.endsWith('/')) return true;
-  const relative = key.startsWith(sourcePrefix) ? key.slice(sourcePrefix.length) : key;
-  return relative.split('/').some((segment) => RUN_EXPORT_SKIP_PATH_SEGMENTS.has(segment));
+  return relativeKey(key, sourcePrefix)
+    .split('/')
+    .some((segment) => RUN_EXPORT_SKIP_PATH_SEGMENTS.has(segment));
 }
 
 export function filterExportableRunObjects(
@@ -184,18 +192,19 @@ function labExportRoot(
 
 export function defaultExportPrefix(params: {
   laboratory: Pick<Laboratory, 'OrganizationId' | 'LaboratoryId'>;
-  run: Pick<LaboratoryRun, 'RunId' | 'RunName'>;
   destination: Exclude<RunExportDestination, 'Download'>;
+  jobId: string;
 }): string {
-  return labExportRoot(params.laboratory, params.destination);
+  return `${labExportRoot(params.laboratory, params.destination)}${params.jobId}/`;
 }
 
 export function defaultBundleExportPrefix(params: {
   laboratory: Pick<Laboratory, 'OrganizationId' | 'LaboratoryId'>;
   destination: Exclude<RunExportDestination, 'Download'>;
   runCount: number;
+  jobId: string;
 }): string {
-  return `${labExportRoot(params.laboratory, params.destination)}bundle-${params.runCount}-runs/`;
+  return `${labExportRoot(params.laboratory, params.destination)}bundle-${params.runCount}-runs-${params.jobId}/`;
 }
 
 export function assertDestinationDoesNotOverlapSource(params: {
@@ -216,6 +225,12 @@ export function assertDestinationDoesNotOverlapSource(params: {
 }
 
 export function destinationObjectKey(sourceKey: string, sourcePrefix: string, destPrefix: string): string {
-  const relative = sourceKey.startsWith(sourcePrefix) ? sourceKey.slice(sourcePrefix.length) : sourceKey;
-  return `${normalizeS3Prefix(destPrefix)}${relative}`;
+  return `${normalizeS3Prefix(destPrefix)}${relativeKey(sourceKey, sourcePrefix)}`;
+}
+
+export function assertExportHasTimeRemaining(getRemainingTimeMs?: RemainingTimeFn): void {
+  if (!getRemainingTimeMs) return;
+  if (getRemainingTimeMs() < RUN_EXPORT_WORKER_ABORT_REMAINING_MS) {
+    throw new InvalidRequestError(RUN_EXPORT_TIMEOUT_MESSAGE);
+  }
 }

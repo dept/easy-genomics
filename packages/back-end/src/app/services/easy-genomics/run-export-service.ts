@@ -1,4 +1,7 @@
-import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import HttpError, {
+  InvalidRequestError,
+  UnauthorizedAccessError,
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import {
   RequestRunExportJob,
   RunExportJobResponse,
@@ -27,6 +30,7 @@ import {
   ZIP_TOO_LARGE_MESSAGE,
   assertCompletedRun,
   assertDestinationDoesNotOverlapSource,
+  assertExportHasTimeRemaining,
   defaultBundleExportPrefix,
   defaultExportPrefix,
   destinationObjectKey,
@@ -37,6 +41,7 @@ import {
   safeRunFolderName,
   uniqueRunExportFolder,
   uniqueRunIds,
+  type RemainingTimeFn,
   type RunExportJobMessage,
   type RunExportJobSource,
   type RunExportObject,
@@ -76,8 +81,7 @@ export class RunExportService {
       FileCount: item.objects.length,
       TotalBytes: item.bytes,
     }));
-    const fileCount = collected.reduce((sum, item) => sum + item.objects.length, 0);
-    const totalBytes = collected.reduce((sum, item) => sum + item.bytes, 0);
+    const { fileCount, totalBytes } = this.summarizeCollected(collected);
 
     return {
       RunCount: runPreviews.length,
@@ -91,8 +95,7 @@ export class RunExportService {
 
   async startJob(laboratory: Laboratory, request: RequestRunExportJob): Promise<RunExportJobResponse> {
     const collected = await this.collectRuns(laboratory, request.RunIds);
-    const fileCount = collected.reduce((sum, item) => sum + item.objects.length, 0);
-    const totalBytes = collected.reduce((sum, item) => sum + item.bytes, 0);
+    const { fileCount, totalBytes } = this.summarizeCollected(collected);
     if (fileCount === 0) {
       throw new InvalidRequestError(RUN_OUTPUT_EMPTY_MESSAGE);
     }
@@ -102,9 +105,10 @@ export class RunExportService {
 
     const statusBucket = requireLaboratoryS3Bucket(laboratory);
     await assertLaboratoryHasS3BucketAccess(laboratory, statusBucket, this.s3Access);
+    await this.cleanupExpiredExportArtifacts(laboratory, statusBucket);
 
-    const destination = await this.resolveCopyDestination(laboratory, request, collected);
     const jobId = uuidv4();
+    const destination = await this.resolveCopyDestination(laboratory, request, collected, jobId);
     const laboratoryOwnedPrefix = laboratoryPrefix(laboratory);
     const statusKey = `${laboratoryOwnedPrefix}${RUN_EXPORT_JOBS_PREFIX}/${jobId}.json`;
     const archiveKey =
@@ -139,7 +143,12 @@ export class RunExportService {
 
     const queueUrl = process.env.SQS_RUN_EXPORT_QUEUE_URL || '';
     if (!queueUrl) {
-      throw new InvalidRequestError('Missing SQS_RUN_EXPORT_QUEUE_URL environment variable');
+      throw new HttpError(
+        'Export configuration error',
+        500,
+        'EG-100',
+        'Missing SQS_RUN_EXPORT_QUEUE_URL environment variable',
+      );
     }
 
     const message: RunExportJobMessage = {
@@ -157,7 +166,7 @@ export class RunExportService {
 
     await this.sqs.sendMessage({
       QueueUrl: queueUrl,
-      MessageGroupId: laboratory.LaboratoryId,
+      MessageGroupId: jobId,
       MessageDeduplicationId: `${jobId}-${Date.now()}`,
       MessageBody: JSON.stringify(message),
     });
@@ -202,7 +211,7 @@ export class RunExportService {
 
     if (parsedStatus.Status === 'COMPLETED' && parsedStatus.Destination === 'Download' && parsedStatus.ArchiveS3Key) {
       this.tagging.assertKeyUnderLabPrefix(laboratory, parsedStatus.ArchiveS3Key);
-      const runIds = parsedStatus.RunIds?.length ? parsedStatus.RunIds : parsedStatus.RunId ? [parsedStatus.RunId] : [];
+      const runIds = parsedStatus.RunIds ?? [];
       const folderName =
         runIds.length === 1
           ? safeRunFolderName(parsedStatus.RunName, runIds[0])
@@ -228,20 +237,10 @@ export class RunExportService {
     return response;
   }
 
-  async processSqsRecord(job: RunExportJobMessage): Promise<void> {
+  async processSqsRecord(job: RunExportJobMessage, getRemainingTimeMs?: RemainingTimeFn): Promise<void> {
     const laboratory = await this.laboratoryService.queryByLaboratoryId(job.LaboratoryId);
-    if (laboratory.OrganizationId !== job.OrganizationId) {
-      throw new UnauthorizedAccessError();
-    }
-
-    const statusBucket = requireLaboratoryS3Bucket(laboratory);
-    if (job.StatusBucket !== statusBucket) {
-      throw new InvalidRequestError('Export job status bucket does not match the laboratory bucket');
-    }
-    this.tagging.assertKeyUnderLabPrefix(laboratory, job.StatusKey);
-
+    const expiresAt = new Date(Date.now() + RUN_EXPORT_STATUS_EXPIRY_MS).toISOString();
     const runIds = job.Sources.map((source) => source.RunId);
-    const createdAt = new Date().toISOString();
     const processingStatus: StoredRunExportJobStatus = {
       JobId: job.JobId,
       LaboratoryId: job.LaboratoryId,
@@ -251,38 +250,43 @@ export class RunExportService {
       ArchiveS3Key: job.ArchiveKey,
       DestBucket: job.DestBucket,
       DestPrefix: job.DestPrefix,
-      CreatedAt: createdAt,
+      CreatedAt: new Date().toISOString(),
+      ExpiresAt: expiresAt,
     };
 
-    await this.writeStatus({ s3Bucket: statusBucket, statusKey: job.StatusKey, status: processingStatus });
-
     try {
+      if (laboratory.OrganizationId !== job.OrganizationId) {
+        throw new UnauthorizedAccessError();
+      }
+
+      const statusBucket = requireLaboratoryS3Bucket(laboratory);
+      if (job.StatusBucket !== statusBucket) {
+        throw new InvalidRequestError('Export job status bucket does not match the laboratory bucket');
+      }
+      this.tagging.assertKeyUnderLabPrefix(laboratory, job.StatusKey);
       if (job.ArchiveKey) {
         this.tagging.assertKeyUnderLabPrefix(laboratory, job.ArchiveKey);
       }
+
+      await this.writeStatus({ s3Bucket: statusBucket, statusKey: job.StatusKey, status: processingStatus });
+
       const collected = await this.collectRuns(laboratory, runIds);
       processingStatus.RunName = collected.length === 1 ? collected[0].source.RunName : undefined;
-      if (collected.reduce((sum, item) => sum + item.objects.length, 0) === 0) {
+      if (this.summarizeCollected(collected).fileCount === 0) {
         throw new InvalidRequestError(RUN_OUTPUT_EMPTY_MESSAGE);
       }
       if (job.Destination !== 'Download') {
         if (!job.DestBucket || !job.DestPrefix) {
           throw new InvalidRequestError('Missing destination bucket or prefix for S3/LIMS export');
         }
-        await assertLaboratoryHasS3BucketAccess(laboratory, job.DestBucket, this.s3Access);
-        this.tagging.assertKeyUnderLabPrefix(laboratory, job.DestPrefix);
-        for (const item of collected) {
-          assertDestinationDoesNotOverlapSource({
-            sourceBucket: item.source.SourceBucket,
-            sourcePrefix: item.source.SourcePrefix,
-            destBucket: job.DestBucket,
-            destPrefix: job.DestPrefix,
-          });
-        }
+        await this.assertCopyDestinationAllowed(laboratory, job.DestBucket, job.DestPrefix, collected);
       }
 
+      assertExportHasTimeRemaining(getRemainingTimeMs);
       const filesCopied =
-        job.Destination === 'Download' ? await this.zipOutputs(job, collected) : await this.copyOutputs(job, collected);
+        job.Destination === 'Download'
+          ? await this.zipOutputs(job, collected, getRemainingTimeMs)
+          : await this.copyOutputs(job, collected, getRemainingTimeMs);
 
       await this.writeStatus({
         s3Bucket: statusBucket,
@@ -296,17 +300,7 @@ export class RunExportService {
         },
       });
     } catch (error: any) {
-      await this.writeStatus({
-        s3Bucket: statusBucket,
-        statusKey: job.StatusKey,
-        status: {
-          ...processingStatus,
-          Status: 'FAILED',
-          CompletedAt: new Date().toISOString(),
-          ErrorMessage: error?.message || 'Unable to export run results',
-          ExpiresAt: new Date(Date.now() + RUN_EXPORT_STATUS_EXPIRY_MS).toISOString(),
-        },
-      });
+      await this.writeFailedStatus(laboratory, job, processingStatus, error);
     }
   }
 
@@ -356,24 +350,36 @@ export class RunExportService {
     laboratory: Laboratory,
     request: RequestRunExportJob,
     collected: CollectedRunExport[],
+    jobId: string,
   ): Promise<{ destBucket?: string; destPrefix?: string }> {
     if (request.Destination === 'Download') {
       return {};
     }
 
     const destBucket = request.DestinationBucket!;
-    await assertLaboratoryHasS3BucketAccess(laboratory, destBucket, this.s3Access);
     const destPrefix = labScopedExportPrefix(
       laboratory,
       request.DestinationPrefix,
       collected.length === 1
-        ? defaultExportPrefix({ laboratory, run: collected[0].run, destination: request.Destination })
+        ? defaultExportPrefix({ laboratory, destination: request.Destination, jobId })
         : defaultBundleExportPrefix({
             laboratory,
             destination: request.Destination,
             runCount: collected.length,
+            jobId,
           }),
     );
+    await this.assertCopyDestinationAllowed(laboratory, destBucket, destPrefix, collected);
+    return { destBucket, destPrefix };
+  }
+
+  private async assertCopyDestinationAllowed(
+    laboratory: Laboratory,
+    destBucket: string,
+    destPrefix: string,
+    collected: CollectedRunExport[],
+  ): Promise<void> {
+    await assertLaboratoryHasS3BucketAccess(laboratory, destBucket, this.s3Access);
     this.tagging.assertKeyUnderLabPrefix(laboratory, destPrefix);
     for (const item of collected) {
       assertDestinationDoesNotOverlapSource({
@@ -383,30 +389,25 @@ export class RunExportService {
         destPrefix,
       });
     }
-    return { destBucket, destPrefix };
   }
 
-  private async zipOutputs(job: RunExportJobMessage, collected: CollectedRunExport[]): Promise<number> {
+  private async zipOutputs(
+    job: RunExportJobMessage,
+    collected: CollectedRunExport[],
+    getRemainingTimeMs?: RemainingTimeFn,
+  ): Promise<number> {
     if (!job.ArchiveKey) {
-      throw new InvalidRequestError('Missing archive key for ZIP export');
+      throw new HttpError('Export configuration error', 500, 'EG-100', 'Missing archive key for ZIP export');
     }
     const entries = collected.flatMap((item) => {
       const zipRootFolder = uniqueRunExportFolder({ RunId: item.source.RunId, RunName: item.source.RunName });
-      return item.objects
-        .map((object) => {
-          const archivePath = destinationObjectKey(object.Key, item.source.SourcePrefix, `${zipRootFolder}/`);
-          if (!archivePath || archivePath.endsWith('/')) return undefined;
-          return {
-            sourceBucket: item.source.SourceBucket,
-            sourceKey: object.Key,
-            archivePath,
-          };
-        })
-        .filter((entry): entry is NonNullable<typeof entry> => !!entry);
+      return item.objects.map((object) => ({
+        sourceBucket: item.source.SourceBucket,
+        sourceKey: object.Key,
+        archivePath: destinationObjectKey(object.Key, item.source.SourcePrefix, `${zipRootFolder}/`),
+      }));
     });
-    if (entries.length === 0) {
-      throw new InvalidRequestError(RUN_OUTPUT_EMPTY_MESSAGE);
-    }
+    assertExportHasTimeRemaining(getRemainingTimeMs);
     await zipS3ObjectsToArchive({
       s3: this.s3,
       destinationBucket: job.StatusBucket,
@@ -416,12 +417,17 @@ export class RunExportService {
     return entries.length;
   }
 
-  private async copyOutputs(job: RunExportJobMessage, collected: CollectedRunExport[]): Promise<number> {
+  private async copyOutputs(
+    job: RunExportJobMessage,
+    collected: CollectedRunExport[],
+    getRemainingTimeMs?: RemainingTimeFn,
+  ): Promise<number> {
     let copied = 0;
     for (const item of collected) {
       const runFolder = uniqueRunExportFolder({ RunId: item.source.RunId, RunName: item.source.RunName });
       const destPrefix = `${job.DestPrefix}${runFolder}/`;
       for (const object of item.objects) {
+        assertExportHasTimeRemaining(getRemainingTimeMs);
         await this.s3.copyObjectBySize({
           sourceBucket: item.source.SourceBucket,
           sourceKey: object.Key,
@@ -433,6 +439,63 @@ export class RunExportService {
       }
     }
     return copied;
+  }
+
+  private summarizeCollected(collected: CollectedRunExport[]): { fileCount: number; totalBytes: number } {
+    return {
+      fileCount: collected.reduce((sum, item) => sum + item.objects.length, 0),
+      totalBytes: collected.reduce((sum, item) => sum + item.bytes, 0),
+    };
+  }
+
+  private async cleanupExpiredExportArtifacts(laboratory: Laboratory, statusBucket: string): Promise<void> {
+    const jobsPrefix = `${laboratoryPrefix(laboratory)}${RUN_EXPORT_JOBS_PREFIX}/`;
+    this.tagging.assertKeyUnderLabPrefix(laboratory, jobsPrefix);
+    const listed = await this.s3.listAllObjectsUnderPrefix(statusBucket, jobsPrefix);
+    for (const object of listed) {
+      const statusKey = object.Key;
+      if (!statusKey || !statusKey.endsWith('.json')) continue;
+      try {
+        this.tagging.assertKeyUnderLabPrefix(laboratory, statusKey);
+        const statusObject = await this.s3.getObject({ Bucket: statusBucket, Key: statusKey });
+        const statusJson = await s3BodyToString(statusObject.Body);
+        if (!statusJson) continue;
+        const status = JSON.parse(statusJson) as StoredRunExportJobStatus;
+        if (!status.ExpiresAt || new Date(status.ExpiresAt).getTime() > Date.now()) continue;
+        if (status.ArchiveS3Key) {
+          this.tagging.assertKeyUnderLabPrefix(laboratory, status.ArchiveS3Key);
+          await this.s3.deleteObject({ Bucket: statusBucket, Key: status.ArchiveS3Key });
+        }
+        await this.s3.deleteObject({ Bucket: statusBucket, Key: statusKey });
+      } catch (error) {
+        console.warn(`Failed to cleanup export artifact for key '${statusKey}':`, error);
+      }
+    }
+  }
+
+  private async writeFailedStatus(
+    laboratory: Laboratory,
+    job: RunExportJobMessage,
+    processingStatus: StoredRunExportJobStatus,
+    error: unknown,
+  ): Promise<void> {
+    try {
+      const statusBucket = requireLaboratoryS3Bucket(laboratory);
+      this.tagging.assertKeyUnderLabPrefix(laboratory, job.StatusKey);
+      await this.writeStatus({
+        s3Bucket: statusBucket,
+        statusKey: job.StatusKey,
+        status: {
+          ...processingStatus,
+          Status: 'FAILED',
+          CompletedAt: new Date().toISOString(),
+          ErrorMessage: error instanceof Error ? error.message : 'Unable to export run results',
+          ExpiresAt: new Date(Date.now() + RUN_EXPORT_STATUS_EXPIRY_MS).toISOString(),
+        },
+      });
+    } catch {
+      throw error;
+    }
   }
 
   private async writeStatus(input: {

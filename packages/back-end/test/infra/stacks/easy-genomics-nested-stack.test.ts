@@ -206,6 +206,59 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     expect(requestConfig.environment.SQS_RUN_EXPORT_QUEUE_URL).toBe('https://sqs/export');
     expect(processConfig.timeoutSeconds).toBe(900);
     expect(processConfig.events).toHaveLength(1);
+
+    const sqsConstructMock = SqsConstruct as unknown as jest.Mock;
+    const sqsProps = sqsConstructMock.mock.calls[0][2];
+    expect(sqsProps.queues['run-export-queue'].deadLetterQueue).toBeDefined();
+    expect(sqsProps.queues['run-export-queue'].deadLetterQueue.maxReceiveCount).toBe(3);
+  });
+
+  it('adds IAM policy statements for run-export routes', async () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/laboratory/run/request-run-export-job-status',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['dynamodb:Query']),
+        }),
+        expect.objectContaining({
+          actions: expect.arrayContaining(['s3:GetObject', 's3:DeleteObject']),
+        }),
+      ]),
+    );
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/laboratory/run/request-run-export-job',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['s3:PutObject', 's3:GetObject', 's3:DeleteObject']),
+        }),
+        expect.objectContaining({
+          actions: expect.arrayContaining(['sqs:SendMessage']),
+        }),
+      ]),
+    );
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/laboratory/run/process-run-export-job',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['s3:GetObject', 's3:PutObject', 's3:AbortMultipartUpload']),
+        }),
+      ]),
+    );
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/laboratory/run/request-run-export-preview',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['dynamodb:Query']),
+        }),
+      ]),
+    );
   });
 
   it('adds IAM policy statements for top-level bucket objects endpoint', () => {

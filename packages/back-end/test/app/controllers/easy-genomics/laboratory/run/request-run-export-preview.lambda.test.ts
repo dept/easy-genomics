@@ -22,7 +22,11 @@ jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-data-tagg
 import { LaboratoryRunService } from '../../../../../../src/app/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '../../../../../../src/app/services/easy-genomics/laboratory-service';
 import { S3Service } from '../../../../../../src/app/services/s3-service';
-import { validateOrganizationAdminAccess } from '../../../../../../src/app/utils/auth-utils';
+import {
+  validateLaboratoryManagerAccess,
+  validateLaboratoryTechnicianAccess,
+  validateOrganizationAdminAccess,
+} from '../../../../../../src/app/utils/auth-utils';
 
 describe('request-run-export-preview Lambda', () => {
   let mockQueryByLaboratoryId: jest.Mock;
@@ -78,6 +82,8 @@ describe('request-run-export-preview Lambda', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(true);
+    (validateLaboratoryManagerAccess as jest.Mock).mockReturnValue(false);
+    (validateLaboratoryTechnicianAccess as jest.Mock).mockReturnValue(false);
 
     mockQueryByLaboratoryId = jest.fn().mockResolvedValue(laboratory);
     (LaboratoryService as jest.MockedClass<typeof LaboratoryService>).prototype.queryByLaboratoryId =
@@ -218,5 +224,40 @@ describe('request-run-export-preview Lambda', () => {
     );
 
     expect(result.statusCode).toBe(400);
+  });
+
+  it('allows a laboratory manager', async () => {
+    (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(false);
+    (validateLaboratoryManagerAccess as jest.Mock).mockReturnValue(true);
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(validateLaboratoryManagerAccess).toHaveBeenCalledWith(expect.anything(), 'org-1', 'lab-1');
+  });
+
+  it('allows a laboratory technician', async () => {
+    (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(false);
+    (validateLaboratoryManagerAccess as jest.Mock).mockReturnValue(false);
+    (validateLaboratoryTechnicianAccess as jest.Mock).mockReturnValue(true);
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(validateLaboratoryTechnicianAccess).toHaveBeenCalledWith(expect.anything(), 'org-1', 'lab-1');
   });
 });

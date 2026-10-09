@@ -35,6 +35,8 @@ export async function zipS3ObjectsToArchive(params: {
   entries: S3ZipArchiveEntry[];
 }): Promise<void> {
   const uploadStream = new PassThrough();
+  // Swallow stream `error` so it is not an unhandled rejection; the real failure
+  // is surfaced through `uploadPromise` or `archiveError`.
   uploadStream.on('error', () => undefined);
   const archive = archiver('zip', { zlib: { level: 0 } });
   archive.pipe(uploadStream);

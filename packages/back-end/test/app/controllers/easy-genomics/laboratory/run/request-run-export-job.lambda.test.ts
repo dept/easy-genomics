@@ -24,7 +24,11 @@ import { LaboratoryRunService } from '../../../../../../src/app/services/easy-ge
 import { LaboratoryService } from '../../../../../../src/app/services/easy-genomics/laboratory-service';
 import { S3Service } from '../../../../../../src/app/services/s3-service';
 import { SqsService } from '../../../../../../src/app/services/sqs-service';
-import { validateOrganizationAdminAccess } from '../../../../../../src/app/utils/auth-utils';
+import {
+  validateLaboratoryManagerAccess,
+  validateLaboratoryTechnicianAccess,
+  validateOrganizationAdminAccess,
+} from '../../../../../../src/app/utils/auth-utils';
 import { assertLaboratoryHasS3BucketAccess } from '../../../../../../src/app/utils/laboratory-s3-access-utils';
 
 describe('request-run-export-job Lambda', () => {
@@ -32,6 +36,8 @@ describe('request-run-export-job Lambda', () => {
   let mockQueryByRunId: jest.Mock;
   let mockListAllObjectsUnderPrefix: jest.Mock;
   let mockPutObject: jest.Mock;
+  let mockGetObject: jest.Mock;
+  let mockDeleteObject: jest.Mock;
   let mockSendMessage: jest.Mock;
 
   const laboratory = {
@@ -84,6 +90,8 @@ describe('request-run-export-job Lambda', () => {
     jest.clearAllMocks();
     process.env.SQS_RUN_EXPORT_QUEUE_URL = 'https://sqs/export.fifo';
     (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(true);
+    (validateLaboratoryManagerAccess as jest.Mock).mockReturnValue(false);
+    (validateLaboratoryTechnicianAccess as jest.Mock).mockReturnValue(false);
 
     mockQueryByLaboratoryId = jest.fn().mockResolvedValue(laboratory);
     (LaboratoryService as jest.MockedClass<typeof LaboratoryService>).prototype.queryByLaboratoryId =
@@ -92,11 +100,18 @@ describe('request-run-export-job Lambda', () => {
     mockQueryByRunId = jest.fn().mockResolvedValue(completedRun);
     (LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>).prototype.queryByRunId = mockQueryByRunId;
 
-    mockListAllObjectsUnderPrefix = jest.fn().mockResolvedValue([{ Key: 'org-1/lab-1/results/a.vcf', Size: 100 }]);
+    mockListAllObjectsUnderPrefix = jest.fn().mockImplementation(async (_bucket: string, prefix: string) => {
+      if (prefix.includes('.exports/jobs')) return [];
+      return [{ Key: 'org-1/lab-1/results/a.vcf', Size: 100 }];
+    });
     mockPutObject = jest.fn().mockResolvedValue({});
+    mockGetObject = jest.fn().mockResolvedValue({ Body: undefined });
+    mockDeleteObject = jest.fn().mockResolvedValue({});
     (S3Service as jest.MockedClass<typeof S3Service>).prototype.listAllObjectsUnderPrefix =
       mockListAllObjectsUnderPrefix;
     (S3Service as jest.MockedClass<typeof S3Service>).prototype.putObject = mockPutObject;
+    (S3Service as jest.MockedClass<typeof S3Service>).prototype.getObject = mockGetObject;
+    (S3Service as jest.MockedClass<typeof S3Service>).prototype.deleteObject = mockDeleteObject;
 
     mockSendMessage = jest.fn().mockResolvedValue({});
     (SqsService as jest.MockedClass<typeof SqsService>).prototype.sendMessage = mockSendMessage;
@@ -143,7 +158,8 @@ describe('request-run-export-job Lambda', () => {
 
     expect(result.statusCode).toBe(200);
     const message = JSON.parse(mockSendMessage.mock.calls[0][0].MessageBody);
-    expect(message.DestPrefix).toBe('org-1/lab-1/exports/');
+    expect(message.DestPrefix).toMatch(/^org-1\/lab-1\/exports\/.+\/$/);
+    expect(mockSendMessage.mock.calls[0][0].MessageGroupId).toBe(message.JobId);
   });
 
   it('returns 403 when the caller has no laboratory access', async () => {
@@ -221,9 +237,11 @@ describe('request-run-export-job Lambda', () => {
       RunName: 'Flu Panel',
       OutputS3Url: 's3://lab-bucket/org-1/lab-1/flu/',
     });
-    mockListAllObjectsUnderPrefix
-      .mockResolvedValueOnce([{ Key: 'org-1/lab-1/results/a.vcf', Size: 100 }])
-      .mockResolvedValueOnce([{ Key: 'org-1/lab-1/flu/b.vcf', Size: 50 }]);
+    mockListAllObjectsUnderPrefix.mockImplementation(async (_bucket: string, prefix: string) => {
+      if (prefix.includes('.exports/jobs')) return [];
+      if (prefix.includes('/flu/')) return [{ Key: 'org-1/lab-1/flu/b.vcf', Size: 50 }];
+      return [{ Key: 'org-1/lab-1/results/a.vcf', Size: 100 }];
+    });
 
     const result = await handler(
       createMockEvent({
@@ -240,7 +258,7 @@ describe('request-run-export-job Lambda', () => {
     const message = JSON.parse(mockSendMessage.mock.calls[0][0].MessageBody);
     expect(message.Sources).toHaveLength(2);
     expect(message.DestBucket).toBe('lims-bucket');
-    expect(message.DestPrefix).toBe('org-1/lab-1/exports/bundle-2-runs/');
+    expect(message.DestPrefix).toMatch(/^org-1\/lab-1\/exports\/bundle-2-runs-.+\/$/);
     expect(assertLaboratoryHasS3BucketAccess).toHaveBeenCalledWith(
       expect.objectContaining({ LaboratoryId: 'lab-1' }),
       'lims-bucket',
@@ -372,5 +390,80 @@ describe('request-run-export-job Lambda', () => {
 
     expect(result.statusCode).toBe(400);
     expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('allows a laboratory manager', async () => {
+    (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(false);
+    (validateLaboratoryManagerAccess as jest.Mock).mockReturnValue(true);
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
+        Destination: 'Download',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(validateLaboratoryManagerAccess).toHaveBeenCalledWith(expect.anything(), 'org-1', 'lab-1');
+  });
+
+  it('allows a laboratory technician', async () => {
+    (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(false);
+    (validateLaboratoryManagerAccess as jest.Mock).mockReturnValue(false);
+    (validateLaboratoryTechnicianAccess as jest.Mock).mockReturnValue(true);
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
+        Destination: 'Download',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(validateLaboratoryTechnicianAccess).toHaveBeenCalledWith(expect.anything(), 'org-1', 'lab-1');
+  });
+
+  it('sweeps expired export jobs and archives before enqueueing', async () => {
+    mockListAllObjectsUnderPrefix.mockImplementation(async (_bucket: string, prefix: string) => {
+      if (prefix.includes('.exports/jobs')) {
+        return [{ Key: 'org-1/lab-1/.exports/jobs/old.json' }];
+      }
+      return [{ Key: 'org-1/lab-1/results/a.vcf', Size: 100 }];
+    });
+    mockGetObject.mockResolvedValue({
+      Body: {
+        transformToString: async () =>
+          JSON.stringify({
+            ExpiresAt: new Date(Date.now() - 1000).toISOString(),
+            ArchiveS3Key: 'org-1/lab-1/.exports/archives/old.zip',
+          }),
+      },
+    });
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'lab-1',
+        RunIds: ['run-1'],
+        Destination: 'Download',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockDeleteObject).toHaveBeenCalledWith({
+      Bucket: 'lab-bucket',
+      Key: 'org-1/lab-1/.exports/archives/old.zip',
+    });
+    expect(mockDeleteObject).toHaveBeenCalledWith({
+      Bucket: 'lab-bucket',
+      Key: 'org-1/lab-1/.exports/jobs/old.json',
+    });
   });
 });

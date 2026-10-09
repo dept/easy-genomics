@@ -160,7 +160,9 @@ describe('S3Service.copyObjectBySize', () => {
 
     expect(copyBucketObject).not.toHaveBeenCalled();
     expect(createMultipartUpload).toHaveBeenCalled();
-    expect(uploadPartCopy).toHaveBeenCalled();
+    expect(uploadPartCopy).toHaveBeenCalledTimes(81);
+    expect(uploadPartCopy.mock.calls[0][0].CopySourceRange).toBe('bytes=0-67108863');
+    expect(uploadPartCopy.mock.calls[80][0].CopySourceRange).toBe('bytes=5368709120-5368709120');
     expect(completeMultipartUpload).toHaveBeenCalledWith(
       expect.objectContaining({
         UploadId: 'u-1',

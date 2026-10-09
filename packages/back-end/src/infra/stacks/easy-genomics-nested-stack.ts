@@ -52,6 +52,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
   notificationDlq!: Queue;
   /** DLQ for the AI failure-classification consumer. See constructor for wiring detail. */
   classificationDlq!: Queue;
+  /** DLQ for run-export copies/zips that time out or crash the worker. */
+  runExportDlq!: Queue;
 
   constructor(scope: Construct, id: string, props: EasyGenomicsNestedStackProps) {
     super(scope, id);
@@ -72,6 +74,15 @@ export class EasyGenomicsNestedStack extends NestedStack {
     // stuck at `AnalysisStatus: Queued` with no trace of why.
     this.classificationDlq = new Queue(this, `${this.props.namePrefix}-laboratory-run-failure-classification-dlq`, {
       queueName: `${this.props.namePrefix}-laboratory-run-failure-classification-dlq.fifo`,
+      fifo: true,
+      retentionPeriod: Duration.days(14),
+      enforceSSL: true,
+    });
+
+    // Without a DLQ a timed-out copy is retried for the 1-day retention and, with a
+    // lab-scoped FIFO group, blocks every other export in that laboratory.
+    this.runExportDlq = new Queue(this, `${this.props.namePrefix}-run-export-dlq`, {
+      queueName: `${this.props.namePrefix}-run-export-dlq.fifo`,
       fifo: true,
       retentionPeriod: Duration.days(14),
       enforceSSL: true,
@@ -135,13 +146,14 @@ export class EasyGenomicsNestedStack extends NestedStack {
           enforceSSL: true,
         },
         ['run-export-queue']: <QueueDetails>{
-          // ~10 nested-stack resources (queue + 4 Functions/Roles + event source).
+          // ~11 nested-stack resources (queue + DLQ + 4 Functions/Roles + event source).
           // Log retention stays in the sibling stack. Runtime prefix/grant checks
           // bound writes; IAM stays bucket-wildcard because destinations are lab-granted.
           fifo: true,
           retentionPeriod: Duration.days(1),
           visibilityTimeout: Duration.minutes(15),
           enforceSSL: true,
+          deadLetterQueue: { queue: this.runExportDlq, maxReceiveCount: 3 },
         },
       },
     });
@@ -2062,7 +2074,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
       new PolicyStatement({
         resources: ['arn:aws:s3:::*/*'],
-        actions: ['s3:PutObject'],
+        actions: ['s3:PutObject', 's3:GetObject', 's3:DeleteObject'],
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
