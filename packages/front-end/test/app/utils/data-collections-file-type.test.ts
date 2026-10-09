@@ -28,6 +28,14 @@ describe('dataCollectionFileKind', () => {
   it('does not treat .fastq as .fa', () => {
     expect(dataCollectionFileKind('org/lab/sample.fastq')).toBe('fastq');
   });
+
+  it.each(['ref.fa.gz', 'ref.fasta.gz', 'ref.fna.gz', 'ref.fna', 'ref.FA.GZ'])('classifies %s as FASTA', (name) => {
+    expect(dataCollectionFileKind(`org/lab/${name}`)).toBe('fasta');
+  });
+
+  it.each(['ref.fa.gz.md5', 'ref.fai', 'ref.gz'])('does not classify %s as FASTA', (name) => {
+    expect(dataCollectionFileKind(`org/lab/${name}`)).toBe('other');
+  });
 });
 
 describe('fileMatchesFileTypeFilter', () => {
@@ -56,6 +64,12 @@ describe('dataCollectionHiddenTypeLabel', () => {
 
   it('returns fallback for extensionless basenames', () => {
     expect(dataCollectionHiddenTypeLabel('org/lab/README')).toBe('(no extension)');
+  });
+
+  it('labels gzipped FASTA by its multi-part suffix', () => {
+    expect(dataCollectionHiddenTypeLabel('org/lab/ref.fa.gz')).toBe('.fa.gz');
+    expect(dataCollectionHiddenTypeLabel('org/lab/ref.fasta.gz')).toBe('.fasta.gz');
+    expect(dataCollectionHiddenTypeLabel('org/lab/ref.fna.gz')).toBe('.fna.gz');
   });
 });
 

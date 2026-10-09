@@ -50,8 +50,8 @@ export type RegexGroupingPresetKey = keyof typeof REGEX_GROUPING_PRESETS;
 
 export const DEFAULT_REGEX_GROUPING_PRESET_KEY: RegexGroupingPresetKey = 'any_separator_r1_r2';
 
-function isFasta(name: string): boolean {
-  return /\.(fasta|fa|fna)(?:\\.gz)?$/i.test(name);
+export function isFasta(name: string): boolean {
+  return /\.(fasta|fa|fna)(?:\.gz)?$/i.test(name);
 }
 
 function inferLayout(files: ProposedSampleFile[]): SampleLayout {
