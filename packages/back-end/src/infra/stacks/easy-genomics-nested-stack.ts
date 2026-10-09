@@ -2474,8 +2474,10 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: laboratoryDataTaggingDynamoActions,
       }),
       new PolicyStatement({
+        // CopyObject is authorised as s3:GetObject (+ GetObjectTagging) on the source and
+        // s3:PutObject (+ PutObjectTagging) on the destination; S3 has no s3:CopyObject action.
         resources: ['arn:aws:s3:::*/*'],
-        actions: ['s3:CopyObject', 's3:PutObject', 's3:HeadObject'],
+        actions: ['s3:GetObject', 's3:GetObjectTagging', 's3:PutObject', 's3:PutObjectTagging'],
         effect: Effect.ALLOW,
       }),
     ]);

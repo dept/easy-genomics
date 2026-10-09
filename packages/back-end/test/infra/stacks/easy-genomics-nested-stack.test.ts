@@ -361,6 +361,35 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     );
   });
 
+  it('grants create-bulk-samples the IAM actions an S3 CopyObject needs', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/data-collections/create-bulk-samples',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining([
+            's3:GetObject',
+            's3:GetObjectTagging',
+            's3:PutObject',
+            's3:PutObjectTagging',
+          ]),
+        }),
+      ]),
+    );
+
+    const bulkSamplesActions = iamInstance.addPolicyStatements.mock.calls
+      .filter(([route]: [string]) => route === '/easy-genomics/data-collections/create-bulk-samples')
+      .flatMap(([, statements]: [string, { actions?: string[] }[]]) => statements.flatMap((s) => s.actions ?? []));
+    expect(bulkSamplesActions).not.toContain('s3:CopyObject');
+    expect(bulkSamplesActions).not.toContain('s3:HeadObject');
+  });
+
   it('adds IAM policy statements for create-sample endpoint', () => {
     const app = new App();
     const parentStack = new Stack(app, 'parent-stack');
