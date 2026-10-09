@@ -334,3 +334,25 @@ describe('folderBelowLabRoot', () => {
     expect(folderBelowLabRoot('')).toBe('');
   });
 });
+
+describe('reference FASTA role', () => {
+  const customPattern = '^(?<sample>[^_]+)_(?:(?<read>R[12])_001\\.fastq\\.gz|ref\\.[a-z0-9.]+)$';
+
+  it.each(['ref.fa', 'ref.fasta', 'ref.fna', 'ref.fa.gz', 'ref.fasta.gz', 'ref.fna.gz', 'ref.FA.GZ'])(
+    'gives %s the reference_fasta role and a paired_end_with_extras layout',
+    (referenceName) => {
+      const { sets } = groupFilenamesByRegex(
+        ['s1_R1_001.fastq.gz', 's1_R2_001.fastq.gz', `s1_${referenceName}`],
+        customPattern,
+      );
+      expect(sets).toHaveLength(1);
+      expect(sets[0].files.find((f) => f.fileName === `s1_${referenceName}`)?.role).toBe('reference_fasta');
+      expect(sets[0].layout).toBe('paired_end_with_extras');
+    },
+  );
+
+  it.each(['ref.fa.gz.md5', 'ref.fai'])('does not treat %s as a reference', (sidecarName) => {
+    const { sets } = groupFilenamesByRegex(['s1_R1_001.fastq.gz', `s1_${sidecarName}`], customPattern);
+    expect(sets[0].files.find((f) => f.fileName === `s1_${sidecarName}`)?.role).toBe('extra');
+  });
+});
