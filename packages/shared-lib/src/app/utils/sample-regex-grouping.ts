@@ -8,7 +8,11 @@ export type ProposedSampleFile = {
 };
 
 export type ProposedSample = {
+  /** Unique per proposal (`folder + sampleId`); use it for list keys and exclusion sets, never as a name. */
+  groupKey: string;
   sampleId: string;
+  /** Directory part of the files' keys, ending in `/`; `''` for bare file names. */
+  folder: string;
   files: ProposedSampleFile[];
   status: SampleGroupingStatus;
   layout: SampleLayout;
@@ -20,28 +24,34 @@ export type RegexGroupingPreset = {
 };
 
 export const REGEX_GROUPING_PRESETS = {
+  any_separator_r1_r2: {
+    label: 'R1 and R2 (any separator)',
+    pattern: '(?<sample>.+?)[._-](?<read>R[12])(?:_\\d*)?\\.(?:fastq|fq)(?:\\.gz)?$',
+  },
   underscore_r1_r2: {
     label: '_R1 and _R2',
-    pattern: '(?<sample>.+?)_(?<read>R[12])(?:_001)?\\.fastq\\.gz',
+    pattern: '(?<sample>.+?)_(?<read>R[12])(?:_\\d*)?\\.(?:fastq|fq)(?:\\.gz)?$',
   },
   dash_r1_r2: {
     label: '-R1 and -R2',
-    pattern: '(?<sample>.+?)-(?<read>R[12])(?:_001)?\\.fastq\\.gz',
+    pattern: '(?<sample>.+?)-(?<read>R[12])(?:_\\d*)?\\.(?:fastq|fq)(?:\\.gz)?$',
   },
   underscore_1_2: {
     label: '_1 and _2',
-    pattern: '(?<sample>.+?)_(?<read>[12])(?:_001)?\\.fastq\\.gz',
+    pattern: '(?<sample>.+?)_(?<read>[12])(?:_\\d*)?\\.(?:fastq|fq)(?:\\.gz)?$',
   },
   dash_1_2: {
     label: '-1 and -2',
-    pattern: '(?<sample>.+?)-(?<read>[12])(?:_001)?\\.fastq\\.gz',
+    pattern: '(?<sample>.+?)-(?<read>[12])(?:_\\d*)?\\.(?:fastq|fq)(?:\\.gz)?$',
   },
 } as const satisfies Record<string, RegexGroupingPreset>;
 
 export type RegexGroupingPresetKey = keyof typeof REGEX_GROUPING_PRESETS;
 
-function isFasta(name: string): boolean {
-  return /\.(fasta|fa|fna)(?:\\.gz)?$/i.test(name);
+export const DEFAULT_REGEX_GROUPING_PRESET_KEY: RegexGroupingPresetKey = 'any_separator_r1_r2';
+
+export function isFasta(name: string): boolean {
+  return /\.(fasta|fa|fna)(?:\.gz)?$/i.test(name);
 }
 
 function inferLayout(files: ProposedSampleFile[]): SampleLayout {
@@ -80,12 +90,13 @@ export function groupFilenamesByRegex(
 ): { sets: ProposedSample[]; unmatched: string[] } {
   let regex: RegExp;
   try {
-    regex = new RegExp(regexPattern);
+    // Case-insensitive to match data-collection-sample-sheet's read-direction and extension checks.
+    regex = new RegExp(regexPattern, 'i');
   } catch {
     return { sets: [], unmatched: [...fileNames] };
   }
 
-  const bySample = new Map<string, ProposedSampleFile[]>();
+  const groups = new Map<string, { sampleId: string; folder: string; files: ProposedSampleFile[] }>();
   const unmatched: string[] = [];
 
   for (const fileName of fileNames) {
@@ -96,24 +107,53 @@ export function groupFilenamesByRegex(
       continue;
     }
     const sampleId = match.groups.sample;
+    // S3 keys are unique only within a folder, so one sample ID can recur across runs; the folder keeps them apart.
+    const folder = fileName.slice(0, fileName.length - base.length);
+    const groupKey = `${folder}${sampleId}`;
     const role = classifyFileRole(base, match.groups as Record<string, string | undefined>);
-    const existing = bySample.get(sampleId) || [];
-    existing.push({ fileName, role });
-    bySample.set(sampleId, existing);
+    const group = groups.get(groupKey) ?? { sampleId, folder, files: [] };
+    group.files.push({ fileName, role });
+    groups.set(groupKey, group);
   }
 
   const sets: ProposedSample[] = [];
-  for (const [sampleId, files] of bySample) {
+  for (const [groupKey, { sampleId, folder, files }] of groups) {
     sets.push({
+      groupKey,
       sampleId,
+      folder,
       files,
       status: inferStatus(files),
       layout: inferLayout(files),
     });
   }
 
-  sets.sort((a, b) => a.sampleId.localeCompare(b.sampleId));
+  sets.sort((a, b) => a.sampleId.localeCompare(b.sampleId) || a.folder.localeCompare(b.folder));
   return { sets, unmatched };
+}
+
+/** Display form of a folder: drops the leading `<OrganizationId>/<LaboratoryId>/` that every lab key starts with. */
+export function folderBelowLabRoot(folder: string): string {
+  return folder.split('/').slice(2).join('/');
+}
+
+export type DuplicateSampleName = {
+  sampleId: string;
+  folders: string[];
+};
+
+/** Sample IDs proposed from more than one folder, so the review step can flag them before import. Case-insensitive, like the grouping regex. */
+export function findDuplicateSampleNames(sets: ProposedSample[]): DuplicateSampleName[] {
+  const byLowercaseName = new Map<string, DuplicateSampleName>();
+  for (const set of sets) {
+    const key = set.sampleId.toLowerCase();
+    const entry = byLowercaseName.get(key) ?? { sampleId: set.sampleId, folders: [] };
+    entry.folders.push(set.folder);
+    byLowercaseName.set(key, entry);
+  }
+  return [...byLowercaseName.values()]
+    .filter((entry) => entry.folders.length > 1)
+    .sort((a, b) => a.sampleId.localeCompare(b.sampleId));
 }
 
 export function buildContentsSummary(files: ProposedSampleFile[]): string {

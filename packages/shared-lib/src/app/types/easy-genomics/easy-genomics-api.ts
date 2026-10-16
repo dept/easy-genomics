@@ -195,3 +195,18 @@ export type SampleSheetResponse = {
   TransactionId: string;
   SampleSheetInfo: SampleSheetInfo;
 };
+
+// ─── Laboratory run: export result set ───────────────────────────────────────
+// Request/response shapes live on the Zod schemas so the FE can validate without
+// waiting on generated OpenAPI aliases.
+
+export type {
+  RequestRunExportPreview,
+  RunExportPreviewResponse,
+  RequestRunExportJob,
+  RunExportJobResponse,
+  RequestRunExportJobStatus,
+  RunExportJobStatusResponse,
+  RunExportDestination,
+  RunExportJobStatus,
+} from '../../schema/easy-genomics/laboratory-run/request-run-export-job';

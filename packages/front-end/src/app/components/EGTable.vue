@@ -16,18 +16,20 @@
       rowClickAction?: (rowItem: any) => void | undefined;
       noResultsMsg?: string;
       canSelect?: boolean;
-      rowClasses?: (row: any) => string;
       labelledBy?: string;
       /**
        * Flexible leading columns; Favourite and Run (last two) stay narrow and centered.
        * Use when columns end with [favourite, run] in that order.
        */
       narrowRunAndFavouriteColumns?: boolean;
+      /** Extra trailing icon columns to keep narrow when the flag above is on. */
+      narrowTrailingIconCount?: number;
     }>(),
     {
       showPagination: true,
       noResultsMsg: 'No results found',
       narrowRunAndFavouriteColumns: false,
+      narrowTrailingIconCount: 2,
     },
   );
 
@@ -88,7 +90,11 @@
 <template>
   <UCard
     class="rounded-2xl border-none shadow-none"
-    :class="{ 'eg-table--narrow-run-favourite': narrowRunAndFavouriteColumns }"
+    :class="{
+      'eg-table--narrow-run-favourite': narrowRunAndFavouriteColumns,
+      'eg-table--narrow-trailing-3': narrowRunAndFavouriteColumns && narrowTrailingIconCount >= 3,
+      'eg-table--narrow-trailing-4': narrowRunAndFavouriteColumns && narrowTrailingIconCount >= 4,
+    }"
     :ui="{ body: 'p-0' }"
     :aria-busy="isLoading"
   >
@@ -117,12 +123,11 @@
 
       <template #default="{ row }">
         <tr
-          :class="[
-            props.rowClasses ? props.rowClasses(row) : '',
+          :class="
             rowClickAction
               ? 'focus-visible:outline-primary-500 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px]'
-              : '',
-          ]"
+              : ''
+          "
           :tabindex="rowClickAction ? 0 : undefined"
           :role="rowClickAction ? 'button' : undefined"
           :aria-label="rowAriaLabel(row)"
@@ -278,6 +283,70 @@
     /* Icon buttons in body: inline-flex + auto margins centers under the header text */
     tbody tr td:nth-last-child(2) button,
     tbody tr td:nth-last-child(1) button {
+      display: inline-flex;
+      margin-left: auto;
+      margin-right: auto;
+    }
+  }
+
+  .eg-table--narrow-run-favourite.eg-table--narrow-trailing-3 :deep(table) {
+    thead tr th:nth-last-child(3),
+    tbody tr td:nth-last-child(3) {
+      text-align: center !important;
+      vertical-align: middle;
+      width: 9.5rem;
+      padding-top: 0.875rem;
+      padding-bottom: 0.875rem;
+      padding-left: 0.75rem;
+      padding-right: 0.75rem;
+      box-sizing: border-box;
+    }
+
+    thead tr th:not(:nth-last-child(-n + 3)) {
+      min-width: 0;
+      text-align: left;
+    }
+
+    tbody tr td:not(:nth-last-child(-n + 3)) {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    thead tr th:nth-last-child(3) button,
+    tbody tr td:nth-last-child(3) button {
+      display: inline-flex;
+      margin-left: auto;
+      margin-right: auto;
+    }
+  }
+
+  .eg-table--narrow-run-favourite.eg-table--narrow-trailing-4 :deep(table) {
+    thead tr th:nth-last-child(4),
+    tbody tr td:nth-last-child(4) {
+      text-align: center !important;
+      vertical-align: middle;
+      width: 9.5rem;
+      padding-top: 0.875rem;
+      padding-bottom: 0.875rem;
+      padding-left: 0.75rem;
+      padding-right: 0.75rem;
+      box-sizing: border-box;
+    }
+
+    thead tr th:not(:nth-last-child(-n + 4)) {
+      min-width: 0;
+      text-align: left !important;
+    }
+
+    tbody tr td:not(:nth-last-child(-n + 4)) {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    thead tr th:nth-last-child(4) button,
+    tbody tr td:nth-last-child(4) button {
       display: inline-flex;
       margin-left: auto;
       margin-right: auto;

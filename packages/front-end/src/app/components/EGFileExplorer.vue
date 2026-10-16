@@ -47,7 +47,7 @@
     { isLoading: true },
   );
 
-  const { handleS3Download, downloadFolder, isFolderZipInProgress } = useFileDownload();
+  const { handleS3Download, downloadFolder, openHtmlFromS3, isFolderZipInProgress } = useFileDownload();
   const { $api } = useNuxtApp();
 
   const uiStore = useUiStore();
@@ -319,43 +319,46 @@
     return direction === 'asc' ? result : -result;
   }
 
-  const tableColumns = [
-    {
+  const tableColumns = computed(() => {
+    const nameColumn = {
       key: 'name',
       label: 'Name',
       sortable: true,
       sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
         sortHelpers.stringSortCompare(String(a ?? ''), String(b ?? ''), direction),
-    },
-    {
-      key: 'type',
-      label: 'Type',
-      sortable: true,
-      sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
-        sortHelpers.stringSortCompare(String(a ?? ''), String(b ?? ''), direction),
-    },
-    {
-      key: 'lastModified',
-      label: 'Date Modified',
-      sortable: true,
-      sort: compareLastModified,
-    },
-    {
-      key: 'size',
-      label: 'Size',
-      sortable: true,
-      sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
-        sortHelpers.numberSortCompare(Number(a ?? 0), Number(b ?? 0), direction),
-    },
-    { key: 'actions', label: 'Actions' },
-  ];
+    };
+    return [
+      nameColumn,
+      {
+        key: 'type',
+        label: 'Type',
+        sortable: true,
+        sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
+          sortHelpers.stringSortCompare(String(a ?? ''), String(b ?? ''), direction),
+      },
+      {
+        key: 'lastModified',
+        label: 'Date Modified',
+        sortable: true,
+        sort: compareLastModified,
+      },
+      {
+        key: 'size',
+        label: 'Size',
+        sortable: true,
+        sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
+          sortHelpers.numberSortCompare(Number(a ?? 0), Number(b ?? 0), direction),
+      },
+      { key: 'actions', label: 'Actions' },
+    ];
+  });
 
   const fileTableSort = ref<TableSort>({ column: 'name', direction: 'asc' });
 
   const sortedTableData = computed(() => {
     const items = [...filteredItems.value];
     const { column, direction } = fileTableSort.value;
-    const col = tableColumns.find((c) => c.key === column);
+    const col = tableColumns.value.find((c) => c.key === column);
     if (!col || !('sortable' in col) || !col.sortable || typeof col.sort !== 'function') {
       return items;
     }
@@ -616,27 +619,7 @@
     uiStore.setRequestPending(`downloadHtmlFileButton-${nodeId}`);
 
     try {
-      const fileDownloadPath = getNodeS3Uri(node);
-      const fileDownloadResponse = await $api.file.requestFileDownloadUrl({
-        LaboratoryId: props.labId,
-        S3Uri: fileDownloadPath,
-      });
-
-      if (!fileDownloadResponse || !fileDownloadResponse.DownloadUrl) {
-        console.error('Download URL is undefined or empty');
-        return;
-      }
-
-      // Fetch the HTML content
-      const response = await fetch(fileDownloadResponse.DownloadUrl);
-      const htmlContent = await response.text();
-
-      // Create a new blob with the HTML content and proper MIME type
-      const blob = new Blob([htmlContent], { type: 'text/html' });
-      const blobUrl = URL.createObjectURL(blob);
-
-      // Open the blob URL in a new tab
-      window.open(blobUrl, '_blank');
+      await openHtmlFromS3(props.labId, getNodeS3Uri(node));
     } catch (error) {
       console.error('Error opening HTML file:', error);
       useToastStore().error('Failed to open HTML file');
@@ -739,6 +722,7 @@
       :columns="tableColumns"
       no-results-msg="No files or folders found"
       :is-loading="isRootLoading || isSearchLoading"
+      show-pagination
     >
       <template #name-data="{ row }">
         <div class="flex items-center gap-2">

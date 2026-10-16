@@ -105,7 +105,7 @@ describe('list-granted-buckets.lambda', () => {
 
     const result = await handler(createEvent(LAB_ID), createContext(), () => {});
     expect(result.statusCode).toBe(200);
-    expect(JSON.parse(result.body)).toEqual({ buckets: ['bucket-a'] });
+    expect(JSON.parse(result.body)).toEqual({ buckets: ['bucket-a'], allowedPrefixes: {} });
   });
 
   it('returns catalog minus DENY in default-on mode', async () => {
@@ -120,7 +120,7 @@ describe('list-granted-buckets.lambda', () => {
 
     const result = await handler(createEvent(LAB_ID), createContext(), () => {});
     expect(result.statusCode).toBe(200);
-    expect(JSON.parse(result.body)).toEqual({ buckets: ['bucket-b'] });
+    expect(JSON.parse(result.body)).toEqual({ buckets: ['bucket-b'], allowedPrefixes: {} });
   });
 
   it('does not return a legacy configured default when it is off-catalog and there are zero access rows', async () => {
@@ -134,6 +134,32 @@ describe('list-granted-buckets.lambda', () => {
 
     const result = await handler(createEvent(LAB_ID), createContext(), () => {});
     expect(result.statusCode).toBe(200);
-    expect(JSON.parse(result.body)).toEqual({ buckets: [] });
+    expect(JSON.parse(result.body)).toEqual({ buckets: [], allowedPrefixes: {} });
+  });
+
+  it('returns the allowed prefix of each granted bucket, and none for buckets that are not granted', async () => {
+    (mockAccessService.prototype.listByLaboratoryId as jest.Mock).mockResolvedValue([
+      {
+        LaboratoryId: LAB_ID,
+        BucketName: 'bucket-a',
+        OrganizationId: ORG_ID,
+        Effect: 'ALLOW',
+        AllowedPrefix: 'sample-3-18/',
+      },
+      {
+        LaboratoryId: LAB_ID,
+        BucketName: 'bucket-off-catalog',
+        OrganizationId: ORG_ID,
+        Effect: 'ALLOW',
+        AllowedPrefix: 'x/',
+      },
+    ]);
+
+    const result = await handler(createEvent(LAB_ID), createContext(), () => {});
+
+    expect(JSON.parse(result.body)).toEqual({
+      buckets: ['bucket-a'],
+      allowedPrefixes: { 'bucket-a': 'sample-3-18/' },
+    });
   });
 });

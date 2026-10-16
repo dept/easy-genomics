@@ -1,4 +1,3 @@
-import { Readable } from 'stream';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { RequestFolderDownloadJobStatusSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-folder-download-job-status';
@@ -16,6 +15,7 @@ import {
   validateOrganizationAdminAccess,
   validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
+import { s3BodyToString } from '@BE/utils/s3-object-body';
 
 const laboratoryService = new LaboratoryService();
 const s3Service = new S3Service();
@@ -39,21 +39,6 @@ const getDownloadFileName = (requestedPrefix: string): string => {
   const lastSegment = trimmedPrefix.split('/').filter(Boolean).pop() || 'folder-download';
   const safeName = lastSegment.replace(/[^\w.-]/g, '_');
   return `${safeName}.zip`;
-};
-
-const streamToString = async (body: unknown): Promise<string> => {
-  if (!body) return '';
-  const bodyWithTransform = body as { transformToString?: () => Promise<string> };
-  if (typeof bodyWithTransform.transformToString === 'function') {
-    return bodyWithTransform.transformToString();
-  }
-
-  const readable = body as Readable;
-  const chunks: Buffer[] = [];
-  for await (const chunk of readable) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks).toString('utf-8');
 };
 
 /**
@@ -97,7 +82,7 @@ export const handler: Handler = async (
       Bucket: s3Bucket,
       Key: statusKey,
     });
-    const statusJson = await streamToString(statusObject.Body);
+    const statusJson = await s3BodyToString(statusObject.Body);
     if (!statusJson) {
       throw new InvalidRequestError('Download job status is unavailable');
     }

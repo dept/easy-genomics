@@ -1112,7 +1112,7 @@ components:
         S3Bucket:
           type: string
           minLength: 1
-        RelativePrefix:
+        S3Prefix:
           type: string
         MaxTotalKeys:
           type: integer
@@ -1372,7 +1372,7 @@ components:
         LaboratoryId:
           type: string
           minLength: 1
-        RelativePrefix:
+        S3Prefix:
           type: string
         MaxTotalKeys:
           type: integer
@@ -1522,6 +1522,18 @@ components:
         S3Prefix:
           type: string
           minLength: 1
+        ObjectKeys:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 1024
+          minItems: 1
+          maxItems: 2000
+        ArchiveName:
+          type: string
+          minLength: 1
+          maxLength: 80
       required:
         - LaboratoryId
         - S3Prefix
@@ -1801,16 +1813,16 @@ components:
     ReadLaboratory:
       type: object
       properties:
-        OrganizationId:
-          type: string
-        Name:
-          type: string
         LaboratoryId:
           type: string
         Status:
           enum:
             - Active
             - Inactive
+          type: string
+        OrganizationId:
+          type: string
+        Name:
           type: string
         Description:
           type: string
@@ -1956,9 +1968,15 @@ components:
     LaboratoryRun:
       type: object
       properties:
-        OrganizationId:
-          type: string
         LaboratoryId:
+          type: string
+        RunId:
+          type: string
+        RunName:
+          type: string
+        Status:
+          type: string
+        OrganizationId:
           type: string
         UserId:
           type: string
@@ -1967,13 +1985,7 @@ components:
             - AWS HealthOmics
             - Seqera Cloud
           type: string
-        Status:
-          type: string
         Owner:
-          type: string
-        RunId:
-          type: string
-        RunName:
           type: string
         Description:
           description: Optional user-authored note for this run; set at creation time.
@@ -2299,9 +2311,15 @@ components:
     ReadLaboratoryRun:
       type: object
       properties:
-        OrganizationId:
-          type: string
         LaboratoryId:
+          type: string
+        RunId:
+          type: string
+        RunName:
+          type: string
+        Status:
+          type: string
+        OrganizationId:
           type: string
         UserId:
           type: string
@@ -2310,13 +2328,7 @@ components:
             - AWS HealthOmics
             - Seqera Cloud
           type: string
-        Status:
-          type: string
         Owner:
-          type: string
-        RunId:
-          type: string
-        RunName:
           type: string
         Description:
           description: Optional user-authored note for this run; set at creation time.
@@ -2636,6 +2648,66 @@ components:
         - estimateAvailable
         - exclusions
         - label
+    RequestRunExportJobStatusRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          minLength: 1
+        JobId:
+          type: string
+          format: uuid
+      required:
+        - LaboratoryId
+        - JobId
+      additionalProperties: false
+    RequestRunExportJobRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          minLength: 1
+        RunIds:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          minItems: 1
+          maxItems: 25
+        Destination:
+          type: string
+          enum:
+            - Download
+            - S3
+            - Lims
+        DestinationBucket:
+          type: string
+          minLength: 1
+        DestinationPrefix:
+          type: string
+          minLength: 1
+      required:
+        - LaboratoryId
+        - RunIds
+        - Destination
+      additionalProperties: false
+    RequestRunExportPreviewRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          minLength: 1
+        RunIds:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          minItems: 1
+          maxItems: 25
+      required:
+        - LaboratoryId
+        - RunIds
+      additionalProperties: false
     UpdateLaboratoryRunRequest:
       type: object
       properties:
@@ -2662,6 +2734,11 @@ components:
           type: array
           items:
             type: string
+        allowedPrefixes:
+          type: object
+          description: >-
+            Granted bucket name → its allowed prefix. Buckets without one are absent; a missing map means no bucket has
+            one.
       required:
         - buckets
     UpdateLaboratoryRequest:
@@ -2860,12 +2937,12 @@ components:
     LaboratoryUserDetails:
       type: object
       properties:
+        LaboratoryId:
+          type: string
         LabManager:
           type: boolean
         LabTechnician:
           type: boolean
-        LaboratoryId:
-          type: string
         UserId:
           type: string
         UserEmail:
@@ -3029,6 +3106,10 @@ components:
                 minLength: 1
               granted:
                 type: boolean
+              allowedPrefix:
+                type: string
+                minLength: 1
+                maxLength: 512
             required:
               - laboratoryId
               - bucketName
@@ -3051,6 +3132,13 @@ components:
           enum:
             - ALLOW
             - DENY
+          type: string
+        AllowedPrefix:
+          description: >-
+            ALLOW rows only: an absolute prefix (ends in "/") outside `{OrganizationId}/{LaboratoryId}/` that Data
+            Collections
+
+            may also list and import from in this bucket. Removed whenever the row is revoked or rewritten without it.
           type: string
         CreatedAt:
           type: string
@@ -3665,6 +3753,363 @@ components:
             - failures_only
             - successes_only
       additionalProperties: false
+    EditWorkflowKeyOutputDeliveryRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          format: uuid
+        WorkflowId:
+          type: string
+          minLength: 1
+        Enabled:
+          type: boolean
+        DestinationUri:
+          type: string
+          maxLength: 1024
+      required:
+        - LaboratoryId
+        - WorkflowId
+        - Enabled
+      additionalProperties: false
+    WorkflowKeyOutput:
+      description: |-
+        One role in the key-outputs definition. `Pattern` is a path glob relative to
+        the run's File Manager root (`*` matches within a single path segment).
+      type: object
+      properties:
+        KeyOutputId:
+          type: string
+        Label:
+          type: string
+        Pattern:
+          type: string
+        ExamplePath:
+          description: Relative path of the file the user ticked when this role was inferred.
+          type: string
+      required:
+        - KeyOutputId
+        - Label
+        - Pattern
+    WorkflowKeyOutputDelivery:
+      description: |-
+        Where to copy this workflow's key outputs after a run completes successfully.
+        One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+      type: object
+      properties:
+        Enabled:
+          type: boolean
+        DestinationUri:
+          type: string
+      required:
+        - Enabled
+    WorkflowKeyOutputs:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+        WorkflowId:
+          type: string
+        WorkflowName:
+          type: string
+        Platform:
+          type: string
+        SourceRunId:
+          description: Last completed run the lab used to pick files for this definition.
+          type: string
+        KeyOutputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowKeyOutput'
+        Delivery:
+          description: |-
+            Where to copy this workflow's key outputs after a run completes successfully.
+            One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+          $ref: '#/components/schemas/WorkflowKeyOutputDelivery'
+        CreatedAt:
+          type: string
+        CreatedBy:
+          type: string
+        ModifiedAt:
+          type: string
+        ModifiedBy:
+          type: string
+      required:
+        - KeyOutputs
+        - LaboratoryId
+        - WorkflowId
+    EditWorkflowKeyOutputsRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          format: uuid
+        WorkflowId:
+          type: string
+          minLength: 1
+        WorkflowName:
+          type: string
+          minLength: 1
+        Platform:
+          type: string
+          minLength: 1
+        SourceRunId:
+          type: string
+          minLength: 1
+        KeyOutputs:
+          type: array
+          items:
+            type: object
+            properties:
+              KeyOutputId:
+                type: string
+                format: uuid
+              Label:
+                type: string
+                minLength: 1
+                maxLength: 80
+              Pattern:
+                type: string
+                minLength: 1
+                maxLength: 1024
+                pattern: ^(?!\/)(?!.*\/\/).+$
+              ExamplePath:
+                type: string
+                minLength: 1
+                maxLength: 1024
+            required:
+              - Label
+              - Pattern
+            additionalProperties: false
+          maxItems: 50
+      required:
+        - LaboratoryId
+        - WorkflowId
+        - KeyOutputs
+      additionalProperties: false
+    ListWorkflowKeyOutputsResponse:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+        WorkflowId:
+          type: string
+        WorkflowName:
+          type: string
+        Platform:
+          type: string
+        SourceRunId:
+          type: string
+        KeyOutputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowKeyOutput'
+        Delivery:
+          description: |-
+            Where to copy this workflow's key outputs after a run completes successfully.
+            One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+          $ref: '#/components/schemas/WorkflowKeyOutputDelivery'
+        CreatedAt:
+          type: string
+        ModifiedAt:
+          type: string
+      required:
+        - KeyOutputs
+        - LaboratoryId
+        - WorkflowId
+    RequestPreviewWorkflowKeyOutputsRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          format: uuid
+        RunId:
+          type: string
+          minLength: 1
+        ObjectKeys:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 1024
+          maxItems: 50
+        KeyOutputs:
+          type: array
+          items:
+            type: object
+            properties:
+              KeyOutputId:
+                type: string
+                format: uuid
+              Label:
+                type: string
+                minLength: 1
+                maxLength: 80
+              Pattern:
+                type: string
+                minLength: 1
+                maxLength: 1024
+                pattern: ^(?!\/)(?!.*\/\/).+$
+              ExamplePath:
+                type: string
+                minLength: 1
+                maxLength: 1024
+            required:
+              - Label
+              - Pattern
+            additionalProperties: false
+          maxItems: 50
+      required:
+        - LaboratoryId
+        - RunId
+      additionalProperties: false
+    PreviewWorkflowKeyOutput:
+      description: A role returned by preview, including how many files on this run match.
+      type: object
+      properties:
+        MatchCount:
+          type: number
+        KeyOutputId:
+          type: string
+        Label:
+          type: string
+        Pattern:
+          type: string
+        ExamplePath:
+          description: Relative path of the file the user ticked when this role was inferred.
+          type: string
+      required:
+        - KeyOutputId
+        - Label
+        - MatchCount
+        - Pattern
+    PreviewWorkflowKeyOutputsResponse:
+      type: object
+      properties:
+        KeyOutputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/PreviewWorkflowKeyOutput'
+      required:
+        - KeyOutputs
+    RequestRunWorkflowKeyOutputsRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          format: uuid
+        RunId:
+          type: string
+          minLength: 1
+      required:
+        - LaboratoryId
+        - RunId
+      additionalProperties: false
+    RunWorkflowKeyOutput:
+      description: |-
+        A declared role scored against a specific run, including the matching files
+        so File Manager can pin them without a second listing.
+      type: object
+      properties:
+        MatchCount:
+          type: number
+        MatchSizeBytes:
+          type: number
+        Matches:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunWorkflowKeyOutputMatch'
+        KeyOutputId:
+          type: string
+        Label:
+          type: string
+        Pattern:
+          type: string
+        ExamplePath:
+          description: Relative path of the file the user ticked when this role was inferred.
+          type: string
+      required:
+        - KeyOutputId
+        - Label
+        - MatchCount
+        - MatchSizeBytes
+        - Matches
+        - Pattern
+    RunWorkflowKeyOutputMatch:
+      description: One file on a run that matches a declared key-output pattern.
+      type: object
+      properties:
+        Key:
+          type: string
+        RelativePath:
+          type: string
+        Size:
+          type: number
+      required:
+        - Key
+        - RelativePath
+        - Size
+    RunWorkflowKeyOutputGroup:
+      description: One representative file for an inferred role, used on the declaring screen.
+      type: object
+      properties:
+        Pattern:
+          type: string
+        Label:
+          type: string
+        ExamplePath:
+          type: string
+        Directory:
+          type: string
+        Size:
+          type: number
+        MatchCount:
+          type: number
+      required:
+        - Directory
+        - ExamplePath
+        - Label
+        - MatchCount
+        - Pattern
+        - Size
+    RunWorkflowKeyOutputsResponse:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+        RunId:
+          type: string
+        WorkflowId:
+          type: string
+        S3Bucket:
+          type: string
+        S3Prefix:
+          type: string
+        TotalFileCount:
+          type: number
+        MatchedFileCount:
+          type: number
+        MatchedSizeBytes:
+          type: number
+        KeyOutputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunWorkflowKeyOutput'
+        Groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunWorkflowKeyOutputGroup'
+      required:
+        - Groups
+        - KeyOutputs
+        - LaboratoryId
+        - MatchedFileCount
+        - MatchedSizeBytes
+        - RunId
+        - S3Bucket
+        - S3Prefix
+        - TotalFileCount
+        - WorkflowId
     CreateWorkflowRunPresetRequest:
       type: object
       properties:
@@ -9327,6 +9772,84 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/run/request-run-export-job-status:
+    post:
+      operationId: requestRunExportJobStatus
+      summary: Request Run Export Job Status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestRunExportJobStatusRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/run/request-run-export-job:
+    post:
+      operationId: requestRunExportJob
+      summary: Request Run Export Job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestRunExportJobRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/run/request-run-export-preview:
+    post:
+      operationId: requestRunExportPreview
+      summary: Request Run Export Preview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestRunExportPreviewRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /easy-genomics/laboratory/run/update-laboratory-run/{id}:
     put:
       operationId: updateLaboratoryRun
@@ -10523,6 +11046,148 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/workflow-key-outputs/edit-workflow-key-output-delivery:
+    post:
+      operationId: editWorkflowKeyOutputDelivery
+      summary: Edit Workflow Key Output Delivery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditWorkflowKeyOutputDeliveryRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowKeyOutputs'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/workflow-key-outputs/edit-workflow-key-outputs:
+    post:
+      operationId: editWorkflowKeyOutputs
+      summary: Edit Workflow Key Outputs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditWorkflowKeyOutputsRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowKeyOutputs'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/workflow-key-outputs/list-workflow-key-outputs:
+    get:
+      operationId: listWorkflowKeyOutputs
+      summary: List Workflow Key Outputs
+      parameters:
+        - name: laboratoryId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Laboratory owning the key-outputs definition
+        - name: workflowId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Workflow the definition applies to
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListWorkflowKeyOutputsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/workflow-key-outputs/request-preview-workflow-key-outputs:
+    post:
+      operationId: requestPreviewWorkflowKeyOutputs
+      summary: Request Preview Workflow Key Outputs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestPreviewWorkflowKeyOutputsRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewWorkflowKeyOutputsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/workflow-key-outputs/request-run-workflow-key-outputs:
+    post:
+      operationId: requestRunWorkflowKeyOutputs
+      summary: Request Run Workflow Key Outputs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestRunWorkflowKeyOutputsRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunWorkflowKeyOutputsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

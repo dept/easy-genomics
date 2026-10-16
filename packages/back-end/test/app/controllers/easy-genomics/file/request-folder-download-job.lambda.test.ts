@@ -101,6 +101,7 @@ describe('request-folder-download-job Lambda', () => {
     mockS3ServiceInstance.prototype.listBucketObjectsV2 = mockListBucketObjectsV2;
     mockS3ServiceInstance.prototype.getObject = mockGetObject;
     mockS3ServiceInstance.prototype.deleteObject = mockDeleteObject;
+    mockS3ServiceInstance.prototype.headObject = jest.fn().mockResolvedValue({ ContentLength: 100 });
     mockListBucketObjectsV2.mockImplementation(({ Prefix }: { Prefix: string }) => {
       if (Prefix.includes('.downloads/jobs/')) {
         return Promise.resolve({
@@ -343,5 +344,52 @@ describe('request-folder-download-job Lambda', () => {
         ContinuationToken: 'page-2',
       }),
     );
+  });
+
+  it('zips a filtered object set without listing the whole prefix for size', async () => {
+    mockValidateOrgAdmin.mockReturnValue(true);
+    mockQueryByLaboratoryId.mockResolvedValue(mockLaboratory);
+    mockPutObject.mockResolvedValue({});
+    mockPublish.mockResolvedValue({});
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'test-lab-id',
+        S3Bucket: 'test-bucket',
+        S3Prefix: 'test-org-id/test-lab-id/results/',
+        ObjectKeys: [
+          'test-org-id/test-lab-id/results/variants/sample01.consensus.fa',
+          'test-org-id/test-lab-id/results/pangolin/sample01.pangolin.csv',
+        ],
+        ArchiveName: 'key-outputs',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockPublish).toHaveBeenCalled();
+    const message = JSON.parse(mockPublish.mock.calls[0][0].MessageBody);
+    expect(message.ObjectKeys).toHaveLength(2);
+    expect(message.ArchiveName).toEqual('key-outputs');
+  });
+
+  it('rejects object keys outside the requested prefix', async () => {
+    mockValidateOrgAdmin.mockReturnValue(true);
+    mockQueryByLaboratoryId.mockResolvedValue(mockLaboratory);
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: 'test-lab-id',
+        S3Bucket: 'test-bucket',
+        S3Prefix: 'test-org-id/test-lab-id/results/',
+        ObjectKeys: ['another-org/another-lab/secret.txt'],
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(403);
+    expect(mockPublish).not.toHaveBeenCalled();
   });
 });

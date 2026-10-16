@@ -51,6 +51,8 @@ jest.mock('../../../src/infra/constructs/sqs-construct', () => ({
         { queueUrl: 'https://sqs/classify', queueArn: 'arn:aws:sqs:classify' },
       ],
       ['folder-download-queue', { queueUrl: 'https://sqs/folder', queueArn: 'arn:aws:sqs:folder' }],
+      ['run-export-queue', { queueUrl: 'https://sqs/export', queueArn: 'arn:aws:sqs:export' }],
+      ['key-output-delivery-queue', { queueUrl: 'https://sqs/deliver', queueArn: 'arn:aws:sqs:deliver' }],
     ]),
   })),
 }));
@@ -192,6 +194,106 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     expect(triggerConfig.environment.SQS_LABORATORY_RUN_NOTIFICATION_QUEUE_URL).toBe('https://sqs/run-notify');
   });
 
+  it('wires the run-export queue into the request and process lambdas', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const lambdaConstructMock = LambdaConstruct as unknown as jest.Mock;
+    const lambdaProps = lambdaConstructMock.mock.calls[0][2];
+    const requestConfig = lambdaProps.lambdaFunctionsResources['/easy-genomics/laboratory/run/request-run-export-job'];
+    const processConfig = lambdaProps.lambdaFunctionsResources['/easy-genomics/laboratory/run/process-run-export-job'];
+
+    expect(requestConfig.environment.SQS_RUN_EXPORT_QUEUE_URL).toBe('https://sqs/export');
+    expect(processConfig.timeoutSeconds).toBe(900);
+    expect(processConfig.events).toHaveLength(1);
+
+    const sqsConstructMock = SqsConstruct as unknown as jest.Mock;
+    const sqsProps = sqsConstructMock.mock.calls[0][2];
+    expect(sqsProps.queues['run-export-queue'].deadLetterQueue).toBeDefined();
+    expect(sqsProps.queues['run-export-queue'].deadLetterQueue.maxReceiveCount).toBe(3);
+  });
+
+  it('wires key-output delivery into the status update and the copy worker', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const lambdaConstructMock = LambdaConstruct as unknown as jest.Mock;
+    const lambdaProps = lambdaConstructMock.mock.calls[0][2];
+    const updateConfig =
+      lambdaProps.lambdaFunctionsResources['/easy-genomics/laboratory/run/process-update-laboratory-run'];
+    const processConfig =
+      lambdaProps.lambdaFunctionsResources['/easy-genomics/workflow-key-outputs/process-deliver-workflow-key-outputs'];
+
+    expect(updateConfig.environment.SQS_KEY_OUTPUT_DELIVERY_QUEUE_URL).toBe('https://sqs/deliver');
+    expect(processConfig.timeoutSeconds).toBe(900);
+    expect(processConfig.events).toHaveLength(1);
+
+    const sqsConstructMock = SqsConstruct as unknown as jest.Mock;
+    const sqsProps = sqsConstructMock.mock.calls[0][2];
+    expect(sqsProps.queues['key-output-delivery-queue'].deadLetterQueue.maxReceiveCount).toBe(3);
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/workflow-key-outputs/process-deliver-workflow-key-outputs',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['s3:GetObject', 's3:PutObject', 's3:AbortMultipartUpload']),
+        }),
+      ]),
+    );
+  });
+
+  it('adds IAM policy statements for run-export routes', async () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/laboratory/run/request-run-export-job-status',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['dynamodb:Query']),
+        }),
+        expect.objectContaining({
+          actions: expect.arrayContaining(['s3:GetObject', 's3:DeleteObject']),
+        }),
+      ]),
+    );
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/laboratory/run/request-run-export-job',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['s3:PutObject', 's3:GetObject', 's3:DeleteObject']),
+        }),
+        expect.objectContaining({
+          actions: expect.arrayContaining(['sqs:SendMessage']),
+        }),
+      ]),
+    );
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/laboratory/run/process-run-export-job',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['s3:GetObject', 's3:PutObject', 's3:AbortMultipartUpload']),
+        }),
+      ]),
+    );
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/laboratory/run/request-run-export-preview',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['dynamodb:Query']),
+        }),
+      ]),
+    );
+  });
+
   it('adds IAM policy statements for top-level bucket objects endpoint', () => {
     const app = new App();
     const parentStack = new Stack(app, 'parent-stack');
@@ -290,6 +392,35 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
         }),
       ]),
     );
+  });
+
+  it('grants create-bulk-samples the IAM actions an S3 CopyObject needs', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+
+    expect(iamInstance.addPolicyStatements).toHaveBeenCalledWith(
+      '/easy-genomics/data-collections/create-bulk-samples',
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining([
+            's3:GetObject',
+            's3:GetObjectTagging',
+            's3:PutObject',
+            's3:PutObjectTagging',
+          ]),
+        }),
+      ]),
+    );
+
+    const bulkSamplesActions = iamInstance.addPolicyStatements.mock.calls
+      .filter(([route]: [string]) => route === '/easy-genomics/data-collections/create-bulk-samples')
+      .flatMap(([, statements]: [string, { actions?: string[] }[]]) => statements.flatMap((s) => s.actions ?? []));
+    expect(bulkSamplesActions).not.toContain('s3:CopyObject');
+    expect(bulkSamplesActions).not.toContain('s3:HeadObject');
   });
 
   it('adds IAM policy statements for create-sample endpoint', () => {

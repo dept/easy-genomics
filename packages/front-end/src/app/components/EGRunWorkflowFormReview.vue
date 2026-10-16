@@ -2,6 +2,7 @@
   import { useRunStore, useToastStore, useLabsStore } from '@FE/stores';
   import { ButtonSizeEnum } from '@FE/types/buttons';
   import type { EstimateRunCostResponse } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
+  import { prepareWorkflowLaunchParams } from '@easy-genomics/shared-lib/src/app/utils/coerce-numeric-workflow-params';
 
   const props = defineProps<{
     schema: object;
@@ -34,16 +35,8 @@
 
   const schema = JSON.parse(JSON.stringify(props.schema));
 
-  function withoutEmptyFields(o: object): object {
-    const r = {};
-
-    for (const key in o) {
-      if (!!o[key]) {
-        r[key] = o[key];
-      }
-    }
-
-    return r;
+  function paramsForLaunch(): Record<string, unknown> {
+    return prepareWorkflowLaunchParams(props.params);
   }
 
   onMounted(async () => {
@@ -55,7 +48,7 @@
         workflowVersionName: props.workflowVersionName,
         inputFileKeys: wipOmicsRun.value?.inputFileKeys,
         sampleSheetS3Url: (props.params as any)?.input,
-        settings: withoutEmptyFields(props.params),
+        settings: paramsForLaunch(),
       });
     } catch (error) {
       console.warn('Pre-run cost estimate unavailable:', error);
@@ -79,12 +72,13 @@
       }
 
       let startOmicsRes;
+      const launchParams = paramsForLaunch();
       try {
         startOmicsRes = await $api.omicsRuns.createExecution(
           props.labId,
           props.workflowId,
           props.runName,
-          withoutEmptyFields(props.params),
+          launchParams,
           props.workflowVersionName,
           props.workflowOwnerId,
           props.transactionId,
@@ -116,7 +110,7 @@
           'InputS3Url': props.params.input.substring(0, props.params.input.lastIndexOf('/')),
           'OutputS3Url': props.params.outdir,
           'SampleSheetS3Url': props.params.input,
-          'Settings': JSON.stringify(props.params),
+          'Settings': JSON.stringify(launchParams),
         };
         await $api.labs.createLabRun(labRunRequest);
       } catch (error) {

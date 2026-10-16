@@ -547,6 +547,7 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
         '^@FE/(.*)$': '<rootDir>/src/app/$1',
         '^@SharedLib/(.*)$': '<rootDir>/../shared-lib/src/app/$1',
         '^@BE/(.*)$': '<rootDir>/../back-end/src/app/$1',
+        '^aws-amplify/auth$': '<rootDir>/node_modules/aws-amplify/dist/esm/auth/index.mjs',
       },
     },
   },
@@ -582,7 +583,6 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     include: ['.nuxt/**/*.d.ts', 'auto-imports.d.ts', 'components.d.ts', '**/*.ts', '**/*d.ts', '**/*.vue'],
   },
   deps: [
-    '@aws-amplify/ui-vue@3.1.30',
     `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-s3',
     '@aws-sdk/s3-request-presigner',
@@ -599,8 +599,9 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@vueuse/core',
     '@vueuse/integrations',
     '@vueuse/nuxt',
-    'amazon-cognito-identity-js',
-    'aws-amplify@5.3.18',
+    // Exact pin: token-storage defaults have changed within 6.x minors, and the
+    // front-end upgrade task would otherwise float aws-amplify unattended.
+    'aws-amplify@6.22.0',
     'axios@^1.18.1',
     'cdk-nag',
     'class-variance-authority',
@@ -808,9 +809,6 @@ root.addFields({
       'simple-git': '>=3.36.0',
       // CVE-2025-29244 + 3 others + XMLBuilder comment/CDATA injection: entity expansion / encoding bypass DoS and XSS
       'fast-xml-parser': '>=5.7.0',
-      // @aws-amplify/storage@5.9.12 declares fast-xml-parser@^4.2.5 (4.x only); 5.x has breaking API changes
-      // that break S3 XML response parsing in the prod frontend bundle. Floor at >=4.5.5 clears all 4.x CVEs.
-      '@aws-amplify/storage>fast-xml-parser': '>=4.5.5 <5.0.0',
 
       // --- PR3: HIGH severity ---
       // 9 advisories: ReDoS via repeated wildcards and nested extglobs

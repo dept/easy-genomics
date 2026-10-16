@@ -65,12 +65,11 @@ describe('LaboratoryDataTaggingService helpers', () => {
   });
 
   it('assertLaboratoryHasS3BucketAccess allows granted bucket', async () => {
-    mockListByLaboratoryId.mockResolvedValue([
-      { LaboratoryId: 'lab-1', BucketName: 'my-bucket', OrganizationId: 'org-1' },
-    ]);
+    const accessRows = [{ LaboratoryId: 'lab-1', BucketName: 'my-bucket', OrganizationId: 'org-1' }];
+    mockListByLaboratoryId.mockResolvedValue(accessRows);
     const svc = new LaboratoryDataTaggingService();
     const lab = labFixture();
-    await expect(svc.assertLaboratoryHasS3BucketAccess(lab, 'my-bucket')).resolves.toBeUndefined();
+    await expect(svc.assertLaboratoryHasS3BucketAccess(lab, 'my-bucket')).resolves.toEqual(accessRows);
   });
 });
 

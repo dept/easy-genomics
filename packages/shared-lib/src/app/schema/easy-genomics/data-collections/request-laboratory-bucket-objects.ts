@@ -5,8 +5,8 @@ export const RequestLaboratoryBucketObjectsSchema = z
     LaboratoryId: z.string().min(1),
     /** When omitted, uses the laboratory default S3 bucket. */
     S3Bucket: z.string().min(1).optional(),
-    /** Optional prefix relative to the lab root `${OrganizationId}/${LaboratoryId}/`. */
-    RelativePrefix: z.string().optional(),
+    /** Absolute key prefix; must sit inside `${OrganizationId}/${LaboratoryId}/`. Defaults to that root. */
+    S3Prefix: z.string().optional(),
     /**
      * Hard cap on how many file objects to return (prevents huge payloads).
      * Default 15_000; max 50_000.

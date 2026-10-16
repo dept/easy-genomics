@@ -8,6 +8,7 @@ import {
   UnlinkedBucketObjectsResponse,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import type { LaboratoryS3Access } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-s3-access';
 import {
   GenerateSequenceCollectionSampleSheetResponse,
   LaboratorySequenceCollection,
@@ -26,6 +27,7 @@ import { isFilenameRegexSafe } from '@easy-genomics/shared-lib/src/app/utils/fil
 import {
   InvalidRequestError,
   NotFoundError,
+  S3KeyOutOfPrefixError,
   SampleNotFoundError,
   SequenceCollectionNotFoundError,
 } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
@@ -41,6 +43,8 @@ import {
 } from './laboratory-data-tagging-service';
 import { DynamoDBService } from '../dynamodb-service';
 import { S3Service } from '../s3-service';
+import { findAllowedPrefix } from '@BE/utils/laboratory-s3-access-utils';
+import { isInsideLaboratoryReadablePrefix, resolveLaboratoryListingPrefix } from '@BE/utils/s3-uri-utils';
 
 const TABLE_NAME = `${process.env.NAME_PREFIX}-laboratory-data-tagging-table`;
 const GSI1_NAME = 'Gsi1Pk_Index';
@@ -79,8 +83,23 @@ export class LaboratorySampleService extends DynamoDBService {
     this.taggingService.assertKeyUnderLabPrefix(laboratory, key);
   }
 
-  public async assertLaboratoryHasS3BucketAccess(laboratory: Laboratory, bucket: string): Promise<void> {
-    await this.taggingService.assertLaboratoryHasS3BucketAccess(laboratory, bucket);
+  public async assertLaboratoryHasS3BucketAccess(
+    laboratory: Laboratory,
+    bucket: string,
+  ): Promise<LaboratoryS3Access[]> {
+    return this.taggingService.assertLaboratoryHasS3BucketAccess(laboratory, bucket);
+  }
+
+  /** An import may copy from the lab root or from the allowed folder stored for this lab and this source bucket. */
+  private async assertImportSourceReadable(
+    laboratory: Laboratory,
+    sourceBucket: string,
+    sourceKey: string,
+  ): Promise<void> {
+    const accessRows = await this.assertLaboratoryHasS3BucketAccess(laboratory, sourceBucket);
+    if (!isInsideLaboratoryReadablePrefix(sourceKey, laboratory, findAllowedPrefix(accessRows, sourceBucket))) {
+      throw new S3KeyOutOfPrefixError();
+    }
   }
 
   public async listSamples(laboratoryId: string): Promise<ListLaboratorySamplesResponse> {
@@ -252,13 +271,15 @@ export class LaboratorySampleService extends DynamoDBService {
       if (!isFilenameRegexSafe(opts.filenameRegex)) {
         throw new InvalidRequestError('Filename regex is not allowed');
       }
-      const labPrefix = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
+      // In-place links must stay under the lab root (assertKeyUnderLabPrefix on every key), so never an allowed folder.
+      const labPrefix = resolveLaboratoryListingPrefix(laboratory);
       const { contents } = await this.dataCollectionService.listTransactionInputs({
         bucket,
         labPrefix,
         pageSize: 1000,
       });
-      const regex = new RegExp(opts.filenameRegex);
+      // Case-insensitive to match the grouping preview (groupFilenamesByRegex), which the user saw before submitting.
+      const regex = new RegExp(opts.filenameRegex, 'i');
       for (const obj of contents) {
         if (!obj.Key) continue;
         const base = obj.Key.split('/').pop() || obj.Key;
@@ -651,7 +672,7 @@ export class LaboratorySampleService extends DynamoDBService {
   public async listUnlinkedBucketObjects(
     laboratory: Laboratory,
     opts: {
-      relativePrefix?: string;
+      s3Prefix?: string;
       maxTotalKeys?: number;
       maxTransactionFolders?: number;
       pageSize?: number;
@@ -660,11 +681,7 @@ export class LaboratorySampleService extends DynamoDBService {
     const s3Bucket = laboratory.S3Bucket || '';
     if (!s3Bucket) throw new Error('Laboratory has no S3 bucket configured');
 
-    const labRoot = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
-    const relative = (opts.relativePrefix || '').replace(/^\/*/, '');
-    let normalizedPrefix = `${labRoot}${relative}`;
-    if (!normalizedPrefix.endsWith('/')) normalizedPrefix = `${normalizedPrefix}/`;
-    if (!normalizedPrefix.startsWith(labRoot)) throw new Error('Prefix is outside laboratory scope');
+    const normalizedPrefix = resolveLaboratoryListingPrefix(laboratory, opts.s3Prefix);
 
     const pageSize = Math.min(opts.pageSize ?? 1000, 1000);
     const maxTotalKeys = Math.min(opts.maxTotalKeys ?? 15_000, 50_000);
@@ -728,8 +745,7 @@ export class LaboratorySampleService extends DynamoDBService {
     };
 
     for (const job of opts.copyJobs || []) {
-      await this.assertLaboratoryHasS3BucketAccess(laboratory, job.sourceBucket);
-      this.assertKeyUnderLabPrefix(laboratory, job.sourceKey);
+      await this.assertImportSourceReadable(laboratory, job.sourceBucket, job.sourceKey);
       this.assertKeyUnderLabPrefix(laboratory, job.destKey);
       await this.s3Service.copyBucketObject({
         Bucket: bucket,

@@ -250,6 +250,18 @@ export interface paths {
     /** Request Laboratory Run Status Check */
     post: operations["requestLaboratoryRunStatusCheck"];
   };
+  "/easy-genomics/laboratory/run/request-run-export-job-status": {
+    /** Request Run Export Job Status */
+    post: operations["requestRunExportJobStatus"];
+  };
+  "/easy-genomics/laboratory/run/request-run-export-job": {
+    /** Request Run Export Job */
+    post: operations["requestRunExportJob"];
+  };
+  "/easy-genomics/laboratory/run/request-run-export-preview": {
+    /** Request Run Export Preview */
+    post: operations["requestRunExportPreview"];
+  };
   "/easy-genomics/laboratory/run/update-laboratory-run/{id}": {
     /** Update Laboratory Run */
     put: operations["updateLaboratoryRun"];
@@ -425,6 +437,26 @@ export interface paths {
   "/easy-genomics/user/update-user-request/{id}": {
     /** Update User Request */
     put: operations["updateUserRequest"];
+  };
+  "/easy-genomics/workflow-key-outputs/edit-workflow-key-output-delivery": {
+    /** Edit Workflow Key Output Delivery */
+    post: operations["editWorkflowKeyOutputDelivery"];
+  };
+  "/easy-genomics/workflow-key-outputs/edit-workflow-key-outputs": {
+    /** Edit Workflow Key Outputs */
+    post: operations["editWorkflowKeyOutputs"];
+  };
+  "/easy-genomics/workflow-key-outputs/list-workflow-key-outputs": {
+    /** List Workflow Key Outputs */
+    get: operations["listWorkflowKeyOutputs"];
+  };
+  "/easy-genomics/workflow-key-outputs/request-preview-workflow-key-outputs": {
+    /** Request Preview Workflow Key Outputs */
+    post: operations["requestPreviewWorkflowKeyOutputs"];
+  };
+  "/easy-genomics/workflow-key-outputs/request-run-workflow-key-outputs": {
+    /** Request Run Workflow Key Outputs */
+    post: operations["requestRunWorkflowKeyOutputs"];
   };
   "/easy-genomics/workflow-run-preset/create-workflow-run-preset": {
     /** Create Workflow Run Preset */
@@ -901,7 +933,7 @@ export interface components {
     RequestLaboratoryBucketObjectsRequest: {
       LaboratoryId: string;
       S3Bucket?: string;
-      RelativePrefix?: string;
+      S3Prefix?: string;
       MaxTotalKeys?: number;
       MaxTransactionFolders?: number;
       MaxKeys?: number;
@@ -1008,7 +1040,7 @@ export interface components {
     };
     RequestUnlinkedBucketObjectsRequest: {
       LaboratoryId: string;
-      RelativePrefix?: string;
+      S3Prefix?: string;
       MaxTotalKeys?: number;
       MaxTransactionFolders?: number;
       MaxKeys?: number;
@@ -1056,6 +1088,8 @@ export interface components {
       LaboratoryId: string;
       S3Bucket?: string;
       S3Prefix: string;
+      ObjectKeys?: string[];
+      ArchiveName?: string;
     };
     RequestListBucketObjectsRequest: {
       LaboratoryId: string;
@@ -1210,11 +1244,11 @@ export interface components {
       ModifiedBy?: string;
     };
     ReadLaboratory: {
-      OrganizationId: string;
-      Name: string;
       LaboratoryId: string;
       /** @enum {string} */
       Status: "Active" | "Inactive";
+      OrganizationId: string;
+      Name: string;
       Description?: string;
       AwsHealthOmicsEnabled?: boolean;
       NextFlowTowerEnabled?: boolean;
@@ -1279,15 +1313,15 @@ export interface components {
       };
     };
     LaboratoryRun: {
-      OrganizationId: string;
       LaboratoryId: string;
+      RunId: string;
+      RunName: string;
+      Status: string;
+      OrganizationId: string;
       UserId: string;
       /** @enum {string} */
       Platform: "AWS HealthOmics" | "Seqera Cloud";
-      Status: string;
       Owner: string;
-      RunId: string;
-      RunName: string;
       /** @description Optional user-authored note for this run; set at creation time. */
       Description?: string;
       WorkflowName?: string;
@@ -1479,15 +1513,15 @@ export interface components {
       };
     };
     ReadLaboratoryRun: {
-      OrganizationId: string;
       LaboratoryId: string;
+      RunId: string;
+      RunName: string;
+      Status: string;
+      OrganizationId: string;
       UserId: string;
       /** @enum {string} */
       Platform: "AWS HealthOmics" | "Seqera Cloud";
-      Status: string;
       Owner: string;
-      RunId: string;
-      RunName: string;
       /** @description Optional user-authored note for this run; set at creation time. */
       Description?: string;
       WorkflowName?: string;
@@ -1609,6 +1643,23 @@ export interface components {
         median: number;
       };
     };
+    RequestRunExportJobStatusRequest: {
+      LaboratoryId: string;
+      /** Format: uuid */
+      JobId: string;
+    };
+    RequestRunExportJobRequest: {
+      LaboratoryId: string;
+      RunIds: string[];
+      /** @enum {string} */
+      Destination: "Download" | "S3" | "Lims";
+      DestinationBucket?: string;
+      DestinationPrefix?: string;
+    };
+    RequestRunExportPreviewRequest: {
+      LaboratoryId: string;
+      RunIds: string[];
+    };
     UpdateLaboratoryRunRequest: {
       Status: string;
       InputS3Url?: string;
@@ -1620,6 +1671,8 @@ export interface components {
     };
     ListGrantedLaboratoryBucketsResponse: {
       buckets: string[];
+      /** @description Granted bucket name → its allowed prefix. Buckets without one are absent; a missing map means no bucket has one. */
+      allowedPrefixes?: Record<string, never>;
     };
     UpdateLaboratoryRequest: {
       Name: string;
@@ -1698,9 +1751,9 @@ export interface components {
       LabTechnician: boolean;
     };
     LaboratoryUserDetails: {
+      LaboratoryId: string;
       LabManager: boolean;
       LabTechnician: boolean;
-      LaboratoryId: string;
       UserId: string;
       UserEmail: string;
       PreferredName?: string;
@@ -1764,6 +1817,7 @@ export interface components {
           laboratoryId: string;
           bucketName: string;
           granted: boolean;
+          allowedPrefix?: string;
         }[];
     };
     LaboratoryS3Access: {
@@ -1775,6 +1829,11 @@ export interface components {
        * @enum {string}
        */
       Effect?: "ALLOW" | "DENY";
+      /**
+       * @description ALLOW rows only: an absolute prefix (ends in "/") outside `{OrganizationId}/{LaboratoryId}/` that Data Collections
+       * may also list and import from in this bucket. Removed whenever the row is revoked or rewritten without it.
+       */
+      AllowedPrefix?: string;
       CreatedAt?: string;
       ModifiedAt?: string;
     };
@@ -2016,6 +2075,151 @@ export interface components {
       NotifyOnOwnRuns?: boolean;
       /** @enum {string} */
       NotificationEventFilter?: "all_terminal" | "failures_only" | "successes_only";
+    };
+    EditWorkflowKeyOutputDeliveryRequest: {
+      /** Format: uuid */
+      LaboratoryId: string;
+      WorkflowId: string;
+      Enabled: boolean;
+      DestinationUri?: string;
+    };
+    /**
+     * @description One role in the key-outputs definition. `Pattern` is a path glob relative to
+     * the run's File Manager root (`*` matches within a single path segment).
+     */
+    WorkflowKeyOutput: {
+      KeyOutputId: string;
+      Label: string;
+      Pattern: string;
+      /** @description Relative path of the file the user ticked when this role was inferred. */
+      ExamplePath?: string;
+    };
+    /**
+     * @description Where to copy this workflow's key outputs after a run completes successfully.
+     * One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+     */
+    WorkflowKeyOutputDelivery: {
+      Enabled: boolean;
+      DestinationUri?: string;
+    };
+    WorkflowKeyOutputs: {
+      LaboratoryId: string;
+      WorkflowId: string;
+      WorkflowName?: string;
+      Platform?: string;
+      /** @description Last completed run the lab used to pick files for this definition. */
+      SourceRunId?: string;
+      KeyOutputs: components["schemas"]["WorkflowKeyOutput"][];
+      /**
+       * @description Where to copy this workflow's key outputs after a run completes successfully.
+       * One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+       */
+      Delivery?: components["schemas"]["WorkflowKeyOutputDelivery"];
+      CreatedAt?: string;
+      CreatedBy?: string;
+      ModifiedAt?: string;
+      ModifiedBy?: string;
+    };
+    EditWorkflowKeyOutputsRequest: {
+      /** Format: uuid */
+      LaboratoryId: string;
+      WorkflowId: string;
+      WorkflowName?: string;
+      Platform?: string;
+      SourceRunId?: string;
+      KeyOutputs: {
+          /** Format: uuid */
+          KeyOutputId?: string;
+          Label: string;
+          Pattern: string;
+          ExamplePath?: string;
+        }[];
+    };
+    ListWorkflowKeyOutputsResponse: {
+      LaboratoryId: string;
+      WorkflowId: string;
+      WorkflowName?: string;
+      Platform?: string;
+      SourceRunId?: string;
+      KeyOutputs: components["schemas"]["WorkflowKeyOutput"][];
+      /**
+       * @description Where to copy this workflow's key outputs after a run completes successfully.
+       * One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+       */
+      Delivery?: components["schemas"]["WorkflowKeyOutputDelivery"];
+      CreatedAt?: string;
+      ModifiedAt?: string;
+    };
+    RequestPreviewWorkflowKeyOutputsRequest: {
+      /** Format: uuid */
+      LaboratoryId: string;
+      RunId: string;
+      ObjectKeys?: string[];
+      KeyOutputs?: {
+          /** Format: uuid */
+          KeyOutputId?: string;
+          Label: string;
+          Pattern: string;
+          ExamplePath?: string;
+        }[];
+    };
+    /** @description A role returned by preview, including how many files on this run match. */
+    PreviewWorkflowKeyOutput: {
+      MatchCount: number;
+      KeyOutputId: string;
+      Label: string;
+      Pattern: string;
+      /** @description Relative path of the file the user ticked when this role was inferred. */
+      ExamplePath?: string;
+    };
+    PreviewWorkflowKeyOutputsResponse: {
+      KeyOutputs: components["schemas"]["PreviewWorkflowKeyOutput"][];
+    };
+    RequestRunWorkflowKeyOutputsRequest: {
+      /** Format: uuid */
+      LaboratoryId: string;
+      RunId: string;
+    };
+    /**
+     * @description A declared role scored against a specific run, including the matching files
+     * so File Manager can pin them without a second listing.
+     */
+    RunWorkflowKeyOutput: {
+      MatchCount: number;
+      MatchSizeBytes: number;
+      Matches: components["schemas"]["RunWorkflowKeyOutputMatch"][];
+      KeyOutputId: string;
+      Label: string;
+      Pattern: string;
+      /** @description Relative path of the file the user ticked when this role was inferred. */
+      ExamplePath?: string;
+    };
+    /** @description One file on a run that matches a declared key-output pattern. */
+    RunWorkflowKeyOutputMatch: {
+      Key: string;
+      RelativePath: string;
+      Size: number;
+    };
+    /** @description One representative file for an inferred role, used on the declaring screen. */
+    RunWorkflowKeyOutputGroup: {
+      Pattern: string;
+      Label: string;
+      ExamplePath: string;
+      Directory: string;
+      Size: number;
+      MatchCount: number;
+    };
+    RunWorkflowKeyOutputsResponse: {
+      LaboratoryId: string;
+      RunId: string;
+      WorkflowId: string;
+      S3Bucket: string;
+      S3Prefix: string;
+      TotalFileCount: number;
+      MatchedFileCount: number;
+      MatchedSizeBytes: number;
+      KeyOutputs: components["schemas"]["RunWorkflowKeyOutput"][];
+      Groups: components["schemas"]["RunWorkflowKeyOutputGroup"][];
     };
     CreateWorkflowRunPresetRequest: {
       /** Format: uuid */
@@ -5146,6 +5350,69 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
+  /** Request Run Export Job Status */
+  requestRunExportJobStatus: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RequestRunExportJobStatusRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Request Run Export Job */
+  requestRunExportJob: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RequestRunExportJobRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Request Run Export Preview */
+  requestRunExportPreview: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RequestRunExportPreviewRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
   /** Update Laboratory Run */
   updateLaboratoryRun: {
     parameters: {
@@ -6081,6 +6348,114 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["User"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Edit Workflow Key Output Delivery */
+  editWorkflowKeyOutputDelivery: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EditWorkflowKeyOutputDeliveryRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["WorkflowKeyOutputs"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Edit Workflow Key Outputs */
+  editWorkflowKeyOutputs: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EditWorkflowKeyOutputsRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["WorkflowKeyOutputs"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** List Workflow Key Outputs */
+  listWorkflowKeyOutputs: {
+    parameters: {
+      query: {
+        /** @description Laboratory owning the key-outputs definition */
+        laboratoryId: string;
+        /** @description Workflow the definition applies to */
+        workflowId: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["ListWorkflowKeyOutputsResponse"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Request Preview Workflow Key Outputs */
+  requestPreviewWorkflowKeyOutputs: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RequestPreviewWorkflowKeyOutputsRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["PreviewWorkflowKeyOutputsResponse"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Request Run Workflow Key Outputs */
+  requestRunWorkflowKeyOutputs: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RequestRunWorkflowKeyOutputsRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["RunWorkflowKeyOutputsResponse"];
         };
       };
       400: components["responses"]["BadRequest"];

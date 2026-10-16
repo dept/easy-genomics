@@ -16,6 +16,11 @@ export interface LaboratoryS3Access {
   OrganizationId: string;
   /** ALLOW or DENY; omitted/undefined on legacy rows means ALLOW. */
   Effect?: LaboratoryS3AccessEffect;
+  /**
+   * ALLOW rows only: an absolute prefix (ends in "/") outside `{OrganizationId}/{LaboratoryId}/` that Data Collections
+   * may also list and import from in this bucket. Removed whenever the row is revoked or rewritten without it.
+   */
+  AllowedPrefix?: string;
   CreatedAt?: string;
   ModifiedAt?: string;
 }
@@ -35,12 +40,19 @@ export interface ListS3BucketCatalogResponse {
 
 export interface ListGrantedLaboratoryBucketsResponse {
   buckets: string[];
+  /** Granted bucket name → its allowed prefix. Buckets without one are absent; a missing map means no bucket has one. */
+  allowedPrefixes?: Record<string, string>;
 }
 
 export interface BatchLaboratoryS3AccessAssignment {
   laboratoryId: string;
   bucketName: string;
   granted: boolean;
+  /**
+   * With `granted: true` only. Each assignment is the cell's full state: a grant without it clears any stored
+   * prefix, and a revoke always drops it.
+   */
+  allowedPrefix?: string;
 }
 
 export interface BatchUpdateLaboratoryS3AccessRequest {

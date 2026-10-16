@@ -103,6 +103,7 @@ const EXPECTED_TABLE_SUFFIXES = [
   'laboratory-s3-access-table',
   'laboratory-data-tagging-table',
   'workflow-run-preset-table',
+  'workflow-key-outputs-table',
 ] as const;
 
 type DeployEnv = {

@@ -1,4 +1,3 @@
-import { Readable } from 'stream';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { RequestFolderDownloadJobSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-folder-download-job';
@@ -20,6 +19,7 @@ import {
   validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
 import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
+import { s3BodyToString } from '@BE/utils/s3-object-body';
 import { normalizeS3Prefix, parseS3Uri } from '@BE/utils/s3-uri-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -33,21 +33,6 @@ const MAX_DOWNLOAD_SIZE_BYTES = 3 * 1024 * 1024 * 1024; // 3GB
 const FOLDER_SIZE_EXCEEDED_MESSAGE =
   'This folder is too large to download as a single ZIP file. You can download files individually, or contact support for assistance retrieving the full dataset.';
 const DOWNLOAD_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
-
-const streamToString = async (body: unknown): Promise<string> => {
-  if (!body) return '';
-  const bodyWithTransform = body as { transformToString?: () => Promise<string> };
-  if (typeof bodyWithTransform.transformToString === 'function') {
-    return bodyWithTransform.transformToString();
-  }
-
-  const readable = body as Readable;
-  const chunks: Buffer[] = [];
-  for await (const chunk of readable) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks).toString('utf-8');
-};
 
 const getRequestedPrefixSize = async (bucket: string, prefix: string): Promise<number> => {
   let totalBytes = 0;
@@ -100,7 +85,7 @@ const cleanupExpiredDownloadArtifacts = async (bucket: string, laboratoryOwnedPr
           Bucket: bucket,
           Key: statusKey,
         });
-        const statusJson = await streamToString(statusObject.Body);
+        const statusJson = await s3BodyToString(statusObject.Body);
         if (!statusJson) continue;
         const status = JSON.parse(statusJson) as { ExpiresAt?: string; ArchiveS3Key?: string };
         if (!status.ExpiresAt) continue;
@@ -135,6 +120,43 @@ type FolderDownloadJobMessage = {
   RequestedPrefix: string;
   ArchiveKey: string;
   StatusKey: string;
+  ObjectKeys?: string[];
+  ArchiveName?: string;
+};
+
+const toObjectKey = (value: string, expectedBucket: string): string => {
+  const parsed = parseS3Uri(value);
+  if (parsed) {
+    if (parsed.bucket !== expectedBucket) {
+      throw new InvalidRequestError('S3 bucket mismatch between S3Bucket and ObjectKeys');
+    }
+    return parsed.prefix.replace(/^\/+/, '');
+  }
+  return value.replace(/^\/+/, '');
+};
+
+const HEAD_OBJECT_CONCURRENCY = 25;
+
+const getRequestedObjectKeysSize = async (bucket: string, keys: string[]): Promise<number> => {
+  let totalBytes = 0;
+  for (let offset = 0; offset < keys.length; offset += HEAD_OBJECT_CONCURRENCY) {
+    const chunk = keys.slice(offset, offset + HEAD_OBJECT_CONCURRENCY);
+    const sizes = await Promise.all(
+      chunk.map(async (key) => {
+        try {
+          const head = await s3Service.headObject({ Bucket: bucket, Key: key });
+          return head.ContentLength || 0;
+        } catch {
+          throw new InvalidRequestError('One of the selected files could not be read');
+        }
+      }),
+    );
+    totalBytes += sizes.reduce((sum, size) => sum + size, 0);
+    if (totalBytes > MAX_DOWNLOAD_SIZE_BYTES) {
+      return totalBytes;
+    }
+  }
+  return totalBytes;
 };
 
 /**
@@ -190,9 +212,18 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
+    const objectKeys = (request.ObjectKeys ?? []).map((key) => toObjectKey(key, s3Bucket));
+    if (request.ObjectKeys) {
+      if (objectKeys.some((key) => !key || key.endsWith('/') || !key.startsWith(requestedPrefix))) {
+        throw new UnauthorizedAccessError();
+      }
+    }
+
     await cleanupExpiredDownloadArtifacts(s3Bucket, laboratoryOwnedPrefix);
 
-    const folderSizeBytes = await getRequestedPrefixSize(s3Bucket, requestedPrefix);
+    const folderSizeBytes = objectKeys.length
+      ? await getRequestedObjectKeysSize(s3Bucket, objectKeys)
+      : await getRequestedPrefixSize(s3Bucket, requestedPrefix);
     if (folderSizeBytes > MAX_DOWNLOAD_SIZE_BYTES) {
       throw new InvalidRequestError(FOLDER_SIZE_EXCEEDED_MESSAGE);
     }
@@ -210,6 +241,8 @@ export const handler: Handler = async (
         LaboratoryId: laboratory.LaboratoryId,
         Status: 'PENDING',
         RequestedPrefix: requestedPrefix,
+        ObjectKeys: objectKeys.length ? objectKeys : undefined,
+        ArchiveName: request.ArchiveName,
         ArchiveS3Key: archiveKey,
         CreatedAt: new Date().toISOString(),
         ExpiresAt: new Date(Date.now() + DOWNLOAD_EXPIRY_MS).toISOString(),
@@ -229,6 +262,8 @@ export const handler: Handler = async (
       RequestedPrefix: requestedPrefix,
       ArchiveKey: archiveKey,
       StatusKey: statusKey,
+      ObjectKeys: objectKeys.length ? objectKeys : undefined,
+      ArchiveName: request.ArchiveName,
     };
 
     await sqsService.sendMessage({

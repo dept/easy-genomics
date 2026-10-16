@@ -4,6 +4,8 @@
  * the "hidden by file type" popout breakdown.
  */
 
+import { isFasta } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
+
 export type DataCollectionFileKind = 'fastq' | 'fasta' | 'other';
 
 export type DataCollectionFileTypeFilter = {
@@ -20,7 +22,7 @@ export type HiddenFileTypeBreakdownRow = {
 const NO_EXTENSION_LABEL = '(no extension)';
 
 /** Multi-part extensions checked before single-dot suffixes on the basename. */
-const HIDDEN_MULTI_SUFFIXES = ['.fastq.gz', '.fq.gz'] as const;
+const HIDDEN_MULTI_SUFFIXES = ['.fastq.gz', '.fq.gz', '.fasta.gz', '.fa.gz', '.fna.gz'] as const;
 
 /** Hidden popout list: these labels appear first, in this order; all others follow A–Z. */
 const HIDDEN_BREAKDOWN_PRIORITY_LABELS = ['.fastq.gz', '.fasta', '.fa'] as const;
@@ -43,7 +45,7 @@ export function dataCollectionFileKind(s3Key: string): DataCollectionFileKind {
   if (name.endsWith('.fastq.gz') || name.endsWith('.fq.gz') || name.endsWith('.fastq') || name.endsWith('.fq')) {
     return 'fastq';
   }
-  if (name.endsWith('.fasta') || name.endsWith('.fa')) {
+  if (isFasta(name)) {
     return 'fasta';
   }
   return 'other';

@@ -38,7 +38,7 @@
     {
       kind: 'fasta' as const,
       title: 'FASTA',
-      description: 'Reference genomes and assemblies (.fasta, .fa)',
+      description: 'Reference genomes and assemblies (.fasta, .fa, .fna, gzipped or not)',
     },
     {
       kind: 'other' as const,
