@@ -173,3 +173,51 @@ this environment has no local Nuxt config and no signed-in session.
       parameter file field shows an error.
 - [ ] **Wrong ZIP extension** — upload a non-`.zip` definition. Create Workflow stays disabled, and the ZIP field shows
       an error.
+
+---
+
+## Data Collections — samples made only of FASTA files (EGV-331)
+
+A sample holding only FASTA files was saved as `single_end`, so launching it failed with "Single-end sample requires at
+least one FASTQ file." The Assembled preset's `assembly_fasta` column was never filled. This change adds an `assembled`
+layout and a "One sample per FASTA file" grouping preset. The sheet maps `assembled` samples, and `single_end` samples
+holding only FASTA, to `assembly_fasta`. A FASTA-only sample in a collection with a required read column gets an error
+that names the mismatch. Unit tests in shared-lib cover grouping, layout and role mapping for `.fa`, `.fasta`, `.fna`
+and `.fa.gz`. There is no Playwright spec for the import wizard or launch.
+
+### Automated checks
+
+| Check                    | Result                                            |
+| ------------------------ | ------------------------------------------------- |
+| `pnpm lint` (all three)  | Passes                                            |
+| `pnpm test` (shared-lib) | 381 tests pass, including `openapi-guard.test.ts` |
+| `pnpm test` (back-end)   | 1370 tests pass                                   |
+| `pnpm test` (front-end)  | 350 tests pass                                    |
+
+### Manual steps
+
+Run on 16 Oct 2026 with Playwright, against the branch's front-end and local back-end (`dev-demo` stack). Signed in as
+the lab-manager test user, in Test Laboratory. Test files: `WI-01.fasta`, `WI-02.fa`, `WI-03.fna`, `WI-04.fa.gz`,
+`WI-05.fasta`.
+
+- [x] **Group with the FASTA preset** — Import data, Upload from computer, all 5 files, then **One sample per FASTA
+      file**. The regex fills with no typing, and 5 files give 5 samples.
+- [x] **Review counts** — with WI-05 excluded, Review shows "0 paired · 0 single-end · 4 assembled" and no "needs
+      review". Each row's status is `assembled`.
+- [x] **Stored layout** — the 4 created samples list as `Layout: assembled`, `ContentsSummary: 1 file`.
+- [x] **Assembled launch** — an Assembled collection of the 4 samples, then Launch Workflow, then Continue. No error,
+      and the run wizard opens with the sheet as `input`. The sheet is `sample,fasta` with one row per sample, and the
+      URIs end in `.fasta`, `.fa`, `.fna` and `.fa.gz`.
+- [x] **Mismatch** — the same 4 samples in a Paired collection. Continue returns 400 EG-102, and the toast reads "WI-02:
+      this sample holds an assembled genome (FASTA) and no FASTQ reads, but column "fastq_1" needs reads. Use a sequence
+      collection with the Assembled preset." The run wizard does not open.
+- [x] **Manual build pre-selects assembled** — Files tab, WI-05.fasta, Build sample manually. The layout is pre-selected
+      as "Assembled genome (FASTA)".
+- [x] **Fallback for a FASTA-only `single_end` sample** — WI-05 saved as Single-end, then put in an Assembled collection
+      and launched. The request returns 200 and the sheet row is `WI-05,s3://…/WI-05.fasta`.
+- [x] **FASTQ unchanged** — paired fixtures `NA1287820K_R1_001.fastq.gz` and `_R2_` with the default preset. Review
+      shows "1 paired · 0 single-end" and no assembled count. A Paired collection launches with `sample,fastq_1,fastq_2`
+      and R1 and R2 in place.
+- [x] **Upload picker accepts `.fna`** — found during this run: the upload input's `accept` list omitted `.fna`, so the
+      file dialog could not pick one (drag and drop worked). The list now includes `.fna`, and the running wizard reads
+      `.fastq,.fq,.gz,.fasta,.fa,.fna,.fa.gz`.

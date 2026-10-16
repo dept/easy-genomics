@@ -1,6 +1,6 @@
 import type { LaboratoryRunUsageSummary } from './data-collections';
 
-export type SampleLayout = 'paired_end' | 'single_end' | 'long_reads' | 'paired_end_with_extras';
+export type SampleLayout = 'paired_end' | 'single_end' | 'long_reads' | 'paired_end_with_extras' | 'assembled';
 
 export type SampleImportSource = {
   type: 's3_import' | 'manual';
@@ -8,7 +8,7 @@ export type SampleImportSource = {
   importedAt: string;
 };
 
-export type SampleGroupingStatus = 'paired' | 'single_end' | 'long_reads' | 'needs_review' | 'unmatched';
+export type SampleGroupingStatus = 'paired' | 'single_end' | 'long_reads' | 'assembled' | 'needs_review' | 'unmatched';
 
 export type SampleSheetColumnRole =
   | 'sample_id'

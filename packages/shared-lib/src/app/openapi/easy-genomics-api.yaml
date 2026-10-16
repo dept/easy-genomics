@@ -312,6 +312,7 @@ components:
                   - single_end
                   - long_reads
                   - paired_end_with_extras
+                  - assembled
               Keys:
                 type: array
                 items:
@@ -415,6 +416,7 @@ components:
             - single_end
             - long_reads
             - paired_end_with_extras
+            - assembled
         FilenameRegex:
           type: string
           minLength: 1
@@ -439,6 +441,7 @@ components:
       additionalProperties: false
     SampleLayout:
       enum:
+        - assembled
         - long_reads
         - paired_end
         - paired_end_with_extras

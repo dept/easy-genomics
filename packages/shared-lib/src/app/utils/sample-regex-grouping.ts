@@ -44,6 +44,10 @@ export const REGEX_GROUPING_PRESETS = {
     label: '-1 and -2',
     pattern: '(?<sample>.+?)-(?<read>[12])(?:_\\d*)?\\.(?:fastq|fq)(?:\\.gz)?$',
   },
+  fasta_one_per_file: {
+    label: 'One sample per FASTA file',
+    pattern: '(?<sample>.+?)\\.(?:fasta|fa|fna)(?:\\.gz)?$',
+  },
 } as const satisfies Record<string, RegexGroupingPreset>;
 
 export type RegexGroupingPresetKey = keyof typeof REGEX_GROUPING_PRESETS;
@@ -54,6 +58,11 @@ export function isFasta(name: string): boolean {
   return /\.(fasta|fa|fna)(?:\.gz)?$/i.test(name);
 }
 
+function isAssembled(files: ProposedSampleFile[]): boolean {
+  const hasReads = files.some((f) => f.role === 'read1' || f.role === 'read2' || f.role === 'reads');
+  return !hasReads && files.some((f) => f.role === 'reference_fasta');
+}
+
 function inferLayout(files: ProposedSampleFile[]): SampleLayout {
   const hasR2 = files.some((f) => f.role === 'read2');
   const hasRef = files.some((f) => f.role === 'reference_fasta');
@@ -61,6 +70,7 @@ function inferLayout(files: ProposedSampleFile[]): SampleLayout {
   if (hasRef && hasR2) return 'paired_end_with_extras';
   if (hasLongRead) return 'long_reads';
   if (hasR2) return 'paired_end';
+  if (isAssembled(files)) return 'assembled';
   return 'single_end';
 }
 
@@ -72,6 +82,7 @@ function inferStatus(files: ProposedSampleFile[]): SampleGroupingStatus {
   if (hasR1 && hasR2) return 'paired';
   if (hasReads) return 'long_reads';
   if (hasR1) return 'single_end';
+  if (isAssembled(files)) return 'assembled';
   return 'needs_review';
 }
 

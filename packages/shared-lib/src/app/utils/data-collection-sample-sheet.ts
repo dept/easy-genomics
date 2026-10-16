@@ -1,3 +1,4 @@
+import { isFasta } from './sample-regex-grouping';
 import type { SampleSheetColumnDef, SampleSheetColumnRole, SampleLayout } from '../types/easy-genomics/samples';
 
 export type SampleSheetSchemaValidationResult = { ok: true } | { ok: false; message: string };
@@ -5,6 +6,12 @@ export type SampleSheetSchemaValidationResult = { ok: true } | { ok: false; mess
 export type SequenceSetFileRoleMap = Partial<Record<SampleSheetColumnRole, string>>;
 
 export type SampleSheetRowValues = Record<string, string>;
+
+export type SequenceSetRoleMappingResult =
+  | { ok: true; roleMap: SequenceSetFileRoleMap; inputFileKeys: string[] }
+  | { ok: false; message: string };
+
+const READ_ROLES: SampleSheetColumnRole[] = ['read1', 'read2', 'reads'];
 
 export const SAMPLE_SHEET_COLUMN_ROLE_LABELS: Record<SampleSheetColumnRole, string> = {
   sample_id: 'Sample ID',
@@ -119,18 +126,34 @@ export function validateSampleSheetSchema(columns: SampleSheetColumnDef[]): Samp
   return { ok: true };
 }
 
+function mapAssembledSampleToRoles(
+  sortedKeys: string[],
+  bucket: string,
+  sequenceSetName: string,
+): SequenceSetRoleMappingResult {
+  const fastaKey = sortedKeys.find((key) => isFasta(key));
+  if (!fastaKey) return { ok: false, message: 'Assembled sample requires at least one FASTA file.' };
+  return {
+    ok: true,
+    roleMap: { sample_id: sequenceSetName, assembly_fasta: `s3://${bucket}/${fastaKey}` },
+    inputFileKeys: [...sortedKeys],
+  };
+}
+
 export function mapSequenceSetFilesToRoles(
   layout: SampleLayout,
   keys: string[],
   bucket: string,
   sequenceSetName: string,
   sampleIdPattern?: string | null,
-): { ok: true; roleMap: SequenceSetFileRoleMap; inputFileKeys: string[] } | { ok: false; message: string } {
+): SequenceSetRoleMappingResult {
   const sortedKeys = [...keys].sort();
   const roleMap: SequenceSetFileRoleMap = {};
   const inputFileKeys: string[] = [...sortedKeys];
 
   const toUri = (key: string) => `s3://${bucket}/${key}`;
+
+  if (layout === 'assembled') return mapAssembledSampleToRoles(sortedKeys, bucket, sequenceSetName);
 
   if (layout === 'long_reads') {
     const readKey =
@@ -145,7 +168,11 @@ export function mapSequenceSetFilesToRoles(
     const fastqKeys = sortedKeys.filter(isFastqKey);
     const r1Key =
       fastqKeys.find((k) => getReadDirection(k.split('/').pop() || k, sampleIdPattern) !== 'R2') ?? fastqKeys[0];
-    if (!r1Key) return { ok: false, message: 'Single-end sample requires at least one FASTQ file.' };
+    if (!r1Key) {
+      // A single_end sample holding only FASTA is an assembly; map it as one rather than fail.
+      if (sortedKeys.some((key) => isFasta(key))) return mapAssembledSampleToRoles(sortedKeys, bucket, sequenceSetName);
+      return { ok: false, message: 'Single-end sample requires at least one FASTQ file.' };
+    }
     roleMap.read1 = toUri(r1Key);
     roleMap.sample_id =
       getSampleIdFromRFileName(r1Key.split('/').pop() || r1Key, sampleIdPattern) ||
@@ -284,6 +311,15 @@ export function buildSampleSheetFromSamples(
     const mapped = mapSequenceSetFilesToRoles(set.Layout, set.FileKeys, bucket, set.Name, set.SampleIdPattern);
     if (!mapped.ok) {
       return { ok: false, message: `${set.Name}: ${mapped.message}` };
+    }
+    const readColumn = mapped.roleMap.assembly_fasta
+      ? columns.find((col) => col.required && READ_ROLES.includes(col.role))
+      : undefined;
+    if (readColumn) {
+      return {
+        ok: false,
+        message: `${set.Name}: this sample holds an assembled genome (FASTA) and no FASTQ reads, but column "${readColumn.columnName}" needs reads. Use a sequence collection with the Assembled preset.`,
+      };
     }
     for (const key of mapped.inputFileKeys) allInputKeys.add(key);
     rows.push(buildSampleSheetRowFromRoleMap(columns, mapped.roleMap));

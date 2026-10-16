@@ -199,3 +199,96 @@ describe('buildSampleSheetFromSamples', () => {
     }
   });
 });
+
+describe('assembled samples', () => {
+  const genomeKey = 'org/lab/genomes/WI-01.fasta';
+  const assembledSample = {
+    SampleId: '1',
+    Name: 'WI-01',
+    Layout: 'assembled' as const,
+    FileKeys: [genomeKey],
+  };
+  const mismatchMessage = (columnName: string) =>
+    `WI-01: this sample holds an assembled genome (FASTA) and no FASTQ reads, but column "${columnName}" needs reads. Use a sequence collection with the Assembled preset.`;
+
+  it.each(['WI-01.fa', 'WI-01.fasta', 'WI-01.fna', 'WI-01.fa.gz'])('maps %s to assembly_fasta', (fileName) => {
+    const key = `org/lab/genomes/${fileName}`;
+    expect(mapSequenceSetFilesToRoles('assembled', [key], 'bucket', 'WI-01')).toEqual({
+      ok: true,
+      roleMap: { sample_id: 'WI-01', assembly_fasta: `s3://bucket/${key}` },
+      inputFileKeys: [key],
+    });
+  });
+
+  it('uses the first sorted FASTA and keeps every key as an input', () => {
+    const keys = ['org/lab/genomes/WI-01.txt', 'org/lab/genomes/WI-01_b.fa', 'org/lab/genomes/WI-01_a.fa'];
+    const result = mapSequenceSetFilesToRoles('assembled', keys, 'bucket', 'WI-01');
+    expect(result.ok && result.roleMap.assembly_fasta).toBe('s3://bucket/org/lab/genomes/WI-01_a.fa');
+    expect(result.ok && result.inputFileKeys).toHaveLength(3);
+  });
+
+  it('rejects an assembled sample with no FASTA', () => {
+    expect(mapSequenceSetFilesToRoles('assembled', ['org/lab/WI-01.txt'], 'bucket', 'WI-01')).toEqual({
+      ok: false,
+      message: 'Assembled sample requires at least one FASTA file.',
+    });
+  });
+
+  it('maps a FASTA-only single_end sample as assembled', () => {
+    expect(mapSequenceSetFilesToRoles('single_end', [genomeKey], 'bucket', 'WI-01')).toEqual({
+      ok: true,
+      roleMap: { sample_id: 'WI-01', assembly_fasta: `s3://bucket/${genomeKey}` },
+      inputFileKeys: [genomeKey],
+    });
+  });
+
+  it('still rejects a single_end sample with neither FASTQ nor FASTA', () => {
+    expect(mapSequenceSetFilesToRoles('single_end', ['org/lab/a.bam'], 'bucket', 'A')).toEqual({
+      ok: false,
+      message: 'Single-end sample requires at least one FASTQ file.',
+    });
+  });
+
+  it('keeps a single_end sample with an R1 and a FASTA on read1', () => {
+    const result = mapSequenceSetFilesToRoles('single_end', ['org/lab/a_R1.fastq.gz', 'org/lab/a.fa'], 'bucket', 'A');
+    expect(result.ok && result.roleMap.read1).toBe('s3://bucket/org/lab/a_R1.fastq.gz');
+    expect(result.ok && result.roleMap.assembly_fasta).toBeUndefined();
+  });
+
+  it('builds one Assembled row per sample, including a FASTA-only single_end sample', () => {
+    const result = buildSampleSheetFromSamples(
+      SAMPLE_SHEET_SCHEMA_PRESETS.assembled,
+      [
+        assembledSample,
+        { SampleId: '2', Name: 'WI-02', Layout: 'single_end', FileKeys: ['org/lab/genomes/WI-02.fa.gz'] },
+      ],
+      'bucket',
+    );
+    expect(result.ok && result.csv).toBe(
+      'sample,fasta\nWI-01,s3://bucket/org/lab/genomes/WI-01.fasta\nWI-02,s3://bucket/org/lab/genomes/WI-02.fa.gz',
+    );
+  });
+
+  it.each([
+    ['single', 'fastq'],
+    ['paired', 'fastq_1'],
+    ['hybrid', 'fastq'],
+  ] as const)('names the mismatch under the %s preset', (presetKey, columnName) => {
+    expect(buildSampleSheetFromSamples(SAMPLE_SHEET_SCHEMA_PRESETS[presetKey], [assembledSample], 'bucket')).toEqual({
+      ok: false,
+      message: mismatchMessage(columnName),
+    });
+  });
+
+  it('names the assembled sample in a mixed collection', () => {
+    const pairedSample = {
+      SampleId: '2',
+      Name: 'SampleA',
+      Layout: 'paired_end' as const,
+      FileKeys: ['org/lab/a_R1.fastq.gz', 'org/lab/a_R2.fastq.gz'],
+    };
+    expect(
+      buildSampleSheetFromSamples(SAMPLE_SHEET_SCHEMA_PRESETS.paired, [pairedSample, assembledSample], 'bucket'),
+    ).toEqual({ ok: false, message: mismatchMessage('fastq_1') });
+  });
+});

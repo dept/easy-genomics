@@ -647,7 +647,7 @@ export interface components {
       Samples: ({
           Name: string;
           /** @enum {string} */
-          Layout: "paired_end" | "single_end" | "long_reads" | "paired_end_with_extras";
+          Layout: "paired_end" | "single_end" | "long_reads" | "paired_end_with_extras" | "assembled";
           Keys: string[];
           TagIds?: string[];
           FilenameRegex?: string;
@@ -674,7 +674,7 @@ export interface components {
       S3Bucket: string;
       Name?: string;
       /** @enum {string} */
-      Layout: "paired_end" | "single_end" | "long_reads" | "paired_end_with_extras";
+      Layout: "paired_end" | "single_end" | "long_reads" | "paired_end_with_extras" | "assembled";
       FilenameRegex?: string;
       SampleIdPattern?: string;
       Keys?: string[];
@@ -683,7 +683,7 @@ export interface components {
       ExpandRegexFromListing?: boolean;
     };
     /** @enum {string} */
-    SampleLayout: "long_reads" | "paired_end" | "paired_end_with_extras" | "single_end";
+    SampleLayout: "assembled" | "long_reads" | "paired_end" | "paired_end_with_extras" | "single_end";
     LaboratorySample: {
       SampleId: string;
       Name: string;

@@ -158,7 +158,8 @@
     const paired = activeSets.value.filter((s) => s.status === 'paired').length;
     const single = activeSets.value.filter((s) => s.status === 'single_end').length;
     const review = activeSets.value.filter((s) => s.status === 'needs_review').length;
-    return { paired, single, review, total: activeSets.value.length };
+    const assembled = activeSets.value.filter((s) => s.status === 'assembled').length;
+    return { paired, single, review, assembled, total: activeSets.value.length };
   });
   const duplicateSampleNames = computed(() => findDuplicateSampleNames(activeSets.value));
   const repeatedSampleIds = computed(
@@ -563,7 +564,7 @@
             ref="fileInputRef"
             type="file"
             multiple
-            accept=".fastq,.fq,.gz,.fasta,.fa,.fa.gz"
+            accept=".fastq,.fq,.gz,.fasta,.fa,.fna,.fa.gz"
             class="hidden"
             @change="onFileInputChange"
           />
@@ -691,6 +692,9 @@
         <div class="flex gap-2 border-b p-4 text-xs">
           <span class="rounded-full bg-green-100 px-2 py-1 text-green-800">{{ stats.paired }} paired</span>
           <span class="rounded-full bg-blue-100 px-2 py-1 text-blue-800">{{ stats.single }} single-end</span>
+          <span v-if="stats.assembled" class="rounded-full bg-purple-100 px-2 py-1 text-purple-800">
+            {{ stats.assembled }} assembled
+          </span>
           <span v-if="stats.review" class="rounded-full bg-amber-100 px-2 py-1 text-amber-800">
             {{ stats.review }} needs review
           </span>
