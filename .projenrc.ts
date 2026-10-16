@@ -305,7 +305,7 @@ const sharedLib = new typescript.TypeScriptProject({
     `aws-cdk-lib@^${cdkVersion}`,
     'openapi-typescript',
     'tsx',
-    'typescript-json-schema',
+    'typescript-json-schema@^0.68.0',
     'zod-to-json-schema@~3.24.6',
   ],
   tsconfig: {
