@@ -602,7 +602,7 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     // Exact pin: token-storage defaults have changed within 6.x minors, and the
     // front-end upgrade task would otherwise float aws-amplify unattended.
     'aws-amplify@6.22.0',
-    'axios@^1.18.1',
+    'axios@^1.20.0',
     'cdk-nag',
     'class-variance-authority',
     'clsx',
@@ -887,7 +887,7 @@ root.addFields({
       'on-headers': '>=1.1.0',
 
       // --- Dependabot follow-up: transitive copies not covered by direct-dep bumps ---
-      axios: '>=1.18.1', // force nx's transitive axios 1.8.4 up (prototype-pollution + SSRF cluster)
+      axios: '>=1.20.0 <2.0.0', // force nx's transitive axios 1.8.4 up (prototype-pollution + SSRF cluster)
       'fast-uri': '>=3.1.2', // path traversal + host confusion
       tmp: '>=0.2.6', // path traversal + symlink write
       got: '>=11.8.5', // redirect-to-UNIX-socket

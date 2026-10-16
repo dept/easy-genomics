@@ -45,7 +45,7 @@ overrides:
   diff: '>=8.0.3'
   cookie: '>=0.7.0'
   on-headers: '>=1.1.0'
-  axios: '>=1.18.1'
+  axios: '>=1.20.0 <2.0.0'
   fast-uri: '>=3.1.2'
   tmp: '>=0.2.6'
   got: '>=11.8.5'
@@ -366,7 +366,7 @@ importers:
         version: 1.2.106
       '@nuxt/ui':
         specifier: 2.18.4
-        version: 2.18.4(axios@1.18.1)(change-case@4.1.2)(jwt-decode@4.0.0)(magicast@0.5.3)(qrcode@1.5.0)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3))(vite@7.3.6(@types/node@20.17.30)(jiti@2.7.0)(sass@1.86.3)(terser@5.48.0)(tsx@4.21.0)(yaml@2.9.0))(vue@3.5.39(typescript@5.8.3))
+        version: 2.18.4(axios@1.20.0)(change-case@4.1.2)(jwt-decode@4.0.0)(magicast@0.5.3)(qrcode@1.5.0)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3))(vite@7.3.6(@types/node@20.17.30)(jiti@2.7.0)(sass@1.86.3)(terser@5.48.0)(tsx@4.21.0)(yaml@2.9.0))(vue@3.5.39(typescript@5.8.3))
       '@pinia/nuxt':
         specifier: ^0.9.0
         version: 0.9.0(magicast@0.5.3)(pinia@2.3.1(typescript@5.8.3)(vue@3.5.39(typescript@5.8.3)))
@@ -384,7 +384,7 @@ importers:
         version: 11.3.0(vue@3.5.39(typescript@5.8.3))
       '@vueuse/integrations':
         specifier: ^10.11.1
-        version: 10.11.1(axios@1.18.1)(change-case@4.1.2)(fuse.js@6.6.2)(jwt-decode@4.0.0)(qrcode@1.5.0)(vue@3.5.39(typescript@5.8.3))
+        version: 10.11.1(axios@1.20.0)(change-case@4.1.2)(fuse.js@6.6.2)(jwt-decode@4.0.0)(qrcode@1.5.0)(vue@3.5.39(typescript@5.8.3))
       '@vueuse/nuxt':
         specifier: ^11.3.0
         version: 11.3.0(magicast@0.5.3)(nuxt@3.21.2(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)(@parcel/watcher@2.5.6)(@types/node@20.17.30)(@vue/compiler-sfc@3.5.39)(cac@6.7.14)(commander@13.1.0)(db0@0.3.4)(esbuild@0.24.2)(eslint@8.57.1)(ioredis@5.11.1)(magicast@0.5.3)(optionator@0.9.4)(rollup-plugin-visualizer@7.0.1(rollup@4.62.2))(rollup@4.62.2)(sass@1.86.3)(terser@5.48.0)(tsx@4.21.0)(typescript@5.8.3)(vite@7.3.6(@types/node@20.17.30)(jiti@2.7.0)(sass@1.86.3)(terser@5.48.0)(tsx@4.21.0)(yaml@2.9.0))(xml2js@0.6.2)(yaml@2.9.0))(vue@3.5.39(typescript@5.8.3))
@@ -395,8 +395,8 @@ importers:
         specifier: ^2.260.0
         version: 2.261.0(constructs@10.4.2)
       axios:
-        specifier: '>=1.18.1'
-        version: 1.18.1
+        specifier: '>=1.20.0 <2.0.0'
+        version: 1.20.0
       cdk-nag:
         specifier: ^2.35.67
         version: 2.35.67(aws-cdk-lib@2.261.0(constructs@10.4.2))(constructs@10.4.2)
@@ -5765,7 +5765,7 @@ packages:
     resolution: {integrity: sha512-Y5hCGBguN+vuVYTZmdd/IMXLOdfS60zAmDmFYc4BKBcMUPZH1n4tdyDECCPjXm0bNT3ZRUy1xzTLGaUje8Xyaw==}
     peerDependencies:
       async-validator: ^4
-      axios: '>=1.18.1'
+      axios: '>=1.20.0 <2.0.0'
       change-case: ^4
       drauu: ^0.3
       focus-trap: ^7
@@ -6190,8 +6190,8 @@ packages:
   axax@0.2.2:
     resolution: {integrity: sha512-xPTMeQzPOENNONCFLFsPLjubtrnjju9FdOr6u/P0dFKDjC3m+/8NydLNvrukNxxto+usR2dKGZ8DVKOz4MBo2g==}
 
-  axios@1.18.1:
-    resolution: {integrity: sha512-3nTvFlvpn9Zu/RkHUqtc7/+al4UpRW5az71ap5zccp6e8RAYEzhMTecX8Dz1wWDYrPpUoB1HAQEGEAEvUr7S9g==}
+  axios@1.20.0:
+    resolution: {integrity: sha512-r8aOh8j9cGKpgQAqpzrUHnSIc6a59Y3Xf/cv8sy1DrHCkZHzQGEuoq1tARk6qSyDdtQGSDgpb9kFlruzPvrgwg==}
 
   b4a@1.6.7:
     resolution: {integrity: sha512-OnAYlL5b7LEkALw87fUVafQw5rVR9RjwGd4KUwNQ6DrrNmaVaUCgLipfVlzrPQ4tWOR9P0IXGNOx50jYCCdSJg==}
@@ -17734,7 +17734,7 @@ snapshots:
       '@types/webpack-bundle-analyzer': 3.9.5
       '@types/webpack-hot-middleware': 2.25.5
 
-  '@nuxt/ui@2.18.4(axios@1.18.1)(change-case@4.1.2)(jwt-decode@4.0.0)(magicast@0.5.3)(qrcode@1.5.0)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3))(vite@7.3.6(@types/node@20.17.30)(jiti@2.7.0)(sass@1.86.3)(terser@5.48.0)(tsx@4.21.0)(yaml@2.9.0))(vue@3.5.39(typescript@5.8.3))':
+  '@nuxt/ui@2.18.4(axios@1.20.0)(change-case@4.1.2)(jwt-decode@4.0.0)(magicast@0.5.3)(qrcode@1.5.0)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3))(vite@7.3.6(@types/node@20.17.30)(jiti@2.7.0)(sass@1.86.3)(terser@5.48.0)(tsx@4.21.0)(yaml@2.9.0))(vue@3.5.39(typescript@5.8.3))':
     dependencies:
       '@headlessui/tailwindcss': 0.2.2(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3)))
       '@headlessui/vue': 1.7.23(vue@3.5.39(typescript@5.8.3))
@@ -17749,7 +17749,7 @@ snapshots:
       '@tailwindcss/forms': 0.5.10(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3)))
       '@tailwindcss/typography': 0.5.16(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.8.3)))
       '@vueuse/core': 10.11.1(vue@3.5.39(typescript@5.8.3))
-      '@vueuse/integrations': 10.11.1(axios@1.18.1)(change-case@4.1.2)(fuse.js@6.6.2)(jwt-decode@4.0.0)(qrcode@1.5.0)(vue@3.5.39(typescript@5.8.3))
+      '@vueuse/integrations': 10.11.1(axios@1.20.0)(change-case@4.1.2)(fuse.js@6.6.2)(jwt-decode@4.0.0)(qrcode@1.5.0)(vue@3.5.39(typescript@5.8.3))
       '@vueuse/math': 10.11.1(vue@3.5.39(typescript@5.8.3))
       defu: 6.1.7
       fuse.js: 6.6.2
@@ -19093,7 +19093,7 @@ snapshots:
       '@slack/types': 2.14.0
       '@types/node': 20.17.30
       '@types/retry': 0.12.0
-      axios: 1.18.1
+      axios: 1.20.0
       eventemitter3: 5.0.1
       form-data: 4.0.6
       is-electron: 2.2.2
@@ -19109,7 +19109,7 @@ snapshots:
     dependencies:
       '@slack/types': 2.14.0
       '@types/node': 20.17.30
-      axios: 1.18.1
+      axios: 1.20.0
     transitivePeerDependencies:
       - debug
       - supports-color
@@ -20971,13 +20971,13 @@ snapshots:
       - '@vue/composition-api'
       - vue
 
-  '@vueuse/integrations@10.11.1(axios@1.18.1)(change-case@4.1.2)(fuse.js@6.6.2)(jwt-decode@4.0.0)(qrcode@1.5.0)(vue@3.5.39(typescript@5.8.3))':
+  '@vueuse/integrations@10.11.1(axios@1.20.0)(change-case@4.1.2)(fuse.js@6.6.2)(jwt-decode@4.0.0)(qrcode@1.5.0)(vue@3.5.39(typescript@5.8.3))':
     dependencies:
       '@vueuse/core': 10.11.1(vue@3.5.39(typescript@5.8.3))
       '@vueuse/shared': 10.11.1(vue@3.5.39(typescript@5.8.3))
       vue-demi: 0.14.10(vue@3.5.39(typescript@5.8.3))
     optionalDependencies:
-      axios: 1.18.1
+      axios: 1.20.0
       change-case: 4.1.2
       fuse.js: 6.6.2
       jwt-decode: 4.0.0
@@ -21407,7 +21407,7 @@ snapshots:
 
   axax@0.2.2: {}
 
-  axios@1.18.1:
+  axios@1.20.0:
     dependencies:
       follow-redirects: 1.16.0
       form-data: 4.0.6
@@ -26300,7 +26300,7 @@ snapshots:
       '@yarnpkg/lockfile': 1.1.0
       '@yarnpkg/parsers': 3.0.0-rc.46
       '@zkochan/js-yaml': 0.0.6
-      axios: 1.18.1
+      axios: 1.20.0
       chalk: 4.1.2
       cli-cursor: 3.1.0
       cli-spinners: 2.6.1
