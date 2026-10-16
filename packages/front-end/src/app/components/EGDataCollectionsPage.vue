@@ -11,6 +11,7 @@
   import EGDialog from '@FE/components/EGDialog.vue';
   import { useDataCollectionsStore, useLabsStore, useToastStore, useUiStore } from '@FE/stores';
   import { ButtonVariantEnum } from '@FE/types/buttons';
+  import EGAddToSampleModal from '@FE/components/EGAddToSampleModal.vue';
   import EGBuildSampleModal from '@FE/components/EGBuildSampleModal.vue';
   import EGBuildSamplesFromRegexModal from '@FE/components/EGBuildSamplesFromRegexModal.vue';
   import EGDataCollectionBuilder from '@FE/components/EGDataCollectionBuilder.vue';
@@ -68,6 +69,7 @@
   const selectedFileKeys = ref<string[]>([]);
 
   const showBuildSampleModal = ref(false);
+  const showAddToSampleModal = ref(false);
   const showRegexGroupModal = ref(false);
   const showRunModal = ref(false);
   const runCollection = ref<LaboratorySequenceCollection | null>(null);
@@ -430,12 +432,14 @@
           :s3-bucket="unlinkedMeta.s3Bucket"
           :resolved-prefix="unlinkedMeta.resolvedPrefix"
           :last-scan-label="unlinkedMeta.lastScanLabel"
+          :has-samples="samples.length > 0"
           @update:selected-keys="selectedFileKeys = $event"
           @update:search="fileSearch = $event"
           @rescan="loadUnlinkedFiles({ force: true })"
           @open-settings="openLabSettings"
           @build-sample="showBuildSampleModal = true"
           @group-with-regex="showRegexGroupModal = true"
+          @add-to-sample="showAddToSampleModal = true"
         />
       </div>
     </template>
@@ -450,6 +454,20 @@
           selectedFileKeys = [];
           activeTab = 'samples';
           clearUnlinkedFiles();
+          refreshAll();
+        }
+      "
+    />
+
+    <EGAddToSampleModal
+      v-model="showAddToSampleModal"
+      :lab-id="labId"
+      :lab="lab"
+      :file-keys="selectedFileKeys"
+      :samples="samples"
+      @saved="
+        () => {
+          selectedFileKeys = [];
           refreshAll();
         }
       "

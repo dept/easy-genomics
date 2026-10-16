@@ -16,6 +16,7 @@ jest.mock('../../../../src/app/services/easy-genomics/s3-bucket-catalog-service'
 import { ConditionalCheckFailedException, type AttributeValue } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import type { LaboratorySample } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
 import {
   S3BucketAccessDeniedError,
   S3KeyOutOfPrefixError,
@@ -615,6 +616,92 @@ describe('LaboratorySampleService.getSampleIdsForFileRefs', () => {
     expect(mockBatchGetItem).toHaveBeenCalledTimes(3);
     expect(mockGetItem).toHaveBeenCalledTimes(1);
     expect(result.get(linkedRef)).toEqual(['sample-1']);
+  });
+});
+
+describe('LaboratorySampleService.addFilesToSample', () => {
+  let svc: LaboratorySampleService;
+  let mockPutItem: jest.Mock;
+  let mockUpdateItem: jest.Mock;
+
+  function sampleFixture(overrides?: Partial<LaboratorySample>): LaboratorySample {
+    return { SampleId: 'sample-1', Name: 'NA12878', Layout: 'single_end', FileCount: 1, ...overrides };
+  }
+
+  function sampleRowUpdates(): {
+    UpdateExpression: string;
+    ExpressionAttributeValues: Record<string, AttributeValue>;
+  }[] {
+    return mockUpdateItem.mock.calls
+      .map(([input]) => input)
+      .filter((input) => String(input.UpdateExpression).includes('#layout'));
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    svc = new LaboratorySampleService();
+    mockPutItem = jest.fn().mockResolvedValue({});
+    mockUpdateItem = jest.fn().mockResolvedValue({});
+    (svc as unknown as { putItem: typeof mockPutItem }).putItem = mockPutItem;
+    (svc as unknown as { updateItem: typeof mockUpdateItem }).updateItem = mockUpdateItem;
+    jest.spyOn(svc as never, 'addSampleIdToFileRow' as never).mockResolvedValue(undefined as never);
+  });
+
+  it('upgrades a single-end sample to paired-end when an R2 is added', async () => {
+    jest.spyOn(svc, 'getSample').mockResolvedValue(sampleFixture());
+
+    await svc.addFilesToSample(labFixture(), 'user-1', 'my-bucket', 'sample-1', [
+      'org-1/lab-1/NA12878_R2_001.fastq.gz',
+    ]);
+
+    const [update] = sampleRowUpdates();
+    expect(unmarshall(update.ExpressionAttributeValues)[':layout']).toBe('paired_end');
+    expect(update.UpdateExpression).toContain('REMOVE ContentsSummary');
+  });
+
+  it('leaves the sample row alone when the added files bring no new role', async () => {
+    jest.spyOn(svc, 'getSample').mockResolvedValue(sampleFixture());
+
+    await svc.addFilesToSample(labFixture(), 'user-1', 'my-bucket', 'sample-1', [
+      'org-1/lab-1/NA12878_L002_R1_001.fastq.gz',
+    ]);
+
+    expect(sampleRowUpdates()).toHaveLength(0);
+  });
+
+  it('does not upgrade when the R2 was already in the sample', async () => {
+    jest.spyOn(svc, 'getSample').mockResolvedValue(sampleFixture());
+    mockPutItem.mockRejectedValueOnce(new ConditionalCheckFailedException({ message: 'c', $metadata: {} }));
+
+    await svc.addFilesToSample(labFixture(), 'user-1', 'my-bucket', 'sample-1', [
+      'org-1/lab-1/NA12878_R2_001.fastq.gz',
+    ]);
+
+    expect(sampleRowUpdates()).toHaveLength(0);
+  });
+
+  it('drops a stored contents summary even when the layout is unchanged', async () => {
+    jest.spyOn(svc, 'getSample').mockResolvedValue(sampleFixture({ ContentsSummary: '1 file · R1 (single-end)' }));
+
+    await svc.addFilesToSample(labFixture(), 'user-1', 'my-bucket', 'sample-1', [
+      'org-1/lab-1/NA12878_L002_R1_001.fastq.gz',
+    ]);
+
+    const [update] = sampleRowUpdates();
+    expect(unmarshall(update.ExpressionAttributeValues)[':layout']).toBe('single_end');
+    expect(update.UpdateExpression).toContain('REMOVE ContentsSummary');
+  });
+
+  it('rejects the whole request before writing when any key is outside the lab folder', async () => {
+    jest.spyOn(svc, 'getSample').mockResolvedValue(sampleFixture());
+
+    await expect(
+      svc.addFilesToSample(labFixture(), 'user-1', 'my-bucket', 'sample-1', [
+        'org-1/lab-1/NA12878_R2_001.fastq.gz',
+        'org-2/lab-9/other_R1.fastq.gz',
+      ]),
+    ).rejects.toThrow(S3KeyOutOfPrefixError);
+    expect(mockPutItem).not.toHaveBeenCalled();
   });
 });
 

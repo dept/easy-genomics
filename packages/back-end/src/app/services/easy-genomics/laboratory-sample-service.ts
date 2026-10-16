@@ -22,6 +22,7 @@ import {
 import {
   buildSampleSheetFromSamples,
   SampleForSampleSheet,
+  upgradeLayoutForAddedFiles,
 } from '@easy-genomics/shared-lib/src/app/utils/data-collection-sample-sheet';
 import { isFilenameRegexSafe } from '@easy-genomics/shared-lib/src/app/utils/filename-regex-safety';
 import {
@@ -234,8 +235,8 @@ export class LaboratorySampleService extends DynamoDBService {
       ),
     });
 
-    const added = await this.addFilesToSampleInternal(laboratory, userId, bucket, setId, opts.keys);
-    return { ...set, FileCount: added };
+    const addedKeys = await this.addFilesToSampleInternal(laboratory, userId, bucket, setId, opts.keys);
+    return { ...set, FileCount: addedKeys.length };
   }
 
   public async addFilesToSample(
@@ -247,7 +248,8 @@ export class LaboratorySampleService extends DynamoDBService {
   ): Promise<void> {
     const existing = await this.getSample(laboratory.LaboratoryId, setId);
     if (!existing) throw new SampleNotFoundError(setId);
-    await this.addFilesToSampleInternal(laboratory, userId, bucket, setId, keys);
+    const addedKeys = await this.addFilesToSampleInternal(laboratory, userId, bucket, setId, keys);
+    await this.updateSampleAfterFilesAdded(laboratory.LaboratoryId, existing, addedKeys, userId);
   }
 
   public async createOrExtendSample(
@@ -864,8 +866,8 @@ export class LaboratorySampleService extends DynamoDBService {
       ),
     });
 
-    const added = await this.addFilesToSampleInternal(laboratory, userId, bucket, setId, opts.keys);
-    return { ...set, FileCount: added };
+    const addedKeys = await this.addFilesToSampleInternal(laboratory, userId, bucket, setId, opts.keys);
+    return { ...set, FileCount: addedKeys.length };
   }
 
   private async addFilesToSampleInternal(
@@ -874,12 +876,13 @@ export class LaboratorySampleService extends DynamoDBService {
     bucket: string,
     setId: string,
     keys: string[],
-  ): Promise<number> {
+  ): Promise<string[]> {
     const laboratoryId = laboratory.LaboratoryId;
-    let added = 0;
+    const addedKeys: string[] = [];
+
+    for (const key of keys) this.assertKeyUnderLabPrefix(laboratory, key);
 
     for (const key of keys) {
-      this.assertKeyUnderLabPrefix(laboratory, key);
       const ref = encodeS3ObjectRef(bucket, key);
       const mapSk = skSampleFile(setId, ref);
 
@@ -902,17 +905,17 @@ export class LaboratorySampleService extends DynamoDBService {
           ConditionExpression: 'attribute_not_exists(#sk)',
           ExpressionAttributeNames: { '#sk': 'Sk' },
         });
-        added++;
+        addedKeys.push(key);
         await this.addSampleIdToFileRow(laboratoryId, ref, bucket, key, setId);
       } catch (e: unknown) {
         if (!isConditionalCheckFailed(e)) throw e;
       }
     }
 
-    if (added > 0) {
-      await this.adjustSampleFileCount(laboratoryId, setId, added, userId);
+    if (addedKeys.length > 0) {
+      await this.adjustSampleFileCount(laboratoryId, setId, addedKeys.length, userId);
     }
-    return added;
+    return addedKeys;
   }
 
   private async addSamplesToSequenceCollectionInternal(
@@ -1068,6 +1071,33 @@ export class LaboratorySampleService extends DynamoDBService {
       UpdateExpression: 'ADD FileCount :delta SET ModifiedAt = :ma, ModifiedBy = :mb',
       ExpressionAttributeValues: marshall({
         ':delta': delta,
+        ':ma': new Date().toISOString(),
+        ':mb': userId,
+      }),
+    });
+  }
+
+  /**
+   * ContentsSummary is written once at import and never maintained, so it is removed rather than
+   * left describing files the sample no longer matches; the UI falls back to layout + FileCount.
+   */
+  private async updateSampleAfterFilesAdded(
+    laboratoryId: string,
+    sample: LaboratorySample,
+    addedKeys: string[],
+    userId: string,
+  ): Promise<void> {
+    if (!addedKeys.length) return;
+    const layout = upgradeLayoutForAddedFiles(sample.Layout, addedKeys, sample.SampleIdPattern);
+    if (layout === sample.Layout && !sample.ContentsSummary) return;
+
+    await this.updateItem({
+      TableName: TABLE_NAME,
+      Key: marshall({ LaboratoryId: laboratoryId, Sk: skSample(sample.SampleId) }),
+      UpdateExpression: 'SET #layout = :layout, ModifiedAt = :ma, ModifiedBy = :mb REMOVE ContentsSummary',
+      ExpressionAttributeNames: { '#layout': 'Layout' },
+      ExpressionAttributeValues: marshall({
+        ':layout': layout,
         ':ma': new Date().toISOString(),
         ':mb': userId,
       }),

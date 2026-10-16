@@ -1,16 +1,15 @@
 <script setup lang="ts">
   import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-  import type { LaboratorySample, SampleLayout } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
-  import { SAMPLE_NAME_MAX_LENGTH } from '@easy-genomics/shared-lib/src/app/constants/data-collections';
-  import { useToastStore, useUiStore } from '@FE/stores';
+  import type { LaboratorySample } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
+  import { upgradeLayoutForAddedFiles } from '@easy-genomics/shared-lib/src/app/utils/data-collection-sample-sheet';
+  import { useDataCollectionsStore, useToastStore, useUiStore } from '@FE/stores';
   import { SAMPLE_LAYOUT_LABELS } from '@FE/utils/data-collections-selection';
-  import { selectedFileKeys, type ExplorerSelection } from '@FE/utils/data-collections-selection';
 
   const props = defineProps<{
     modelValue: boolean;
     labId: string;
     lab: Laboratory | null;
-    selection: ExplorerSelection;
+    fileKeys: string[];
     samples: LaboratorySample[];
   }>();
 
@@ -19,74 +18,68 @@
     saved: [];
   }>();
 
-  const { $api } = useNuxtApp();
+  const dataCollectionsStore = useDataCollectionsStore();
   const toast = useToastStore();
   const uiStore = useUiStore();
 
-  type Mode = 'create' | 'existing';
-  const mode = ref<Mode>('create');
-  const name = ref('');
-  const layout = ref<SampleLayout>('paired_end');
-  const filenameRegex = ref('');
-  const expandRegex = ref(false);
-  const existingSetId = ref<string | undefined>(undefined);
+  const selectedSampleId = ref<string | undefined>(undefined);
   const submitting = ref(false);
 
-  const layoutOptions = computed(() =>
-    (Object.keys(SAMPLE_LAYOUT_LABELS) as SampleLayout[]).map((value) => ({
-      value,
-      label: SAMPLE_LAYOUT_LABELS[value],
-    })),
+  const sampleOptions = computed(() =>
+    [...props.samples]
+      .sort((a, b) => a.Name.localeCompare(b.Name))
+      .map((sample) => ({ label: sample.Name, value: sample.SampleId })),
   );
 
-  const fileKeys = computed(() => selectedFileKeys(props.selection));
+  const selectedSample = computed(() => props.samples.find((sample) => sample.SampleId === selectedSampleId.value));
 
-  const nameInvalid = computed(() => mode.value === 'create' && name.value.trim().length > SAMPLE_NAME_MAX_LENGTH);
-
-  const canSubmit = computed(() => {
-    if (!props.lab?.S3Bucket || !fileKeys.value.length || submitting.value) return false;
-    if (mode.value === 'create') return !!name.value.trim() && !nameInvalid.value;
-    return !!existingSetId.value;
+  const layoutChange = computed(() => {
+    const sample = selectedSample.value;
+    if (!sample) return null;
+    const upgradedLayout = upgradeLayoutForAddedFiles(sample.Layout, props.fileKeys, sample.SampleIdPattern);
+    if (upgradedLayout === sample.Layout) return null;
+    return {
+      from: SAMPLE_LAYOUT_LABELS[sample.Layout] ?? sample.Layout,
+      to: SAMPLE_LAYOUT_LABELS[upgradedLayout] ?? upgradedLayout,
+    };
   });
+
+  const canSubmit = computed(
+    () => !!props.lab?.S3Bucket && !!selectedSample.value && props.fileKeys.length > 0 && !submitting.value,
+  );
 
   watch(
     () => props.modelValue,
     (open) => {
-      if (!open) return;
-      mode.value = 'create';
-      name.value = '';
-      layout.value = 'paired_end';
-      filenameRegex.value = '';
-      expandRegex.value = false;
-      existingSetId.value = undefined;
+      if (open) selectedSampleId.value = undefined;
     },
   );
+
+  function fileName(key: string): string {
+    return key.split('/').pop() ?? key;
+  }
 
   function close(): void {
     emit('update:modelValue', false);
   }
 
   async function submit(): Promise<void> {
-    if (!canSubmit.value || !props.lab?.S3Bucket) return;
+    const sample = selectedSample.value;
+    const s3Bucket = props.lab?.S3Bucket;
+    if (!canSubmit.value || !sample || !s3Bucket) return;
     submitting.value = true;
     uiStore.setRequestPending('dataCollectionsMutate');
     try {
-      await $api.dataCollections.createSample({
-        LaboratoryId: props.labId,
-        S3Bucket: props.lab.S3Bucket,
-        ...(mode.value === 'create'
-          ? { Name: name.value.trim(), Layout: layout.value }
-          : { ExistingSampleId: existingSetId.value!, Layout: layout.value }),
-        Keys: fileKeys.value,
-        ...(filenameRegex.value.trim()
-          ? { FilenameRegex: filenameRegex.value.trim(), ExpandRegexFromListing: expandRegex.value }
-          : {}),
+      const added = await dataCollectionsStore.addFilesToSample({
+        labId: props.labId,
+        s3Bucket,
+        sampleId: sample.SampleId,
+        keys: props.fileKeys,
       });
-      toast.success(mode.value === 'create' ? 'Sample created.' : 'Files added to sample.');
+      if (!added) return;
+      toast.success(`Added ${props.fileKeys.length} file(s) to ${sample.Name}.`);
       emit('saved');
       close();
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save sample.');
     } finally {
       submitting.value = false;
       uiStore.setRequestComplete('dataCollectionsMutate');
@@ -105,57 +98,36 @@
       </template>
 
       <div class="space-y-4">
-        <p class="text-muted text-sm">{{ fileKeys.length }} file(s) selected</p>
-
-        <div class="flex gap-4">
-          <label class="flex cursor-pointer items-center gap-2 text-sm">
-            <input v-model="mode" type="radio" value="create" class="text-primary" />
-            Create new
-          </label>
-          <label class="flex cursor-pointer items-center gap-2 text-sm">
-            <input v-model="mode" type="radio" value="existing" class="text-primary" />
-            Add to existing
-          </label>
-        </div>
-
-        <div v-if="mode === 'create'">
-          <label class="text-muted mb-1 block text-xs font-medium">Sample name</label>
-          <UInput v-model="name" placeholder="Name" :color="nameInvalid ? 'red' : undefined" />
-          <p v-if="nameInvalid" class="text-alert-danger-dark mt-1 text-xs">
-            {{ SAMPLE_NAME_MAX_LENGTH }} characters max
-          </p>
-        </div>
-
-        <div v-else>
-          <label class="text-muted mb-1 block text-xs font-medium">Existing sample</label>
-          <USelectMenu
-            v-model="existingSetId"
-            :options="samples.map((s) => ({ label: s.Name, value: s.SampleId }))"
-            value-attribute="value"
-            option-attribute="label"
-            placeholder="Select sample"
-          />
-        </div>
-
-        <div v-if="mode === 'create'">
-          <label class="text-muted mb-1 block text-xs font-medium">Layout</label>
-          <USelectMenu v-model="layout" :options="layoutOptions" value-attribute="value" option-attribute="label" />
+        <div>
+          <p class="text-muted mb-2 text-sm">{{ fileKeys.length }} file(s) selected</p>
+          <div class="max-h-32 space-y-1 overflow-y-auto">
+            <div v-for="key in fileKeys" :key="key" class="truncate font-mono text-xs text-gray-600">
+              {{ fileName(key) }}
+            </div>
+          </div>
         </div>
 
         <div>
-          <label class="text-muted mb-1 block text-xs font-medium">Filename regex (optional)</label>
-          <UInput v-model="filenameRegex" placeholder="e.g. _R[12]_" />
-          <label v-if="filenameRegex.trim()" class="mt-2 flex items-center gap-2 text-xs">
-            <UCheckbox v-model="expandRegex" />
-            Also include matching files from the lab bucket
-          </label>
+          <label class="text-muted mb-1 block text-xs font-medium">Sample</label>
+          <USelectMenu
+            v-model="selectedSampleId"
+            :options="sampleOptions"
+            value-attribute="value"
+            option-attribute="label"
+            placeholder="Select sample"
+            searchable
+          />
         </div>
+
+        <p v-if="layoutChange" class="text-sm text-gray-600">
+          Layout will change from {{ layoutChange.from }} to {{ layoutChange.to }}.
+        </p>
       </div>
 
       <template #footer>
         <div class="flex justify-end gap-2">
           <UButton variant="ghost" @click="close">Cancel</UButton>
-          <UButton :disabled="!canSubmit" :loading="submitting" @click="submit">Save</UButton>
+          <UButton :disabled="!canSubmit" :loading="submitting" @click="submit">Add files</UButton>
         </div>
       </template>
     </UCard>

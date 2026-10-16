@@ -86,6 +86,41 @@ const useDataCollectionsStore = defineStore('dataCollectionsStore', {
     },
 
     /**
+     * The added files are linked now, so they leave the cached scan in place. Clearing the scan instead
+     * would blank the bucket header and force a full rescan. The generation bump discards any scan
+     * that was already in flight and would bring them back.
+     */
+    removeFilesFromUnlinkedScan(labId: string, keys: string[]): void {
+      const scan = this.unlinkedScans[labId];
+      if (!scan) return;
+      const linkedKeys = new Set(keys);
+      this.unlinkedScans[labId] = { ...scan, files: scan.files.filter((file) => !linkedKeys.has(file.Key ?? '')) };
+      this.unlinkedScanGeneration[labId] = (this.unlinkedScanGeneration[labId] ?? 0) + 1;
+    },
+
+    async addFilesToSample(request: {
+      labId: string;
+      s3Bucket: string;
+      sampleId: string;
+      keys: string[];
+    }): Promise<boolean> {
+      try {
+        const { $api } = useNuxtApp();
+        await $api.dataCollections.addFilesToSample({
+          LaboratoryId: request.labId,
+          S3Bucket: request.s3Bucket,
+          SampleId: request.sampleId,
+          Keys: request.keys,
+        });
+        this.removeFilesFromUnlinkedScan(request.labId, request.keys);
+        return true;
+      } catch (e: unknown) {
+        useToastStore().error(e instanceof Error && e.message ? e.message : 'Failed to add files to sample.');
+        return false;
+      }
+    },
+
+    /**
      * Load or reuse the unlinked-file scan for a lab. `labId` is captured by the
      * caller so a response is always stored under the lab the request was started for.
      */

@@ -5,10 +5,12 @@ import {
   buildSampleSheetFromSamples,
   buildSampleSheetRowFromRoleMap,
   mapSequenceSetFilesToRoles,
+  upgradeLayoutForAddedFiles,
   validateSampleSheetRows,
   validateSampleSheetSchema,
 } from './data-collection-sample-sheet';
 import { isFilenameRegexSafe } from './filename-regex-safety';
+import type { SampleLayout } from '../types/easy-genomics/samples';
 
 describe('validateSampleSheetSchema', () => {
   it('requires sample_id column', () => {
@@ -74,6 +76,37 @@ describe('mapSequenceSetFilesToRoles', () => {
   it('returns false for an empty keys array', () => {
     const result = mapSequenceSetFilesToRoles('single_end', [], 'my-bucket', 'SampleA');
     expect(result.ok).toBe(false);
+  });
+
+  it('maps every extra file role under paired_end_with_extras', () => {
+    const result = mapSequenceSetFilesToRoles(
+      'paired_end_with_extras',
+      [
+        'org/lab/s_R1.fastq.gz',
+        'org/lab/s_R2.fastq.gz',
+        'org/lab/ref.fna',
+        'org/lab/genes.gtf',
+        'org/lab/genes.gff3',
+        'org/lab/targets.bed',
+        'org/lab/s.bam',
+        'org/lab/s.cram',
+        'org/lab/calls.vcf.gz',
+      ],
+      'b',
+      'S',
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.roleMap).toMatchObject({
+        reference_fasta: 's3://b/org/lab/ref.fna',
+        reference_gtf: 's3://b/org/lab/genes.gtf',
+        reference_gff: 's3://b/org/lab/genes.gff3',
+        reference_bed: 's3://b/org/lab/targets.bed',
+        input_bam: 's3://b/org/lab/s.bam',
+        input_cram: 's3://b/org/lab/s.cram',
+        input_vcf: 's3://b/org/lab/calls.vcf.gz',
+      });
+    }
   });
 });
 
@@ -197,5 +230,31 @@ describe('buildSampleSheetFromSamples', () => {
       expect(result.csv).toContain('sample,fastq');
       expect(result.rows[0].fastq).toBe('s3://bucket/org/lab/a.fastq.gz');
     }
+  });
+});
+
+describe('upgradeLayoutForAddedFiles', () => {
+  it.each([
+    ['single_end', ['org/lab/s_R2_001.fastq.gz'], 'paired_end'],
+    ['single_end', ['org/lab/s_R2_001.fastq.gz', 'org/lab/ref.fasta'], 'paired_end_with_extras'],
+    ['paired_end', ['org/lab/ref.fasta'], 'paired_end_with_extras'],
+    ['paired_end', ['org/lab/s.bam'], 'paired_end_with_extras'],
+    ['single_end', ['org/lab/S_R2.FASTQ.GZ'], 'paired_end'],
+    ['single_end', ['org/lab/s_r2.fq'], 'paired_end'],
+    ['single_end', ['org/lab/ref.fasta'], 'single_end'],
+    ['single_end', ['org/lab/s_L002_R1_001.fastq.gz'], 'single_end'],
+    ['single_end', ['org/lab/s_R2_001.fastq.gz.md5'], 'single_end'],
+    ['single_end', ['org/lab/s.R2.fastq.gz'], 'single_end'],
+    ['paired_end', ['org/lab/s_R2_001.fastq.gz'], 'paired_end'],
+    ['long_reads', ['org/lab/s_R2_001.fastq.gz', 'org/lab/ref.fasta'], 'long_reads'],
+    ['paired_end_with_extras', ['org/lab/s_R2_001.fastq.gz'], 'paired_end_with_extras'],
+    ['single_end', [], 'single_end'],
+  ] as [SampleLayout, string[], SampleLayout][])('%s + %j -> %s', (currentLayout, addedKeys, expected) => {
+    expect(upgradeLayoutForAddedFiles(currentLayout, addedKeys)).toBe(expected);
+  });
+
+  it('detects R2 through the sample SampleIdPattern, as the sheet does', () => {
+    expect(upgradeLayoutForAddedFiles('single_end', ['org/lab/NA12878-2.fastq.gz'], '-')).toBe('paired_end');
+    expect(upgradeLayoutForAddedFiles('single_end', ['org/lab/NA12878-2.fastq.gz'])).toBe('single_end');
   });
 });

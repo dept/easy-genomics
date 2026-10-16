@@ -2,6 +2,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import useDataCollectionsStore, { UNLINKED_SCAN_TTL_MS } from '../../../src/app/stores/dataCollections';
 
 const mockRequestUnlinkedBucketObjects = jest.fn();
+const mockAddFilesToSample = jest.fn();
 const mockRequestLaboratoryBucketObjects = jest.fn();
 const mockToastError = jest.fn();
 
@@ -9,6 +10,7 @@ const mockToastError = jest.fn();
   $api: {
     dataCollections: {
       requestUnlinkedBucketObjects: mockRequestUnlinkedBucketObjects,
+      addFilesToSample: mockAddFilesToSample,
       requestLaboratoryBucketObjects: mockRequestLaboratoryBucketObjects,
     },
   },
@@ -140,6 +142,51 @@ describe('dataCollections store unlinked scan cache', () => {
     await pending;
 
     expect(store.unlinkedScan('lab-1')).toBeNull();
+  });
+});
+
+describe('dataCollections store addFilesToSample', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    useDataCollectionsStore().reset();
+    mockAddFilesToSample.mockReset();
+    mockToastError.mockReset();
+  });
+
+  const request = { labId: 'lab-1', s3Bucket: 'bucket', sampleId: 'sample-1', keys: ['org/lab/a_R2.fq.gz'] };
+
+  it('adds the files and drops them from the cached unlinked scan, keeping the rest of the scan', async () => {
+    const store = useDataCollectionsStore();
+    store.setUnlinkedScan('lab-1', {
+      ...scanResponse('org/lab/a_R2.fq.gz'),
+      Contents: [{ Key: 'org/lab/a_R2.fq.gz' }, { Key: 'org/lab/b_R1.fq.gz' }],
+    });
+    const scannedBefore = store.unlinkedScan('lab-1');
+    mockAddFilesToSample.mockResolvedValueOnce(undefined);
+
+    await expect(store.addFilesToSample(request)).resolves.toBe(true);
+
+    expect(mockAddFilesToSample).toHaveBeenCalledWith({
+      LaboratoryId: 'lab-1',
+      S3Bucket: 'bucket',
+      SampleId: 'sample-1',
+      Keys: ['org/lab/a_R2.fq.gz'],
+    });
+    const scanAfter = store.unlinkedScan('lab-1');
+    expect(scanAfter?.files.map((file) => file.Key)).toEqual(['org/lab/b_R1.fq.gz']);
+    expect(scanAfter?.s3Bucket).toBe(scannedBefore?.s3Bucket);
+    expect(scanAfter?.resolvedPrefix).toBe(scannedBefore?.resolvedPrefix);
+  });
+
+  it('shows the API error and keeps the scan when the add fails', async () => {
+    const store = useDataCollectionsStore();
+    store.setUnlinkedScan('lab-1', scanResponse('org/lab/a_R2.fq.gz'));
+    mockAddFilesToSample.mockRejectedValueOnce(new Error('Sample not found'));
+
+    await expect(store.addFilesToSample(request)).resolves.toBe(false);
+
+    expect(mockToastError).toHaveBeenCalledWith('Sample not found');
+    expect(store.unlinkedScan('lab-1')).not.toBeNull();
   });
 });
 

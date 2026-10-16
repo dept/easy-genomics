@@ -97,6 +97,44 @@ function firstMatchingKey(keys: string[], extensions: string[]): string | undefi
   return keys.find((k) => extensionMatches(k, extensions));
 }
 
+/** Files that reach the sample sheet only under `paired_end_with_extras`, by sheet role. */
+const EXTRA_FILE_EXTENSIONS_BY_ROLE = {
+  reference_fasta: ['.fasta', '.fa', '.fna'],
+  reference_gtf: ['.gtf'],
+  reference_gff: ['.gff', '.gff3'],
+  reference_bed: ['.bed'],
+  input_bam: ['.bam'],
+  input_cram: ['.cram'],
+  input_vcf: ['.vcf', '.vcf.gz'],
+} satisfies Partial<Record<SampleSheetColumnRole, string[]>>;
+
+function isExtraFileKey(key: string): boolean {
+  return Object.values(EXTRA_FILE_EXTENSIONS_BY_ROLE).some((extensions) => extensionMatches(key, extensions));
+}
+
+/**
+ * Layout a sample needs so the files being added reach its sample sheet. Never downgrades, and
+ * looks only at the added files so a layout someone chose deliberately survives unrelated adds.
+ */
+export function upgradeLayoutForAddedFiles(
+  currentLayout: SampleLayout,
+  addedKeys: string[],
+  sampleIdPattern?: string | null,
+): SampleLayout {
+  const addsRead2 = addedKeys.some(
+    (key) => isFastqKey(key) && getReadDirection(key.split('/').pop() || key, sampleIdPattern) === 'R2',
+  );
+  const addsExtra = addedKeys.some(isExtraFileKey);
+
+  if (currentLayout === 'single_end' && addsRead2) {
+    return addsExtra ? 'paired_end_with_extras' : 'paired_end';
+  }
+  if (currentLayout === 'paired_end' && addsExtra) {
+    return 'paired_end_with_extras';
+  }
+  return currentLayout;
+}
+
 export function validateSampleSheetSchema(columns: SampleSheetColumnDef[]): SampleSheetSchemaValidationResult {
   if (!columns.length) {
     return { ok: false, message: 'At least one column is required.' };
@@ -183,21 +221,10 @@ export function mapSequenceSetFilesToRoles(
   }
 
   if (layout === 'paired_end_with_extras') {
-    const fastaKey = firstMatchingKey(sortedKeys, ['.fasta', '.fa', '.fna']);
-    const gtfKey = firstMatchingKey(sortedKeys, ['.gtf']);
-    const gffKey = firstMatchingKey(sortedKeys, ['.gff', '.gff3']);
-    const bedKey = firstMatchingKey(sortedKeys, ['.bed']);
-    const bamKey = firstMatchingKey(sortedKeys, ['.bam']);
-    const cramKey = firstMatchingKey(sortedKeys, ['.cram']);
-    const vcfKey = firstMatchingKey(sortedKeys, ['.vcf', '.vcf.gz']);
-
-    if (fastaKey) roleMap.reference_fasta = toUri(fastaKey);
-    if (gtfKey) roleMap.reference_gtf = toUri(gtfKey);
-    if (gffKey) roleMap.reference_gff = toUri(gffKey);
-    if (bedKey) roleMap.reference_bed = toUri(bedKey);
-    if (bamKey) roleMap.input_bam = toUri(bamKey);
-    if (cramKey) roleMap.input_cram = toUri(cramKey);
-    if (vcfKey) roleMap.input_vcf = toUri(vcfKey);
+    for (const [role, extensions] of Object.entries(EXTRA_FILE_EXTENSIONS_BY_ROLE)) {
+      const key = firstMatchingKey(sortedKeys, extensions);
+      if (key) roleMap[role as SampleSheetColumnRole] = toUri(key);
+    }
   }
 
   if (!roleMap.sample_id) {
