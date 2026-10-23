@@ -62,6 +62,11 @@
     if (!workflowId) return false;
     return (keyOutputsStore.definitionFor(labId, workflowId)?.KeyOutputs.length ?? 0) > 0;
   });
+  const canSendToMicroreact = computed<boolean>(() => {
+    const workflowId = labRun.value?.WorkflowExternalId;
+    if (!canDeclareKeyOutputs.value || !workflowId) return false;
+    return Boolean(keyOutputsStore.definitionFor(labId, workflowId)?.Delivery?.Microreact?.MetadataKeyOutputId);
+  });
   const runKeyOutputs = computed(() => keyOutputsStore.matchesFor(labId, labRunId));
   const showKeyOutputsPanel = computed(() => (runKeyOutputs.value?.KeyOutputs.length ?? 0) > 0);
   const keyOutputsDefinition = computed(() => {
@@ -692,6 +697,8 @@
                 Define key outputs
               </button>
             </div>
+
+            <EGMicroreactExport v-if="canSendToMicroreact && labRun" :lab-id="labId" :run="labRun" />
 
             <EGRunInputData :lab-run="labRun" :lab-id="labId" :lab-name="lab?.Name ?? ''" />
           </div>

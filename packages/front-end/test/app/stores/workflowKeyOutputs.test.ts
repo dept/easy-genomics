@@ -5,6 +5,7 @@ const mockList = jest.fn();
 const mockEdit = jest.fn();
 const mockEditDelivery = jest.fn();
 const mockRunMatches = jest.fn();
+const mockRequestMicroreactExport = jest.fn();
 const mockToastError = jest.fn();
 const mockSetRequestPending = jest.fn();
 const mockSetRequestComplete = jest.fn();
@@ -16,6 +17,7 @@ const mockSetRequestComplete = jest.fn();
       edit: mockEdit,
       editDelivery: mockEditDelivery,
       runMatches: mockRunMatches,
+      requestMicroreactExport: mockRequestMicroreactExport,
     },
   },
 });
@@ -37,7 +39,43 @@ describe('workflowKeyOutputs store', () => {
     mockEdit.mockReset();
     mockEditDelivery.mockReset();
     mockRunMatches.mockReset();
+    mockRequestMicroreactExport.mockReset();
     mockToastError.mockReset();
+  });
+
+  it('sends the Microreact roles with the delivery settings', async () => {
+    const microreact = { Enabled: true, MetadataKeyOutputId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' };
+    mockEditDelivery.mockResolvedValue({
+      LaboratoryId: LAB_ID,
+      WorkflowId: WORKFLOW_ID,
+      KeyOutputs: [],
+      Delivery: { Enabled: false, Microreact: microreact },
+    });
+    const store = useWorkflowKeyOutputsStore();
+
+    expect(await store.saveDelivery(LAB_ID, WORKFLOW_ID, { Enabled: false, Microreact: microreact })).toBe(true);
+    expect(mockEditDelivery).toHaveBeenCalledWith(expect.objectContaining({ Microreact: microreact }));
+    expect(store.definitionFor(LAB_ID, WORKFLOW_ID)?.Delivery?.Microreact).toEqual(microreact);
+  });
+
+  it('queues a Microreact export for a run', async () => {
+    mockRequestMicroreactExport.mockResolvedValue({ RunId: 'run-1', MicroreactStatus: 'Queued' });
+    const store = useWorkflowKeyOutputsStore();
+
+    expect(await store.requestMicroreactExport('org-1', LAB_ID, 'run-1')).toBe(true);
+    expect(mockRequestMicroreactExport).toHaveBeenCalledWith({
+      OrganizationId: 'org-1',
+      LaboratoryId: LAB_ID,
+      RunId: 'run-1',
+    });
+  });
+
+  it('toasts when a Microreact export cannot be queued', async () => {
+    mockRequestMicroreactExport.mockRejectedValue(new Error('Choose a Microreact metadata key output first'));
+    const store = useWorkflowKeyOutputsStore();
+
+    expect(await store.requestMicroreactExport('org-1', LAB_ID, 'run-1')).toBe(false);
+    expect(mockToastError).toHaveBeenCalledWith('Choose a Microreact metadata key output first');
   });
 
   it('caches a loaded definition', async () => {

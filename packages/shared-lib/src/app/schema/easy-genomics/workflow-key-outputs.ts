@@ -1,18 +1,13 @@
 import { z } from 'zod';
 import {
+  MICROREACT_TREE_KEY_OUTPUTS_LIMIT,
   WORKFLOW_KEY_OUTPUTS_LIMIT,
   WORKFLOW_KEY_OUTPUT_LABEL_MAX_LENGTH,
   WORKFLOW_KEY_OUTPUT_PATTERN_MAX_LENGTH,
 } from '../../types/easy-genomics/workflow-key-outputs';
-import {
-  isProtectedLabDataDestination,
-  parseKeyOutputDeliveryUri,
-} from '../../utils/workflow-key-output-delivery';
+import { isProtectedLabDataDestination, parseKeyOutputDeliveryUri } from '../../utils/workflow-key-output-delivery';
 
-function refineDeliveryDestination(
-  value: { Enabled: boolean; DestinationUri?: string },
-  ctx: z.RefinementCtx,
-): void {
+function refineDeliveryDestination(value: { Enabled: boolean; DestinationUri?: string }, ctx: z.RefinementCtx): void {
   if (value.Enabled && !value.DestinationUri) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -73,10 +68,43 @@ export const WorkflowKeyOutputSchema = z
   .strict()
   .superRefine((value, ctx) => refineKeyOutputPattern(value.Pattern, ctx));
 
+export const WorkflowKeyOutputMicroreactDeliverySchema = z
+  .object({
+    Enabled: z.boolean(),
+    MetadataKeyOutputId: z.string().uuid().optional(),
+    TreeKeyOutputIds: z.array(z.string().uuid()).max(MICROREACT_TREE_KEY_OUTPUTS_LIMIT).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.Enabled && !value.MetadataKeyOutputId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['MetadataKeyOutputId'],
+        message: 'Choose the key output Microreact uses as its metadata table',
+      });
+    }
+    const trees = value.TreeKeyOutputIds ?? [];
+    if (value.MetadataKeyOutputId && trees.includes(value.MetadataKeyOutputId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['TreeKeyOutputIds'],
+        message: 'The metadata key output cannot also be a tree',
+      });
+    }
+    if (new Set(trees).size !== trees.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['TreeKeyOutputIds'],
+        message: 'Each tree key output can be chosen once',
+      });
+    }
+  });
+
 export const WorkflowKeyOutputDeliverySchema = z
   .object({
     Enabled: z.boolean(),
     DestinationUri: z.string().trim().min(1).max(1024).optional(),
+    Microreact: WorkflowKeyOutputMicroreactDeliverySchema.optional(),
   })
   .strict()
   .superRefine(refineDeliveryDestination);
@@ -130,10 +158,20 @@ export const EditWorkflowKeyOutputDeliverySchema = z
     WorkflowId: z.string().min(1),
     Enabled: z.boolean(),
     DestinationUri: z.string().trim().max(1024).optional(),
+    Microreact: WorkflowKeyOutputMicroreactDeliverySchema.optional(),
   })
   .strict()
   .superRefine(refineDeliveryDestination);
 export type EditWorkflowKeyOutputDelivery = z.infer<typeof EditWorkflowKeyOutputDeliverySchema>;
+
+export const RequestRunMicroreactExportSchema = z
+  .object({
+    OrganizationId: z.string().uuid(),
+    LaboratoryId: z.string().uuid(),
+    RunId: z.string().min(1),
+  })
+  .strict();
+export type RequestRunMicroreactExport = z.infer<typeof RequestRunMicroreactExportSchema>;
 
 export const RequestPreviewWorkflowKeyOutputsSchema = z
   .object({
