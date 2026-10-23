@@ -3840,8 +3840,6 @@ components:
                 type: string
                 format: uuid
               maxItems: 10
-          required:
-            - Enabled
           additionalProperties: false
       required:
         - LaboratoryId
