@@ -166,6 +166,57 @@ describe('edit-workflow-key-output-delivery Lambda', () => {
     expect(mockSave).not.toHaveBeenCalled();
   });
 
+  it('saves the Microreact roles alongside the S3 setting', async () => {
+    const microreact = { Enabled: true, MetadataKeyOutputId: KEY_OUTPUT.KeyOutputId };
+    const result = await handler(
+      createMockEvent({ LaboratoryId: LAB_ID, WorkflowId: WORKFLOW_ID, Enabled: false, Microreact: microreact }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toEqual(200);
+    expect(JSON.parse(result.body).Delivery).toEqual({ Enabled: false, Microreact: microreact });
+  });
+
+  it('keeps the saved Microreact roles when the request omits them', async () => {
+    const microreact = { Enabled: true, MetadataKeyOutputId: KEY_OUTPUT.KeyOutputId };
+    mockGet.mockResolvedValue({
+      LaboratoryId: LAB_ID,
+      WorkflowId: WORKFLOW_ID,
+      KeyOutputs: [KEY_OUTPUT],
+      Delivery: { Enabled: false, Microreact: microreact },
+    });
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        Enabled: true,
+        DestinationUri: 's3://results-bucket/incoming',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(JSON.parse(result.body).Delivery.Microreact).toEqual(microreact);
+  });
+
+  it('rejects a Microreact role that is not a declared key output', async () => {
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        Enabled: false,
+        Microreact: { Enabled: true, MetadataKeyOutputId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toEqual(400);
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
   it('rejects a laboratory data prefix destination', async () => {
     const result = await handler(
       createMockEvent({

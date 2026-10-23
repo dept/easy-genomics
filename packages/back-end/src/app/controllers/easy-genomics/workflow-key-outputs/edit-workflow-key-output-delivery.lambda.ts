@@ -4,7 +4,11 @@ import {
   EditWorkflowKeyOutputDelivery,
   EditWorkflowKeyOutputDeliverySchema,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/workflow-key-outputs';
-import { WorkflowKeyOutputs } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
+import {
+  WorkflowKeyOutput,
+  WorkflowKeyOutputMicroreactDelivery,
+  WorkflowKeyOutputs,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
 import { parseKeyOutputDeliveryUri } from '@easy-genomics/shared-lib/src/app/utils/workflow-key-output-delivery';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
@@ -19,7 +23,8 @@ const workflowKeyOutputsService = new WorkflowKeyOutputsService();
  * POST /easy-genomics/workflow-key-outputs/edit-workflow-key-output-delivery
  *
  * Lab-wide setting: copy this workflow's declared key outputs to one external
- * S3 URI when a HealthOmics run completes successfully.
+ * S3 URI, and/or send them to Microreact, when a HealthOmics run completes
+ * successfully. A request without `Microreact` keeps the saved Microreact roles.
  */
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -42,6 +47,10 @@ export const handler: Handler = async (
     }
 
     const existing = await workflowKeyOutputsService.get(request.LaboratoryId, request.WorkflowId);
+    const microreact = request.Microreact ?? existing?.Delivery?.Microreact;
+    if (microreact && !microreactRolesAreDeclared(microreact, existing?.KeyOutputs ?? [])) {
+      throw new InvalidRequestError('Microreact roles must be key outputs declared for this workflow');
+    }
     const now = new Date().toISOString();
     const definition: WorkflowKeyOutputs = {
       LaboratoryId: request.LaboratoryId,
@@ -53,6 +62,7 @@ export const handler: Handler = async (
       Delivery: {
         Enabled: request.Enabled,
         DestinationUri: destination ? `s3://${destination.bucket}/${destination.prefix}` : undefined,
+        ...(microreact ? { Microreact: microreact } : {}),
       },
       CreatedAt: existing?.CreatedAt ?? now,
       CreatedBy: existing?.CreatedBy ?? currentUserId,
@@ -67,3 +77,12 @@ export const handler: Handler = async (
     return buildErrorResponse(err, event);
   }
 };
+
+function microreactRolesAreDeclared(
+  microreact: WorkflowKeyOutputMicroreactDelivery,
+  keyOutputs: WorkflowKeyOutput[],
+): boolean {
+  const declared = new Set(keyOutputs.map((output) => output.KeyOutputId));
+  const roles = [microreact.MetadataKeyOutputId, ...(microreact.TreeKeyOutputIds ?? [])].filter(Boolean);
+  return roles.every((id) => declared.has(id!));
+}

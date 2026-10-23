@@ -179,7 +179,7 @@ async function enqueueKeyOutputDelivery(run: LaboratoryRun): Promise<void> {
   }
   try {
     const definition = await workflowKeyOutputsService.get(run.LaboratoryId, run.WorkflowExternalId!);
-    if (!definition?.Delivery?.Enabled) return;
+    if (!definition?.Delivery?.Enabled && !definition?.Delivery?.Microreact?.Enabled) return;
     await sqsService.sendMessage({
       QueueUrl: queueUrl,
       MessageBody: JSON.stringify({ LaboratoryId: run.LaboratoryId, RunId: run.RunId }),

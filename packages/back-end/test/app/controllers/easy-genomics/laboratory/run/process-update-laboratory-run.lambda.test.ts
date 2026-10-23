@@ -1334,6 +1334,41 @@ describe('process-update-laboratory-run.lambda', () => {
     expect(mockMarkTerminalNotified.mock.invocationCallOrder[0]).toBeLessThan(mockPublish.mock.invocationCallOrder[0]);
   });
 
+  it('enqueues key-output delivery when only Microreact is enabled', async () => {
+    mockGetKeyOutputs.mockResolvedValue({
+      Delivery: { Enabled: false, Microreact: { Enabled: true, MetadataKeyOutputId: 'meta-1' } },
+    });
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      ExternalRunId: 'ext-1',
+      WorkflowExternalId: 'wf-1',
+      Status: 'RUNNING',
+      Platform: 'AWS HealthOmics',
+    });
+    mockGetRun.mockResolvedValue({ status: 'SUCCEEDED' } as any);
+    mockUpdateRun.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      Status: 'SUCCEEDED',
+      Platform: 'AWS HealthOmics',
+      WorkflowExternalId: 'wf-1',
+    });
+    mockMarkTerminalNotified.mockResolvedValue({
+      published: true,
+      run: { RunId: 'run-1', LaboratoryId: 'lab-1', Status: 'SUCCEEDED' },
+    });
+    process.env.SQS_KEY_OUTPUT_DELIVERY_QUEUE_URL =
+      'https://sqs.region.amazonaws.com/acct/key-output-delivery-queue.fifo';
+
+    await expect(processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any)).resolves.toBe(true);
+
+    expect(mockPublish).toHaveBeenCalledWith(
+      expect.objectContaining({ MessageDeduplicationId: 'deliver-key-outputs-run-1' }),
+    );
+  });
+
   it('does not enqueue key-output delivery when the workflow has not opted in', async () => {
     mockQueryByRunId.mockResolvedValue({
       RunId: 'run-1',

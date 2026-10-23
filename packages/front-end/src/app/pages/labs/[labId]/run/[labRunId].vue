@@ -64,6 +64,11 @@
     if (!workflowId) return false;
     return (keyOutputsStore.definitionFor(labId, workflowId)?.KeyOutputs.length ?? 0) > 0;
   });
+  const canSendToMicroreact = computed<boolean>(() => {
+    const workflowId = labRun.value?.WorkflowExternalId;
+    if (!canDeclareKeyOutputs.value || !workflowId) return false;
+    return Boolean(keyOutputsStore.definitionFor(labId, workflowId)?.Delivery?.Microreact?.MetadataKeyOutputId);
+  });
   const runKeyOutputs = computed(() => keyOutputsStore.matchesFor(labId, labRunId));
   const showKeyOutputsPanel = computed(() => (runKeyOutputs.value?.KeyOutputs.length ?? 0) > 0);
 
@@ -780,6 +785,7 @@
             :can-edit="canDeclareKeyOutputs"
             @edit="isDeclaringKeyOutputs = true"
           />
+          <EGMicroreactExport v-if="canSendToMicroreact && labRun" :lab-id="labId" :run="labRun" />
           <div v-else-if="canDeclareKeyOutputs && !hasKeyOutputs" class="flex justify-end">
             <button
               type="button"

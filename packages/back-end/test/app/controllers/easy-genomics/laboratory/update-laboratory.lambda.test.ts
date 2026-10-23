@@ -150,6 +150,30 @@ describe('update-laboratory.lambda', () => {
     );
   });
 
+  it('stores a new Microreact access token in SSM', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+    });
+    (mockLabService.prototype.update as jest.Mock).mockResolvedValue({ OrganizationId: ORG_ID, LaboratoryId: LAB_ID });
+    (mockSsmService.prototype.putParameter as jest.Mock).mockResolvedValue({});
+
+    const result = await handler(
+      createEvent(LAB_ID, { ...baseRequest, MicroreactAccessToken: 'mr-token' }),
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockSsmService.prototype.putParameter).toHaveBeenCalledWith({
+      Name: `/easy-genomics/organization/${ORG_ID}/laboratory/${LAB_ID}/microreact-access-token`,
+      Description: `Easy Genomics Laboratory ${LAB_ID} Microreact access token`,
+      Value: 'mr-token',
+      Type: 'SecureString',
+      Overwrite: true,
+    });
+  });
+
   it('passes NotificationsEnabled through to the service update call', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
       OrganizationId: ORG_ID,

@@ -61,6 +61,16 @@ const laboratoryRunCostFields = {
   BilledCost: BilledCostSchema.optional(),
 };
 
+const microreactExportFields = {
+  /** State of the latest Microreact export for this run. Absent means it was never sent. */
+  MicroreactStatus: z.enum(['Queued', 'Succeeded', 'Failed']).optional(),
+  /** Project created by the latest successful export. Each export creates a new project. */
+  MicroreactProjectUrl: z.string().url().optional(),
+  /** Why the latest export failed, specific enough for a lab manager to fix the settings. */
+  MicroreactErrorMessage: z.string().optional(),
+  MicroreactRequestedAt: z.string().optional(),
+};
+
 export const LaboratoryRunSchema = z
   .object({
     LaboratoryId: z.string().uuid(),
@@ -180,6 +190,7 @@ export const LaboratoryRunSchema = z
      * so runs predating this field keep rendering with no migration.
      */
     AnalysisHistory: z.array(AnalysisHistoryEntrySchema).optional(),
+    ...microreactExportFields,
     /**
      * Sparse marker present only while the run is non-terminal. Backs the `PollStatus_Index`
      * GSI so the notification poller can query "every active run" in O(1) regardless of total
@@ -256,6 +267,7 @@ export const ReadLaboratoryRunSchema = z
     AnalysisRequestedBy: z.string().optional(),
     AnalysisRunCount: z.number().nonnegative().optional(),
     AnalysisHistory: z.array(AnalysisHistoryEntrySchema).optional(),
+    ...microreactExportFields,
     ...laboratoryRunCostFields,
     ProgressPercent: z.number().min(0).max(100).optional(),
     TasksTotal: z.number().nonnegative().optional(),

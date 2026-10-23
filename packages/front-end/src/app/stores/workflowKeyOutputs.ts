@@ -3,6 +3,7 @@ import type {
   PreviewWorkflowKeyOutput,
   RunWorkflowKeyOutputsResponse,
   WorkflowKeyOutput,
+  WorkflowKeyOutputMicroreactDelivery,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
 import { defineStore } from 'pinia';
 
@@ -123,7 +124,7 @@ const useWorkflowKeyOutputsStore = defineStore('workflowKeyOutputsStore', {
     async saveDelivery(
       laboratoryId: string,
       workflowId: string,
-      delivery: { Enabled: boolean; DestinationUri?: string },
+      delivery: { Enabled: boolean; DestinationUri?: string; Microreact?: WorkflowKeyOutputMicroreactDelivery },
     ): Promise<boolean> {
       const { $api } = useNuxtApp();
       useUiStore().setRequestPending('saveWorkflowKeyOutputDelivery');
@@ -133,6 +134,7 @@ const useWorkflowKeyOutputsStore = defineStore('workflowKeyOutputsStore', {
           WorkflowId: workflowId,
           Enabled: delivery.Enabled,
           DestinationUri: delivery.DestinationUri,
+          Microreact: delivery.Microreact,
         });
         this.definitionsByWorkflow[cacheKey(laboratoryId, workflowId)] = {
           LaboratoryId: saved.LaboratoryId,
@@ -151,6 +153,25 @@ const useWorkflowKeyOutputsStore = defineStore('workflowKeyOutputsStore', {
         return false;
       } finally {
         useUiStore().setRequestComplete('saveWorkflowKeyOutputDelivery');
+      }
+    },
+
+    /** Queues a new Microreact project for a completed run. The run record carries the result. */
+    async requestMicroreactExport(organizationId: string, laboratoryId: string, runId: string): Promise<boolean> {
+      const { $api } = useNuxtApp();
+      useUiStore().setRequestPending('requestMicroreactExport');
+      try {
+        await $api.workflowKeyOutputs.requestMicroreactExport({
+          OrganizationId: organizationId,
+          LaboratoryId: laboratoryId,
+          RunId: runId,
+        });
+        return true;
+      } catch (error) {
+        toastFailure(error, 'Unable to send this run to Microreact.');
+        return false;
+      } finally {
+        useUiStore().setRequestComplete('requestMicroreactExport');
       }
     },
 

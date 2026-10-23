@@ -127,5 +127,8 @@ describe('delete-laboratory.lambda', () => {
     expect(mockSqsService.prototype.sendMessage).toHaveBeenCalled();
     expect(mockLabService.prototype.delete).toHaveBeenCalled();
     expect(mockSsmService.prototype.deleteParameter).toHaveBeenCalled();
+    expect(mockSsmService.prototype.deleteParameter).toHaveBeenCalledWith({
+      Name: '/easy-genomics/organization/org-1/laboratory/lab-1/microreact-access-token',
+    });
   });
 });

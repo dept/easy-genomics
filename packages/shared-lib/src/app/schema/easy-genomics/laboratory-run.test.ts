@@ -38,4 +38,19 @@ describe('LaboratoryRunSchema analysis fields', () => {
     });
     expect(parsed.success).toBe(true);
   });
+
+  it('accepts a Microreact export result', () => {
+    const parsed = LaboratoryRunSchema.safeParse({
+      ...base,
+      Status: 'COMPLETED',
+      MicroreactStatus: 'Succeeded',
+      MicroreactProjectUrl: 'https://microreact.org/project/gb7RzDg87aJK2yGAqQiaiu',
+      MicroreactRequestedAt: '2026-10-22T10:00:00.000Z',
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('rejects an unknown MicroreactStatus', () => {
+    expect(LaboratoryRunSchema.safeParse({ ...base, MicroreactStatus: 'Sent' }).success).toBe(false);
+  });
 });
