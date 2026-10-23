@@ -178,6 +178,25 @@ describe('edit-workflow-key-output-delivery Lambda', () => {
     expect(JSON.parse(result.body).Delivery).toEqual({ Enabled: false, Microreact: microreact });
   });
 
+  it('saves Microreact as disabled when the request omits Enabled', async () => {
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        Enabled: false,
+        Microreact: { MetadataKeyOutputId: KEY_OUTPUT.KeyOutputId },
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toEqual(200);
+    expect(JSON.parse(result.body).Delivery.Microreact).toEqual({
+      Enabled: false,
+      MetadataKeyOutputId: KEY_OUTPUT.KeyOutputId,
+    });
+  });
+
   it('keeps the saved Microreact roles when the request omits them', async () => {
     const microreact = { Enabled: true, MetadataKeyOutputId: KEY_OUTPUT.KeyOutputId };
     mockGet.mockResolvedValue({

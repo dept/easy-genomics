@@ -47,7 +47,9 @@ export const handler: Handler = async (
     }
 
     const existing = await workflowKeyOutputsService.get(request.LaboratoryId, request.WorkflowId);
-    const microreact = request.Microreact ?? existing?.Delivery?.Microreact;
+    const microreact: WorkflowKeyOutputMicroreactDelivery | undefined = request.Microreact
+      ? { ...request.Microreact, Enabled: request.Microreact.Enabled ?? false }
+      : existing?.Delivery?.Microreact;
     if (microreact && !microreactRolesAreDeclared(microreact, existing?.KeyOutputs ?? [])) {
       throw new InvalidRequestError('Microreact roles must be key outputs declared for this workflow');
     }

@@ -58,6 +58,26 @@ describe('EditWorkflowKeyOutputDeliverySchema', () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it('accepts Microreact roles without Enabled so the request adds no required property', () => {
+    const result = EditWorkflowKeyOutputDeliverySchema.safeParse({
+      LaboratoryId: LAB_ID,
+      WorkflowId: 'wf-1',
+      Enabled: false,
+      Microreact: { MetadataKeyOutputId: METADATA_ID },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('still requires a metadata key output when Microreact is enabled', () => {
+    const result = EditWorkflowKeyOutputDeliverySchema.safeParse({
+      LaboratoryId: LAB_ID,
+      WorkflowId: 'wf-1',
+      Enabled: false,
+      Microreact: { Enabled: true },
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('RequestRunMicroreactExportSchema', () => {

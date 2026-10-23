@@ -68,15 +68,16 @@ export const WorkflowKeyOutputSchema = z
   .strict()
   .superRefine((value, ctx) => refineKeyOutputPattern(value.Pattern, ctx));
 
-export const WorkflowKeyOutputMicroreactDeliverySchema = z
-  .object({
-    Enabled: z.boolean(),
-    MetadataKeyOutputId: z.string().uuid().optional(),
-    TreeKeyOutputIds: z.array(z.string().uuid()).max(MICROREACT_TREE_KEY_OUTPUTS_LIMIT).optional(),
-  })
-  .strict()
-  .superRefine((value, ctx) => {
-    if (value.Enabled && !value.MetadataKeyOutputId) {
+const microreactRoleFields = {
+  MetadataKeyOutputId: z.string().uuid().optional(),
+  TreeKeyOutputIds: z.array(z.string().uuid()).max(MICROREACT_TREE_KEY_OUTPUTS_LIMIT).optional(),
+};
+
+function refineMicroreactDelivery(
+  value: { Enabled?: boolean; MetadataKeyOutputId?: string; TreeKeyOutputIds?: string[] },
+  ctx: z.RefinementCtx,
+): void {
+  if (value.Enabled && !value.MetadataKeyOutputId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['MetadataKeyOutputId'],
@@ -98,7 +99,18 @@ export const WorkflowKeyOutputMicroreactDeliverySchema = z
         message: 'Each tree key output can be chosen once',
       });
     }
-  });
+}
+
+export const WorkflowKeyOutputMicroreactDeliverySchema = z
+  .object({ Enabled: z.boolean(), ...microreactRoleFields })
+  .strict()
+  .superRefine(refineMicroreactDelivery);
+
+/** Enabled is optional so adding Microreact to the request is not an OpenAPI breaking change; omitted means false. */
+const EditWorkflowKeyOutputMicroreactDeliverySchema = z
+  .object({ Enabled: z.boolean().optional(), ...microreactRoleFields })
+  .strict()
+  .superRefine(refineMicroreactDelivery);
 
 export const WorkflowKeyOutputDeliverySchema = z
   .object({
@@ -158,7 +170,7 @@ export const EditWorkflowKeyOutputDeliverySchema = z
     WorkflowId: z.string().min(1),
     Enabled: z.boolean(),
     DestinationUri: z.string().trim().max(1024).optional(),
-    Microreact: WorkflowKeyOutputMicroreactDeliverySchema.optional(),
+    Microreact: EditWorkflowKeyOutputMicroreactDeliverySchema.optional(),
   })
   .strict()
   .superRefine(refineDeliveryDestination);
