@@ -12,6 +12,7 @@
     DEFAULT_REGEX_GROUPING_PRESET_KEY,
     FASTA_REGEX_GROUPING_PRESET_KEY,
     findDuplicateSampleNames,
+    findSharedFasta,
     folderBelowLabRoot,
     REGEX_GROUPING_PRESETS,
     type RegexGroupingPresetKey,
@@ -24,6 +25,8 @@
   import { exceedsBatchNameMaxLength } from '@FE/utils/data-collections-name-validation';
   import {
     describeSourceListing,
+    type ImportedFileSource,
+    locateSharedFasta,
     skipsGroupingStep,
     type SourceListingNotice,
   } from '@FE/utils/data-collections-source-listing';
@@ -108,6 +111,8 @@
     sourceFiles,
     regexPattern,
   );
+  const sharedFastaFiles = computed(() => findSharedFasta(sourceFiles.value, unmatchedFiles.value));
+  const skippedFiles = computed(() => unmatchedFiles.value.filter((file) => !sharedFastaFiles.value.includes(file)));
   const excludedSamples = ref<Set<string>>(new Set());
   const tagSheetRows = ref<string[][]>([]);
   const tagSheetError = ref<string>('');
@@ -121,6 +126,13 @@
   const uploadTransactionId = ref(uuidv4());
   const pendingUploadFiles = ref<PendingUploadFile[]>([]);
   const uploadedKeysByName = ref<Record<string, string>>({});
+  const sharedFastaLocations = computed(() => {
+    const source: ImportedFileSource =
+      importSource.value === 'upload'
+        ? { kind: 'upload', bucket: props.lab?.S3Bucket ?? '', uploadedKeysByName: uploadedKeysByName.value }
+        : { kind: 's3', bucket: sourceBucket.value };
+    return locateSharedFasta(sharedFastaFiles.value, source);
+  });
   const isDropzoneActive = ref(false);
   const uploading = ref(false);
   const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -176,7 +188,10 @@
     const single = activeSets.value.filter((s) => s.status === 'single_end').length;
     const review = activeSets.value.filter((s) => s.status === 'needs_review').length;
     const assembled = activeSets.value.filter((s) => s.status === 'assembled').length;
-    return { paired, single, review, assembled, total: activeSets.value.length };
+    const pairedWithFasta = activeSets.value.filter(
+      (s) => s.status === 'paired' && s.layout === 'paired_end_with_extras',
+    ).length;
+    return { paired, pairedWithFasta, single, review, assembled, total: activeSets.value.length };
   });
   const duplicateSampleNames = computed(() => findDuplicateSampleNames(activeSets.value));
   const repeatedSampleIds = computed(
@@ -671,10 +686,11 @@
           {{ sourceListingNotice.message }}
         </p>
         <EGRegexUnmatchedNotice
-          :unmatched-files="unmatchedFiles"
+          :unmatched-files="skippedFiles"
           :proposed-set-count="proposedSets.length"
           notice-class="mt-4"
         />
+        <EGSharedFastaNotice :files="sharedFastaLocations" notice-class="mt-4" />
       </div>
 
       <!-- Step 3: Tags (optional) -->
@@ -726,7 +742,10 @@
       <div v-else-if="step === 4" class="flex min-h-0 flex-1 flex-col">
         <div class="flex gap-2 border-b p-4 text-xs">
           <template v-if="!autoGroupedOnePerFastaFile">
-            <span class="rounded-full bg-green-100 px-2 py-1 text-green-800">{{ stats.paired }} paired</span>
+            <span class="rounded-full bg-green-100 px-2 py-1 text-green-800">
+              {{ stats.paired }} paired
+              <template v-if="stats.pairedWithFasta">· {{ stats.pairedWithFasta }} with FASTA</template>
+            </span>
             <span class="rounded-full bg-blue-100 px-2 py-1 text-blue-800">{{ stats.single }} single-end</span>
           </template>
           <span v-if="stats.assembled" class="rounded-full bg-purple-100 px-2 py-1 text-purple-800">
@@ -742,6 +761,7 @@
           :proposed-set-count="proposedSets.length"
           notice-class="mx-4 mt-4"
         />
+        <EGSharedFastaNotice :files="sharedFastaLocations" notice-class="mx-4 mt-4" />
         <EGDuplicateSampleNamesNotice :duplicates="duplicateSampleNames" notice-class="mx-4 mt-4" />
         <div class="flex-1 overflow-y-auto">
           <table class="w-full text-sm">

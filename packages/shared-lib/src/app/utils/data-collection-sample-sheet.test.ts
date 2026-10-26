@@ -10,7 +10,7 @@ import {
   validateSampleSheetSchema,
 } from './data-collection-sample-sheet';
 import { isFilenameRegexSafe } from './filename-regex-safety';
-import type { SampleLayout } from '../types/easy-genomics/samples';
+import type { SampleLayout, SampleSheetColumnDef } from '../types/easy-genomics/samples';
 
 describe('validateSampleSheetSchema', () => {
   it('requires sample_id column', () => {
@@ -349,5 +349,45 @@ describe('upgradeLayoutForAddedFiles', () => {
   it('detects R2 through the sample SampleIdPattern, as the sheet does', () => {
     expect(upgradeLayoutForAddedFiles('single_end', ['org/lab/NA12878-2.fastq.gz'], '-')).toBe('paired_end');
     expect(upgradeLayoutForAddedFiles('single_end', ['org/lab/NA12878-2.fastq.gz'])).toBe('single_end');
+  });
+});
+
+describe('reference FASTA in a custom column', () => {
+  const pairedWithFastaColumn: SampleSheetColumnDef[] = [
+    ...SAMPLE_SHEET_SCHEMA_PRESETS.paired,
+    { columnName: 'fasta', role: 'reference_fasta', required: false },
+  ];
+
+  it.each(['A.fasta', 'A.fa', 'A.fna', 'A.fasta.gz', 'A.fa.gz', 'A.fna.gz', 'A.FA.GZ'])(
+    'writes %s of a paired sample to the column',
+    (fastaName) => {
+      const result = buildSampleSheetFromSamples(
+        pairedWithFastaColumn,
+        [
+          {
+            SampleId: '1',
+            Name: 'A',
+            Layout: 'paired_end_with_extras',
+            FileKeys: ['org/lab/run/A_R1.fastq.gz', 'org/lab/run/A_R2.fastq.gz', `org/lab/run/${fastaName}`],
+          },
+        ],
+        'bucket',
+      );
+      expect(result).toMatchObject({
+        ok: true,
+        rows: [
+          {
+            sample: 'A',
+            fastq_1: 's3://bucket/org/lab/run/A_R1.fastq.gz',
+            fastq_2: 's3://bucket/org/lab/run/A_R2.fastq.gz',
+            fasta: `s3://bucket/org/lab/run/${fastaName}`,
+          },
+        ],
+      });
+    },
+  );
+
+  it('upgrades a paired sample when a gzipped FASTA is added to it', () => {
+    expect(upgradeLayoutForAddedFiles('paired_end', ['org/lab/run/A.fa.gz'])).toBe('paired_end_with_extras');
   });
 });
