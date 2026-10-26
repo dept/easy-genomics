@@ -398,4 +398,68 @@ describe('request-laboratory-bucket-objects Lambda', () => {
       expect(JSON.parse(response.body).ResolvedPrefix).toBe(`${labRoot}aws-healthomics/`);
     });
   });
+
+  describe('whole-bucket grant', () => {
+    const accessRowWithWholeBucket = (bucketName: string) => ({
+      LaboratoryId: 'test-lab-id',
+      BucketName: bucketName,
+      OrganizationId: 'test-org-id',
+      Effect: 'ALLOW',
+      AllowsWholeBucket: true,
+    });
+
+    beforeEach(() => {
+      mockValidateLabTechnician.mockReturnValue(true);
+      mockQueryByLaboratoryId.mockResolvedValue(mockLaboratory);
+      mockListBucketObjectsV2.mockResolvedValue({ Contents: [], CommonPrefixes: [], IsTruncated: false });
+    });
+
+    it('lists a folder typed from the bucket root of the granted bucket', async () => {
+      (assertLaboratoryHasS3BucketAccess as jest.Mock).mockResolvedValueOnce([accessRowWithWholeBucket('test-bucket')]);
+
+      const response = await handler(
+        createMockEvent({ LaboratoryId: 'test-lab-id', S3Bucket: 'test-bucket', S3Prefix: 'sequencer-drop/run-1' }),
+        createMockContext(),
+        jest.fn(),
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(response.body).ResolvedPrefix).toBe('sequencer-drop/run-1/');
+      expect(mockListBucketObjectsV2).toHaveBeenCalledWith(
+        expect.objectContaining({ Bucket: 'test-bucket', Prefix: 'sequencer-drop/run-1/' }),
+      );
+    });
+
+    it("rejects another organization's lab folder with 403 and never lists", async () => {
+      (assertLaboratoryHasS3BucketAccess as jest.Mock).mockResolvedValueOnce([accessRowWithWholeBucket('test-bucket')]);
+
+      const response = await handler(
+        createMockEvent({
+          LaboratoryId: 'test-lab-id',
+          S3Bucket: 'test-bucket',
+          S3Prefix: '99999999-8888-4777-8666-555555555555/44444444-5555-4666-8777-888888888888/',
+        }),
+        createMockContext(),
+        jest.fn(),
+      );
+
+      expect(response.statusCode).toBe(403);
+      expect(mockListBucketObjectsV2).not.toHaveBeenCalled();
+    });
+
+    it('rejects a folder outside the lab root when the grant was recorded for a different bucket', async () => {
+      (assertLaboratoryHasS3BucketAccess as jest.Mock).mockResolvedValueOnce([
+        accessRowWithWholeBucket('other-bucket'),
+      ]);
+
+      const response = await handler(
+        createMockEvent({ LaboratoryId: 'test-lab-id', S3Bucket: 'test-bucket', S3Prefix: 'sequencer-drop/' }),
+        createMockContext(),
+        jest.fn(),
+      );
+
+      expect(response.statusCode).toBe(403);
+      expect(mockListBucketObjectsV2).not.toHaveBeenCalled();
+    });
+  });
 });

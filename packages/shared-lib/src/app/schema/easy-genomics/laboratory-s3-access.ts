@@ -6,6 +6,11 @@ export const ALLOWED_S3_PREFIX_MAX_LENGTH = 512;
 // segment keeps an allowed prefix out of every organization's and laboratory's own tree.
 const TENANT_FOLDER_SEGMENT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** The one tenant rule for allowed folders and whole-bucket reads: the key or prefix is inside an organization's folder. */
+export function startsInTenantFolder(keyOrPrefix: string): boolean {
+  return TENANT_FOLDER_SEGMENT.test(keyOrPrefix.split('/')[0]);
+}
+
 function folderSegments(prefix: string): string[] {
   return prefix.replace(/\/$/, '').split('/');
 }
@@ -22,16 +27,21 @@ export const AllowedS3PrefixSchema = z
       message: 'Allowed folder must not contain empty, "." or ".." folders',
     },
   )
-  .refine((prefix) => !TENANT_FOLDER_SEGMENT.test(folderSegments(prefix)[0]), {
+  .refine((prefix) => !startsInTenantFolder(prefix), {
     message: "Allowed folder must not be inside an organization's folder",
   });
 
-const batchAssignmentSchema = z.object({
-  laboratoryId: z.string().min(1),
-  bucketName: z.string().min(1),
-  granted: z.boolean(),
-  allowedPrefix: AllowedS3PrefixSchema.optional(),
-});
+const batchAssignmentSchema = z
+  .object({
+    laboratoryId: z.string().min(1),
+    bucketName: z.string().min(1),
+    granted: z.boolean(),
+    allowedPrefix: AllowedS3PrefixSchema.optional(),
+    allowsWholeBucket: z.boolean().optional(),
+  })
+  .refine((assignment) => !(assignment.allowsWholeBucket && assignment.allowedPrefix), {
+    message: 'An assignment may carry an allowed folder or whole-bucket access, not both',
+  });
 
 export const BatchUpdateLaboratoryS3AccessRequestSchema = z.object({
   assignments: z.array(batchAssignmentSchema),

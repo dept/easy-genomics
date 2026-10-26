@@ -66,8 +66,9 @@ export async function migrateS3AccessOnDefaultModeChange(params: {
       if (!rowIsAllow(row)) {
         continue;
       }
-      // An ALLOW row is a no-op for access in default-on mode, but it is where an allowed folder lives.
-      if (catalogNameSet.has(row.BucketName) && !row.AllowedPrefix) {
+      // An ALLOW row is a no-op for access in default-on mode, but it is where an allowed folder or a whole-bucket
+      // grant lives.
+      if (catalogNameSet.has(row.BucketName) && !row.AllowedPrefix && !row.AllowsWholeBucket) {
         await accessService.remove(laboratoryId, row.BucketName);
       }
     }

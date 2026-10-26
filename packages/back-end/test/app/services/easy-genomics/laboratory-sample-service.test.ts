@@ -209,6 +209,71 @@ describe('LaboratorySampleService.bulkCreateSamples', () => {
       expect(mockCopy).not.toHaveBeenCalled();
     });
   });
+
+  describe('copy jobs under a whole-bucket grant', () => {
+    beforeEach(() => {
+      mockListByLaboratoryId.mockResolvedValue([
+        { LaboratoryId: 'lab-1', BucketName: 'my-bucket', OrganizationId: 'org-1', Effect: 'ALLOW' },
+        {
+          LaboratoryId: 'lab-1',
+          BucketName: 'drop-bucket',
+          OrganizationId: 'org-1',
+          Effect: 'ALLOW',
+          AllowsWholeBucket: true,
+        },
+      ]);
+    });
+
+    it('copies a source key outside every organization folder of its source bucket', async () => {
+      await svc.bulkCreateSamples(labFixture(), 'user-1', 'my-bucket', {
+        importLabel: 'run-1',
+        samples: [],
+        copyJobs: [
+          {
+            sourceBucket: 'drop-bucket',
+            sourceKey: 'sequencer-drop/run-1/S1_R1.fastq.gz',
+            destKey: 'org-1/lab-1/imports/run-1/S1_R1.fastq.gz',
+          },
+        ],
+      });
+
+      expect(mockCopy).toHaveBeenCalledWith({
+        Bucket: 'my-bucket',
+        Key: 'org-1/lab-1/imports/run-1/S1_R1.fastq.gz',
+        CopySource: 'drop-bucket/sequencer-drop/run-1/S1_R1.fastq.gz',
+      });
+    });
+
+    it("rejects a source key inside another laboratory's folder", async () => {
+      await expect(
+        svc.bulkCreateSamples(labFixture(), 'user-1', 'my-bucket', {
+          importLabel: 'run-1',
+          samples: [],
+          copyJobs: [
+            {
+              sourceBucket: 'drop-bucket',
+              sourceKey: '99999999-8888-4777-8666-555555555555/44444444-5555-4666-8777-888888888888/S1.fq.gz',
+              destKey: 'org-1/lab-1/imports/run-1/S1.fq.gz',
+            },
+          ],
+        }),
+      ).rejects.toThrow(S3KeyOutOfPrefixError);
+      expect(mockCopy).not.toHaveBeenCalled();
+    });
+
+    it('still rejects a destination key outside the laboratory root', async () => {
+      await expect(
+        svc.bulkCreateSamples(labFixture(), 'user-1', 'my-bucket', {
+          importLabel: 'run-1',
+          samples: [],
+          copyJobs: [
+            { sourceBucket: 'drop-bucket', sourceKey: 'sequencer-drop/S1.fq.gz', destKey: 'sequencer-drop/S1.fq.gz' },
+          ],
+        }),
+      ).rejects.toThrow(S3KeyOutOfPrefixError);
+      expect(mockCopy).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('LaboratorySampleService.createOrExtendSample expanding from the listing', () => {

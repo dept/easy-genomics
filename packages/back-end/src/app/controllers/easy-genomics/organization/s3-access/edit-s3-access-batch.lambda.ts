@@ -14,7 +14,7 @@ import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handl
 import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { validateOrganizationAdminAccess, validateSystemAdminAccess } from '@BE/utils/auth-utils';
-import { assertAllowedPrefixesUnchanged } from '@BE/utils/laboratory-s3-access-utils';
+import { assertAllowedPrefixesUnchanged, assertWholeBucketGrantsAllowed } from '@BE/utils/laboratory-s3-access-utils';
 import { normalizeS3Prefix } from '@BE/utils/s3-uri-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -58,21 +58,27 @@ export const handler: Handler = async (
       await assertAllowedPrefixesUnchanged(body.assignments, accessService);
     }
 
+    if (body.assignments.some((change) => change.granted && change.allowsWholeBucket)) {
+      assertWholeBucketGrantsAllowed(body.assignments, await laboratoryService.listAllLaboratories());
+    }
+
     const clearedDefaults: ClearedLaboratoryDefaultBucket[] = [];
 
     for (const change of body.assignments) {
       const lab = labById.get(change.laboratoryId)!;
       const defaultOn = lab.EnableNewBucketsByDefault === true;
       if (change.granted) {
-        if (change.allowedPrefix) {
-          // An allowed folder needs a row to live on, so write an explicit ALLOW row even in default-on mode,
-          // where an ALLOW row does not change access.
+        if (change.allowedPrefix || change.allowsWholeBucket) {
+          // An allowed folder or a whole-bucket grant needs a row to live on, so write an explicit ALLOW row even in
+          // default-on mode, where an ALLOW row does not change access.
           await accessService.upsert({
             LaboratoryId: change.laboratoryId,
             BucketName: change.bucketName,
             OrganizationId: organizationId,
             Effect: 'ALLOW',
-            AllowedPrefix: normalizeS3Prefix(change.allowedPrefix),
+            ...(change.allowsWholeBucket
+              ? { AllowsWholeBucket: true }
+              : { AllowedPrefix: normalizeS3Prefix(change.allowedPrefix!) }),
           });
         } else if (defaultOn) {
           await accessService.remove(change.laboratoryId, change.bucketName);

@@ -224,6 +224,57 @@ describe('isInsideLaboratoryReadablePrefix', () => {
   });
 });
 
+describe('under a whole-bucket grant', () => {
+  const orgId = '11111111-2222-4333-8444-555555555555';
+  const lab = { OrganizationId: orgId, LaboratoryId: '22222222-3333-4444-8555-666666666666' };
+  const labRoot = `${orgId}/${lab.LaboratoryId}/`;
+  const siblingLab = `${orgId}/33333333-4444-4555-8666-777777777777/`;
+  const otherOrgLab = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/44444444-5555-4666-8777-888888888888/';
+
+  it('reads any key outside every organization folder', () => {
+    expect(isInsideLaboratoryReadablePrefix('sequencer-drop/run-1/S1_R1_001.fastq.gz', lab, undefined, true)).toBe(
+      true,
+    );
+    expect(isInsideLaboratoryReadablePrefix('S1_R1_001.fastq.gz', lab, undefined, true)).toBe(true);
+  });
+
+  it("still reads the laboratory's own folder", () => {
+    expect(isInsideLaboratoryReadablePrefix(`${labRoot}imports/x.fq.gz`, lab, undefined, true)).toBe(true);
+  });
+
+  it.each([
+    ['a sibling laboratory in the same organization', `${siblingLab}S1.fq.gz`],
+    ['another organization', `${otherOrgLab}S1.fq.gz`],
+    ['the organization folder itself', `${orgId}/shared.fq.gz`],
+    ['an upper-case organization id', `${otherOrgLab.toUpperCase()}S1.fq.gz`],
+    ['a leading slash', '/sequencer-drop/S1.fq.gz'],
+  ])('never reads %s', (_label, key) => {
+    expect(isInsideLaboratoryReadablePrefix(key, lab, undefined, true)).toBe(false);
+  });
+
+  it('is off unless the grant says so', () => {
+    expect(isInsideLaboratoryReadablePrefix('sequencer-drop/S1.fq.gz', lab)).toBe(false);
+  });
+
+  it('lists a folder typed from the bucket root, and refuses another tenant folder', () => {
+    expect(resolveLaboratoryListingPrefix(lab, 'sequencer-drop/run-1', undefined, true)).toBe('sequencer-drop/run-1/');
+    expect(() => resolveLaboratoryListingPrefix(lab, siblingLab, undefined, true)).toThrow(UnauthorizedAccessError);
+    expect(() => resolveLaboratoryListingPrefix(lab, otherOrgLab, undefined, true)).toThrow(UnauthorizedAccessError);
+  });
+
+  it('never lists the bucket root', () => {
+    expect(resolveLaboratoryListingPrefix(lab, undefined, undefined, true)).toBe(labRoot);
+    expect(resolveLaboratoryListingPrefix(lab, '', undefined, true)).toBe(labRoot);
+    expect(() => resolveLaboratoryListingPrefix(lab, '/', undefined, true)).toThrow(UnauthorizedAccessError);
+  });
+
+  it('says what a whole-bucket grant allows when it refuses a folder', () => {
+    expect(() => resolveLaboratoryListingPrefix(lab, siblingLab, undefined, true)).toThrow(
+      "S3 prefix must be inside this laboratory's folder or outside every organization's folder",
+    );
+  });
+});
+
 describe('encodeS3CopySource', () => {
   it('encodes spaces, hashes, percents, and plus signs in the key', () => {
     expect(encodeS3CopySource('lab-bucket', 'org/lab/file name#1+%.bam')).toBe(

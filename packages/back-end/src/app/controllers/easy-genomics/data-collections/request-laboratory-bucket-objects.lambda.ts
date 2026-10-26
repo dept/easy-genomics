@@ -12,7 +12,11 @@ import {
   validateOrganizationAdminAccess,
   validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
-import { assertLaboratoryHasS3BucketAccess, findAllowedPrefix } from '@BE/utils/laboratory-s3-access-utils';
+import {
+  assertLaboratoryHasS3BucketAccess,
+  findAllowedPrefix,
+  hasWholeBucketGrant,
+} from '@BE/utils/laboratory-s3-access-utils';
 import { resolveLaboratoryListingPrefix } from '@BE/utils/s3-uri-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -52,6 +56,7 @@ export const handler: Handler = async (
       laboratory,
       body.S3Prefix,
       findAllowedPrefix(accessRows, s3Bucket),
+      hasWholeBucketGrant(accessRows, s3Bucket),
     );
 
     const pageSize = Math.min(body.MaxKeys ?? 1000, 1000);
