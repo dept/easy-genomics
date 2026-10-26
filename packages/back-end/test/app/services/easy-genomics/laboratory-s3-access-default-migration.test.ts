@@ -115,6 +115,28 @@ describe('migrateS3AccessOnDefaultModeChange', () => {
     expect(mockUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ BucketName: 'bucket-a' }));
   });
 
+  it('false → true: keeps an ALLOW row that carries whole-bucket access', async () => {
+    mockListByLaboratoryId.mockResolvedValue([
+      {
+        LaboratoryId: laboratoryId,
+        OrganizationId: organizationId,
+        BucketName: 'bucket-a',
+        Effect: 'ALLOW',
+        AllowsWholeBucket: true,
+      },
+    ]);
+
+    await migrateS3AccessOnDefaultModeChange({
+      organizationId,
+      laboratoryId,
+      previousDefaultOn: false,
+      nextDefaultOn: true,
+    });
+
+    expect(mockRemove).not.toHaveBeenCalledWith(laboratoryId, 'bucket-a');
+    expect(mockUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ BucketName: 'bucket-a' }));
+  });
+
   it('true → false: does not overwrite an ALLOW row that carries an allowed prefix', async () => {
     mockListByLaboratoryId.mockResolvedValue([
       {

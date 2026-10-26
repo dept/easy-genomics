@@ -64,15 +64,17 @@ export const handler: Handler = async (
       const lab = labById.get(change.laboratoryId)!;
       const defaultOn = lab.EnableNewBucketsByDefault === true;
       if (change.granted) {
-        if (change.allowedPrefix) {
-          // An allowed folder needs a row to live on, so write an explicit ALLOW row even in default-on mode,
-          // where an ALLOW row does not change access.
+        if (change.allowedPrefix || change.allowsWholeBucket) {
+          // An allowed folder or a whole-bucket grant needs a row to live on, so write an explicit ALLOW row even in
+          // default-on mode, where an ALLOW row does not change access.
           await accessService.upsert({
             LaboratoryId: change.laboratoryId,
             BucketName: change.bucketName,
             OrganizationId: organizationId,
             Effect: 'ALLOW',
-            AllowedPrefix: normalizeS3Prefix(change.allowedPrefix),
+            ...(change.allowsWholeBucket
+              ? { AllowsWholeBucket: true }
+              : { AllowedPrefix: normalizeS3Prefix(change.allowedPrefix!) }),
           });
         } else if (defaultOn) {
           await accessService.remove(change.laboratoryId, change.bucketName);

@@ -131,8 +131,9 @@ export async function assertLaboratoryHasS3BucketAccess(
   return rows;
 }
 /**
- * An allowed prefix moves a lab's read boundary outside its own folder, so setting, changing or clearing one is a
- * system-admin decision. Callers without that role may only re-send a grant carrying the prefix already stored.
+ * An allowed prefix or a whole-bucket grant moves a lab's read boundary outside its own folder, so setting, changing or
+ * clearing either is a system-admin decision. Callers without that role may only re-send a grant carrying the prefix
+ * and whole-bucket grant already stored.
  */
 export async function assertAllowedPrefixesUnchanged(
   assignments: BatchLaboratoryS3AccessAssignment[],
@@ -145,9 +146,11 @@ export async function assertAllowedPrefixesUnchanged(
   }
 
   for (const grant of grants) {
-    const storedPrefix = findAllowedPrefix(rowsByLaboratory.get(grant.laboratoryId) ?? [], grant.bucketName) ?? '';
+    const storedRows = rowsByLaboratory.get(grant.laboratoryId) ?? [];
+    const storedPrefix = findAllowedPrefix(storedRows, grant.bucketName) ?? '';
     const requestedPrefix = grant.allowedPrefix ? normalizeS3Prefix(grant.allowedPrefix) : '';
-    if (storedPrefix !== requestedPrefix) {
+    const wholeBucketChanged = hasWholeBucketGrant(storedRows, grant.bucketName) !== (grant.allowsWholeBucket === true);
+    if (storedPrefix !== requestedPrefix || wholeBucketChanged) {
       throw new UnauthorizedAccessError('Only a system administrator can set, change or clear an allowed folder');
     }
   }
