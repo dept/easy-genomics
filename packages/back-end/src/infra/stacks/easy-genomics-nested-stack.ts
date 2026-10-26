@@ -2314,8 +2314,9 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: ['dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:Scan'],
       }),
       new PolicyStatement({
+        // Query reads a lab's stored grants, which non-system-admin saves compare against before writing.
         resources: [laboratoryS3AccessTableArn, laboratoryS3AccessTableAnyIndex],
-        actions: ['dynamodb:PutItem', 'dynamodb:DeleteItem'],
+        actions: ['dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:DeleteItem'],
       }),
     ]);
 
