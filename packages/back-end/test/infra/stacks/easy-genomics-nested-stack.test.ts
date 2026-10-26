@@ -526,7 +526,7 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     );
   });
 
-  it('grants edit-s3-access-batch PutItem on laboratory-table to clear default buckets', () => {
+  it('grants edit-s3-access-batch Query, PutItem and Scan on laboratory-table', () => {
     const app = new App();
     const parentStack = new Stack(app, 'parent-stack');
     new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
@@ -538,7 +538,7 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     expect(policies).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          actions: expect.arrayContaining(['dynamodb:Query', 'dynamodb:PutItem']),
+          actions: expect.arrayContaining(['dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:Scan']),
           resources: expect.arrayContaining([expect.stringContaining('laboratory-table')]),
         }),
       ]),

@@ -1,4 +1,8 @@
-import { S3BucketAccessDeniedError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import {
+  InvalidRequestError,
+  S3BucketAccessDeniedError,
+  UnauthorizedAccessError,
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import type {
   BatchLaboratoryS3AccessAssignment,
@@ -153,5 +157,25 @@ export async function assertAllowedPrefixesUnchanged(
     if (storedPrefix !== requestedPrefix || wholeBucketChanged) {
       throw new UnauthorizedAccessError('Only a system administrator can set, change or clear an allowed folder');
     }
+  }
+}
+
+/**
+ * A whole-bucket grant is for buckets Easy Genomics does not write lab data into, such as a sequencer drop or archive
+ * bucket, so it is refused on any laboratory's default bucket in any organization. The read guard keeps every
+ * organization folder out regardless.
+ */
+export function assertWholeBucketGrantsAllowed(
+  assignments: BatchLaboratoryS3AccessAssignment[],
+  laboratories: Pick<Laboratory, 'S3Bucket'>[],
+): void {
+  const defaultBuckets = new Set(laboratories.map((laboratory) => laboratory.S3Bucket));
+  const refused = assignments.find(
+    (assignment) => assignment.granted && assignment.allowsWholeBucket && defaultBuckets.has(assignment.bucketName),
+  );
+  if (refused) {
+    throw new InvalidRequestError(
+      `Whole-bucket access is not allowed on ${refused.bucketName}: it is a laboratory's default bucket`,
+    );
   }
 }

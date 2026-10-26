@@ -470,6 +470,29 @@ describe('edit-s3-access-batch.lambda', () => {
           expect(result.statusCode).toBe(400);
           expect(mockAccessService.prototype.upsert).not.toHaveBeenCalled();
         });
+
+        it('returns 400 and writes nothing when the bucket is the default bucket of a laboratory in another organization', async () => {
+          givenLabs();
+          (mockLabService.prototype.listAllLaboratories as jest.Mock).mockResolvedValue([
+            makeLab({ S3Bucket: 'bucket-a' }),
+            { OrganizationId: 'other-org', LaboratoryId: 'other-lab', S3Bucket: 'drop-bucket' },
+          ]);
+
+          const result = await send(wholeBucketGrant);
+
+          expect(result.statusCode).toBe(400);
+          expect(JSON.parse(result.body).Error).toContain('drop-bucket');
+          expect(mockAccessService.prototype.upsert).not.toHaveBeenCalled();
+          expect(mockAccessService.prototype.remove).not.toHaveBeenCalled();
+        });
+
+        it('does not scan laboratories when no assignment asks for whole-bucket access', async () => {
+          givenLabs();
+
+          await send(grantWithPrefix('x/'));
+
+          expect(mockLabService.prototype.listAllLaboratories).not.toHaveBeenCalled();
+        });
       });
 
       describe('as an organization admin', () => {

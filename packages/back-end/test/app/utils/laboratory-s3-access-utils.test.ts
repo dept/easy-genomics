@@ -14,10 +14,12 @@ jest.mock('../../../src/app/services/easy-genomics/s3-bucket-catalog-service', (
   listDataTaggedS3Buckets: jest.fn(),
 }));
 
+import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import type { LaboratoryS3Access } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-s3-access';
 import { LaboratoryS3AccessService } from '../../../src/app/services/easy-genomics/laboratory-s3-access-service';
 import {
   assertLaboratoryHasS3BucketAccess,
+  assertWholeBucketGrantsAllowed,
   findAllowedPrefix,
   grantedBucketNamesForLaboratory,
   hasWholeBucketGrant,
@@ -165,6 +167,37 @@ describe('laboratory-s3-access-utils', () => {
     it('is false for a row with only an allowed folder, and for no row', () => {
       expect(hasWholeBucketGrant([{ ...allowRow('drop-bucket'), AllowedPrefix: 'x/' }], 'drop-bucket')).toBe(false);
       expect(hasWholeBucketGrant([], 'drop-bucket')).toBe(false);
+    });
+  });
+
+  describe('assertWholeBucketGrantsAllowed', () => {
+    const wholeBucketGrant = {
+      laboratoryId: 'lab-1',
+      bucketName: 'drop-bucket',
+      granted: true,
+      allowsWholeBucket: true,
+    };
+
+    it("rejects a bucket that is any laboratory's default bucket, naming it", () => {
+      expect(() =>
+        assertWholeBucketGrantsAllowed([wholeBucketGrant], [{ S3Bucket: 'bucket-a' }, { S3Bucket: 'drop-bucket' }]),
+      ).toThrow(
+        new InvalidRequestError(
+          "Whole-bucket access is not allowed on drop-bucket: it is a laboratory's default bucket",
+        ),
+      );
+    });
+
+    it('accepts a bucket no laboratory uses as its default', () => {
+      expect(() => assertWholeBucketGrantsAllowed([wholeBucketGrant], [{ S3Bucket: 'bucket-a' }, {}])).not.toThrow();
+    });
+
+    it('ignores revokes and grants without whole-bucket access', () => {
+      const assignments = [
+        { ...wholeBucketGrant, granted: false },
+        { laboratoryId: 'lab-1', bucketName: 'drop-bucket', granted: true },
+      ];
+      expect(() => assertWholeBucketGrantsAllowed(assignments, [{ S3Bucket: 'drop-bucket' }])).not.toThrow();
     });
   });
 
