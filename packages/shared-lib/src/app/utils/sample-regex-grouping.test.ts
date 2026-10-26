@@ -4,6 +4,7 @@ import {
   DEFAULT_REGEX_GROUPING_PRESET_KEY,
   FASTA_REGEX_GROUPING_PRESET_KEY,
   findDuplicateSampleNames,
+  findSharedFasta,
   folderBelowLabRoot,
   groupFilenamesByRegex,
   hasFastaButNoFastq,
@@ -525,5 +526,111 @@ describe('listings without FASTQ', () => {
     expect(sets).toHaveLength(1);
     expect(sets[0]).toMatchObject({ sampleId: 'WI-01', layout: 'assembled', status: 'assembled' });
     expect(sets[0].files).toHaveLength(2);
+  });
+});
+
+describe('FASTA next to FASTQ reads', () => {
+  const defaultPattern = REGEX_GROUPING_PRESETS[DEFAULT_REGEX_GROUPING_PRESET_KEY].pattern;
+  const pairs = [
+    'org/lab/run/A_R1.fastq.gz',
+    'org/lab/run/A_R2.fastq.gz',
+    'org/lab/run/B_R1.fastq.gz',
+    'org/lab/run/B_R2.fastq.gz',
+  ];
+
+  it('case 1: keeps a FASTA named after no sample out of every sample', () => {
+    const listing = [...pairs, 'org/lab/run/ref.fa'];
+    const { sets, unmatched } = groupFilenamesByRegex(listing, defaultPattern);
+    expect(sets.map((set) => [set.sampleId, set.files.length, set.layout, set.status])).toEqual([
+      ['A', 2, 'paired_end', 'paired'],
+      ['B', 2, 'paired_end', 'paired'],
+    ]);
+    expect(unmatched).toEqual(['org/lab/run/ref.fa']);
+    expect(findSharedFasta(listing, unmatched)).toEqual(['org/lab/run/ref.fa']);
+  });
+
+  it('case 2: puts each FASTA in the read pair it is named after', () => {
+    const listing = [...pairs, 'org/lab/run/A.fasta', 'org/lab/run/B.fa.gz'];
+    const { sets, unmatched } = groupFilenamesByRegex(listing, defaultPattern);
+    expect(sets.map((set) => [set.sampleId, set.layout, set.status])).toEqual([
+      ['A', 'paired_end_with_extras', 'paired'],
+      ['B', 'paired_end_with_extras', 'paired'],
+    ]);
+    expect(sets[0].files).toEqual([
+      { fileName: 'org/lab/run/A_R1.fastq.gz', role: 'read1' },
+      { fileName: 'org/lab/run/A_R2.fastq.gz', role: 'read2' },
+      { fileName: 'org/lab/run/A.fasta', role: 'reference_fasta' },
+    ]);
+    expect(unmatched).toEqual([]);
+    expect(findSharedFasta(listing, unmatched)).toEqual([]);
+  });
+
+  it('handles both cases in one listing without being told which', () => {
+    const listing = [...pairs, 'org/lab/run/A.fasta', 'org/lab/run/ref.fa'];
+    const { sets, unmatched } = groupFilenamesByRegex(listing, defaultPattern);
+    expect(sets.map((set) => [set.sampleId, set.layout])).toEqual([
+      ['A', 'paired_end_with_extras'],
+      ['B', 'paired_end'],
+    ]);
+    expect(unmatched).toEqual(['org/lab/run/ref.fa']);
+  });
+
+  it('pairs bare upload names the same way', () => {
+    const { sets, unmatched } = groupFilenamesByRegex(
+      ['A_R1.fastq.gz', 'A_R2.fastq.gz', 'A.fna', 'ref.fna'],
+      defaultPattern,
+    );
+    expect(sets[0]).toMatchObject({ sampleId: 'A', layout: 'paired_end_with_extras' });
+    expect(sets[0].files).toHaveLength(3);
+    expect(unmatched).toEqual(['ref.fna']);
+  });
+
+  it('puts every FASTA with the sample name in the sample', () => {
+    const { sets } = groupFilenamesByRegex([...pairs, 'org/lab/run/A.fasta', 'org/lab/run/A.fa.gz'], defaultPattern);
+    expect(sets[0].files).toHaveLength(4);
+  });
+
+  it.each([
+    ['an upper-case extension', 'org/lab/run/A.FASTA.GZ', true],
+    ['a name with a suffix', 'org/lab/run/A.contigs.fa', false],
+    ['a name in another letter case', 'org/lab/run/a.fasta', false],
+    ['another folder', 'org/lab/run/assemblies/A.fasta', false],
+  ])('a FASTA with %s joins sample A: %s', (_case, fastaKey, joins) => {
+    const { sets, unmatched } = groupFilenamesByRegex([...pairs, fastaKey], defaultPattern);
+    expect(sets[0].files.some((file) => file.fileName === fastaKey)).toBe(joins);
+    expect(unmatched.includes(fastaKey)).toBe(!joins);
+  });
+
+  it('keeps a FASTA shared when the reads carry an Illumina suffix, because the sample ID is longer', () => {
+    const listing = [
+      'org/lab/run/A_S1_L001_R1_001.fastq.gz',
+      'org/lab/run/A_S1_L001_R2_001.fastq.gz',
+      'org/lab/run/A.fasta',
+    ];
+    const { sets, unmatched } = groupFilenamesByRegex(listing, defaultPattern);
+    expect(sets[0]).toMatchObject({ sampleId: 'A_S1_L001', layout: 'paired_end' });
+    expect(findSharedFasta(listing, unmatched)).toEqual(['org/lab/run/A.fasta']);
+  });
+
+  it('keeps a same-name FASTA out of a single-end sample, whose sheet row has no FASTA column', () => {
+    const { sets, unmatched } = groupFilenamesByRegex(
+      ['org/lab/run/A_R1.fastq.gz', 'org/lab/run/A.fasta'],
+      defaultPattern,
+    );
+    expect(sets[0]).toMatchObject({ sampleId: 'A', layout: 'single_end' });
+    expect(sets[0].files).toHaveLength(1);
+    expect(unmatched).toEqual(['org/lab/run/A.fasta']);
+  });
+
+  it('never counts a FASTA index or checksum as shared', () => {
+    const listing = [...pairs, 'org/lab/run/A.fasta.fai', 'org/lab/run/ref.fa.md5'];
+    const { unmatched } = groupFilenamesByRegex(listing, defaultPattern);
+    expect(unmatched).toEqual(['org/lab/run/A.fasta.fai', 'org/lab/run/ref.fa.md5']);
+    expect(findSharedFasta(listing, unmatched)).toEqual([]);
+  });
+
+  it('finds no shared FASTA in a listing without FASTQ', () => {
+    const listing = ['org/lab/g/WI-01.fasta', 'org/lab/g/WI-02.fa'];
+    expect(findSharedFasta(listing, listing)).toEqual([]);
   });
 });
