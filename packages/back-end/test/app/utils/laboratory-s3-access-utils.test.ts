@@ -20,6 +20,7 @@ import {
   assertLaboratoryHasS3BucketAccess,
   findAllowedPrefix,
   grantedBucketNamesForLaboratory,
+  hasWholeBucketGrant,
   isS3BucketAccessAllowed,
 } from '../../../src/app/utils/laboratory-s3-access-utils';
 
@@ -138,6 +139,32 @@ describe('laboratory-s3-access-utils', () => {
       const rowsAfterSettingPrefix = [withPrefix('bucket-a', 'ALLOW')];
       expect(isS3BucketAccessAllowed(labStrict, rowsAfterSettingPrefix, 'bucket-a')).toBe(true);
       expect(findAllowedPrefix(rowsAfterSettingPrefix, 'bucket-a')).toBe('sample-3-18/');
+    });
+  });
+
+  describe('hasWholeBucketGrant', () => {
+    const wholeBucketRow = (bucketName: string, effect?: 'ALLOW' | 'DENY'): LaboratoryS3Access => ({
+      ...allowRow(bucketName),
+      ...(effect ? { Effect: effect } : {}),
+      AllowsWholeBucket: true,
+    });
+
+    it('is true for the ALLOW row of that bucket, legacy rows included', () => {
+      expect(hasWholeBucketGrant([wholeBucketRow('drop-bucket', 'ALLOW')], 'drop-bucket')).toBe(true);
+      expect(hasWholeBucketGrant([wholeBucketRow('drop-bucket')], 'drop-bucket')).toBe(true);
+    });
+
+    it("never applies one bucket's grant to another bucket", () => {
+      expect(hasWholeBucketGrant([wholeBucketRow('drop-bucket', 'ALLOW')], 'bucket-a')).toBe(false);
+    });
+
+    it('ignores the flag on a DENY row', () => {
+      expect(hasWholeBucketGrant([wholeBucketRow('drop-bucket', 'DENY')], 'drop-bucket')).toBe(false);
+    });
+
+    it('is false for a row with only an allowed folder, and for no row', () => {
+      expect(hasWholeBucketGrant([{ ...allowRow('drop-bucket'), AllowedPrefix: 'x/' }], 'drop-bucket')).toBe(false);
+      expect(hasWholeBucketGrant([], 'drop-bucket')).toBe(false);
     });
   });
 

@@ -74,6 +74,10 @@ export function findAllowedPrefix(accessRows: LaboratoryS3Access[], bucketName: 
   return row?.AllowedPrefix || undefined;
 }
 
+export function hasWholeBucketGrant(accessRows: LaboratoryS3Access[], bucketName: string): boolean {
+  return accessRows.some((row) => row.BucketName === bucketName && rowIsAllow(row) && row.AllowsWholeBucket === true);
+}
+
 export function grantedBucketNamesForLaboratory(
   laboratory: Pick<Laboratory, 'EnableNewBucketsByDefault' | 'S3Bucket'>,
   accessRows: LaboratoryS3Access[],
