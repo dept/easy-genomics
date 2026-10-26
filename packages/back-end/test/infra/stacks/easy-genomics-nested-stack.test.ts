@@ -545,6 +545,25 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     );
   });
 
+  it('grants edit-s3-access-batch Query on laboratory-s3-access-table, which non-admin saves read', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+    const policies = iamInstance.policyStatements.get('/easy-genomics/organization/s3-access/edit-s3-access-batch');
+
+    expect(policies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['dynamodb:Query']),
+          resources: expect.arrayContaining([expect.stringContaining('laboratory-s3-access-table')]),
+        }),
+      ]),
+    );
+  });
+
   it('appends GetBucketTagging and s3-access Query to enforcement routes', () => {
     const app = new App();
     const parentStack = new Stack(app, 'parent-stack');
