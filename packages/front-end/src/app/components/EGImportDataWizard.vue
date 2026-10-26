@@ -33,8 +33,10 @@
   import {
     buildLaboratorySourcePrefix,
     buildSourcePrefix,
+    buildSourceRootOptions,
     defaultS3ImportLabel,
     isSourceFolderMissing,
+    type SourceRoot,
   } from '@FE/utils/data-collections-source-prefix';
   import { matchSheetToSamples, type SheetTagMatchResult } from '@FE/utils/sheet-tag-matching';
 
@@ -71,21 +73,23 @@
   const sourcePrefix = ref('');
   const grantedBuckets = ref<string[]>([]);
 
-  type SourceRoot = 'laboratory' | 'allowed';
   const allowedPrefixes = ref<Record<string, string>>({});
+  const wholeBuckets = ref<string[]>([]);
   const sourceRoot = ref<SourceRoot>('laboratory');
   const allowedPrefixForBucket = computed(() => allowedPrefixes.value[sourceBucket.value] ?? '');
+  const allowsWholeBucketForBucket = computed(() => wholeBuckets.value.includes(sourceBucket.value));
   const searchesAllowedFolder = computed(() => sourceRoot.value === 'allowed' && !!allowedPrefixForBucket.value);
+  const searchesWholeBucket = computed(() => sourceRoot.value === 'bucket' && allowsWholeBucketForBucket.value);
   /** The allowed folder chosen in "Search in", or '' when the wizard searches this lab's own folder. */
   const selectedAllowedFolder = computed(() => (searchesAllowedFolder.value ? allowedPrefixForBucket.value : ''));
   const sourceFolderMissing = computed(() => isSourceFolderMissing(sourcePrefix.value, selectedAllowedFolder.value));
-  const sourceRootOptions = computed(() => [
-    { label: "This lab's folder", value: 'laboratory' },
-    { label: allowedPrefixForBucket.value, value: 'allowed' },
-  ]);
-  const prefixHint = computed(() =>
-    selectedAllowedFolder.value ? `optional, inside ${selectedAllowedFolder.value}` : "inside this lab's folder",
+  const sourceRootOptions = computed(() =>
+    buildSourceRootOptions(allowedPrefixForBucket.value, allowsWholeBucketForBucket.value),
   );
+  const prefixHint = computed(() => {
+    if (searchesWholeBucket.value) return 'from the bucket root';
+    return selectedAllowedFolder.value ? `optional, inside ${selectedAllowedFolder.value}` : "inside this lab's folder";
+  });
 
   watch(sourceBucket, () => {
     sourceRoot.value = 'laboratory';
@@ -93,6 +97,7 @@
 
   /** The one place the wizard turns the typed Prefix into the absolute prefix it lists, and later copies from. */
   function resolveSourcePrefix(lab: Pick<Laboratory, 'OrganizationId' | 'LaboratoryId'>): string {
+    if (searchesWholeBucket.value) return buildSourcePrefix('', sourcePrefix.value);
     return searchesAllowedFolder.value
       ? buildSourcePrefix(allowedPrefixForBucket.value, sourcePrefix.value)
       : buildLaboratorySourcePrefix(lab, sourcePrefix.value);
@@ -341,6 +346,7 @@
       const res = await $api.s3Access.listGrantedBuckets(props.labId);
       grantedBuckets.value = res.buckets;
       allowedPrefixes.value = res.allowedPrefixes ?? {};
+      wholeBuckets.value = res.wholeBuckets ?? [];
       if (!sourceBucket.value && res.buckets.length) {
         sourceBucket.value = res.buckets[0];
       }
@@ -555,7 +561,7 @@
             <div class="mb-1 text-sm font-medium">Amazon S3</div>
             <div class="mb-2 text-xs text-gray-500">Connected</div>
             <p class="text-xs text-gray-500">
-              Import files from this lab's folder, or a folder a system admin allowed for it, in a granted bucket.
+              Import files from this lab's folder, or a folder or whole bucket a system admin allowed for it.
             </p>
           </button>
 
@@ -581,7 +587,7 @@
               placeholder="Select a bucket"
             />
           </UFormGroup>
-          <UFormGroup v-if="allowedPrefixForBucket" label="Search in" class="mb-4">
+          <UFormGroup v-if="sourceRootOptions.length > 1" label="Search in" class="mb-4">
             <USelect v-model="sourceRoot" :options="sourceRootOptions" class="font-mono" />
           </UFormGroup>
           <UFormGroup

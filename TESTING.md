@@ -354,3 +354,55 @@ files plus `ref.fa`; `C_R1.fastq.gz` and `C_R2.fastq.gz`; `D1.fasta` and `D2.fas
       Covered by a unit test; follow-up ticket pending the client's file names.
 - [x] **Clean up** — the collection and the `egv-340-qa/` S3 folder are deleted. Samples A and B stay, since samples
       can't be deleted, and the files from the three uploads stay in the lab bucket as unlinked files.
+
+## S3 Lab Access — whole-bucket grants (EGV-333)
+
+A system admin can tick **Whole bucket** on a lab's granted bucket. The lab can then import from any folder in it except
+organization folders, typing the folder from the bucket root under **Search in → Whole bucket**. The grant is refused on
+any lab's default bucket, only a system admin can set or clear it, and the read guard still refuses every organization
+folder at list and copy time. The Playwright spec `sys-admin/S3_Lab_Access_Whole_Bucket.spec.e2e.ts` ticks the box and
+discards the change, so it never alters shared S3 access.
+
+### Automated checks
+
+| Check                                                    | Result                                            |
+| -------------------------------------------------------- | ------------------------------------------------- |
+| `pnpm lint` (shared-lib, back-end, front-end)            | Passes                                            |
+| `pnpm test` (shared-lib)                                 | 429 tests pass, including `openapi-guard.test.ts` |
+| `pnpm test` (back-end)                                   | 1412 tests pass                                   |
+| `pnpm test` (front-end)                                  | 396 tests pass                                    |
+| `S3_Lab_Access_Whole_Bucket.spec.e2e.ts` (local, branch) | Passes                                            |
+
+### Manual steps
+
+Run on 26 Oct 2026 with Playwright, against the branch's front-end and local back-end (`dev-demo` stack), as the
+system-admin, organization-admin and lab-manager test users, in Test Laboratory, which has "Enable new buckets by
+default" on. The drop bucket is a data-tagged bucket that is no lab's default bucket. Test files in it:
+`egv-333-qa/sequencer-drop/run-1/S1_R1_001.fastq.gz` and `_R2_001`, plus a decoy pair under a UUID-shaped organization
+folder, `<uuid>/egv-333-decoy-lab/`. The local back-end runs with the developer's AWS credentials, so the deployed IAM
+change (`dynamodb:Scan`) is covered by the infra test, not by this run.
+
+- [x] **Checkbox follows the grant** — Whole bucket is enabled on a granted bucket, and disabled once access is revoked.
+- [x] **Save** — with `/x/` typed in Allowed folder, ticking Whole bucket disables the field, and Save sends
+      `{ granted: true, allowsWholeBucket: true }` with no folder. After a reload the box is ticked and the field is
+      empty and disabled.
+- [x] **Discard all** — unticking shows "1 laboratory has unsaved S3 access changes."; Discard all restores the tick.
+- [x] **Refused on a default bucket** — ticking Whole bucket on the lab's default bucket and saving returns 400
+      (EG-102), and the toast names the bucket: "Whole-bucket access is not allowed on <bucket>: it is a laboratory's
+      default bucket".
+- [x] **Organization admin** — sees Whole bucket and Allowed folder read-only.
+- [x] **Wizard** — `list-granted-buckets` returns the drop bucket in `wholeBuckets`. Search in offers **Whole bucket**,
+      the Folder hint reads "from the bucket root", and Continue stays disabled for a blank Folder and `/`.
+- [x] **Tenancy** — Folder `<uuid>/egv-333-decoy-lab/` returns 403 (EG-103), shown as a toast: "S3 prefix must be inside
+      this laboratory's folder or outside every organization's folder".
+- [x] **Import** — Folder `egv-333-qa/sequencer-drop/run-1/` lists "From 2 files → 1 samples". Copy & create 1 samples
+      (batch `egv-333-qa-whole-bucket`) creates the sample and copies both files to `{org}/{lab}/imports/run-1/`.
+- [x] **Narrow grant unchanged** — after unticking and setting Allowed folder `egv-333-qa/sequencer-drop/run-1/`,
+      `list-granted-buckets` returns it in `allowedPrefixes` with `wholeBuckets` empty, and a blank Folder lists the
+      run.
+- [x] **Mode switch** — with the box ticked and saved, the organization admin turns "Enable new buckets by default" off
+      and back on, saving each time. The box stays ticked both times.
+- [ ] **System admin mode switch** — not possible: saving "Enable new buckets by default" as a system admin returns 403
+      from `update-laboratory`, which only allows organization admins. Existing behaviour, ticketed separately.
+- [x] **Clean up** — the grant is unticked and saved, and the test files are deleted from the drop bucket. The `S1`
+      sample stays, since samples can't be deleted.

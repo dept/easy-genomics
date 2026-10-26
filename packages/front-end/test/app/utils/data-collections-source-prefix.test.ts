@@ -2,6 +2,7 @@ import { buildImportDestKey } from '../../../src/app/utils/data-collections-copy
 import {
   buildLaboratorySourcePrefix,
   buildSourcePrefix,
+  buildSourceRootOptions,
   defaultS3ImportLabel,
   isSourceFolderMissing,
 } from '../../../src/app/utils/data-collections-source-prefix';
@@ -94,5 +95,48 @@ describe('defaultS3ImportLabel', () => {
     expect(buildImportDestKey('her-folder/S1_R1_001.fastq.gz', listedSourcePrefix, destPrefix)).toBe(
       'org-1/lab-1/imports/her-folder/S1_R1_001.fastq.gz',
     );
+  });
+});
+
+describe('buildSourceRootOptions', () => {
+  const labFolder = { label: "This lab's folder", value: 'laboratory' };
+
+  it("offers only this lab's folder when the bucket has no wider grant", () => {
+    expect(buildSourceRootOptions('', false)).toEqual([labFolder]);
+  });
+
+  it('offers the allowed folder by name', () => {
+    expect(buildSourceRootOptions('her-folder/', false)).toEqual([
+      labFolder,
+      { label: 'her-folder/', value: 'allowed' },
+    ]);
+  });
+
+  it('offers the whole bucket under a whole-bucket grant', () => {
+    expect(buildSourceRootOptions('', true)).toEqual([labFolder, { label: 'Whole bucket', value: 'bucket' }]);
+  });
+});
+
+describe('a folder typed from the bucket root', () => {
+  it('lists the typed folder', () => {
+    expect(buildSourcePrefix('', 'sequencer-drop/run-1')).toBe('sequencer-drop/run-1/');
+    expect(buildSourcePrefix('', '/sequencer-drop/')).toBe('sequencer-drop/');
+  });
+
+  it.each(['', '   ', '/', ' / '])('still requires a folder for %p, as in the lab folder', (typedPrefix) => {
+    expect(isSourceFolderMissing(typedPrefix, '')).toBe(true);
+  });
+
+  it('names the import after the typed folder and lands it under imports/<name>/', () => {
+    const listedSourcePrefix = buildSourcePrefix('', 'sequencer-drop/run-1/');
+    const label = defaultS3ImportLabel('sequencer-drop/run-1/', '', 'drop-bucket');
+    expect(label).toBe('run-1');
+    expect(
+      buildImportDestKey(
+        'sequencer-drop/run-1/S1_R1_001.fastq.gz',
+        listedSourcePrefix,
+        `org-1/lab-1/imports/${label}/`,
+      ),
+    ).toBe('org-1/lab-1/imports/run-1/S1_R1_001.fastq.gz');
   });
 });

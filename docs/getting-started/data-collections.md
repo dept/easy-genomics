@@ -112,7 +112,8 @@ never modified**.
 
 For S3, pick the bucket and type a **Folder** inside the lab's folder, then continue so Easy Genomics can list the files
 in it. If a system admin has set an allowed folder for the lab in that bucket, **Search in** also offers that folder.
-There the **Folder** is optional: leave it blank to list the allowed folder itself.
+There the **Folder** is optional: leave it blank to list the allowed folder itself. If a system admin has granted the
+lab the whole bucket, **Search in** offers **Whole bucket** instead: type the **Folder** from the bucket root.
 
 ### Group files
 
