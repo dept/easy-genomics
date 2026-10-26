@@ -267,6 +267,12 @@ describe('under a whole-bucket grant', () => {
     expect(resolveLaboratoryListingPrefix(lab, '', undefined, true)).toBe(labRoot);
     expect(() => resolveLaboratoryListingPrefix(lab, '/', undefined, true)).toThrow(UnauthorizedAccessError);
   });
+
+  it('says what a whole-bucket grant allows when it refuses a folder', () => {
+    expect(() => resolveLaboratoryListingPrefix(lab, siblingLab, undefined, true)).toThrow(
+      "S3 prefix must be inside this laboratory's folder or outside every organization's folder",
+    );
+  });
 });
 
 describe('encodeS3CopySource', () => {

@@ -87,7 +87,9 @@ export function resolveLaboratoryListingPrefix(
   const resolvedPrefix = normalizeS3Prefix(requestedPrefix || laboratoryPrefix(laboratory));
   if (!isInsideLaboratoryReadablePrefix(resolvedPrefix, laboratory, allowedPrefix, allowsWholeBucket)) {
     throw new UnauthorizedAccessError(
-      "S3 prefix must be inside this laboratory's folder or the allowed folder for this bucket",
+      allowsWholeBucket
+        ? "S3 prefix must be inside this laboratory's folder or outside every organization's folder"
+        : "S3 prefix must be inside this laboratory's folder or the allowed folder for this bucket",
     );
   }
   return resolvedPrefix;
