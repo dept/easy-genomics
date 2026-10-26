@@ -21,6 +21,11 @@ export interface LaboratoryS3Access {
    * may also list and import from in this bucket. Removed whenever the row is revoked or rewritten without it.
    */
   AllowedPrefix?: string;
+  /**
+   * ALLOW rows only, never with AllowedPrefix: the lab may also read every key in this bucket outside every
+   * organization's folder. Never set on a laboratory's default bucket.
+   */
+  AllowsWholeBucket?: boolean;
   CreatedAt?: string;
   ModifiedAt?: string;
 }
@@ -42,6 +47,8 @@ export interface ListGrantedLaboratoryBucketsResponse {
   buckets: string[];
   /** Granted bucket name → its allowed prefix. Buckets without one are absent; a missing map means no bucket has one. */
   allowedPrefixes?: Record<string, string>;
+  /** Granted buckets this lab may read outside its own folder, except organization folders. A missing list means none. */
+  wholeBuckets?: string[];
 }
 
 export interface BatchLaboratoryS3AccessAssignment {
@@ -53,6 +60,11 @@ export interface BatchLaboratoryS3AccessAssignment {
    * prefix, and a revoke always drops it.
    */
   allowedPrefix?: string;
+  /**
+   * With `granted: true` only, never with `allowedPrefix`. Like `allowedPrefix`, it is part of the cell's full state:
+   * a grant without it clears it.
+   */
+  allowsWholeBucket?: boolean;
 }
 
 export interface BatchUpdateLaboratoryS3AccessRequest {
