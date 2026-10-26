@@ -15,6 +15,7 @@ import { ApacheLicense } from './projenrc/apache-license';
 import { setupProjectFolders } from './projenrc/easy-genomics-project-setup';
 import { GithubActionsApiDiffCheck } from './projenrc/github-actions-api-diff-check';
 import { GithubActionsCICDRelease } from './projenrc/github-actions-cicd-release';
+import { GithubDependabot } from './projenrc/github-dependabot';
 import { Husky } from './projenrc/husky';
 import { Nx } from './projenrc/nx';
 import { PnpmWorkspace } from './projenrc/pnpm';
@@ -22,9 +23,9 @@ import { VscodeSettings } from './projenrc/vscode';
 
 const defaultReleaseBranch = 'main';
 const cdkVersion = '2.260.0';
-// nuxt 3.21.8's oxc-parser requires node ^20.19.0 || >=22.12.0; pnpm silently skips its
-// platform-native bindings on older Node at install time, breaking every nuxt CLI command.
-const nodeVersion = '20.20.2';
+// Keep in step with the Lambda runtime in packages/back-end/src/infra/constructs/lambda-construct.ts
+// and with .nvmrc, which projen does not manage.
+const nodeVersion = '24.22.1';
 const pnpmVersion = '9.15.0';
 const awsSdkClientOmicsVersion = '^3.1090.0';
 const authorName = 'DEPT® Agency';
@@ -305,7 +306,7 @@ const sharedLib = new typescript.TypeScriptProject({
     `aws-cdk-lib@^${cdkVersion}`,
     'openapi-typescript',
     'tsx',
-    'typescript-json-schema',
+    'typescript-json-schema@^0.68.0',
     'zod-to-json-schema@~3.24.6',
   ],
   tsconfig: {
@@ -602,7 +603,7 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     // Exact pin: token-storage defaults have changed within 6.x minors, and the
     // front-end upgrade task would otherwise float aws-amplify unattended.
     'aws-amplify@6.22.0',
-    'axios@^1.18.1',
+    'axios@^1.20.0',
     'cdk-nag',
     'class-variance-authority',
     'clsx',
@@ -731,6 +732,7 @@ new GithubActionsCICDRelease(root, {
   manualDispatchOnly: true,
 });
 new GithubActionsApiDiffCheck(root, { pnpmVersion });
+new GithubDependabot(root, { targetBranch: 'development' });
 new ApacheLicense(root, licenseOptions);
 new ApacheLicense(backEndApp, licenseOptions);
 new ApacheLicense(frontEndApp, licenseOptions);
@@ -887,7 +889,7 @@ root.addFields({
       'on-headers': '>=1.1.0',
 
       // --- Dependabot follow-up: transitive copies not covered by direct-dep bumps ---
-      axios: '>=1.18.1', // force nx's transitive axios 1.8.4 up (prototype-pollution + SSRF cluster)
+      axios: '>=1.20.0 <2.0.0', // force nx's transitive axios 1.8.4 up (prototype-pollution + SSRF cluster)
       'fast-uri': '>=3.1.2', // path traversal + host confusion
       tmp: '>=0.2.6', // path traversal + symlink write
       got: '>=11.8.5', // redirect-to-UNIX-socket

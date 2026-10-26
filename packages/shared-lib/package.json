@@ -28,7 +28,7 @@
     "@types/aws-lambda": "^8.10.149",
     "@types/jest": "^29.5.14",
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^20",
+    "@types/node": "^24",
     "@types/uuid": "^9.0.8",
     "@typescript-eslint/eslint-plugin": "^7",
     "@typescript-eslint/parser": "^7",
@@ -42,7 +42,7 @@
     "ts-jest": "^29.3.1",
     "tsx": "^4.21.0",
     "typescript": "^5.8.3",
-    "typescript-json-schema": "^0.67.4",
+    "typescript-json-schema": "^0.68.0",
     "zod-to-json-schema": "~3.24.6"
   },
   "dependencies": {
@@ -60,7 +60,7 @@
     "zod": "^3.24.2"
   },
   "engines": {
-    "node": ">= 20.20.2"
+    "node": ">= 24.22.1"
   },
   "main": "lib/index.js",
   "license": "Apache-2.0",

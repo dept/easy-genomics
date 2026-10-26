@@ -166,6 +166,40 @@ describe('process-update-laboratory-run.lambda', () => {
     expect(mockRunService.prototype.update).toHaveBeenCalled();
   });
 
+  it('handles a Node.js 24 context, which has no callbackWaitsForEmptyEventLoop', async () => {
+    mockQueryByRunId.mockResolvedValue({
+      RunId: 'run-1',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      ExternalRunId: 'ext-1',
+      Status: 'PENDING',
+      Platform: 'AWS HealthOmics',
+    });
+    mockGetRun.mockResolvedValue({ status: 'SUCCEEDED' } as any);
+    mockUpdateRun.mockResolvedValue({ RunId: 'run-1', Status: 'SUCCEEDED' });
+
+    // The Node.js 24 Lambda runtime removed these context members. Freezing the context
+    // makes any attempt by the handler to set one of them fail the test.
+    const keysRemovedInNode24 = ['callbackWaitsForEmptyEventLoop', 'done', 'fail', 'succeed'];
+    const node24Context = Object.fromEntries(
+      Object.entries(createContext()).filter(([key]) => !keysRemovedInNode24.includes(key)),
+    );
+
+    const snsBody = {
+      Message: JSON.stringify({
+        Operation: 'UPDATE',
+        Type: 'LaboratoryRun',
+        Record: { RunId: 'run-1', LaboratoryId: 'lab-1' },
+      }),
+    };
+    const event = createEvent([{ body: JSON.stringify(snsBody) } as any]);
+
+    const result = await handler(event, Object.freeze(node24Context) as any, () => {});
+
+    expect(result.statusCode).toBe(200);
+    expect(mockRunService.prototype.update).toHaveBeenCalled();
+  });
+
   it('skips update when run has no ExternalRunId', async () => {
     mockQueryByRunId.mockResolvedValue({
       RunId: 'run-1',

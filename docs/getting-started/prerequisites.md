@@ -7,7 +7,7 @@ following utilities to be available.
 | ------------------------ | -------------- | ----------------------------------------- |
 | `git`                    | v2.40.1        | https://github.com/git-guides/install-git |
 | `nvm`                    | v0.40.0        | https://nvm.sh                            |
-| `node`                   | v20.15.0       | https://nodejs.org                        |
+| `node`                   | v24.22.1       | https://nodejs.org                        |
 | `pnpm`                   | v9.6.0         | https://pnpm.io/installation              |
 
 NOTE: If you are using a restricted O/S environment for deployment where NodeJS package(s) cannot be installed in a
@@ -22,10 +22,10 @@ NodeJS package(s) locally.
 [user ~]$ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
 [user ~]$ nvm --version                           # Expect v0.40.0
 
-# Use NVM to install and use NodeJs ver 20.15.0
-[user ~]$ nvm install 20.15.0
-[user ~]$ nvm alias default 20.15.0
-[user ~]$ node --version                          # Expect v20.15.0
+# Use NVM to install and use NodeJs ver 24.22.1
+[user ~]$ nvm install 24.22.1
+[user ~]$ nvm alias default 24.22.1
+[user ~]$ node --version                          # Expect v24.22.1
 
 # Install PNPM and verify it is executable
 [user ~]$ npm install -g pnpm

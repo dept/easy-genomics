@@ -49,6 +49,8 @@ const ssmService = new SsmService();
  * HealthOmics cost uses paginated ListRunTasks; large runs can take well over the
  * Lambda timeout (observed: 5k+ tasks / ~2min). Cap wait time so status/notify
  * writes always complete; uncaptured cost can be healed by process-sync-run-costs.
+ * A timed-out capture leaves its ListRunTasks requests in flight; the Node.js 24
+ * Lambda runtime does not wait for them once the handler returns.
  */
 const COST_CAPTURE_BUDGET_MS = 8_000;
 
@@ -222,13 +224,7 @@ async function safePropagateExpiresAt(
   }
 }
 
-export const handler: Handler = async (event: SQSEvent, context): Promise<APIGatewayProxyResult> => {
-  // Cost capture may leave paginated Omics ListRunTasks requests in flight after we
-  // abandon them via Promise.race; do not wait for the empty event loop or those
-  // requests will hold the invocation until the Lambda timeout and redrive SQS.
-  if (context && typeof context === 'object') {
-    (context as { callbackWaitsForEmptyEventLoop?: boolean }).callbackWaitsForEmptyEventLoop = false;
-  }
+export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxyResult> => {
   console.log('EVENT: \n' + JSON.stringify(event, null, 2));
   try {
     const sqsRecords: SQSRecord[] = event.Records;

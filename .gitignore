@@ -49,6 +49,7 @@ jspm_packages/
 !/.github/workflows/cicd-release-quality-uat.yml
 !/.github/workflows/cicd-release-sandbox.yml
 !/.github/workflows/api-diff-check.yml
+!/.github/dependabot.yml
 !/LICENSE
 !/packages/back-end/src/app/README.md
 !/packages/back-end/src/app/controllers/README.md

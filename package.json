@@ -39,7 +39,7 @@
     "@nrwl/workspace": "^15",
     "@types/aws-lambda": "^8.10.149",
     "@types/jest": "^29.5.14",
-    "@types/node": "^20",
+    "@types/node": "^24",
     "@types/uuid": "^9.0.8",
     "@typescript-eslint/eslint-plugin": "^7",
     "@typescript-eslint/parser": "^7",
@@ -106,7 +106,7 @@
       "diff": ">=8.0.3",
       "cookie": ">=0.7.0",
       "on-headers": ">=1.1.0",
-      "axios": ">=1.18.1",
+      "axios": ">=1.20.0 <2.0.0",
       "fast-uri": ">=3.1.2",
       "tmp": ">=0.2.6",
       "got": ">=11.8.5",
@@ -116,7 +116,7 @@
     }
   },
   "engines": {
-    "node": ">= 20.20.2"
+    "node": ">= 24.22.1"
   },
   "main": "lib/index.js",
   "license": "Apache-2.0",

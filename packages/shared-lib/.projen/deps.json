@@ -19,7 +19,7 @@
     },
     {
       "name": "@types/node",
-      "version": "^20",
+      "version": "^24",
       "type": "build"
     },
     {
@@ -81,6 +81,7 @@
     },
     {
       "name": "typescript-json-schema",
+      "version": "^0.68.0",
       "type": "build"
     },
     {
