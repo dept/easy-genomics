@@ -1,4 +1,8 @@
-import { describeSourceListing, skipsGroupingStep } from '../../../src/app/utils/data-collections-source-listing';
+import {
+  describeSourceListing,
+  locateSharedFasta,
+  skipsGroupingStep,
+} from '../../../src/app/utils/data-collections-source-listing';
 
 describe('describeSourceListing', () => {
   const searched = { S3Bucket: 'lab-bucket', ResolvedPrefix: 'org-1/lab-1/sample-3-18/' };
@@ -75,5 +79,27 @@ describe('skipsGroupingStep', () => {
 
   it('keeps the step for a truncated listing, which may hold FASTQ past the cut', () => {
     expect(skipsGroupingStep(genomes, { kind: 'truncated', message: 'Showing the first 5000 files' })).toBe(false);
+  });
+});
+
+describe('locateSharedFasta', () => {
+  it('points an S3 import at the listed key in the source bucket', () => {
+    expect(locateSharedFasta(['org-1/lab-1/run-1/ref.fa'], { kind: 's3', bucket: 'source-bucket' })).toEqual([
+      { name: 'ref.fa', uri: 's3://source-bucket/org-1/lab-1/run-1/ref.fa' },
+    ]);
+  });
+
+  it('points an upload at the key it was uploaded to in the lab bucket', () => {
+    expect(
+      locateSharedFasta(['ref.fa'], {
+        kind: 'upload',
+        bucket: 'lab-bucket',
+        uploadedKeysByName: { 'ref.fa': 'org-1/lab-1/aws-healthomics/txn-1/ref.fa' },
+      }),
+    ).toEqual([{ name: 'ref.fa', uri: 's3://lab-bucket/org-1/lab-1/aws-healthomics/txn-1/ref.fa' }]);
+  });
+
+  it('leaves out an upload with no recorded key rather than show a URI that does not exist', () => {
+    expect(locateSharedFasta(['ref.fa'], { kind: 'upload', bucket: 'lab-bucket', uploadedKeysByName: {} })).toEqual([]);
   });
 });

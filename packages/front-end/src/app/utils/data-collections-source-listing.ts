@@ -1,5 +1,6 @@
 import { hasFastaButNoFastq } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
 import type { LaboratoryBucketObjectsResponse } from '@FE/repository/modules/data-collections';
+import { basenameFromS3Key } from '@FE/utils/data-collections-file-type';
 
 export type SourceListingSummary = Pick<
   LaboratoryBucketObjectsResponse,
@@ -41,4 +42,25 @@ export function describeSourceListing(listing: SourceListingSummary): SourceList
  */
 export function skipsGroupingStep(fileNames: string[], notice: SourceListingNotice | null): boolean {
   return notice?.kind !== 'truncated' && hasFastaButNoFastq(fileNames);
+}
+
+export type SharedFastaLocation = { name: string; uri: string };
+
+export type ImportedFileSource =
+  | { kind: 's3'; bucket: string }
+  | { kind: 'upload'; bucket: string; uploadedKeysByName: Record<string, string> };
+
+/**
+ * Where each shared FASTA can be read by a run. An S3 import leaves it at its listed key in the source bucket; an
+ * upload already put it in the lab bucket, under the key the upload manifest recorded for its file name.
+ */
+export function locateSharedFasta(sharedFasta: string[], source: ImportedFileSource): SharedFastaLocation[] {
+  const locations: SharedFastaLocation[] = [];
+  for (const fileName of sharedFasta) {
+    const key = source.kind === 'upload' ? source.uploadedKeysByName[fileName] : fileName;
+    if (key) {
+      locations.push({ name: basenameFromS3Key(fileName), uri: `s3://${source.bucket}/${key}` });
+    }
+  }
+  return locations;
 }

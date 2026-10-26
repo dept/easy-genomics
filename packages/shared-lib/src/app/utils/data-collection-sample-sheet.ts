@@ -106,7 +106,7 @@ function firstMatchingKey(keys: string[], extensions: string[]): string | undefi
 
 /** Files that reach the sample sheet only under `paired_end_with_extras`, by sheet role. */
 const EXTRA_FILE_EXTENSIONS_BY_ROLE = {
-  reference_fasta: ['.fasta', '.fa', '.fna'],
+  reference_fasta: ['.fasta', '.fa', '.fna', '.fasta.gz', '.fa.gz', '.fna.gz'],
   reference_gtf: ['.gtf'],
   reference_gff: ['.gff', '.gff3'],
   reference_bed: ['.bed'],
