@@ -309,3 +309,48 @@ files: `E332-01.fasta`, `E332-02.fa`, `E332-03.fna` and `E332-04.fa.gz`.
 - [ ] **Truncated listing** — covered by its unit test only; a 5000-key folder isn't worth building for QA.
 - [x] **Clean up** — the collection and the `egv-332-qa/` S3 folder are deleted. The 4 samples stay, since samples can't
       be deleted.
+
+## Data Collections — FASTA files imported together with FASTQ reads (EGV-340)
+
+In a listing with FASTQ, a FASTA whose name without its extension is a sample ID, in the same folder, joins that sample
+when it has both an R1 and an R2. The sample is saved as `paired_end_with_extras`. Any other FASTA joins no sample: a
+notice on Group files and Review lists its S3 URI with a copy button, for use as a workflow parameter. Review counts
+paired samples that gained a FASTA. Gzipped FASTA files reach a Reference FASTA sheet column. The Playwright spec
+`lab-manager/Data_Collections_Import_Fasta_With_Fastq.spec.e2e.ts` covers the upload path up to Review.
+
+### Automated checks
+
+| Check                                                                  | Result                                         |
+| ---------------------------------------------------------------------- | ---------------------------------------------- |
+| `pnpm lint` (shared-lib, front-end)                                    | Passes                                         |
+| `pnpm test` (shared-lib)                                               | 439 tests pass                                 |
+| `pnpm test` (front-end)                                                | 384 tests pass                                 |
+| `pnpm test` (back-end, pre-commit hook)                                | 1377 tests pass                                |
+| `Data_Collections_Import_Fasta_With_Fastq.spec.e2e.ts` (local, branch) | Passes, with the lab name set to the local lab |
+
+### Manual steps
+
+Run on 26 Oct 2026 with Playwright, against the branch's front-end and local back-end (`dev-demo` stack). Signed in as
+the lab-manager test user, in Test Laboratory. S3 test folder under the lab's `egv-340-qa/`: `A_R1.fastq.gz`,
+`A_R2.fastq.gz`, `A.fasta`, `B_R1.fastq.gz`, `B_R2.fastq.gz`, `B.fa.gz` and `ref.fa`. Upload files: the same four FASTQ
+files plus `ref.fa`; `C_R1.fastq.gz` and `C_R2.fastq.gz`; `D1.fasta` and `D2.fasta`.
+
+- [x] **S3, same-name and shared FASTA** — `egv-340-qa/` → Group files shows "From 7 files → 2 samples" and a notice
+      listing only `s3://<lab bucket>/<org>/<lab>/egv-340-qa/ref.fa`, with a copy button. Review shows "2 paired · 2
+      with FASTA": A holds `A_R1`, `A_R2` and `A.fasta`; B holds `B_R1`, `B_R2` and `B.fa.gz`.
+- [x] **Saved samples** — Copy & create 2 samples (batch `egv-340-qa-s3`) saves A and B as `paired_end_with_extras`, "3
+      files · R1 + R2 + ref". The six read and FASTA files are copied to `{org}/{lab}/imports/egv-340-qa/`; `ref.fa` is
+      not copied.
+- [x] **Launch** — a collection of A and B with the Paired preset plus a custom `fasta` column (role Reference FASTA),
+      then Launch Workflow, then Continue. The sheet is `sample,fastq_1,fastq_2,fasta`, with `A.fasta` and `B.fa.gz` in
+      the `fasta` column. No run was submitted.
+- [x] **Upload, shared FASTA** — the four FASTQ files plus `ref.fa` → "From 5 files → 2 samples". The notice lists
+      `ref.fa` at its lab-bucket key under `aws-healthomics/<transaction>/`. Review shows "2 paired" with no FASTA
+      count.
+- [x] **Upload, FASTQ only, unchanged** — `C_R1` and `C_R2` → "From 2 files → 1 samples", no notice, Review "1 paired".
+- [x] **Upload, FASTA only, unchanged** — `D1.fasta` and `D2.fasta` → the wizard lands on Tags, and Review shows "2
+      assembled" with no notice.
+- [ ] **Illumina-style names** — not handled: the sample ID keeps the `_S1_L001` suffix, so `A.fasta` stays shared.
+      Covered by a unit test; follow-up ticket pending the client's file names.
+- [x] **Clean up** — the collection and the `egv-340-qa/` S3 folder are deleted. Samples A and B stay, since samples
+      can't be deleted, and the files from the three uploads stay in the lab bucket as unlinked files.
