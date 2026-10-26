@@ -399,5 +399,134 @@ describe('edit-s3-access-batch.lambda', () => {
       expect(result.statusCode).toBe(403);
       expect(mockAccessService.prototype.upsert).not.toHaveBeenCalled();
     });
+
+    describe('allowsWholeBucket', () => {
+      const wholeBucketGrant = {
+        assignments: [{ laboratoryId: LAB_ID, bucketName: 'drop-bucket', granted: true, allowsWholeBucket: true }],
+      };
+      const plainGrant = {
+        assignments: [{ laboratoryId: LAB_ID, bucketName: 'drop-bucket', granted: true }],
+      };
+      const storedWholeBucketRow = {
+        LaboratoryId: LAB_ID,
+        BucketName: 'drop-bucket',
+        OrganizationId: ORG_ID,
+        Effect: 'ALLOW',
+        AllowsWholeBucket: true,
+      };
+      const storedPlainRow = {
+        LaboratoryId: LAB_ID,
+        BucketName: 'drop-bucket',
+        OrganizationId: ORG_ID,
+        Effect: 'ALLOW',
+      };
+
+      beforeEach(() => {
+        mockLabService.prototype.listAllLaboratories = jest.fn().mockResolvedValue([makeLab({ S3Bucket: 'bucket-a' })]);
+      });
+
+      describe('as a system admin', () => {
+        beforeEach(() => {
+          (validateSystemAdminAccess as jest.Mock).mockReturnValue(true);
+          (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(false);
+        });
+
+        it.each([false, true])(
+          'writes an ALLOW row carrying AllowsWholeBucket and no AllowedPrefix (default-on: %p)',
+          async (defaultOn) => {
+            givenLabs({ EnableNewBucketsByDefault: defaultOn });
+
+            const result = await send(wholeBucketGrant);
+
+            expect(result.statusCode).toBe(200);
+            expect(mockAccessService.prototype.upsert).toHaveBeenCalledWith({
+              LaboratoryId: LAB_ID,
+              BucketName: 'drop-bucket',
+              OrganizationId: ORG_ID,
+              Effect: 'ALLOW',
+              AllowsWholeBucket: true,
+            });
+            expect(mockAccessService.prototype.remove).not.toHaveBeenCalled();
+          },
+        );
+
+        it('clears whole-bucket access when the grant is re-sent without it (strict mode)', async () => {
+          givenLabs();
+          givenStoredRows(storedWholeBucketRow);
+
+          const result = await send(plainGrant);
+
+          expect(result.statusCode).toBe(200);
+          expect(mockAccessService.prototype.upsert).toHaveBeenCalledWith(storedPlainRow);
+        });
+
+        it('returns 400 and writes nothing for an assignment carrying both', async () => {
+          givenLabs();
+
+          const result = await send({
+            assignments: [{ ...wholeBucketGrant.assignments[0], allowedPrefix: 'sequencer-drop/' }],
+          });
+
+          expect(result.statusCode).toBe(400);
+          expect(mockAccessService.prototype.upsert).not.toHaveBeenCalled();
+        });
+
+        it('returns 400 and writes nothing when the bucket is the default bucket of a laboratory in another organization', async () => {
+          givenLabs();
+          (mockLabService.prototype.listAllLaboratories as jest.Mock).mockResolvedValue([
+            makeLab({ S3Bucket: 'bucket-a' }),
+            { OrganizationId: 'other-org', LaboratoryId: 'other-lab', S3Bucket: 'drop-bucket' },
+          ]);
+
+          const result = await send(wholeBucketGrant);
+
+          expect(result.statusCode).toBe(400);
+          expect(JSON.parse(result.body).Error).toContain('drop-bucket');
+          expect(mockAccessService.prototype.upsert).not.toHaveBeenCalled();
+          expect(mockAccessService.prototype.remove).not.toHaveBeenCalled();
+        });
+
+        it('does not scan laboratories when no assignment asks for whole-bucket access', async () => {
+          givenLabs();
+
+          await send(grantWithPrefix('x/'));
+
+          expect(mockLabService.prototype.listAllLaboratories).not.toHaveBeenCalled();
+        });
+      });
+
+      describe('as an organization admin', () => {
+        it('is rejected when setting whole-bucket access', async () => {
+          givenLabs();
+          givenStoredRows(storedPlainRow);
+
+          const result = await send(wholeBucketGrant);
+
+          expect(result.statusCode).toBe(403);
+          expect(mockAccessService.prototype.upsert).not.toHaveBeenCalled();
+          expect(mockAccessService.prototype.remove).not.toHaveBeenCalled();
+        });
+
+        it('is rejected when a grant without it would clear stored whole-bucket access', async () => {
+          givenLabs();
+          givenStoredRows(storedWholeBucketRow);
+
+          const result = await send(plainGrant);
+
+          expect(result.statusCode).toBe(403);
+          expect(mockAccessService.prototype.upsert).not.toHaveBeenCalled();
+        });
+
+        it('may re-send a grant that keeps stored whole-bucket access', async () => {
+          givenLabs();
+          givenStoredRows(storedWholeBucketRow);
+
+          const result = await send(wholeBucketGrant);
+
+          expect(result.statusCode).toBe(200);
+          expect(mockAccessService.prototype.upsert).toHaveBeenCalledWith(storedWholeBucketRow);
+        });
+      });
+    });
   });
 });

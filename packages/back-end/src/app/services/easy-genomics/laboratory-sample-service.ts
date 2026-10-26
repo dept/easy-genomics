@@ -44,7 +44,7 @@ import {
 } from './laboratory-data-tagging-service';
 import { DynamoDBService } from '../dynamodb-service';
 import { S3Service } from '../s3-service';
-import { findAllowedPrefix } from '@BE/utils/laboratory-s3-access-utils';
+import { findAllowedPrefix, hasWholeBucketGrant } from '@BE/utils/laboratory-s3-access-utils';
 import { isInsideLaboratoryReadablePrefix, resolveLaboratoryListingPrefix } from '@BE/utils/s3-uri-utils';
 
 const TABLE_NAME = `${process.env.NAME_PREFIX}-laboratory-data-tagging-table`;
@@ -91,14 +91,23 @@ export class LaboratorySampleService extends DynamoDBService {
     return this.taggingService.assertLaboratoryHasS3BucketAccess(laboratory, bucket);
   }
 
-  /** An import may copy from the lab root or from the allowed folder stored for this lab and this source bucket. */
+  /**
+   * An import may copy from the lab root, or from the allowed folder or whole-bucket grant stored for this lab and this
+   * source bucket.
+   */
   private async assertImportSourceReadable(
     laboratory: Laboratory,
     sourceBucket: string,
     sourceKey: string,
   ): Promise<void> {
     const accessRows = await this.assertLaboratoryHasS3BucketAccess(laboratory, sourceBucket);
-    if (!isInsideLaboratoryReadablePrefix(sourceKey, laboratory, findAllowedPrefix(accessRows, sourceBucket))) {
+    const readable = isInsideLaboratoryReadablePrefix(
+      sourceKey,
+      laboratory,
+      findAllowedPrefix(accessRows, sourceBucket),
+      hasWholeBucketGrant(accessRows, sourceBucket),
+    );
+    if (!readable) {
       throw new S3KeyOutOfPrefixError();
     }
   }

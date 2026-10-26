@@ -2742,6 +2742,13 @@ components:
           description: >-
             Granted bucket name → its allowed prefix. Buckets without one are absent; a missing map means no bucket has
             one.
+        wholeBuckets:
+          description: >-
+            Granted buckets this lab may read outside its own folder, except organization folders. A missing list means
+            none.
+          type: array
+          items:
+            type: string
       required:
         - buckets
     UpdateLaboratoryRequest:
@@ -3113,6 +3120,8 @@ components:
                 type: string
                 minLength: 1
                 maxLength: 512
+              allowsWholeBucket:
+                type: boolean
             required:
               - laboratoryId
               - bucketName
@@ -3143,6 +3152,11 @@ components:
 
             may also list and import from in this bucket. Removed whenever the row is revoked or rewritten without it.
           type: string
+        AllowsWholeBucket:
+          description: |-
+            ALLOW rows only, never with AllowedPrefix: the lab may also read every key in this bucket outside every
+            organization's folder. Never set on a laboratory's default bucket.
+          type: boolean
         CreatedAt:
           type: string
         ModifiedAt:

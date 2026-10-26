@@ -2,8 +2,10 @@ import {
   allowedPrefixError,
   allowedPrefixesFromAssignments,
   changedAllowedPrefixKeys,
+  changedWholeBucketKeys,
   normalizeAllowedPrefixInput,
   s3AccessKey,
+  wholeBucketKeysFromAssignments,
   withAllowedPrefixChanges,
 } from '../../../src/app/utils/s3-access-allowed-prefixes';
 
@@ -83,5 +85,55 @@ describe('withAllowedPrefixChanges', () => {
     expect(
       withAllowedPrefixChanges(revokes, new Set(), { [keyA]: 'sample-3-18/' }, { [keyA]: 'sample-3-18/' }),
     ).toEqual(revokes);
+  });
+});
+
+describe('whole-bucket access', () => {
+  const row = { LaboratoryId: 'lab-1', BucketName: 'bucket-a', OrganizationId: 'org-1', Effect: 'ALLOW' as const };
+  const grantA = { laboratoryId: 'lab-1', bucketName: 'bucket-a' };
+  const ticked = (...keys: string[]) => ({ baseline: new Set<string>(), pending: new Set(keys) });
+
+  it('reads stored whole-bucket grants as ticked cells, ignoring DENY rows and folder-only rows', () => {
+    expect(
+      wholeBucketKeysFromAssignments([
+        { ...row, AllowsWholeBucket: true },
+        { ...row, BucketName: 'bucket-b', Effect: 'DENY', AllowsWholeBucket: true },
+        { ...row, BucketName: 'bucket-c', AllowedPrefix: 'x/' },
+      ]),
+    ).toEqual(new Set([keyA]));
+  });
+
+  it('reports granted cells whose tick changed, and ignores revoked cells', () => {
+    expect(changedWholeBucketKeys(new Set([keyA]), new Set(), new Set([keyA, keyB]))).toEqual([keyA]);
+  });
+
+  it('sends a ticked cell as allowsWholeBucket with no allowedPrefix, whatever the folder input holds', () => {
+    expect(
+      withAllowedPrefixChanges(
+        [{ ...grantA, granted: true }],
+        new Set([keyA]),
+        {},
+        { [keyA]: 'sample-3-18/' },
+        ticked(keyA),
+      ),
+    ).toEqual([{ ...grantA, granted: true, allowsWholeBucket: true }]);
+  });
+
+  it('re-sends an already-granted cell whose tick alone changed', () => {
+    expect(withAllowedPrefixChanges([], new Set([keyA]), {}, {}, ticked(keyA))).toEqual([
+      { ...grantA, granted: true, allowsWholeBucket: true },
+    ]);
+  });
+
+  it('clears whole-bucket access by re-sending the grant without it', () => {
+    const unticked = { baseline: new Set([keyA]), pending: new Set<string>() };
+    expect(withAllowedPrefixChanges([], new Set([keyA]), {}, {}, unticked)).toEqual([{ ...grantA, granted: true }]);
+  });
+
+  it('never attaches whole-bucket access to a revoke', () => {
+    const stillTicked = { baseline: new Set([keyA]), pending: new Set([keyA]) };
+    expect(withAllowedPrefixChanges([{ ...grantA, granted: false }], new Set(), {}, {}, stillTicked)).toEqual([
+      { ...grantA, granted: false },
+    ]);
   });
 });

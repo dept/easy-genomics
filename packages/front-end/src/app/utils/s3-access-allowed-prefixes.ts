@@ -28,6 +28,16 @@ export function allowedPrefixesFromAssignments(assignments: LaboratoryS3Access[]
   return prefixes;
 }
 
+export function wholeBucketKeysFromAssignments(assignments: LaboratoryS3Access[]): Set<string> {
+  const keys = new Set<string>();
+  for (const row of assignments) {
+    if (row.Effect !== 'DENY' && row.AllowsWholeBucket) {
+      keys.add(s3AccessKey(row.LaboratoryId, row.BucketName));
+    }
+  }
+  return keys;
+}
+
 export function normalizeAllowedPrefixInput(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return '';
@@ -52,24 +62,42 @@ export function changedAllowedPrefixKeys(
   );
 }
 
+export type WholeBucketCells = { baseline: Set<string>; pending: Set<string> };
+
+export function changedWholeBucketKeys(
+  grantedKeys: Set<string>,
+  baseline: Set<string>,
+  pending: Set<string>,
+): string[] {
+  return [...grantedKeys].filter((key) => baseline.has(key) !== pending.has(key));
+}
+
 /**
  * The back-end treats each assignment as the cell's full state, so every grant carries the cell's pending prefix,
- * and a granted cell whose prefix alone changed is re-sent as a grant. Revokes never carry one.
+ * and a granted cell whose prefix alone changed is re-sent as a grant. Revokes never carry one. A ticked cell is sent
+ * as whole-bucket access, never with a folder.
  */
 export function withAllowedPrefixChanges(
   grantChanges: BatchLaboratoryS3AccessAssignment[],
   grantedKeys: Set<string>,
   baseline: Record<string, string>,
   pending: Record<string, string>,
+  wholeBuckets: WholeBucketCells = { baseline: new Set(), pending: new Set() },
 ): BatchLaboratoryS3AccessAssignment[] {
   const withPrefix = (cell: { laboratoryId: string; bucketName: string }): BatchLaboratoryS3AccessAssignment => {
-    const allowedPrefix = normalizeAllowedPrefixInput(pending[s3AccessKey(cell.laboratoryId, cell.bucketName)] ?? '');
+    const key = s3AccessKey(cell.laboratoryId, cell.bucketName);
+    if (wholeBuckets.pending.has(key)) return { ...cell, granted: true, allowsWholeBucket: true };
+    const allowedPrefix = normalizeAllowedPrefixInput(pending[key] ?? '');
     return { ...cell, granted: true, ...(allowedPrefix ? { allowedPrefix } : {}) };
   };
 
   const changedCells = new Set(grantChanges.map((change) => s3AccessKey(change.laboratoryId, change.bucketName)));
   const assignments = grantChanges.map((change) => (change.granted ? withPrefix(change) : change));
-  for (const key of changedAllowedPrefixKeys(grantedKeys, baseline, pending)) {
+  const resentKeys = new Set([
+    ...changedAllowedPrefixKeys(grantedKeys, baseline, pending),
+    ...changedWholeBucketKeys(grantedKeys, wholeBuckets.baseline, wholeBuckets.pending),
+  ]);
+  for (const key of resentKeys) {
     const cell = parseS3AccessKey(key);
     if (cell && !changedCells.has(key)) assignments.push(withPrefix(cell));
   }

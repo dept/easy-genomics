@@ -11,7 +11,11 @@ import {
   validateOrganizationAdminAccess,
   validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
-import { findAllowedPrefix, grantedBucketNamesForLaboratory } from '@BE/utils/laboratory-s3-access-utils';
+import {
+  findAllowedPrefix,
+  grantedBucketNamesForLaboratory,
+  hasWholeBucketGrant,
+} from '@BE/utils/laboratory-s3-access-utils';
 
 const laboratoryService = new LaboratoryService();
 const accessService = new LaboratoryS3AccessService();
@@ -51,7 +55,9 @@ export const handler: Handler = async (
       if (allowedPrefix) allowedPrefixes[bucketName] = allowedPrefix;
     }
 
-    const body: ListGrantedLaboratoryBucketsResponse = { buckets, allowedPrefixes };
+    const wholeBuckets = buckets.filter((bucketName) => hasWholeBucketGrant(accessRows, bucketName));
+
+    const body: ListGrantedLaboratoryBucketsResponse = { buckets, allowedPrefixes, wholeBuckets };
     return buildResponse(200, JSON.stringify(body), event);
   } catch (err: any) {
     console.error(err);

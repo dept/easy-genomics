@@ -32,3 +32,17 @@ export function isSourceFolderMissing(typedPrefix: string, selectedAllowedFolder
 export function defaultS3ImportLabel(typedPrefix: string, selectedAllowedFolder: string, bucket: string): string {
   return folderNames(typedPrefix).pop() || folderNames(selectedAllowedFolder).pop() || bucket || 'import';
 }
+
+export type SourceRoot = 'laboratory' | 'allowed' | 'bucket';
+export type SourceRootOption = { label: string; value: SourceRoot };
+
+/** "Search in" choices for a bucket. A bucket never carries both an allowed folder and a whole-bucket grant. */
+export function buildSourceRootOptions(allowedPrefix: string, allowsWholeBucket: boolean): SourceRootOption[] {
+  const options: SourceRootOption[] = [{ label: "This lab's folder", value: 'laboratory' }];
+  if (allowsWholeBucket) {
+    options.push({ label: 'Whole bucket', value: 'bucket' });
+  } else if (allowedPrefix) {
+    options.push({ label: allowedPrefix, value: 'allowed' });
+  }
+  return options;
+}

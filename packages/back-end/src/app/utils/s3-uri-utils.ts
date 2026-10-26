@@ -1,4 +1,5 @@
 import { UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { startsInTenantFolder } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-s3-access';
 
 export type ParsedS3Uri = { bucket: string; prefix: string };
 
@@ -60,13 +61,16 @@ export function laboratoryPrefix(laboratory: { OrganizationId: string; Laborator
 /**
  * True when `keyOrPrefix` is inside the laboratory root or inside `allowedPrefix`, the prefix stored on the lab's
  * S3-access row for the same bucket. Both roots end in "/", so a sibling folder sharing the name never matches.
+ * Under a whole-bucket grant, everything outside every organization folder is readable too.
  */
 export function isInsideLaboratoryReadablePrefix(
   keyOrPrefix: string,
   laboratory: { OrganizationId: string; LaboratoryId: string },
   allowedPrefix?: string,
+  allowsWholeBucket = false,
 ): boolean {
   if (keyOrPrefix.startsWith(laboratoryPrefix(laboratory))) return true;
+  if (allowsWholeBucket) return !keyOrPrefix.startsWith('/') && !startsInTenantFolder(keyOrPrefix);
   return !!allowedPrefix && keyOrPrefix.startsWith(normalizeS3Prefix(allowedPrefix));
 }
 
@@ -78,11 +82,14 @@ export function resolveLaboratoryListingPrefix(
   laboratory: { OrganizationId: string; LaboratoryId: string },
   requestedPrefix?: string,
   allowedPrefix?: string,
+  allowsWholeBucket = false,
 ): string {
   const resolvedPrefix = normalizeS3Prefix(requestedPrefix || laboratoryPrefix(laboratory));
-  if (!isInsideLaboratoryReadablePrefix(resolvedPrefix, laboratory, allowedPrefix)) {
+  if (!isInsideLaboratoryReadablePrefix(resolvedPrefix, laboratory, allowedPrefix, allowsWholeBucket)) {
     throw new UnauthorizedAccessError(
-      "S3 prefix must be inside this laboratory's folder or the allowed folder for this bucket",
+      allowsWholeBucket
+        ? "S3 prefix must be inside this laboratory's folder or outside every organization's folder"
+        : "S3 prefix must be inside this laboratory's folder or the allowed folder for this bucket",
     );
   }
   return resolvedPrefix;

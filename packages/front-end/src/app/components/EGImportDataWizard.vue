@@ -12,6 +12,7 @@
     DEFAULT_REGEX_GROUPING_PRESET_KEY,
     FASTA_REGEX_GROUPING_PRESET_KEY,
     findDuplicateSampleNames,
+    findSharedFasta,
     folderBelowLabRoot,
     REGEX_GROUPING_PRESETS,
     type RegexGroupingPresetKey,
@@ -24,14 +25,18 @@
   import { exceedsBatchNameMaxLength } from '@FE/utils/data-collections-name-validation';
   import {
     describeSourceListing,
+    type ImportedFileSource,
+    locateSharedFasta,
     skipsGroupingStep,
     type SourceListingNotice,
   } from '@FE/utils/data-collections-source-listing';
   import {
     buildLaboratorySourcePrefix,
     buildSourcePrefix,
+    buildSourceRootOptions,
     defaultS3ImportLabel,
     isSourceFolderMissing,
+    type SourceRoot,
   } from '@FE/utils/data-collections-source-prefix';
   import { matchSheetToSamples, type SheetTagMatchResult } from '@FE/utils/sheet-tag-matching';
 
@@ -68,21 +73,23 @@
   const sourcePrefix = ref('');
   const grantedBuckets = ref<string[]>([]);
 
-  type SourceRoot = 'laboratory' | 'allowed';
   const allowedPrefixes = ref<Record<string, string>>({});
+  const wholeBuckets = ref<string[]>([]);
   const sourceRoot = ref<SourceRoot>('laboratory');
   const allowedPrefixForBucket = computed(() => allowedPrefixes.value[sourceBucket.value] ?? '');
+  const allowsWholeBucketForBucket = computed(() => wholeBuckets.value.includes(sourceBucket.value));
   const searchesAllowedFolder = computed(() => sourceRoot.value === 'allowed' && !!allowedPrefixForBucket.value);
+  const searchesWholeBucket = computed(() => sourceRoot.value === 'bucket' && allowsWholeBucketForBucket.value);
   /** The allowed folder chosen in "Search in", or '' when the wizard searches this lab's own folder. */
   const selectedAllowedFolder = computed(() => (searchesAllowedFolder.value ? allowedPrefixForBucket.value : ''));
   const sourceFolderMissing = computed(() => isSourceFolderMissing(sourcePrefix.value, selectedAllowedFolder.value));
-  const sourceRootOptions = computed(() => [
-    { label: "This lab's folder", value: 'laboratory' },
-    { label: allowedPrefixForBucket.value, value: 'allowed' },
-  ]);
-  const prefixHint = computed(() =>
-    selectedAllowedFolder.value ? `optional, inside ${selectedAllowedFolder.value}` : "inside this lab's folder",
+  const sourceRootOptions = computed(() =>
+    buildSourceRootOptions(allowedPrefixForBucket.value, allowsWholeBucketForBucket.value),
   );
+  const prefixHint = computed(() => {
+    if (searchesWholeBucket.value) return 'from the bucket root';
+    return selectedAllowedFolder.value ? `optional, inside ${selectedAllowedFolder.value}` : "inside this lab's folder";
+  });
 
   watch(sourceBucket, () => {
     sourceRoot.value = 'laboratory';
@@ -90,6 +97,7 @@
 
   /** The one place the wizard turns the typed Prefix into the absolute prefix it lists, and later copies from. */
   function resolveSourcePrefix(lab: Pick<Laboratory, 'OrganizationId' | 'LaboratoryId'>): string {
+    if (searchesWholeBucket.value) return buildSourcePrefix('', sourcePrefix.value);
     return searchesAllowedFolder.value
       ? buildSourcePrefix(allowedPrefixForBucket.value, sourcePrefix.value)
       : buildLaboratorySourcePrefix(lab, sourcePrefix.value);
@@ -103,6 +111,8 @@
     sourceFiles,
     regexPattern,
   );
+  const sharedFastaFiles = computed(() => findSharedFasta(sourceFiles.value, unmatchedFiles.value));
+  const skippedFiles = computed(() => unmatchedFiles.value.filter((file) => !sharedFastaFiles.value.includes(file)));
   const excludedSamples = ref<Set<string>>(new Set());
   const tagSheetRows = ref<string[][]>([]);
   const tagSheetError = ref<string>('');
@@ -116,6 +126,13 @@
   const uploadTransactionId = ref(uuidv4());
   const pendingUploadFiles = ref<PendingUploadFile[]>([]);
   const uploadedKeysByName = ref<Record<string, string>>({});
+  const sharedFastaLocations = computed(() => {
+    const source: ImportedFileSource =
+      importSource.value === 'upload'
+        ? { kind: 'upload', bucket: props.lab?.S3Bucket ?? '', uploadedKeysByName: uploadedKeysByName.value }
+        : { kind: 's3', bucket: sourceBucket.value };
+    return locateSharedFasta(sharedFastaFiles.value, source);
+  });
   const isDropzoneActive = ref(false);
   const uploading = ref(false);
   const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -171,7 +188,10 @@
     const single = activeSets.value.filter((s) => s.status === 'single_end').length;
     const review = activeSets.value.filter((s) => s.status === 'needs_review').length;
     const assembled = activeSets.value.filter((s) => s.status === 'assembled').length;
-    return { paired, single, review, assembled, total: activeSets.value.length };
+    const pairedWithFasta = activeSets.value.filter(
+      (s) => s.status === 'paired' && s.layout === 'paired_end_with_extras',
+    ).length;
+    return { paired, pairedWithFasta, single, review, assembled, total: activeSets.value.length };
   });
   const duplicateSampleNames = computed(() => findDuplicateSampleNames(activeSets.value));
   const repeatedSampleIds = computed(
@@ -326,6 +346,7 @@
       const res = await $api.s3Access.listGrantedBuckets(props.labId);
       grantedBuckets.value = res.buckets;
       allowedPrefixes.value = res.allowedPrefixes ?? {};
+      wholeBuckets.value = res.wholeBuckets ?? [];
       if (!sourceBucket.value && res.buckets.length) {
         sourceBucket.value = res.buckets[0];
       }
@@ -540,7 +561,7 @@
             <div class="mb-1 text-sm font-medium">Amazon S3</div>
             <div class="mb-2 text-xs text-gray-500">Connected</div>
             <p class="text-xs text-gray-500">
-              Import files from this lab's folder, or a folder a system admin allowed for it, in a granted bucket.
+              Import files from this lab's folder, or a folder or whole bucket a system admin allowed for it.
             </p>
           </button>
 
@@ -566,7 +587,7 @@
               placeholder="Select a bucket"
             />
           </UFormGroup>
-          <UFormGroup v-if="allowedPrefixForBucket" label="Search in" class="mb-4">
+          <UFormGroup v-if="sourceRootOptions.length > 1" label="Search in" class="mb-4">
             <USelect v-model="sourceRoot" :options="sourceRootOptions" class="font-mono" />
           </UFormGroup>
           <UFormGroup
@@ -665,10 +686,11 @@
           {{ sourceListingNotice.message }}
         </p>
         <EGRegexUnmatchedNotice
-          :unmatched-files="unmatchedFiles"
+          :unmatched-files="skippedFiles"
           :proposed-set-count="proposedSets.length"
           notice-class="mt-4"
         />
+        <EGSharedFastaNotice :files="sharedFastaLocations" notice-class="mt-4" />
       </div>
 
       <!-- Step 3: Tags (optional) -->
@@ -720,7 +742,10 @@
       <div v-else-if="step === 4" class="flex min-h-0 flex-1 flex-col">
         <div class="flex gap-2 border-b p-4 text-xs">
           <template v-if="!autoGroupedOnePerFastaFile">
-            <span class="rounded-full bg-green-100 px-2 py-1 text-green-800">{{ stats.paired }} paired</span>
+            <span class="rounded-full bg-green-100 px-2 py-1 text-green-800">
+              {{ stats.paired }} paired
+              <template v-if="stats.pairedWithFasta">· {{ stats.pairedWithFasta }} with FASTA</template>
+            </span>
             <span class="rounded-full bg-blue-100 px-2 py-1 text-blue-800">{{ stats.single }} single-end</span>
           </template>
           <span v-if="stats.assembled" class="rounded-full bg-purple-100 px-2 py-1 text-purple-800">
@@ -736,6 +761,7 @@
           :proposed-set-count="proposedSets.length"
           notice-class="mx-4 mt-4"
         />
+        <EGSharedFastaNotice :files="sharedFastaLocations" notice-class="mx-4 mt-4" />
         <EGDuplicateSampleNamesNotice :duplicates="duplicateSampleNames" notice-class="mx-4 mt-4" />
         <div class="flex-1 overflow-y-auto">
           <table class="w-full text-sm">
