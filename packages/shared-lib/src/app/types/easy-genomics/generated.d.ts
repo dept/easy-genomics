@@ -1673,6 +1673,8 @@ export interface components {
       buckets: string[];
       /** @description Granted bucket name → its allowed prefix. Buckets without one are absent; a missing map means no bucket has one. */
       allowedPrefixes?: Record<string, never>;
+      /** @description Granted buckets this lab may read outside its own folder, except organization folders. A missing list means none. */
+      wholeBuckets?: string[];
     };
     UpdateLaboratoryRequest: {
       Name: string;
@@ -1818,6 +1820,7 @@ export interface components {
           bucketName: string;
           granted: boolean;
           allowedPrefix?: string;
+          allowsWholeBucket?: boolean;
         }[];
     };
     LaboratoryS3Access: {
@@ -1834,6 +1837,11 @@ export interface components {
        * may also list and import from in this bucket. Removed whenever the row is revoked or rewritten without it.
        */
       AllowedPrefix?: string;
+      /**
+       * @description ALLOW rows only, never with AllowedPrefix: the lab may also read every key in this bucket outside every
+       * organization's folder. Never set on a laboratory's default bucket.
+       */
+      AllowsWholeBucket?: boolean;
       CreatedAt?: string;
       ModifiedAt?: string;
     };
