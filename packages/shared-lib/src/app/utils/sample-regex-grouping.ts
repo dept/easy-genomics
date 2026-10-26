@@ -55,8 +55,10 @@ export type RegexGroupingPresetKey = keyof typeof REGEX_GROUPING_PRESETS;
 export const DEFAULT_REGEX_GROUPING_PRESET_KEY: RegexGroupingPresetKey = 'any_separator_r1_r2';
 export const FASTA_REGEX_GROUPING_PRESET_KEY: RegexGroupingPresetKey = 'fasta_one_per_file';
 
+const FASTA_EXTENSION = /\.(?:fasta|fa|fna)(?:\.gz)?$/i;
+
 export function isFasta(name: string): boolean {
-  return /\.(fasta|fa|fna)(?:\.gz)?$/i.test(name);
+  return FASTA_EXTENSION.test(name);
 }
 
 export function isFastq(name: string): boolean {
@@ -69,6 +71,14 @@ export function isFastq(name: string): boolean {
  */
 export function hasFastaButNoFastq(fileNames: string[]): boolean {
   return fileNames.some(isFasta) && !fileNames.some(isFastq);
+}
+
+/**
+ * FASTA files that a listing with FASTQ left out of every sample: one FASTA for the whole run, which the
+ * user passes to the workflow as a parameter. A listing without FASTQ has none, since there each FASTA is a sample.
+ */
+export function findSharedFasta(fileNames: string[], unmatched: string[]): string[] {
+  return fileNames.some(isFastq) ? unmatched.filter(isFasta) : [];
 }
 
 function isAssembled(files: ProposedSampleFile[]): boolean {
@@ -108,6 +118,30 @@ function classifyFileRole(fileName: string, groups: Record<string, string | unde
   return 'extra';
 }
 
+type SampleFileGroup = { sampleId: string; folder: string; files: ProposedSampleFile[] };
+
+function hasReadPair(files: ProposedSampleFile[]): boolean {
+  return files.some((f) => f.role === 'read1') && files.some((f) => f.role === 'read2');
+}
+
+/**
+ * Labs name a pair's own FASTA after the sample (`A.fasta` beside `A_R1`, `A_R2`), which no read preset matches.
+ * Only a pair takes it: single-end and long-read sheet rows have no FASTA column, so the file would be hidden there.
+ */
+function attachSameNameFastaToPairs(groups: Map<string, SampleFileGroup>, unmatched: string[]): string[] {
+  const stillUnmatched: string[] = [];
+  for (const fileName of unmatched) {
+    // A group key is `folder + sampleId`, so the key minus the extension finds the sample in the same folder and case.
+    const group = isFasta(fileName) ? groups.get(fileName.replace(FASTA_EXTENSION, '')) : undefined;
+    if (group && hasReadPair(group.files)) {
+      group.files.push({ fileName, role: 'reference_fasta' });
+    } else {
+      stillUnmatched.push(fileName);
+    }
+  }
+  return stillUnmatched;
+}
+
 export function groupFilenamesByRegex(
   fileNames: string[],
   regexPattern: string,
@@ -120,7 +154,7 @@ export function groupFilenamesByRegex(
     return { sets: [], unmatched: [...fileNames] };
   }
 
-  const groups = new Map<string, { sampleId: string; folder: string; files: ProposedSampleFile[] }>();
+  const groups = new Map<string, SampleFileGroup>();
   const unmatched: string[] = [];
 
   for (const fileName of fileNames) {
@@ -140,6 +174,8 @@ export function groupFilenamesByRegex(
     groups.set(groupKey, group);
   }
 
+  const stillUnmatched = attachSameNameFastaToPairs(groups, unmatched);
+
   const sets: ProposedSample[] = [];
   for (const [groupKey, { sampleId, folder, files }] of groups) {
     sets.push({
@@ -153,7 +189,7 @@ export function groupFilenamesByRegex(
   }
 
   sets.sort((a, b) => a.sampleId.localeCompare(b.sampleId) || a.folder.localeCompare(b.folder));
-  return { sets, unmatched };
+  return { sets, unmatched: stillUnmatched };
 }
 
 /** Display form of a folder: drops the leading `<OrganizationId>/<LaboratoryId>/` that every lab key starts with. */
