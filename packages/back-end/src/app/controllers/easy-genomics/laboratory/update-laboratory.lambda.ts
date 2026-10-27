@@ -27,6 +27,7 @@ import { SsmService } from '@BE/services/ssm-service';
 import { validateOrganizationAdminAccess } from '@BE/utils/auth-utils';
 import { assertHealthOmicsVpcConfigurationIsActive } from '@BE/utils/laboratory-omics-vpc-utils';
 import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
+import { microreactAccessTokenParameterName } from '@BE/utils/microreact-project';
 import { httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -245,6 +246,15 @@ export const handler: Handler = async (
         Name: `/easy-genomics/organization/${existing.OrganizationId}/laboratory/${existing.LaboratoryId}/llm-api-key-seqera`,
         Description: `Easy Genomics Laboratory ${existing.LaboratoryId} Seqera BYOK LLM API key`,
         Value: request.SeqeraLlmApiKey,
+        Type: 'SecureString',
+        Overwrite: true,
+      });
+    }
+    if (request.MicroreactAccessToken) {
+      await ssmService.putParameter({
+        Name: microreactAccessTokenParameterName(existing.OrganizationId, existing.LaboratoryId),
+        Description: `Easy Genomics Laboratory ${existing.LaboratoryId} Microreact access token`,
+        Value: request.MicroreactAccessToken,
         Type: 'SecureString',
         Overwrite: true,
       });

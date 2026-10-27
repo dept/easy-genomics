@@ -80,6 +80,7 @@ import {
   EditWorkflowKeyOutputDeliverySchema,
   EditWorkflowKeyOutputsSchema,
   RequestPreviewWorkflowKeyOutputsSchema,
+  RequestRunMicroreactExportSchema,
   RequestRunWorkflowKeyOutputsSchema,
 } from '../schema/easy-genomics/workflow-key-outputs';
 import {
@@ -536,6 +537,10 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
   'POST /easy-genomics/workflow-key-outputs/request-run-workflow-key-outputs': {
     request: RequestRunWorkflowKeyOutputsSchema,
     response: 'RunWorkflowKeyOutputsResponse',
+  },
+  'POST /easy-genomics/workflow-key-outputs/request-run-microreact-export': {
+    request: RequestRunMicroreactExportSchema,
+    response: 'RequestRunMicroreactExportResponse',
   },
 
   // ── aws-healthomics/run/ ─────────────────────────────────────────────────────

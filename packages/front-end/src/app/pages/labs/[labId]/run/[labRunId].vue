@@ -64,6 +64,11 @@
     if (!workflowId) return false;
     return (keyOutputsStore.definitionFor(labId, workflowId)?.KeyOutputs.length ?? 0) > 0;
   });
+  const canSendToMicroreact = computed<boolean>(() => {
+    const workflowId = labRun.value?.WorkflowExternalId;
+    if (!canDeclareKeyOutputs.value || !workflowId) return false;
+    return Boolean(keyOutputsStore.definitionFor(labId, workflowId)?.Delivery?.Microreact?.MetadataKeyOutputId);
+  });
   const runKeyOutputs = computed(() => keyOutputsStore.matchesFor(labId, labRunId));
   const showKeyOutputsPanel = computed(() => (runKeyOutputs.value?.KeyOutputs.length ?? 0) > 0);
 
@@ -789,6 +794,7 @@
               Define key outputs
             </button>
           </div>
+          <EGMicroreactExport v-if="canSendToMicroreact && labRun" :lab-id="labId" :run="labRun" />
           <div v-if="showKeyOutputsPanel && runKeyOutputs" class="pt-2">
             <EGText tag="h3">All files</EGText>
             <p class="text-muted mb-4 mt-1 text-sm">{{ runKeyOutputs.TotalFileCount.toLocaleString() }} objects</p>

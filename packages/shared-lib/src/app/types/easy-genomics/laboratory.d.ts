@@ -124,6 +124,13 @@ export interface Laboratory extends BaseAttributes {
   HasSeqeraLlmApiKey?: boolean;
 
   /**
+   * Microreact API access token used to create projects from key outputs. Projects
+   * land in the token owner's Microreact account. Stored in SSM at
+   * `/easy-genomics/organization/{OrganizationId}/laboratory/{LaboratoryId}/microreact-access-token`.
+   */
+  HasMicroreactAccessToken?: boolean;
+
+  /**
    * AWS HealthOmics run cache id used for call caching ("resume"). Lazily provisioned on the
    * first HealthOmics run and reused for all subsequent runs, so a failed run can be retried and
    * resume from its last completed task instead of recomputing everything. Managed internally.

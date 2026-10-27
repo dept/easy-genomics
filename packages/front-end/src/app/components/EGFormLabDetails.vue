@@ -94,6 +94,7 @@
     NextFlowTowerEnabled: false,
     NextFlowTowerAccessToken: '',
     GitHubAccessToken: '',
+    MicroreactAccessToken: '',
     NextFlowTowerWorkspaceId: '',
     NextFlowTowerApiBaseUrl: orgsStore.orgs[userStore.currentOrgId || '']?.NextFlowTowerApiBaseUrl || '',
     AwsHealthOmicsEnabled: false,
@@ -133,6 +134,7 @@
   // the password field display state
   const isEditingNextFlowTowerAccessToken = ref(false);
   const isEditingGitHubAccessToken = ref(false);
+  const isEditingMicroreactAccessToken = ref(false);
 
   // BYOK provider dropdown options + per-provider hints/placeholders for the
   // Model ID input. The leading option lets users reset back to "no provider".
@@ -374,6 +376,7 @@
     NextFlowTowerWorkspaceId: 'Integrations – Seqera workspace ID',
     NextFlowTowerAccessToken: 'Integrations – Seqera access token',
     GitHubAccessToken: 'Integrations – GitHub access token',
+    MicroreactAccessToken: 'Integrations – Microreact access token',
     AwsHealthOmicsEnabled: 'Integrations – HealthOmics enabled',
     AwsHealthOmicsNetworkingMode: 'HealthOmics VPC Networking – Networking mode',
     AwsHealthOmicsVpcConfigurationName: 'HealthOmics VPC Networking – VPC configuration name',
@@ -402,6 +405,8 @@
       'SeqeraLlmProvider',
       'SeqeraLlmModelId',
       'SeqeraLlmApiKey',
+      // Empty string must not be sent: an older back-end rejects the unknown field.
+      'MicroreactAccessToken',
     ] as const;
     const next = { ...input } as Record<string, unknown>;
     for (const key of fields) {
@@ -562,6 +567,7 @@
           // Initialize the password inputs to empty so they don't show stale data.
           HealthOmicsLlmApiKey: '',
           SeqeraLlmApiKey: '',
+          MicroreactAccessToken: '',
           // Backend kill-switch semantics: absent means enabled, only `=== false` disables.
           // Normalize here so an unset field doesn't load as a `false` that then gets
           // saved back as an explicit disable on the next Save Changes.
@@ -604,6 +610,7 @@
     notifyOnLabRunsAdditionalEmailsInput.value = uneditedNotifyOnLabRunsAdditionalEmailsInput.value;
     isEditingNextFlowTowerAccessToken.value = false;
     isEditingGitHubAccessToken.value = false;
+    isEditingMicroreactAccessToken.value = false;
     canSubmit.value = false;
     retentionPreviewCacheMonths.value = null;
     retentionPreviewCounts.value = null;
@@ -765,6 +772,7 @@
       emit('updated');
       isEditingNextFlowTowerAccessToken.value = false;
       isEditingGitHubAccessToken.value = false;
+      isEditingMicroreactAccessToken.value = false;
       retentionPreviewCacheMonths.value = null;
       retentionPreviewCounts.value = null;
       await getLabDetails({ showLoader: false });
@@ -843,6 +851,7 @@
 
     isEditingNextFlowTowerAccessToken.value = false;
     isEditingGitHubAccessToken.value = false;
+    isEditingMicroreactAccessToken.value = false;
     await getLabDetails({ showLoader: false });
 
     useToastStore().success(`${lab.Name} successfully updated`);
@@ -1016,6 +1025,7 @@
     'NextFlowTowerWorkspaceId',
     'NextFlowTowerAccessToken',
     'GitHubAccessToken',
+    'MicroreactAccessToken',
     'HealthOmicsLlmProvider',
     'HealthOmicsLlmModelId',
     'HealthOmicsLlmApiKey',
@@ -1047,6 +1057,7 @@
     if (
       key === 'NextFlowTowerAccessToken' ||
       key === 'GitHubAccessToken' ||
+      key === 'MicroreactAccessToken' ||
       key === 'Description' ||
       key === 'HealthOmicsLlmApiKey' ||
       key === 'SeqeraLlmApiKey' ||
@@ -1089,6 +1100,9 @@
         }
         if (key === 'GitHubAccessToken') {
           isEditingGitHubAccessToken.value = true;
+        }
+        if (key === 'MicroreactAccessToken') {
+          isEditingMicroreactAccessToken.value = true;
         }
         return true;
       }
@@ -1407,6 +1421,37 @@
                 eager-validation
                 :disabled="!isEditing || isSubmittingFormData"
               />
+            </EGFormGroup>
+            <EGFormGroup
+              v-if="isEditing && state.AwsHealthOmicsEnabled"
+              label="Microreact Access Token"
+              name="MicroreactAccessToken"
+              eager-validation
+            >
+              <div v-if="uneditedLabDetails?.HasMicroreactAccessToken" class="mb-2 flex items-center gap-2">
+                <UBadge
+                  size="sm"
+                  class="bg-alert-danger-muted text-alert-danger rounded-xl border-0 ring-0"
+                  aria-hidden="true"
+                >
+                  TOKEN SAVED
+                </UBadge>
+                <p class="text-alert-danger-dark text-xs font-medium">
+                  Saving a new value will replace the existing token.
+                </p>
+              </div>
+              <EGPasswordInput
+                v-model="state.MicroreactAccessToken"
+                :select-on-focus="formMode === LabDetailsFormModeEnum.enum.Edit"
+                :password="true"
+                placeholder="Optional. Key outputs sent to Microreact create projects in this token's account. A saved token is never shown."
+                :show-toggle-password-button="
+                  formMode === LabDetailsFormModeEnum.enum.Create || isEditingMicroreactAccessToken
+                "
+                :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
+                :disabled="!isEditing || isSubmittingFormData"
+              />
+              <p class="text-muted mt-1 text-xs">Find it in Microreact under Account settings, API access token.</p>
             </EGFormGroup>
           </section>
         </template>

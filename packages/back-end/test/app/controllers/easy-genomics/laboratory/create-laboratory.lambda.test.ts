@@ -143,6 +143,60 @@ describe('create-laboratory.lambda', () => {
     });
   });
 
+  it('stores a Microreact access token in SSM when provided', async () => {
+    (mockOrgService.prototype.get as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      AwsHealthOmicsEnabled: true,
+    });
+    (mockLabService.prototype.add as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: 'lab-1',
+    });
+    (mockSsmService.prototype.putParameter as jest.Mock).mockResolvedValue({});
+
+    const result = await handler(
+      createEvent({
+        ...baseRequest,
+        NextFlowTowerEnabled: false,
+        NextFlowTowerAccessToken: undefined,
+        MicroreactAccessToken: 'mr-token',
+      }),
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    const createdLabId = (mockLabService.prototype.add as jest.Mock).mock.calls[0][0].LaboratoryId;
+    expect(mockSsmService.prototype.putParameter).toHaveBeenCalledWith({
+      Name: `/easy-genomics/organization/${ORG_ID}/laboratory/${createdLabId}/microreact-access-token`,
+      Description: `Easy Genomics Laboratory ${createdLabId} Microreact access token`,
+      Value: 'mr-token',
+      Type: 'SecureString',
+      Overwrite: false,
+    });
+  });
+
+  it('does not write a Microreact access token when it is omitted', async () => {
+    (mockOrgService.prototype.get as jest.Mock).mockResolvedValue({ OrganizationId: ORG_ID });
+    (mockLabService.prototype.add as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: 'lab-1',
+    });
+
+    const result = await handler(
+      createEvent({
+        ...baseRequest,
+        NextFlowTowerEnabled: false,
+        NextFlowTowerAccessToken: undefined,
+      }),
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockSsmService.prototype.putParameter).not.toHaveBeenCalled();
+  });
+
   it('does not seed S3 access when S3Bucket is omitted', async () => {
     (mockOrgService.prototype.get as jest.Mock).mockResolvedValue({
       OrganizationId: ORG_ID,

@@ -1,4 +1,4 @@
-import { ZodIssue, ZodSchema } from 'zod';
+import { z, ZodArray, ZodIssue, ZodObject, ZodSchema, ZodTypeAny } from 'zod';
 
 const REQUEST_ERROR_PREFIX = 'Request error: ';
 
@@ -31,8 +31,23 @@ export function formatValidationIssues(issues: ZodIssue[], fieldLabels: Record<s
     .join('; ');
 }
 
+/**
+ * Request schemas stay `.strict()` so the client cannot invent fields. Response validation
+ * strips unrecognized keys instead: a newer backend (or leftover fields after a feature
+ * rollback) must not blank the page when required fields are still present.
+ */
+function schemaIgnoringUnknownKeys(schema: ZodTypeAny): ZodTypeAny {
+  if (schema instanceof ZodArray) {
+    return z.array(schemaIgnoringUnknownKeys(schema.element));
+  }
+  if (schema instanceof ZodObject) {
+    return schema.strip();
+  }
+  return schema;
+}
+
 export function validateApiResponse<T>(schema: ZodSchema<T>, data: any) {
-  const validation = schema.safeParse(data);
+  const validation = schemaIgnoringUnknownKeys(schema as ZodTypeAny).safeParse(data);
 
   if (!validation.success) {
     console.error('Validation error details:', validation.error.issues);

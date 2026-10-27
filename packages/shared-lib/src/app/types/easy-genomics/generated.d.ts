@@ -454,6 +454,10 @@ export interface paths {
     /** Request Preview Workflow Key Outputs */
     post: operations["requestPreviewWorkflowKeyOutputs"];
   };
+  "/easy-genomics/workflow-key-outputs/request-run-microreact-export": {
+    /** Request Run Microreact Export */
+    post: operations["requestRunMicroreactExport"];
+  };
   "/easy-genomics/workflow-key-outputs/request-run-workflow-key-outputs": {
     /** Request Run Workflow Key Outputs */
     post: operations["requestRunWorkflowKeyOutputs"];
@@ -1144,6 +1148,7 @@ export interface components {
       FailureAnalysisEnabled?: boolean;
       HealthOmicsLlmApiKey?: string;
       SeqeraLlmApiKey?: string;
+      MicroreactAccessToken?: string;
     };
     /** @enum {string} */
     Status: "Active" | "Inactive";
@@ -1233,6 +1238,12 @@ export interface components {
       HasHealthOmicsLlmApiKey?: boolean;
       HasSeqeraLlmApiKey?: boolean;
       /**
+       * @description Microreact API access token used to create projects from key outputs. Projects
+       * land in the token owner's Microreact account. Stored in SSM at
+       * `/easy-genomics/organization/{OrganizationId}/laboratory/{LaboratoryId}/microreact-access-token`.
+       */
+      HasMicroreactAccessToken?: boolean;
+      /**
        * @description AWS HealthOmics run cache id used for call caching ("resume"). Lazily provisioned on the
        * first HealthOmics run and reused for all subsequent runs, so a failed run can be retried and
        * resume from its last completed task instead of recomputing everything. Managed internally.
@@ -1281,6 +1292,7 @@ export interface components {
       /** @description Boolean indicators. The actual keys live in SSM and are never returned. */
       HasHealthOmicsLlmApiKey?: boolean;
       HasSeqeraLlmApiKey?: boolean;
+      HasMicroreactAccessToken?: boolean;
       HealthOmicsRunCacheId?: string;
     };
     RequestLaboratoryRequest: {
@@ -1511,6 +1523,16 @@ export interface components {
         SyncedAt: string;
         ByService?: Record<string, never>;
       };
+      /**
+       * @description State of the latest Microreact export for this run. Absent means it was never sent.
+       * @enum {string}
+       */
+      MicroreactStatus?: "Failed" | "Queued" | "Succeeded";
+      /** @description Project created by the latest successful export. Each export creates a new project. */
+      MicroreactProjectUrl?: string;
+      /** @description Why the latest export failed, specific enough for a lab manager to fix the settings. */
+      MicroreactErrorMessage?: string;
+      MicroreactRequestedAt?: string;
     };
     ReadLaboratoryRun: {
       LaboratoryId: string;
@@ -1613,6 +1635,16 @@ export interface components {
         SyncedAt: string;
         ByService?: Record<string, never>;
       };
+      /**
+       * @description State of the latest Microreact export for this run. Absent means it was never sent.
+       * @enum {string}
+       */
+      MicroreactStatus?: "Failed" | "Queued" | "Succeeded";
+      /** @description Project created by the latest successful export. Each export creates a new project. */
+      MicroreactProjectUrl?: string;
+      /** @description Why the latest export failed, specific enough for a lab manager to fix the settings. */
+      MicroreactErrorMessage?: string;
+      MicroreactRequestedAt?: string;
     };
     RequestEstimateRunCostRequest: {
       /** @enum {string} */
@@ -1707,6 +1739,7 @@ export interface components {
       FailureAnalysisEnabled?: boolean;
       HealthOmicsLlmApiKey?: string;
       SeqeraLlmApiKey?: string;
+      MicroreactAccessToken?: string;
     };
     AddBulkLaboratoryUsersRequest: {
       /** Format: uuid */
@@ -2090,6 +2123,12 @@ export interface components {
       WorkflowId: string;
       Enabled: boolean;
       DestinationUri?: string;
+      Microreact?: {
+        Enabled?: boolean;
+        /** Format: uuid */
+        MetadataKeyOutputId?: string;
+        TreeKeyOutputIds?: string[];
+      };
     };
     /**
      * @description One role in the key-outputs definition. `Pattern` is a path glob relative to
@@ -2103,12 +2142,30 @@ export interface components {
       ExamplePath?: string;
     };
     /**
-     * @description Where to copy this workflow's key outputs after a run completes successfully.
-     * One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+     * @description Where to deliver this workflow's key outputs after a run completes successfully:
+     * an external `s3://bucket/prefix` copy, a Microreact project, or both.
      */
     WorkflowKeyOutputDelivery: {
       Enabled: boolean;
       DestinationUri?: string;
+      /**
+       * @description Sends a completed run's key outputs to Microreact as a new private project,
+       * using the lab's Microreact access token. `MetadataKeyOutputId` names the
+       * CSV/TSV key output whose first column is the sample ID; each tree key output
+       * is a Newick file whose leaf labels match that ID.
+       */
+      Microreact?: components["schemas"]["WorkflowKeyOutputMicroreactDelivery"];
+    };
+    /**
+     * @description Sends a completed run's key outputs to Microreact as a new private project,
+     * using the lab's Microreact access token. `MetadataKeyOutputId` names the
+     * CSV/TSV key output whose first column is the sample ID; each tree key output
+     * is a Newick file whose leaf labels match that ID.
+     */
+    WorkflowKeyOutputMicroreactDelivery: {
+      Enabled: boolean;
+      MetadataKeyOutputId?: string;
+      TreeKeyOutputIds?: string[];
     };
     WorkflowKeyOutputs: {
       LaboratoryId: string;
@@ -2119,8 +2176,8 @@ export interface components {
       SourceRunId?: string;
       KeyOutputs: components["schemas"]["WorkflowKeyOutput"][];
       /**
-       * @description Where to copy this workflow's key outputs after a run completes successfully.
-       * One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+       * @description Where to deliver this workflow's key outputs after a run completes successfully:
+       * an external `s3://bucket/prefix` copy, a Microreact project, or both.
        */
       Delivery?: components["schemas"]["WorkflowKeyOutputDelivery"];
       CreatedAt?: string;
@@ -2151,8 +2208,8 @@ export interface components {
       SourceRunId?: string;
       KeyOutputs: components["schemas"]["WorkflowKeyOutput"][];
       /**
-       * @description Where to copy this workflow's key outputs after a run completes successfully.
-       * One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+       * @description Where to deliver this workflow's key outputs after a run completes successfully:
+       * an external `s3://bucket/prefix` copy, a Microreact project, or both.
        */
       Delivery?: components["schemas"]["WorkflowKeyOutputDelivery"];
       CreatedAt?: string;
@@ -2182,6 +2239,17 @@ export interface components {
     };
     PreviewWorkflowKeyOutputsResponse: {
       KeyOutputs: components["schemas"]["PreviewWorkflowKeyOutput"][];
+    };
+    RequestRunMicroreactExportRequest: {
+      /** Format: uuid */
+      LaboratoryId: string;
+      RunId: string;
+    };
+    /** @enum {string} */
+    MicroreactExportStatus: "Failed" | "Queued" | "Succeeded";
+    RequestRunMicroreactExportResponse: {
+      RunId: string;
+      MicroreactStatus: components["schemas"]["MicroreactExportStatus"];
     };
     RequestRunWorkflowKeyOutputsRequest: {
       /** Format: uuid */
@@ -6443,6 +6511,27 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["PreviewWorkflowKeyOutputsResponse"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Request Run Microreact Export */
+  requestRunMicroreactExport: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RequestRunMicroreactExportRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["RequestRunMicroreactExportResponse"];
         };
       };
       400: components["responses"]["BadRequest"];

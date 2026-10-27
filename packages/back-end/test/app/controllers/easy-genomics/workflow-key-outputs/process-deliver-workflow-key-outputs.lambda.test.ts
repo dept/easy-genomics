@@ -5,8 +5,10 @@ import { handler } from '../../../../../src/app/controllers/easy-genomics/workfl
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-run-service');
 jest.mock('../../../../../src/app/services/easy-genomics/workflow-key-outputs-service');
 jest.mock('../../../../../src/app/services/s3-service');
+jest.mock('../../../../../src/app/services/easy-genomics/microreact-export-service');
 
 import { LaboratoryRunService } from '../../../../../src/app/services/easy-genomics/laboratory-run-service';
+import { MicroreactExportService } from '../../../../../src/app/services/easy-genomics/microreact-export-service';
 import { WorkflowKeyOutputsService } from '../../../../../src/app/services/easy-genomics/workflow-key-outputs-service';
 import { S3Service } from '../../../../../src/app/services/s3-service';
 
@@ -48,12 +50,13 @@ describe('process-deliver-workflow-key-outputs Lambda', () => {
   let mockGetDefinition: jest.Mock;
   let mockList: jest.Mock;
   let mockCopy: jest.Mock;
+  let mockExportRun: jest.Mock;
 
-  const event = (): SQSEvent =>
+  const event = (target?: 'Microreact'): SQSEvent =>
     ({
       Records: [
         {
-          body: JSON.stringify({ LaboratoryId: LAB_ID, RunId: 'run-1' }),
+          body: JSON.stringify({ LaboratoryId: LAB_ID, RunId: 'run-1', ...(target ? { Target: target } : {}) }),
           messageId: '1',
           receiptHandle: 'handle',
           attributes: {},
@@ -87,6 +90,66 @@ describe('process-deliver-workflow-key-outputs Lambda', () => {
     (WorkflowKeyOutputsService as jest.MockedClass<typeof WorkflowKeyOutputsService>).prototype.get = mockGetDefinition;
     (S3Service as jest.MockedClass<typeof S3Service>).prototype.listAllObjectsUnderPrefix = mockList;
     (S3Service as jest.MockedClass<typeof S3Service>).prototype.copyObjectBySize = mockCopy;
+    mockExportRun = jest.fn().mockResolvedValue('Succeeded');
+    (MicroreactExportService as jest.MockedClass<typeof MicroreactExportService>).prototype.exportRun = mockExportRun;
+  });
+
+  const microreact = { Enabled: true, MetadataKeyOutputId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' };
+
+  it('sends to Microreact and copies to S3 when both are enabled', async () => {
+    const definition = deliveryDefinition({
+      Delivery: { Enabled: true, DestinationUri: 's3://results-bucket/incoming', Microreact: microreact },
+    });
+    mockGetDefinition.mockResolvedValue(definition);
+
+    await handler(event(), context, () => {});
+
+    expect(mockExportRun).toHaveBeenCalledWith(completedRun(), definition);
+    expect(mockCopy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not send to Microreact automatically when it is off', async () => {
+    mockGetDefinition.mockResolvedValue(
+      deliveryDefinition({
+        Delivery: {
+          Enabled: true,
+          DestinationUri: 's3://results-bucket/incoming',
+          Microreact: { ...microreact, Enabled: false },
+        },
+      }),
+    );
+
+    await handler(event(), context, () => {});
+
+    expect(mockExportRun).not.toHaveBeenCalled();
+    expect(mockCopy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not create a second project when a retried message already succeeded', async () => {
+    mockGetRun.mockResolvedValue(completedRun({ MicroreactStatus: 'Succeeded' }));
+    mockGetDefinition.mockResolvedValue(deliveryDefinition({ Delivery: { Enabled: false, Microreact: microreact } }));
+
+    await handler(event(), context, () => {});
+
+    expect(mockExportRun).not.toHaveBeenCalled();
+  });
+
+  it('only sends to Microreact for a manual send, even when it already succeeded', async () => {
+    mockGetRun.mockResolvedValue(completedRun({ MicroreactStatus: 'Succeeded' }));
+    mockGetDefinition.mockResolvedValue(
+      deliveryDefinition({
+        Delivery: {
+          Enabled: true,
+          DestinationUri: 's3://results-bucket/incoming',
+          Microreact: { ...microreact, Enabled: false },
+        },
+      }),
+    );
+
+    await handler(event('Microreact'), context, () => {});
+
+    expect(mockExportRun).toHaveBeenCalledTimes(1);
+    expect(mockCopy).not.toHaveBeenCalled();
   });
 
   it('copies only the files that match a declared pattern', async () => {

@@ -413,6 +413,10 @@
             runsTableSort.value.direction,
           ),
         );
+    } catch (error) {
+      console.error('Failed to load lab runs:', error);
+      useToastStore().error('Failed to load runs. Please refresh.');
+      runsTableItems.value = [];
     } finally {
       uiStore.setRequestComplete('loadLabRuns');
     }

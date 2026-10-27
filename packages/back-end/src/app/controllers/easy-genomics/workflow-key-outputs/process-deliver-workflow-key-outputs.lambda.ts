@@ -1,5 +1,7 @@
 import { buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { LaboratoryRunNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
+import { WorkflowKeyOutputs } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
 import {
   isProtectedLabDataDestination,
   parseKeyOutputDeliveryUri,
@@ -7,6 +9,10 @@ import {
 import { APIGatewayProxyResult, Handler } from 'aws-lambda';
 import { SQSEvent } from 'aws-lambda/trigger/sqs';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
+import {
+  MicroreactDeliveryMessage,
+  MicroreactExportService,
+} from '@BE/services/easy-genomics/microreact-export-service';
 import { WorkflowKeyOutputsService } from '@BE/services/easy-genomics/workflow-key-outputs-service';
 import { S3Service } from '@BE/services/s3-service';
 import { parseSqsJsonBody } from '@BE/utils/sqs-json-body';
@@ -21,16 +27,16 @@ import { runKeyOutputsRoot, shouldEnqueueKeyOutputDelivery } from '@BE/utils/wor
 const laboratoryRunService = new LaboratoryRunService();
 const workflowKeyOutputsService = new WorkflowKeyOutputsService();
 const s3Service = new S3Service();
+const microreactExportService = new MicroreactExportService();
 
-type DeliverWorkflowKeyOutputsMessage = {
-  LaboratoryId: string;
-  RunId: string;
-};
+type DeliverWorkflowKeyOutputsMessage = MicroreactDeliveryMessage;
 
 /**
- * Copies a completed HealthOmics run's declared key outputs to the external
- * S3 URI saved for that workflow. A missing setting, a failed run, or no
- * matching files is a no-op. Copy failures are retried by the queue.
+ * Delivers a completed HealthOmics run's declared key outputs: a copy to the
+ * external S3 URI saved for that workflow, and a new Microreact project when
+ * enabled. A manual send (`Target: 'Microreact'`) only creates the project.
+ * A missing setting, a failed run, or no matching files is a no-op. Copy
+ * failures are retried by the queue.
  */
 export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxyResult> => {
   console.log('EVENT: \n' + JSON.stringify(event, null, 2));
@@ -64,6 +70,18 @@ async function deliverKeyOutputs(message: DeliverWorkflowKeyOutputsMessage): Pro
   }
 
   const definition = await workflowKeyOutputsService.get(run.LaboratoryId, run.WorkflowExternalId!);
+  if (message.Target === 'Microreact') {
+    await microreactExportService.exportRun(run, definition);
+    return;
+  }
+  // Microreact records its own failures, so it runs first and an S3 retry cannot re-send a created project.
+  if (definition?.Delivery?.Microreact?.Enabled && run.MicroreactStatus !== 'Succeeded') {
+    await microreactExportService.exportRun(run, definition);
+  }
+  await copyKeyOutputsToS3(run, definition);
+}
+
+async function copyKeyOutputsToS3(run: LaboratoryRun, definition: WorkflowKeyOutputs | undefined): Promise<void> {
   if (!definition?.Delivery?.Enabled || !definition.Delivery.DestinationUri || definition.KeyOutputs.length === 0) {
     console.info(`Skip key output delivery for RunId=${run.RunId}: delivery is off or nothing is declared`);
     return;
