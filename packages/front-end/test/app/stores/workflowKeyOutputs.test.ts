@@ -62,9 +62,8 @@ describe('workflowKeyOutputs store', () => {
     mockRequestMicroreactExport.mockResolvedValue({ RunId: 'run-1', MicroreactStatus: 'Queued' });
     const store = useWorkflowKeyOutputsStore();
 
-    expect(await store.requestMicroreactExport('org-1', LAB_ID, 'run-1')).toBe(true);
+    expect(await store.requestMicroreactExport(LAB_ID, 'run-1')).toBe(true);
     expect(mockRequestMicroreactExport).toHaveBeenCalledWith({
-      OrganizationId: 'org-1',
       LaboratoryId: LAB_ID,
       RunId: 'run-1',
     });
@@ -74,7 +73,7 @@ describe('workflowKeyOutputs store', () => {
     mockRequestMicroreactExport.mockRejectedValue(new Error('Choose a Microreact metadata key output first'));
     const store = useWorkflowKeyOutputsStore();
 
-    expect(await store.requestMicroreactExport('org-1', LAB_ID, 'run-1')).toBe(false);
+    expect(await store.requestMicroreactExport(LAB_ID, 'run-1')).toBe(false);
     expect(mockToastError).toHaveBeenCalledWith('Choose a Microreact metadata key output first');
   });
 

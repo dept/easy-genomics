@@ -1,4 +1,5 @@
-import { InvalidRequestError, NotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { ParameterNotFound } from '@aws-sdk/client-ssm';
+import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 
 jest.mock('../../../../src/app/services/easy-genomics/laboratory-run-service');
 jest.mock('../../../../src/app/services/easy-genomics/workflow-key-outputs-service');
@@ -121,7 +122,9 @@ describe('MicroreactExportService', () => {
     });
 
     it('records a failure when the lab has no Microreact access token', async () => {
-      mockGetParameter.mockRejectedValue(new Error('ParameterNotFound'));
+      mockGetParameter.mockRejectedValue(
+        new ParameterNotFound({ message: 'Parameter not found', $metadata: {} } as any),
+      );
 
       const status = await new MicroreactExportService().exportRun(completedRun(), definition());
 
@@ -131,6 +134,22 @@ describe('MicroreactExportService', () => {
         expect.objectContaining({
           MicroreactStatus: 'Failed',
           MicroreactErrorMessage: 'Add a Microreact access token in the laboratory settings',
+        }),
+        [],
+      );
+    });
+
+    it('records the SSM error when the token lookup fails for another reason', async () => {
+      mockGetParameter.mockRejectedValue(new Error('AccessDeniedException'));
+
+      const status = await new MicroreactExportService().exportRun(completedRun(), definition());
+
+      expect(status).toBe('Failed');
+      expect(mockCreateProject).not.toHaveBeenCalled();
+      expect(mockUpdateRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          MicroreactStatus: 'Failed',
+          MicroreactErrorMessage: 'AccessDeniedException',
         }),
         [],
       );
@@ -188,7 +207,7 @@ describe('MicroreactExportService', () => {
   });
 
   describe('requestExport', () => {
-    const request = { OrganizationId: ORG_ID, LaboratoryId: LAB_ID, RunId: 'run-1' };
+    const request = { LaboratoryId: LAB_ID, RunId: 'run-1' };
 
     it('marks the run queued, then enqueues a Microreact-only delivery', async () => {
       const response = await new MicroreactExportService().requestExport(request);
@@ -202,13 +221,6 @@ describe('MicroreactExportService', () => {
       expect(JSON.parse(message.MessageBody)).toEqual({ LaboratoryId: LAB_ID, RunId: 'run-1', Target: 'Microreact' });
       expect(message.MessageGroupId).toBe(`deliver-key-outputs-${LAB_ID}`);
       expect(mockUpdateRun.mock.invocationCallOrder[0]).toBeLessThan(mockSendMessage.mock.invocationCallOrder[0]);
-    });
-
-    it('rejects a run from another organization', async () => {
-      mockGetRun.mockResolvedValue(completedRun({ OrganizationId: '55555555-5555-4555-8555-555555555555' }));
-
-      await expect(new MicroreactExportService().requestExport(request)).rejects.toThrow(NotFoundError);
-      expect(mockSendMessage).not.toHaveBeenCalled();
     });
 
     it('rejects a run that has not completed', async () => {

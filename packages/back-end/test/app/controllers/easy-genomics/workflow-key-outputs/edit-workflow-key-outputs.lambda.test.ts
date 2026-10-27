@@ -156,6 +156,61 @@ describe('edit-workflow-key-outputs Lambda', () => {
     expect(mockSave).not.toHaveBeenCalled();
   });
 
+  it('rejects a technician when Microreact automatic sending is enabled', async () => {
+    (WorkflowKeyOutputsService as jest.MockedClass<typeof WorkflowKeyOutputsService>).prototype.get = jest
+      .fn()
+      .mockResolvedValue({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        Delivery: {
+          Enabled: false,
+          Microreact: { Enabled: true, MetadataKeyOutputId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+        },
+      });
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        KeyOutputs: [{ Label: 'Summary', Pattern: 'reports/*.html' }],
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toEqual(403);
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it('drops stale Microreact roles when key outputs are replaced', async () => {
+    (validateLaboratoryTechnicianAccess as jest.Mock).mockReturnValue(false);
+    (validateLaboratoryManagerAccess as jest.Mock).mockReturnValue(true);
+    (WorkflowKeyOutputsService as jest.MockedClass<typeof WorkflowKeyOutputsService>).prototype.get = jest
+      .fn()
+      .mockResolvedValue({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        KeyOutputs: [{ KeyOutputId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', Label: 'Old', Pattern: 'old/*.tsv' }],
+        Delivery: {
+          Enabled: false,
+          Microreact: { Enabled: true, MetadataKeyOutputId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+        },
+      });
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        KeyOutputs: [{ Label: 'New', Pattern: 'new/*.tsv' }],
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toEqual(200);
+    expect(JSON.parse(result.body).Delivery).toEqual({ Enabled: false });
+  });
+
   it('rejects a caller with no laboratory access', async () => {
     (validateLaboratoryTechnicianAccess as jest.Mock).mockReturnValue(false);
 

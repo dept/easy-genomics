@@ -405,6 +405,8 @@
       'SeqeraLlmProvider',
       'SeqeraLlmModelId',
       'SeqeraLlmApiKey',
+      // Empty string must not be sent: an older back-end rejects the unknown field.
+      'MicroreactAccessToken',
     ] as const;
     const next = { ...input } as Record<string, unknown>;
     for (const key of fields) {

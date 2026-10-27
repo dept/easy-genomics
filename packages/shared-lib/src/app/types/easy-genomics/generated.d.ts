@@ -2242,8 +2242,6 @@ export interface components {
     };
     RequestRunMicroreactExportRequest: {
       /** Format: uuid */
-      OrganizationId: string;
-      /** Format: uuid */
       LaboratoryId: string;
       RunId: string;
     };

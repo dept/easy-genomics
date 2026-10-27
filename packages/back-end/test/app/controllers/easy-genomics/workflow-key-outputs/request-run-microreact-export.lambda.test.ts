@@ -1,10 +1,12 @@
-import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { handler } from '../../../../../src/app/controllers/easy-genomics/workflow-key-outputs/request-run-microreact-export.lambda';
 
+jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../src/app/services/easy-genomics/microreact-export-service');
 jest.mock('../../../../../src/app/utils/auth-utils');
 
+import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
 import { MicroreactExportService } from '../../../../../src/app/services/easy-genomics/microreact-export-service';
 import {
   validateLaboratoryManagerAccess,
@@ -15,7 +17,7 @@ import {
 
 const ORG_ID = '44444444-4444-4444-8444-444444444444';
 const LAB_ID = 'b1e0f6a4-1f2b-4a6d-9f1c-1a2b3c4d5e6f';
-const REQUEST = { OrganizationId: ORG_ID, LaboratoryId: LAB_ID, RunId: 'run-1' };
+const REQUEST = { LaboratoryId: LAB_ID, RunId: 'run-1' };
 
 describe('request-run-microreact-export Lambda', () => {
   let mockRequestExport: jest.Mock;
@@ -47,6 +49,9 @@ describe('request-run-microreact-export Lambda', () => {
     (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(false);
     (validateLaboratoryManagerAccess as jest.Mock).mockReturnValue(false);
     (validateLaboratoryTechnicianAccess as jest.Mock).mockReturnValue(true);
+    (LaboratoryService as jest.MockedClass<typeof LaboratoryService>).prototype.queryByLaboratoryId = jest
+      .fn()
+      .mockResolvedValue({ OrganizationId: ORG_ID, LaboratoryId: LAB_ID });
     mockRequestExport = jest.fn().mockResolvedValue({ RunId: 'run-1', MicroreactStatus: 'Queued' });
     (MicroreactExportService as jest.MockedClass<typeof MicroreactExportService>).prototype.requestExport =
       mockRequestExport;
@@ -70,8 +75,8 @@ describe('request-run-microreact-export Lambda', () => {
     expect(mockRequestExport).not.toHaveBeenCalled();
   });
 
-  it('rejects a request without the organization', async () => {
-    const result = await handler(createMockEvent({ LaboratoryId: LAB_ID, RunId: 'run-1' }), context, () => {});
+  it('rejects a request without the laboratory', async () => {
+    const result = await handler(createMockEvent({ RunId: 'run-1' }), context, () => {});
 
     expect(result.statusCode).toEqual(400);
     expect(mockRequestExport).not.toHaveBeenCalled();
@@ -86,5 +91,16 @@ describe('request-run-microreact-export Lambda', () => {
 
     expect(result.statusCode).toEqual(400);
     expect(result.body).toContain('Choose a Microreact metadata key output on the delivery page first');
+  });
+
+  it('rejects when the laboratory cannot be loaded for authorization', async () => {
+    (LaboratoryService as jest.MockedClass<typeof LaboratoryService>).prototype.queryByLaboratoryId = jest
+      .fn()
+      .mockRejectedValue(new UnauthorizedAccessError());
+
+    const result = await handler(createMockEvent(REQUEST), context, () => {});
+
+    expect(result.statusCode).toEqual(403);
+    expect(mockRequestExport).not.toHaveBeenCalled();
   });
 });

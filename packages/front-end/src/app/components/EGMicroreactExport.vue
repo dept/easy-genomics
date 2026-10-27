@@ -42,11 +42,7 @@
   onBeforeUnmount(stopPolling);
 
   async function send() {
-    const queued = await keyOutputsStore.requestMicroreactExport(
-      props.run.OrganizationId,
-      props.labId,
-      props.run.RunId,
-    );
+    const queued = await keyOutputsStore.requestMicroreactExport(props.labId, props.run.RunId);
     if (queued) await runStore.loadSingleLabRun(props.run.RunId);
   }
 </script>

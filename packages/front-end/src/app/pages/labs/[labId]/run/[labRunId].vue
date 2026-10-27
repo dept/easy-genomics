@@ -785,7 +785,6 @@
             :can-edit="canDeclareKeyOutputs"
             @edit="isDeclaringKeyOutputs = true"
           />
-          <EGMicroreactExport v-if="canSendToMicroreact && labRun" :lab-id="labId" :run="labRun" />
           <div v-else-if="canDeclareKeyOutputs && !hasKeyOutputs" class="flex justify-end">
             <button
               type="button"
@@ -795,6 +794,7 @@
               Define key outputs
             </button>
           </div>
+          <EGMicroreactExport v-if="canSendToMicroreact && labRun" :lab-id="labId" :run="labRun" />
           <div v-if="showKeyOutputsPanel && runKeyOutputs" class="pt-2">
             <EGText tag="h3">All files</EGText>
             <p class="text-muted mb-4 mt-1 text-sm">{{ runKeyOutputs.TotalFileCount.toLocaleString() }} objects</p>

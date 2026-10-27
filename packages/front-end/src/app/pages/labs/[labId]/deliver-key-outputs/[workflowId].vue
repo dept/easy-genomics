@@ -29,6 +29,8 @@
   const microreactMetadataId = ref('');
   const microreactTreeIds = ref<string[]>([]);
   const microreactError = ref('');
+  /** True when DynamoDB already has Microreact settings, so Save can clear them. */
+  const hadSavedMicroreact = ref(false);
 
   onBeforeMount(async () => {
     // Always reload: the lab list does not carry HasMicroreactAccessToken.
@@ -44,9 +46,19 @@
     enabled.value = definition.Delivery?.Enabled ?? false;
     destinationUri.value = definition.Delivery?.DestinationUri ?? '';
     keyOutputs.value = definition.KeyOutputs;
-    microreactEnabled.value = definition.Delivery?.Microreact?.Enabled ?? false;
-    microreactMetadataId.value = definition.Delivery?.Microreact?.MetadataKeyOutputId ?? '';
-    microreactTreeIds.value = definition.Delivery?.Microreact?.TreeKeyOutputIds ?? [];
+    const declaredIds = new Set(definition.KeyOutputs.map((output) => output.KeyOutputId));
+    const savedMicroreact = definition.Delivery?.Microreact;
+    const metadataId =
+      savedMicroreact?.MetadataKeyOutputId && declaredIds.has(savedMicroreact.MetadataKeyOutputId)
+        ? savedMicroreact.MetadataKeyOutputId
+        : '';
+    microreactMetadataId.value = metadataId;
+    microreactTreeIds.value = (savedMicroreact?.TreeKeyOutputIds ?? []).filter((id) => declaredIds.has(id));
+    // Auto-send needs a metadata role; drop Enabled when the saved ID is gone.
+    microreactEnabled.value = Boolean(savedMicroreact?.Enabled && metadataId);
+    hadSavedMicroreact.value = Boolean(
+      savedMicroreact?.Enabled || savedMicroreact?.MetadataKeyOutputId || savedMicroreact?.TreeKeyOutputIds?.length,
+    );
     workflowName.value = definition.WorkflowName || workflowName.value;
     canSave.value = true;
   });
@@ -81,17 +93,35 @@
   }
 
   function deliveryRequest() {
-    return {
+    const request: {
+      LaboratoryId: string;
+      WorkflowId: string;
+      Enabled: boolean;
+      DestinationUri?: string;
+      Microreact?: {
+        Enabled: boolean;
+        MetadataKeyOutputId?: string;
+        TreeKeyOutputIds?: string[];
+      };
+    } = {
       LaboratoryId: labId,
       WorkflowId: workflowId,
       Enabled: enabled.value,
       DestinationUri: destinationUri.value.trim() || undefined,
-      Microreact: {
+    };
+
+    const hasMicroreactConfig =
+      microreactEnabled.value || Boolean(microreactMetadataId.value) || microreactTreeIds.value.length > 0;
+    // Omit Microreact for S3-only saves so an empty {Enabled:false} is not written. Still send
+    // it when clearing previously saved settings.
+    if (hasMicroreactConfig || hadSavedMicroreact.value) {
+      request.Microreact = {
         Enabled: microreactEnabled.value,
         MetadataKeyOutputId: microreactMetadataId.value || undefined,
         TreeKeyOutputIds: microreactTreeIds.value.length ? microreactTreeIds.value : undefined,
-      },
-    };
+      };
+    }
+    return request;
   }
 
   function validateDelivery(): boolean {

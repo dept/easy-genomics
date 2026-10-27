@@ -1,19 +1,16 @@
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
-import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import {
   RequestRunMicroreactExport,
   RequestRunMicroreactExportSchema,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/workflow-key-outputs';
 import { RequestRunMicroreactExportResponse } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { MicroreactExportService } from '@BE/services/easy-genomics/microreact-export-service';
-import {
-  validateLaboratoryManagerAccess,
-  validateLaboratoryTechnicianAccess,
-  validateOrganizationAdminAccess,
-  validateSystemAdminAccess,
-} from '@BE/utils/auth-utils';
+import { authorizeLaboratoryKeyOutputsAccess } from '@BE/utils/workflow-key-output-utils';
 
+const laboratoryService = new LaboratoryService();
 const microreactExportService = new MicroreactExportService();
 
 /**
@@ -32,16 +29,7 @@ export const handler: Handler = async (
       : JSON.parse(event.body!);
     if (!RequestRunMicroreactExportSchema.safeParse(request).success) throw new InvalidRequestError();
 
-    if (
-      !(
-        validateSystemAdminAccess(event) ||
-        validateOrganizationAdminAccess(event, request.OrganizationId) ||
-        validateLaboratoryManagerAccess(event, request.OrganizationId, request.LaboratoryId) ||
-        validateLaboratoryTechnicianAccess(event, request.OrganizationId, request.LaboratoryId)
-      )
-    ) {
-      throw new UnauthorizedAccessError();
-    }
+    await authorizeLaboratoryKeyOutputsAccess(event, laboratoryService, request.LaboratoryId);
 
     const response: RequestRunMicroreactExportResponse = await microreactExportService.requestExport(request);
     return buildResponse(200, JSON.stringify(response), event);

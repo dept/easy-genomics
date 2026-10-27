@@ -78,27 +78,27 @@ function refineMicroreactDelivery(
   ctx: z.RefinementCtx,
 ): void {
   if (value.Enabled && !value.MetadataKeyOutputId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['MetadataKeyOutputId'],
-        message: 'Choose the key output Microreact uses as its metadata table',
-      });
-    }
-    const trees = value.TreeKeyOutputIds ?? [];
-    if (value.MetadataKeyOutputId && trees.includes(value.MetadataKeyOutputId)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['TreeKeyOutputIds'],
-        message: 'The metadata key output cannot also be a tree',
-      });
-    }
-    if (new Set(trees).size !== trees.length) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['TreeKeyOutputIds'],
-        message: 'Each tree key output can be chosen once',
-      });
-    }
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['MetadataKeyOutputId'],
+      message: 'Choose the key output Microreact uses as its metadata table',
+    });
+  }
+  const trees = value.TreeKeyOutputIds ?? [];
+  if (value.MetadataKeyOutputId && trees.includes(value.MetadataKeyOutputId)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['TreeKeyOutputIds'],
+      message: 'The metadata key output cannot also be a tree',
+    });
+  }
+  if (new Set(trees).size !== trees.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['TreeKeyOutputIds'],
+      message: 'Each tree key output can be chosen once',
+    });
+  }
 }
 
 export const WorkflowKeyOutputMicroreactDeliverySchema = z
@@ -178,7 +178,6 @@ export type EditWorkflowKeyOutputDelivery = z.infer<typeof EditWorkflowKeyOutput
 
 export const RequestRunMicroreactExportSchema = z
   .object({
-    OrganizationId: z.string().uuid(),
     LaboratoryId: z.string().uuid(),
     RunId: z.string().min(1),
   })

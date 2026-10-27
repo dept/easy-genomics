@@ -5,7 +5,6 @@ import {
 } from './workflow-key-outputs';
 
 const LAB_ID = '11111111-1111-4111-8111-111111111111';
-const ORG_ID = '44444444-4444-4444-8444-444444444444';
 const METADATA_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const TREE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
@@ -81,11 +80,8 @@ describe('EditWorkflowKeyOutputDeliverySchema', () => {
 });
 
 describe('RequestRunMicroreactExportSchema', () => {
-  it('requires the organization, laboratory and run', () => {
-    expect(
-      RequestRunMicroreactExportSchema.safeParse({ OrganizationId: ORG_ID, LaboratoryId: LAB_ID, RunId: 'run-1' })
-        .success,
-    ).toBe(true);
-    expect(RequestRunMicroreactExportSchema.safeParse({ LaboratoryId: LAB_ID, RunId: 'run-1' }).success).toBe(false);
+  it('requires the laboratory and run', () => {
+    expect(RequestRunMicroreactExportSchema.safeParse({ LaboratoryId: LAB_ID, RunId: 'run-1' }).success).toBe(true);
+    expect(RequestRunMicroreactExportSchema.safeParse({ LaboratoryId: LAB_ID }).success).toBe(false);
   });
 });

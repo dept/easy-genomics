@@ -220,6 +220,56 @@ describe('edit-workflow-key-output-delivery Lambda', () => {
     expect(JSON.parse(result.body).Delivery.Microreact).toEqual(microreact);
   });
 
+  it('drops stale saved Microreact roles when the request omits Microreact', async () => {
+    mockGet.mockResolvedValue({
+      LaboratoryId: LAB_ID,
+      WorkflowId: WORKFLOW_ID,
+      KeyOutputs: [KEY_OUTPUT],
+      Delivery: {
+        Enabled: false,
+        Microreact: {
+          Enabled: true,
+          MetadataKeyOutputId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+          TreeKeyOutputIds: [KEY_OUTPUT.KeyOutputId],
+        },
+      },
+    });
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        Enabled: true,
+        DestinationUri: 's3://results-bucket/incoming',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toEqual(200);
+    expect(JSON.parse(result.body).Delivery).toEqual({
+      Enabled: true,
+      DestinationUri: 's3://results-bucket/incoming/',
+      Microreact: { Enabled: false, TreeKeyOutputIds: [KEY_OUTPUT.KeyOutputId] },
+    });
+  });
+
+  it('does not persist an empty disabled Microreact object', async () => {
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        Enabled: false,
+        Microreact: { Enabled: false },
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toEqual(200);
+    expect(JSON.parse(result.body).Delivery).toEqual({ Enabled: false });
+  });
+
   it('rejects a Microreact role that is not a declared key output', async () => {
     const result = await handler(
       createMockEvent({

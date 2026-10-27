@@ -2,6 +2,10 @@ import { UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils
 import { isCompletedHealthOmicsWorkflowRun } from '@easy-genomics/shared-lib/src/app/utils/workflow-key-output-delivery';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
+import {
+  WorkflowKeyOutput,
+  WorkflowKeyOutputMicroreactDelivery,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
 import { APIGatewayProxyWithCognitoAuthorizerEvent } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import {
@@ -94,4 +98,43 @@ export async function authorizeLaboratoryManagerKeyOutputsAccess(
   }
 
   return laboratory;
+}
+
+/**
+ * Drops Microreact role IDs that are no longer declared key outputs. Returns
+ * undefined when nothing remains to store, so an empty `{ Enabled: false }` is
+ * not written. Auto-send turns off when the metadata role disappears.
+ */
+export function scrubMicroreactDeliveryRoles(
+  microreact: WorkflowKeyOutputMicroreactDelivery | undefined,
+  keyOutputs: WorkflowKeyOutput[],
+): WorkflowKeyOutputMicroreactDelivery | undefined {
+  if (!microreact) return undefined;
+
+  const declared = new Set(keyOutputs.map((output) => output.KeyOutputId));
+  const metadataId =
+    microreact.MetadataKeyOutputId && declared.has(microreact.MetadataKeyOutputId)
+      ? microreact.MetadataKeyOutputId
+      : undefined;
+  const treeIds = (microreact.TreeKeyOutputIds ?? []).filter((id) => declared.has(id) && id !== metadataId);
+  const scrubbed: WorkflowKeyOutputMicroreactDelivery = {
+    Enabled: Boolean(microreact.Enabled && metadataId),
+    ...(metadataId ? { MetadataKeyOutputId: metadataId } : {}),
+    ...(treeIds.length ? { TreeKeyOutputIds: treeIds } : {}),
+  };
+
+  if (!scrubbed.Enabled && !scrubbed.MetadataKeyOutputId && !scrubbed.TreeKeyOutputIds?.length) {
+    return undefined;
+  }
+  return scrubbed;
+}
+
+/** True when every Microreact role ID is a declared key output for the workflow. */
+export function microreactRolesAreDeclared(
+  microreact: WorkflowKeyOutputMicroreactDelivery,
+  keyOutputs: WorkflowKeyOutput[],
+): boolean {
+  const declared = new Set(keyOutputs.map((output) => output.KeyOutputId));
+  const roles = [microreact.MetadataKeyOutputId, ...(microreact.TreeKeyOutputIds ?? [])].filter(Boolean);
+  return roles.every((id) => declared.has(id!));
 }

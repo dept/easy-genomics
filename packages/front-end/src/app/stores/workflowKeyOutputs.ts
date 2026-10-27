@@ -157,12 +157,11 @@ const useWorkflowKeyOutputsStore = defineStore('workflowKeyOutputsStore', {
     },
 
     /** Queues a new Microreact project for a completed run. The run record carries the result. */
-    async requestMicroreactExport(organizationId: string, laboratoryId: string, runId: string): Promise<boolean> {
+    async requestMicroreactExport(laboratoryId: string, runId: string): Promise<boolean> {
       const { $api } = useNuxtApp();
       useUiStore().setRequestPending('requestMicroreactExport');
       try {
         await $api.workflowKeyOutputs.requestMicroreactExport({
-          OrganizationId: organizationId,
           LaboratoryId: laboratoryId,
           RunId: runId,
         });
