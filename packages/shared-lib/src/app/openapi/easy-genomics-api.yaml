@@ -4094,9 +4094,6 @@ components:
     RequestRunMicroreactExportRequest:
       type: object
       properties:
-        OrganizationId:
-          type: string
-          format: uuid
         LaboratoryId:
           type: string
           format: uuid
@@ -4104,7 +4101,6 @@ components:
           type: string
           minLength: 1
       required:
-        - OrganizationId
         - LaboratoryId
         - RunId
       additionalProperties: false

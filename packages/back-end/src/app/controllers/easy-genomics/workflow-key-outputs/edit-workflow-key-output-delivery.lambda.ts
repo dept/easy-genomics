@@ -5,7 +5,6 @@ import {
   EditWorkflowKeyOutputDeliverySchema,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/workflow-key-outputs';
 import {
-  WorkflowKeyOutput,
   WorkflowKeyOutputMicroreactDelivery,
   WorkflowKeyOutputs,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
@@ -14,7 +13,11 @@ import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handl
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { WorkflowKeyOutputsService } from '@BE/services/easy-genomics/workflow-key-outputs-service';
 import { isPlatformKeyOutputDeliveryBucket } from '@BE/utils/workflow-key-output-delivery';
-import { authorizeLaboratoryManagerKeyOutputsAccess } from '@BE/utils/workflow-key-output-utils';
+import {
+  authorizeLaboratoryManagerKeyOutputsAccess,
+  microreactRolesAreDeclared,
+  scrubMicroreactDeliveryRoles,
+} from '@BE/utils/workflow-key-output-utils';
 
 const laboratoryService = new LaboratoryService();
 const workflowKeyOutputsService = new WorkflowKeyOutputsService();
@@ -24,7 +27,8 @@ const workflowKeyOutputsService = new WorkflowKeyOutputsService();
  *
  * Lab-wide setting: copy this workflow's declared key outputs to one external
  * S3 URI, and/or send them to Microreact, when a HealthOmics run completes
- * successfully. A request without `Microreact` keeps the saved Microreact roles.
+ * successfully. A request without `Microreact` keeps the saved Microreact roles
+ * after dropping any IDs that are no longer declared.
  */
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -47,12 +51,8 @@ export const handler: Handler = async (
     }
 
     const existing = await workflowKeyOutputsService.get(request.LaboratoryId, request.WorkflowId);
-    const microreact: WorkflowKeyOutputMicroreactDelivery | undefined = request.Microreact
-      ? { ...request.Microreact, Enabled: request.Microreact.Enabled ?? false }
-      : existing?.Delivery?.Microreact;
-    if (microreact && !microreactRolesAreDeclared(microreact, existing?.KeyOutputs ?? [])) {
-      throw new InvalidRequestError('Microreact roles must be key outputs declared for this workflow');
-    }
+    const keyOutputs = existing?.KeyOutputs ?? [];
+    const microreact = resolveMicroreactDelivery(request.Microreact, existing?.Delivery?.Microreact, keyOutputs);
     const now = new Date().toISOString();
     const definition: WorkflowKeyOutputs = {
       LaboratoryId: request.LaboratoryId,
@@ -60,7 +60,7 @@ export const handler: Handler = async (
       WorkflowName: existing?.WorkflowName,
       Platform: existing?.Platform ?? 'AWS HealthOmics',
       SourceRunId: existing?.SourceRunId,
-      KeyOutputs: existing?.KeyOutputs ?? [],
+      KeyOutputs: keyOutputs,
       Delivery: {
         Enabled: request.Enabled,
         DestinationUri: destination ? `s3://${destination.bucket}/${destination.prefix}` : undefined,
@@ -80,11 +80,20 @@ export const handler: Handler = async (
   }
 };
 
-function microreactRolesAreDeclared(
-  microreact: WorkflowKeyOutputMicroreactDelivery,
-  keyOutputs: WorkflowKeyOutput[],
-): boolean {
-  const declared = new Set(keyOutputs.map((output) => output.KeyOutputId));
-  const roles = [microreact.MetadataKeyOutputId, ...(microreact.TreeKeyOutputIds ?? [])].filter(Boolean);
-  return roles.every((id) => declared.has(id!));
+function resolveMicroreactDelivery(
+  requested: EditWorkflowKeyOutputDelivery['Microreact'],
+  saved: WorkflowKeyOutputMicroreactDelivery | undefined,
+  keyOutputs: WorkflowKeyOutputs['KeyOutputs'],
+): WorkflowKeyOutputMicroreactDelivery | undefined {
+  if (requested) {
+    const normalized: WorkflowKeyOutputMicroreactDelivery = {
+      ...requested,
+      Enabled: requested.Enabled ?? false,
+    };
+    if (!microreactRolesAreDeclared(normalized, keyOutputs)) {
+      throw new InvalidRequestError('Microreact roles must be key outputs declared for this workflow');
+    }
+    return scrubMicroreactDeliveryRoles(normalized, keyOutputs);
+  }
+  return scrubMicroreactDeliveryRoles(saved, keyOutputs);
 }

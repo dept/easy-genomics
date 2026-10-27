@@ -44,6 +44,8 @@
   const savedMicroreactEnabled = ref(false);
   const savedMicroreactMetadataId = ref('');
   const savedMicroreactTreeIds = ref<string[]>([]);
+  /** True when DynamoDB already has Microreact settings, so Save can clear them. */
+  const hadSavedMicroreact = ref(false);
 
   const detailTabs: { key: DetailTabKey; label: string }[] = [
     { key: 'output-files', label: 'Output files' },
@@ -64,6 +66,17 @@
       activeTab.value = tabFromQuery(tab);
     },
   );
+
+  /** Drop metadata and tree roles that are no longer declared output files. */
+  function dropMicroreactIdsMissingFrom(outputs: WorkflowKeyOutput[]) {
+    const declaredIds = new Set(outputs.map((output) => output.KeyOutputId));
+    const metadataId =
+      microreactMetadataId.value && declaredIds.has(microreactMetadataId.value) ? microreactMetadataId.value : '';
+    microreactMetadataId.value = metadataId;
+    microreactTreeIds.value = microreactTreeIds.value.filter((id) => declaredIds.has(id) && id !== metadataId);
+    // Auto-send needs a metadata role; drop Enabled when the saved ID is gone.
+    if (!metadataId) microreactEnabled.value = false;
+  }
 
   onBeforeMount(async () => {
     uiStore.setSidebarVisible(true);
@@ -101,15 +114,18 @@
     savedDestinationUri.value = nextDestinationUri;
     keyOutputs.value = definition.KeyOutputs;
     keyOutputCount.value = definition.KeyOutputs.length;
-    const nextMicroreactEnabled = definition.Delivery?.Microreact?.Enabled ?? false;
-    const nextMicroreactMetadataId = definition.Delivery?.Microreact?.MetadataKeyOutputId ?? '';
-    const nextMicroreactTreeIds = definition.Delivery?.Microreact?.TreeKeyOutputIds ?? [];
-    microreactEnabled.value = nextMicroreactEnabled;
-    microreactMetadataId.value = nextMicroreactMetadataId;
-    microreactTreeIds.value = [...nextMicroreactTreeIds];
-    savedMicroreactEnabled.value = nextMicroreactEnabled;
-    savedMicroreactMetadataId.value = nextMicroreactMetadataId;
-    savedMicroreactTreeIds.value = [...nextMicroreactTreeIds];
+    const savedMicroreact = definition.Delivery?.Microreact;
+    const rawMetadataId = savedMicroreact?.MetadataKeyOutputId ?? '';
+    const rawTreeIds = savedMicroreact?.TreeKeyOutputIds ?? [];
+    const rawEnabled = Boolean(savedMicroreact?.Enabled);
+    microreactEnabled.value = rawEnabled;
+    microreactMetadataId.value = rawMetadataId;
+    microreactTreeIds.value = [...rawTreeIds];
+    savedMicroreactEnabled.value = rawEnabled;
+    savedMicroreactMetadataId.value = rawMetadataId;
+    savedMicroreactTreeIds.value = [...rawTreeIds];
+    hadSavedMicroreact.value = Boolean(rawEnabled || rawMetadataId || rawTreeIds.length);
+    dropMicroreactIdsMissingFrom(definition.KeyOutputs);
     workflowName.value = definition.WorkflowName || workflowName.value;
     definitionLoaded.value = true;
   });
@@ -240,17 +256,35 @@
   }
 
   function deliveryRequest() {
-    return {
+    const request: {
+      LaboratoryId: string;
+      WorkflowId: string;
+      Enabled: boolean;
+      DestinationUri?: string;
+      Microreact?: {
+        Enabled: boolean;
+        MetadataKeyOutputId?: string;
+        TreeKeyOutputIds?: string[];
+      };
+    } = {
       LaboratoryId: labId,
       WorkflowId: workflowId,
       Enabled: enabled.value,
       DestinationUri: destinationUri.value.trim() || undefined,
-      Microreact: {
+    };
+
+    const hasMicroreactConfig =
+      microreactEnabled.value || Boolean(microreactMetadataId.value) || microreactTreeIds.value.length > 0;
+    // Omit Microreact for S3-only saves so an empty {Enabled:false} is not written. Still send
+    // it when clearing previously saved settings.
+    if (hasMicroreactConfig || hadSavedMicroreact.value) {
+      request.Microreact = {
         Enabled: microreactEnabled.value,
         MetadataKeyOutputId: microreactMetadataId.value || undefined,
         TreeKeyOutputIds: microreactTreeIds.value.length ? microreactTreeIds.value : undefined,
-      },
-    };
+      };
+    }
+    return request;
   }
 
   function validateDelivery(): boolean {
@@ -288,6 +322,9 @@
     savedMicroreactEnabled.value = nextMicroreactEnabled;
     savedMicroreactMetadataId.value = nextMicroreactMetadataId;
     savedMicroreactTreeIds.value = nextMicroreactTreeIds;
+    hadSavedMicroreact.value = Boolean(
+      nextMicroreactEnabled || nextMicroreactMetadataId || nextMicroreactTreeIds.length,
+    );
     backToWorkflowsTab();
   }
 
@@ -299,7 +336,10 @@
   function onOutputFilesSaved() {
     const definition = keyOutputsStore.definitionFor(labId, workflowId);
     keyOutputCount.value = definition?.KeyOutputs.length ?? keyOutputCount.value;
-    if (definition) keyOutputs.value = definition.KeyOutputs;
+    if (definition) {
+      keyOutputs.value = definition.KeyOutputs;
+      dropMicroreactIdsMissingFrom(definition.KeyOutputs);
+    }
   }
 </script>
 

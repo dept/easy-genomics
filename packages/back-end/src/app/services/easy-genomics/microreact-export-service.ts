@@ -1,4 +1,5 @@
-import { InvalidRequestError, NotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { ParameterNotFound } from '@aws-sdk/client-ssm';
+import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { RequestRunMicroreactExport } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/workflow-key-outputs';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import {
@@ -54,9 +55,6 @@ export class MicroreactExportService {
   /** Queues a manual send. It always creates a new project, even when one already exists. */
   public requestExport = async (request: RequestRunMicroreactExport): Promise<RequestRunMicroreactExportResponse> => {
     const run = await this.laboratoryRunService.get(request.LaboratoryId, request.RunId);
-    if (run.OrganizationId !== request.OrganizationId) {
-      throw new NotFoundError(`Run ${request.RunId} was not found in this organization`);
-    }
     if (!isCompletedHealthOmicsWorkflowRun(run)) {
       throw new InvalidRequestError('Only completed HealthOmics runs can be sent to Microreact');
     }
@@ -181,17 +179,22 @@ export class MicroreactExportService {
   }
 
   private readAccessToken = async (run: LaboratoryRun): Promise<string> => {
-    const token = await this.ssmService
-      .getParameter({
+    try {
+      const output = await this.ssmService.getParameter({
         Name: microreactAccessTokenParameterName(run.OrganizationId, run.LaboratoryId),
         WithDecryption: true,
-      })
-      .then((output) => output.Parameter?.Value)
-      .catch(() => undefined);
-    if (!token) {
-      throw new InvalidRequestError('Add a Microreact access token in the laboratory settings');
+      });
+      const token = output.Parameter?.Value;
+      if (!token) {
+        throw new InvalidRequestError('Add a Microreact access token in the laboratory settings');
+      }
+      return token;
+    } catch (err) {
+      if (err instanceof ParameterNotFound) {
+        throw new InvalidRequestError('Add a Microreact access token in the laboratory settings');
+      }
+      throw err;
     }
-    return token;
   };
 
   private readText = async (bucket: string, key: string): Promise<string> => {

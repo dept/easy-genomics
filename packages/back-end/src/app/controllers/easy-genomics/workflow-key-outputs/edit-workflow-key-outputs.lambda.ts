@@ -6,6 +6,7 @@ import {
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/workflow-key-outputs';
 import {
   WorkflowKeyOutput,
+  WorkflowKeyOutputDelivery,
   WorkflowKeyOutputs,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
@@ -15,6 +16,7 @@ import { WorkflowKeyOutputsService } from '@BE/services/easy-genomics/workflow-k
 import {
   authorizeLaboratoryKeyOutputsAccess,
   authorizeLaboratoryManagerKeyOutputsAccess,
+  scrubMicroreactDeliveryRoles,
 } from '@BE/utils/workflow-key-output-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -41,7 +43,8 @@ export const handler: Handler = async (
     }
 
     const existing = await workflowKeyOutputsService.get(request.LaboratoryId, request.WorkflowId);
-    if (existing?.Delivery?.Enabled) {
+    // Technicians cannot change which files automatic delivery (S3 or Microreact) would send.
+    if (existing?.Delivery?.Enabled || existing?.Delivery?.Microreact?.Enabled) {
       await authorizeLaboratoryManagerKeyOutputsAccess(event, laboratoryService, request.LaboratoryId);
     } else {
       await authorizeLaboratoryKeyOutputsAccess(event, laboratoryService, request.LaboratoryId);
@@ -61,7 +64,7 @@ export const handler: Handler = async (
       Platform: request.Platform,
       SourceRunId: request.SourceRunId,
       KeyOutputs: keyOutputs,
-      Delivery: existing?.Delivery,
+      Delivery: scrubDeliveryForKeyOutputs(existing?.Delivery, keyOutputs),
       CreatedAt: existing?.CreatedAt ?? now,
       CreatedBy: existing?.CreatedBy ?? currentUserId,
       ModifiedAt: now,
@@ -75,3 +78,17 @@ export const handler: Handler = async (
     return buildErrorResponse(err, event);
   }
 };
+
+/** Keeps S3 delivery settings; drops Microreact roles that no longer match a declared key output. */
+function scrubDeliveryForKeyOutputs(
+  delivery: WorkflowKeyOutputDelivery | undefined,
+  keyOutputs: WorkflowKeyOutput[],
+): WorkflowKeyOutputDelivery | undefined {
+  if (!delivery) return undefined;
+  const microreact = scrubMicroreactDeliveryRoles(delivery.Microreact, keyOutputs);
+  return {
+    Enabled: delivery.Enabled,
+    DestinationUri: delivery.DestinationUri,
+    ...(microreact ? { Microreact: microreact } : {}),
+  };
+}
