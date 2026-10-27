@@ -393,7 +393,7 @@
     { key: 'WorkflowName', label: 'Workflow', sortable: true },
     { key: 'CreatedAt', label: 'Created', sortable: true },
     { key: 'lastUpdated', label: 'Last Updated', sortable: true },
-    { key: 'Status', label: 'Status', sortable: true },
+    { key: 'Status', label: 'Status', sortable: true, class: 'w-32', rowClass: 'w-32' },
     { key: 'actions', label: 'Actions' },
   ];
 
