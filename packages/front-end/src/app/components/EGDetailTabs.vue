@@ -2,6 +2,8 @@
   export interface DetailTabItem {
     key: string;
     label: string;
+    /** Optional count shown after the label (e.g. All files 67). */
+    count?: number | null;
     disabled?: boolean;
   }
 
@@ -60,7 +62,10 @@
     @update:model-value="emit('update:modelValue', $event)"
   >
     <template #default="{ item, selected }">
-      <span>{{ item.label }}</span>
+      <span>
+        {{ item.label }}
+        <span v-if="item.count != null" class="ml-1 tabular-nums">{{ item.count.toLocaleString() }}</span>
+      </span>
       <span v-if="selected" class="sr-only">, current tab</span>
     </template>
 

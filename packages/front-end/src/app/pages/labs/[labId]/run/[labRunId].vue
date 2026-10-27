@@ -24,8 +24,6 @@
   const $route = useRoute();
   const $router = useRouter();
   const { $api } = useNuxtApp();
-  const { handleS3Download } = useFileDownload();
-  const { platformToPipelineOrWorkflow } = useMultiplatform();
 
   const labsStore = useLabsStore();
   const runStore = useRunStore();
@@ -66,6 +64,40 @@
   });
   const runKeyOutputs = computed(() => keyOutputsStore.matchesFor(labId, labRunId));
   const showKeyOutputsPanel = computed(() => (runKeyOutputs.value?.KeyOutputs.length ?? 0) > 0);
+  const keyOutputsDefinition = computed(() => {
+    const workflowId = labRun.value?.WorkflowExternalId;
+    if (!workflowId) return null;
+    return keyOutputsStore.definitionFor(labId, workflowId);
+  });
+  const keyOutputDelivery = computed(() => keyOutputsDefinition.value?.Delivery ?? null);
+  /** Flat list used by the file browser for output tags and the "Output files only" filter. */
+  const outputFileTags = computed(() => {
+    const matches = runKeyOutputs.value?.KeyOutputs ?? [];
+    return matches.flatMap((role) =>
+      role.Matches.map((file) => ({
+        Key: file.Key,
+        RelativePath: file.RelativePath,
+        Label: role.Label,
+      })),
+    );
+  });
+  /**
+   * File Manager root should be the run folder itself. For HealthOmics, Omics nests
+   * outputs under ExternalRunId — bake that into the prefix so the path never shows the ID.
+   */
+  const fileExplorerS3Prefix = computed<string | null>(() => {
+    if (!s3Prefix.value) return null;
+    const run = labRun.value;
+    const normalized = s3Prefix.value.endsWith('/') ? s3Prefix.value.slice(0, -1) : s3Prefix.value;
+    if (run?.Platform === 'AWS HealthOmics' && run.ExternalRunId) {
+      const suffix = `/${run.ExternalRunId}`;
+      if (normalized === run.ExternalRunId || normalized.endsWith(suffix)) {
+        return normalized;
+      }
+      return `${normalized}${suffix}`;
+    }
+    return normalized;
+  });
 
   watch(
     () => [canDeclareKeyOutputs.value, labRun.value?.WorkflowExternalId] as const,
@@ -96,38 +128,6 @@
     isDeclaringKeyOutputs.value = false;
     await keyOutputsStore.loadRunMatches(labId, labRunId);
   }
-
-  const outputPath = computed<string[] | null>(() => {
-    const run = labRun.value;
-    const outputUrl = run?.OutputS3Url ?? null;
-    const inputUrl = inputS3Url.value;
-
-    // If we have an explicit OutputS3Url, the File Manager root is that location.
-    // For AWS HealthOmics runs, Omics generates an additional sub-folder with the ExternalRunId
-    // which we still want to auto-descend into.
-    if (outputUrl) {
-      if (run?.Platform === 'AWS HealthOmics' && !!run.ExternalRunId) {
-        return [run.ExternalRunId];
-      }
-      return null;
-    }
-
-    if (!inputUrl) return null;
-
-    // get length of shared prefix
-    let i = 0;
-    while (inputUrl[i] === outputUrl[i]) i++;
-
-    let outputRelativeLocation = (run?.OutputS3Url ?? '').slice(i);
-    if (!outputRelativeLocation.match(/^(\/[^\/]+)+$/)) return null;
-
-    // omics generates an additional sub-folder with the omics run id which we also want to descend into
-    if (labRun.value?.Platform === 'AWS HealthOmics' && !!labRun.value?.ExternalRunId) {
-      outputRelativeLocation += '/' + labRun.value.ExternalRunId;
-    }
-
-    return outputRelativeLocation.split('/').filter((step) => !!step); // filter out blank steps ie ''
-  });
 
   const isLoading = computed<boolean>(() => uiStore.isRequestPending('loadLabRuns'));
 
@@ -388,21 +388,28 @@
 
   const tabItems = computed(() => [
     { key: 'runDetails', label: 'Overview' },
-    { key: 'fileManager', label: 'Files' },
+    {
+      key: 'fileManager',
+      label: 'All files',
+      count: runKeyOutputs.value?.TotalFileCount ?? null,
+    },
   ]);
 
   // Tab selection is round-tripped through `?tab=<label>`, so renaming the tabs
   // would strand links already shared with the previous labels.
   const LEGACY_TAB_LABELS: Record<string, string> = {
     'Run Details': 'Overview',
-    'File Manager': 'Files',
+    'File Manager': 'All files',
+    Files: 'All files',
   };
   const tabIndex = ref(0);
 
   function setTabIndexFromQuery() {
     const requestedTab = String($route.query.tab ?? '');
     const resolvedTab = LEGACY_TAB_LABELS[requestedTab] ?? requestedTab;
-    const queryTabMatchIndex = tabItems.value.findIndex((tab) => tab.label === resolvedTab);
+    const queryTabMatchIndex = tabItems.value.findIndex(
+      (tab) => tab.label === resolvedTab || (resolvedTab.startsWith('All files') && tab.key === 'fileManager'),
+    );
     tabIndex.value = queryTabMatchIndex !== -1 ? queryTabMatchIndex : 0;
   }
 
@@ -417,33 +424,11 @@
     updateQueryParams({ tab: tabItems.value[newIndex]?.label });
   }
 
-  const pipelineOrWorkflow = computed<string | null>(() =>
-    !labRun.value?.Platform ? null : platformToPipelineOrWorkflow(labRun.value.Platform),
-  );
-
   usePageTitle(() => (labRun.value?.RunName ? labRun.value.RunName : 'Run details'));
 
-  async function downloadSampleSheet(): Promise<void> {
-    const sampleSheetUrl = labRun.value?.SampleSheetS3Url;
-    if (!sampleSheetUrl) {
-      useToastStore().error('Sample Sheet url not available');
-      return;
-    }
-
-    const path = sampleSheetUrl.replace(/\/[^/]+$/, '');
-    const fileName = sampleSheetUrl.split('/').at(-1);
-
-    uiStore.setRequestPending('downloadSampleSheet');
-    try {
-      await handleS3Download(labId, fileName!, path);
-    } finally {
-      uiStore.setRequestComplete('downloadSampleSheet');
-    }
+  function goToOverviewTab() {
+    handleTabChange(0);
   }
-
-  const rowStyle = 'flex border-b p-6 text-sm';
-  const rowLabelStyle = 'w-[200px] shrink-0 font-medium text-black';
-  const rowContentStyle = 'min-w-0 flex-1 break-words text-muted text-left';
 
   /** The failure card is platform-agnostic; each platform supplies the reason differently. */
   const platformFailureReason = computed<string | null>(() =>
@@ -502,11 +487,19 @@
     @update:model-value="handleTabChange"
   >
     <template #default="{ item }">
-      <!-- Run Details -->
+      <!-- Overview -->
       <div v-if="item.key === 'runDetails'" class="space-y-3">
-        <div v-if="labRun" class="grid items-start gap-3 lg:grid-cols-3">
+        <EGDeclareKeyOutputsEditor
+          v-if="isDeclaringKeyOutputs && labRun && s3Bucket && s3Prefix"
+          :lab-id="labId"
+          :lab-name="lab?.Name ?? ''"
+          :run="labRun"
+          @cancel="isDeclaringKeyOutputs = false"
+          @saved="onKeyOutputsSaved"
+        />
+        <div v-else-if="labRun" class="grid items-start gap-3 lg:grid-cols-3">
           <div class="flex flex-col gap-3 lg:col-span-2">
-            <div v-if="platformFailureReason || omicsFailedTasks.length" class="mb-6 space-y-3">
+            <div v-if="platformFailureReason || omicsFailedTasks.length" class="space-y-3">
               <EGRunFailureReason
                 v-if="platformFailureReason && labRun"
                 :reason="platformFailureReason"
@@ -607,7 +600,7 @@
               <EGRunFailedTasks :tasks="omicsFailedTasks" />
             </div>
 
-            <div v-if="showSeqeraProgressCard || showOmicsProgressCard" class="mb-6 space-y-3">
+            <div v-if="showSeqeraProgressCard || showOmicsProgressCard" class="space-y-3">
               <!-- Seqera task-level progress for FAILED or RUNNING runs -->
               <section
                 v-if="showSeqeraProgressCard"
@@ -681,133 +674,62 @@
               </section>
             </div>
 
-            <section class="stroke-light flex flex-col rounded-2xl border border-solid bg-white p-6 pt-0 max-md:px-5">
-              <h2 class="sr-only">Run details</h2>
-              <h3 class="text-muted mt-6 text-xs font-medium uppercase tracking-wide">Configuration</h3>
-              <dl class="mt-2 space-y-0">
-                <div :class="rowStyle">
-                  <dt :class="rowLabelStyle">Run Name</dt>
-                  <dd :class="rowContentStyle">{{ labRun.RunName }}</dd>
-                </div>
+            <EGKeyOutputsPanel
+              v-if="showKeyOutputsPanel && runKeyOutputs"
+              :lab-id="labId"
+              :matches="runKeyOutputs"
+              :workflow-name="labRun.WorkflowName"
+              :can-edit="canDeclareKeyOutputs"
+              :delivery="keyOutputDelivery"
+              @edit="isDeclaringKeyOutputs = true"
+            />
+            <div v-else-if="canDeclareKeyOutputs && !hasKeyOutputs" class="flex justify-end">
+              <button
+                type="button"
+                class="text-primary hover:text-primary-dark text-sm font-medium hover:underline"
+                @click="isDeclaringKeyOutputs = true"
+              >
+                Define key outputs
+              </button>
+            </div>
 
-                <div v-if="labRun.Description" :class="rowStyle">
-                  <dt :class="rowLabelStyle">Description</dt>
-                  <dd :class="[rowContentStyle, 'whitespace-pre-wrap']">{{ labRun.Description }}</dd>
-                </div>
-
-                <div :class="rowStyle">
-                  <dt :class="rowLabelStyle">{{ pipelineOrWorkflow }}</dt>
-                  <dd :class="rowContentStyle">{{ labRun.WorkflowName }}</dd>
-                </div>
-
-                <div v-if="labRun.Platform === 'AWS HealthOmics'" :class="rowStyle">
-                  <dt :class="rowLabelStyle">Workflow version</dt>
-                  <dd :class="rowContentStyle">{{ labRun.WorkflowVersionName || '—' }}</dd>
-                </div>
-
-                <div :class="rowStyle">
-                  <dt :class="rowLabelStyle">{{ pipelineOrWorkflow }} Run Status</dt>
-                  <dd :class="rowContentStyle">
-                    <EGStatusChip :status="labRun.Status" />
-                  </dd>
-                </div>
-
-                <div :class="rowStyle">
-                  <dt :class="rowLabelStyle">Platform</dt>
-                  <dd :class="rowContentStyle">{{ labRun.Platform }}</dd>
-                </div>
-              </dl>
-
-              <h3 class="text-muted mt-6 text-xs font-medium uppercase tracking-wide">Identifiers</h3>
-              <dl class="mt-2 space-y-0">
-                <div :class="rowStyle">
-                  <dt :class="rowLabelStyle">Owner</dt>
-                  <dd :class="rowContentStyle">{{ labRun.Owner }}</dd>
-                </div>
-
-                <div :class="rowStyle">
-                  <dt :class="rowLabelStyle">Internal Run Id</dt>
-                  <dd :class="rowContentStyle">
-                    <span class="inline-flex items-center gap-1">
-                      <span class="break-all font-mono text-xs">{{ labRun.RunId }}</span>
-                      <EGCopyButton :value="labRun.RunId" label="Copy internal run ID" />
-                    </span>
-                  </dd>
-                </div>
-
-                <div v-if="labRun.ExternalRunId" :class="rowStyle">
-                  <dt :class="rowLabelStyle">External Run Id</dt>
-                  <dd :class="rowContentStyle">
-                    <span class="inline-flex items-center gap-1">
-                      <span class="break-all font-mono text-xs">{{ labRun.ExternalRunId }}</span>
-                      <EGCopyButton :value="labRun.ExternalRunId" label="Copy external run ID" />
-                    </span>
-                  </dd>
-                </div>
-
-                <div :class="rowStyle" v-if="labRun.ModifiedAt">
-                  <dt :class="rowLabelStyle">Last Modified</dt>
-                  <dd :class="rowContentStyle">
-                    {{ `${getTime(labRun.ModifiedAt)} ⋅ ${getDate(labRun.ModifiedAt)}` }}
-                  </dd>
-                </div>
-              </dl>
-            </section>
+            <EGRunInputData :lab-run="labRun" :lab-id="labId" :lab-name="lab?.Name ?? ''" />
           </div>
 
           <div class="flex flex-col gap-3">
             <EGRunSummaryCard :lab-run="labRun" />
-            <EGRunInputData :lab-run="labRun" :lab-id="labId" :lab-name="lab?.Name ?? ''" />
+            <EGRunDetailsCard :lab-run="labRun" />
           </div>
         </div>
       </div>
 
-      <!-- File Manager -->
-      <div v-if="item.key === 'fileManager'" class="space-y-6">
-        <EGDeclareKeyOutputsEditor
-          v-if="isDeclaringKeyOutputs && labRun && s3Bucket && s3Prefix"
-          :lab-id="labId"
-          :lab-name="lab?.Name ?? ''"
-          :run="labRun"
-          @cancel="isDeclaringKeyOutputs = false"
-          @saved="onKeyOutputsSaved"
-        />
-        <template v-else>
-          <EGKeyOutputsPanel
-            v-if="showKeyOutputsPanel && runKeyOutputs"
-            :lab-id="labId"
-            :matches="runKeyOutputs"
-            :can-edit="canDeclareKeyOutputs"
-            @edit="isDeclaringKeyOutputs = true"
-          />
-          <div v-else-if="canDeclareKeyOutputs && !hasKeyOutputs" class="flex justify-end">
-            <button
-              type="button"
-              class="text-primary hover:text-primary-dark text-sm font-medium hover:underline"
-              @click="isDeclaringKeyOutputs = true"
-            >
-              Define key outputs
-            </button>
-          </div>
-          <div v-if="showKeyOutputsPanel && runKeyOutputs" class="pt-2">
-            <EGText tag="h3">All files</EGText>
-            <p class="text-muted mb-4 mt-1 text-sm">{{ runKeyOutputs.TotalFileCount.toLocaleString() }} objects</p>
-          </div>
-          <EGFileExplorer
-            v-if="s3Bucket && s3Prefix"
-            :lab-id="labId"
-            :run-id="labRunId"
-            :s3-bucket="s3Bucket"
-            :s3-prefix="s3Prefix"
-            :start-path="outputPath"
-          />
-          <p
-            v-else-if="labRun && !isLoading"
-            class="text-muted rounded-lg border border-dashed p-6 text-center text-sm"
+      <!-- All files -->
+      <div v-if="item.key === 'fileManager'" class="space-y-4">
+        <p class="text-muted text-sm">
+          Everything this run produced. Looking for the results? Output files and where they were sent are on the
+          <button
+            type="button"
+            class="text-primary hover:text-primary-dark font-medium hover:underline"
+            @click="goToOverviewTab"
           >
-            No S3 location is recorded for this run, so files cannot be listed.
-          </p>
-        </template>
+            Overview
+          </button>
+          .
+        </p>
+        <EGFileExplorer
+          v-if="s3Bucket && fileExplorerS3Prefix"
+          :lab-id="labId"
+          :run-id="labRunId"
+          :s3-bucket="s3Bucket"
+          :s3-prefix="fileExplorerS3Prefix"
+          :output-files="outputFileTags"
+        />
+        <p
+          v-else-if="labRun && !isLoading"
+          class="text-muted rounded-lg border border-dashed p-6 text-center text-sm"
+        >
+          No S3 location is recorded for this run, so files cannot be listed.
+        </p>
       </div>
     </template>
   </EGDetailTabs>
