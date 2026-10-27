@@ -65,6 +65,29 @@ const useWorkflowKeyOutputsStore = defineStore('workflowKeyOutputsStore', {
       }
     },
 
+    /**
+     * Prefetch definitions for the workflows table Integrations column.
+     * Skips ids already cached; failures are logged only so one miss does not toast-spam the lab view.
+     */
+    async loadMany(laboratoryId: string, workflowIds: string[]): Promise<void> {
+      const { $api } = useNuxtApp();
+      const missing = [...new Set(workflowIds.filter(Boolean))].filter(
+        (workflowId) => !this.definitionsByWorkflow[cacheKey(laboratoryId, workflowId)],
+      );
+      if (missing.length === 0) return;
+
+      await Promise.all(
+        missing.map(async (workflowId) => {
+          try {
+            const definition = await $api.workflowKeyOutputs.list(laboratoryId, workflowId);
+            this.definitionsByWorkflow[cacheKey(laboratoryId, workflowId)] = definition;
+          } catch (error) {
+            console.error(`Unable to load key outputs for workflow ${workflowId}`, error);
+          }
+        }),
+      );
+    },
+
     async loadRunMatches(laboratoryId: string, runId: string): Promise<RunWorkflowKeyOutputsResponse | null> {
       const { $api } = useNuxtApp();
       useUiStore().setRequestPending('loadRunWorkflowKeyOutputs');

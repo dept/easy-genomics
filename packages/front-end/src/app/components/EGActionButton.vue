@@ -26,28 +26,53 @@
     class="EGActionButton"
     v-model:open="isOpen"
     :items="items"
-    :popper="{ placement: 'bottom-start' }"
+    :popper="{ placement: 'bottom-end', strategy: 'fixed' }"
+    :ui="{
+      container: 'z-50 group',
+      width: 'w-72',
+      item: {
+        base: 'group flex items-start gap-2 w-full text-left',
+        padding: 'py-2.5 pl-3 pr-6',
+        active: 'bg-primary-muted text-primary',
+        inactive: 'text-body',
+        icon: {
+          active: 'text-primary',
+          inactive: 'text-primary',
+        },
+      },
+    }"
     v-bind="attrs"
   >
     <!-- span + tabindex avoids nested <button> inside Headless MenuButton while remaining keyboard-reachable -->
     <span
       tabindex="0"
-      class="hover:bg-null focus-visible:ring-primary-500 inline-flex h-10 w-10 items-center justify-center rounded-full border text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-      :class="{ active: isOpen }"
+      class="hover:bg-primary-muted/60 focus-visible:ring-primary-500 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-neutral-300 bg-white text-black transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+      :class="{ 'EGActionButton__trigger--open': isOpen }"
       :aria-label="menuLabel"
       @keydown="onTriggerKeydown"
     >
       <UIcon name="i-heroicons-ellipsis-horizontal-20-solid" class="h-5 w-5" aria-hidden="true" />
     </span>
     <template #item="{ item }">
-      <span class="flex items-center gap-2 truncate" :class="{ 'is-highlighted': item.isHighlighted }">
+      <span class="flex w-full items-start gap-2.5" :class="{ 'is-highlighted': item.isHighlighted }">
         <UIcon
-          v-if="item.isHighlighted"
-          name="i-heroicons-exclamation-triangle"
-          class="h-4 w-4 shrink-0"
+          v-if="item.icon"
+          :name="item.icon"
+          class="EGActionButton__icon mt-0.5 h-5 w-5 shrink-0"
           aria-hidden="true"
         />
-        {{ item.label }}
+        <UIcon
+          v-else-if="item.isHighlighted"
+          name="i-heroicons-exclamation-triangle"
+          class="mt-0.5 h-5 w-5 shrink-0"
+          aria-hidden="true"
+        />
+        <span class="flex min-w-0 flex-col gap-0.5">
+          <span class="EGActionButton__label text-sm font-medium leading-5">{{ item.label }}</span>
+          <span v-if="item.description" class="EGActionButton__description text-xs font-normal leading-4">
+            {{ item.description }}
+          </span>
+        </span>
       </span>
     </template>
   </UDropdown>
@@ -58,15 +83,42 @@
     .p-1 {
       padding: 8px 12px;
     }
-  }
 
-  .is-highlighted {
-    color: #ef5c45;
-    font-weight: 500;
-  }
+    &__trigger--open {
+      background-color: #eee9fc; // primary-muted
+      border-color: transparent;
+    }
 
-  .active {
-    border-radius: 100px;
-    background-color: #c2c2c2;
+    &__icon {
+      color: #5524e0; // primary
+    }
+
+    &__description {
+      color: #666666; // muted — keep gray even when the parent item is text-primary
+    }
+
+    /* Hover/focus: purple title; description stays muted. */
+    button:hover .EGActionButton__label,
+    button:focus .EGActionButton__label,
+    a:hover .EGActionButton__label,
+    a:focus .EGActionButton__label {
+      color: #5524e0;
+    }
+
+    .is-highlighted {
+      color: #ef5c45;
+      font-weight: 500;
+
+      .EGActionButton__icon {
+        color: #ef5c45;
+      }
+    }
+
+    button:hover .is-highlighted .EGActionButton__label,
+    button:focus .is-highlighted .EGActionButton__label,
+    a:hover .is-highlighted .EGActionButton__label,
+    a:focus .is-highlighted .EGActionButton__label {
+      color: #ef5c45;
+    }
   }
 </style>

@@ -59,8 +59,7 @@
       DestinationUri: destinationUri.value.trim() || undefined,
     });
     if (!parsed.success) {
-      const issue =
-        parsed.error.issues.find((item) => item.path.includes('DestinationUri')) ?? parsed.error.issues[0];
+      const issue = parsed.error.issues.find((item) => item.path.includes('DestinationUri')) ?? parsed.error.issues[0];
       destinationError.value = issue?.message ?? 'Enter an s3://bucket/prefix destination';
       return false;
     }
@@ -80,14 +79,14 @@
 
 <template>
   <EGPageHeader
-    title="Deliver Key Outputs"
+    title="Integrations"
     :description="pageDescription"
     :show-back="true"
     :back-action="backToWorkflowsTab"
     back-button-label="Back to Workflows"
     show-org-breadcrumb
     show-lab-breadcrumb
-    :breadcrumbs="[{ label: 'HealthOmics Workflows', to: labTab('HealthOmics Workflows') }, 'Deliver Key Outputs']"
+    :breadcrumbs="[{ label: 'HealthOmics Workflows', to: labTab('HealthOmics Workflows') }, 'Integrations']"
   />
 
   <template v-if="isLoading">
