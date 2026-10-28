@@ -550,6 +550,7 @@
   const omicsWorkflowsTableColumns = [
     { key: 'favourite', label: '' },
     { key: 'Name', label: 'Name' },
+    { key: 'description', label: 'Description' },
     { key: 'source', label: 'Source' },
     { key: 'integrations', label: 'Integrations' },
     { key: 'actions', label: '' },
@@ -557,31 +558,32 @@
 
   function omicsWorkflowsActionItems(workflow: LabOmicsWorkflow) {
     const items: object[][] = [];
-
-    items.push([
+    const primaryItems: object[] = [
       {
         label: 'Output files',
         description: 'Choose which result files matter.',
         icon: 'i-heroicons-document-check',
         click: () => viewSetKeyOutputs(workflow),
       },
-    ]);
+    ];
 
     if (canDeliverKeyOutputs.value) {
-      items.push([
-        {
-          label: 'Integrations',
-          description: 'Copy to S3, send to Microreact.',
-          icon: 'i-heroicons-link',
-          click: () => viewDeliverKeyOutputs(workflow),
-        },
-      ]);
+      primaryItems.push({
+        label: 'Integrations',
+        description: 'Copy to S3, send to Microreact.',
+        icon: 'i-heroicons-link',
+        click: () => viewDeliverKeyOutputs(workflow),
+      });
     }
+
+    items.push(primaryItems);
 
     if (canDeleteOmicsWorkflow(workflow)) {
       items.push([
         {
           label: 'Delete workflow',
+          description: 'Asks you to confirm first',
+          icon: 'i-heroicons-trash',
           click: () => {
             workflowToDelete.value = workflow;
             isDeleteWorkflowDialogOpen.value = true;
@@ -1325,6 +1327,11 @@
         <div class="flex items-center">
           {{ workflow?.name }}
         </div>
+      </template>
+
+      <template #description-data="{ row: workflow }">
+        <span v-if="workflow?.description" class="text-body text-sm">{{ workflow.description }}</span>
+        <span v-else class="text-muted text-sm">No description</span>
       </template>
 
       <template #source-data="{ row: workflow }">

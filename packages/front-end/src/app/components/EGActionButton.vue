@@ -98,27 +98,34 @@
     }
 
     /* Hover/focus: purple title; description stays muted. */
-    button:hover .EGActionButton__label,
-    button:focus .EGActionButton__label,
-    a:hover .EGActionButton__label,
-    a:focus .EGActionButton__label {
+    button:hover:not(:has(.is-highlighted)) .EGActionButton__label,
+    button:focus:not(:has(.is-highlighted)) .EGActionButton__label,
+    a:hover:not(:has(.is-highlighted)) .EGActionButton__label,
+    a:focus:not(:has(.is-highlighted)) .EGActionButton__label {
       color: #5524e0;
     }
 
     .is-highlighted {
-      color: #ef5c45;
+      color: #ef5c45; // alert-danger
       font-weight: 500;
 
-      .EGActionButton__icon {
+      .EGActionButton__icon,
+      .EGActionButton__label {
         color: #ef5c45;
+      }
+
+      .EGActionButton__description {
+        color: #666666;
       }
     }
 
-    button:hover .is-highlighted .EGActionButton__label,
-    button:focus .is-highlighted .EGActionButton__label,
-    a:hover .is-highlighted .EGActionButton__label,
-    a:focus .is-highlighted .EGActionButton__label {
-      color: #ef5c45;
+    /* Destructive item: light red wash on hover instead of purple. */
+    button:has(.is-highlighted):hover,
+    button:has(.is-highlighted):focus,
+    a:has(.is-highlighted):hover,
+    a:has(.is-highlighted):focus {
+      background-color: #fdefec !important; // alert-danger-muted
+      color: #ef5c45 !important;
     }
   }
 </style>
