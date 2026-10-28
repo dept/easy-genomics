@@ -406,3 +406,34 @@ change (`dynamodb:Scan`) is covered by the infra test, not by this run.
       from `update-laboratory`, which only allows organization admins. Existing behaviour, ticketed separately.
 - [x] **Clean up** — the grant is unticked and saved, and the test files are deleted from the drop bucket. The `S1`
       sample stays, since samples can't be deleted.
+
+---
+
+## Admin S3 and Workflow access — system admins can save the default toggles (EGV-347)
+
+On **Admin view → S3 access**, a system admin's save of **Enable new buckets by default** returned 403 "Unauthorized
+access", because the toggle saves through `update-laboratory`, which accepted only the lab's organization admin. The
+page's bucket grants save through `edit-s3-access-batch`, which already accepted system admins. **Workflow access**
+saves **Enable new workflows by default** through the same endpoint. `update-laboratory` now accepts a system admin or
+the organization admin of the lab's stored organization. Unit tests cover the system-admin path, the 403 for everyone
+else, and the check running against the stored `OrganizationId`.
+
+### Automated checks
+
+| Check                  | Result          |
+| ---------------------- | --------------- |
+| `pnpm lint` (back-end) | Passes          |
+| `pnpm test` (back-end) | 1378 tests pass |
+
+### Manual steps
+
+Run on 28 Oct 2026 by hand, against `development`'s local back-end and then the branch's (`dev-demo` stack). Signed in
+as the system-admin test user, in Influenza Genomics.
+
+- [x] **Reproduce on `development`** — S3 access, flip **Enable new buckets by default**, **Save all changes**. Returns
+      403 "Unauthorized access" and the toggle reverts on reload.
+- [x] **S3 default on the branch** — the same save succeeds, and the toggle keeps its new value after a reload.
+- [x] **Workflow default on the branch** — Workflow access, flip **Enable new workflows by default**, save, then flip it
+      back and save. No 403, and the toggle keeps its value after a reload.
+- [ ] **Quality** — on a lab with a whole-bucket grant, turn **Enable new buckets by default** off and on, saving each
+      time. The grant survives both saves.
