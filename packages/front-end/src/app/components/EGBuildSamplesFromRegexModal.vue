@@ -2,6 +2,9 @@
   import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import type { SampleLayout } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
   import {
+    DEFAULT_REGEX_GROUPING_PRESET_KEY,
+    findDuplicateSampleNames,
+    folderBelowLabRoot,
     REGEX_GROUPING_PRESETS,
     type RegexGroupingPresetKey,
   } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
@@ -26,8 +29,8 @@
   const uiStore = useUiStore();
 
   const step = ref(1);
-  const presetKey = ref<RegexGroupingPresetKey>('underscore_r1_r2');
-  const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern);
+  const presetKey = ref<RegexGroupingPresetKey>(DEFAULT_REGEX_GROUPING_PRESET_KEY);
+  const regexPattern = ref(REGEX_GROUPING_PRESETS[DEFAULT_REGEX_GROUPING_PRESET_KEY].pattern);
   const fileKeys = toRef(props, 'fileKeys');
   const { proposedSets, unmatchedFiles, refreshPreview } = useRegexGroupingPreview(fileKeys, regexPattern);
   const excludedSamples = ref<Set<string>>(new Set());
@@ -38,8 +41,8 @@
     (open) => {
       if (!open) return;
       step.value = 1;
-      presetKey.value = 'underscore_r1_r2';
-      regexPattern.value = REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern;
+      presetKey.value = DEFAULT_REGEX_GROUPING_PRESET_KEY;
+      regexPattern.value = REGEX_GROUPING_PRESETS[DEFAULT_REGEX_GROUPING_PRESET_KEY].pattern;
       excludedSamples.value = new Set();
       refreshPreview();
     },
@@ -49,19 +52,24 @@
     regexPattern.value = REGEX_GROUPING_PRESETS[k].pattern;
   });
 
-  const activeSets = computed(() => proposedSets.value.filter((s) => !excludedSamples.value.has(s.sampleId)));
+  const activeSets = computed(() => proposedSets.value.filter((s) => !excludedSamples.value.has(s.groupKey)));
 
   const stats = computed(() => {
     const paired = activeSets.value.filter((s) => s.status === 'paired').length;
     const single = activeSets.value.filter((s) => s.status === 'single_end').length;
     const review = activeSets.value.filter((s) => s.status === 'needs_review').length;
-    return { paired, single, review, total: activeSets.value.length };
+    const assembled = activeSets.value.filter((s) => s.status === 'assembled').length;
+    return { paired, single, review, assembled, total: activeSets.value.length };
   });
+  const duplicateSampleNames = computed(() => findDuplicateSampleNames(activeSets.value));
+  const repeatedSampleIds = computed(
+    () => new Set(findDuplicateSampleNames(proposedSets.value).map((duplicate) => duplicate.sampleId.toLowerCase())),
+  );
 
-  function toggleExclude(sampleId: string): void {
+  function toggleExclude(groupKey: string): void {
     const next = new Set(excludedSamples.value);
-    if (next.has(sampleId)) next.delete(sampleId);
-    else next.add(sampleId);
+    if (next.has(groupKey)) next.delete(groupKey);
+    else next.add(groupKey);
     excludedSamples.value = next;
   }
 
@@ -193,7 +201,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="s in proposedSets.slice(0, 8)" :key="s.sampleId" class="border-t">
+              <tr v-for="s in proposedSets.slice(0, 8)" :key="s.groupKey" class="border-t">
                 <td class="p-2 font-medium">{{ s.sampleId }}</td>
                 <td class="p-2 font-mono text-gray-500">
                   {{ s.files.map((f) => basenameFromS3Key(f.fileName)).join(', ') }}
@@ -213,10 +221,14 @@
         <div class="mb-3 flex gap-2 text-xs">
           <span class="rounded-full bg-green-100 px-2 py-1 text-green-800">{{ stats.paired }} paired</span>
           <span class="rounded-full bg-blue-100 px-2 py-1 text-blue-800">{{ stats.single }} single-end</span>
+          <span v-if="stats.assembled" class="rounded-full bg-purple-100 px-2 py-1 text-purple-800">
+            {{ stats.assembled }} assembled
+          </span>
           <span v-if="stats.review" class="rounded-full bg-amber-100 px-2 py-1 text-amber-800">
             {{ stats.review }} needs review
           </span>
         </div>
+        <EGDuplicateSampleNamesNotice :duplicates="duplicateSampleNames" notice-class="mb-3" />
         <table class="w-full overflow-hidden rounded-lg border border-gray-200 text-sm">
           <thead class="bg-gray-50">
             <tr>
@@ -229,18 +241,26 @@
           <tbody>
             <tr
               v-for="s in proposedSets"
-              :key="s.sampleId"
+              :key="s.groupKey"
               class="border-t"
-              :class="{ 'opacity-40': excludedSamples.has(s.sampleId) }"
+              :class="{ 'opacity-40': excludedSamples.has(s.groupKey) }"
             >
-              <td class="p-2 font-medium">{{ s.sampleId }}</td>
+              <td class="p-2 font-medium">
+                {{ s.sampleId }}
+                <span
+                  v-if="repeatedSampleIds.has(s.sampleId.toLowerCase()) && folderBelowLabRoot(s.folder)"
+                  class="block break-all font-mono text-xs font-normal text-gray-400"
+                >
+                  {{ folderBelowLabRoot(s.folder) }}
+                </span>
+              </td>
               <td class="p-2 font-mono text-xs text-gray-600">
                 {{ s.files.map((f) => basenameFromS3Key(f.fileName)).join(', ') }}
               </td>
               <td class="p-2 text-xs">{{ s.status }}</td>
               <td class="p-2 text-right">
-                <button type="button" class="text-xs text-red-600" @click="toggleExclude(s.sampleId)">
-                  {{ excludedSamples.has(s.sampleId) ? 'Include' : 'Exclude' }}
+                <button type="button" class="text-xs text-red-600" @click="toggleExclude(s.groupKey)">
+                  {{ excludedSamples.has(s.groupKey) ? 'Include' : 'Exclude' }}
                 </button>
               </td>
             </tr>

@@ -1,3 +1,4 @@
+import { mainBackEndApiName } from '@easy-genomics/shared-lib/src/app/utils/api-gateway-names';
 import { BackEndStackProps } from '@easy-genomics/shared-lib/src/infra/types/main-stack';
 import { CfnOutput, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import { SpecRestApi } from 'aws-cdk-lib/aws-apigateway';
@@ -128,6 +129,7 @@ export class BackEndStack extends Stack {
     // has its own API Gateway in EasyGenomicsApiStack. Reusing the previous
     // construct id preserves the REST API physical id / invoke URL on upgrade.
     this.apiGateway = new SpecRestApiConstruct(this, `${this.props.constructNamespace}-apigw`, {
+      restApiName: mainBackEndApiName(this.props.namePrefix),
       description: 'Easy Genomics Platform API Gateway (AWS HealthOmics + NF-Tower)',
       lambdaFunctions: new Map<string, IFunction>([
         ...awsHealthOmicsNestedStack.lambda.lambdaFunctions,

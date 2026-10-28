@@ -1,3 +1,6 @@
+import { UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { startsInTenantFolder } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-s3-access';
+
 export type ParsedS3Uri = { bucket: string; prefix: string };
 
 const S3_SCHEME = 's3://';
@@ -43,8 +46,53 @@ export function normalizeS3Prefix(prefix: string): string {
   return prefix.endsWith('/') ? prefix : `${prefix}/`;
 }
 
+/**
+ * CopySource must be URL-encoded per segment. A raw `bucket/key with #` silently
+ * copies the wrong object (or none) because `#`, `%`, `+`, and spaces are special.
+ */
+export function encodeS3CopySource(bucket: string, key: string): string {
+  return [bucket, ...key.split('/')].map(encodeURIComponent).join('/');
+}
+
 export function laboratoryPrefix(laboratory: { OrganizationId: string; LaboratoryId: string }): string {
   return `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
+}
+
+/**
+ * True when `keyOrPrefix` is inside the laboratory root or inside `allowedPrefix`, the prefix stored on the lab's
+ * S3-access row for the same bucket. Both roots end in "/", so a sibling folder sharing the name never matches.
+ * Under a whole-bucket grant, everything outside every organization folder is readable too.
+ */
+export function isInsideLaboratoryReadablePrefix(
+  keyOrPrefix: string,
+  laboratory: { OrganizationId: string; LaboratoryId: string },
+  allowedPrefix?: string,
+  allowsWholeBucket = false,
+): boolean {
+  if (keyOrPrefix.startsWith(laboratoryPrefix(laboratory))) return true;
+  if (allowsWholeBucket) return !keyOrPrefix.startsWith('/') && !startsInTenantFolder(keyOrPrefix);
+  return !!allowedPrefix && keyOrPrefix.startsWith(normalizeS3Prefix(allowedPrefix));
+}
+
+/**
+ * Resolves the absolute prefix a laboratory may list. Defaults to the laboratory root; anything outside
+ * `{OrganizationId}/{LaboratoryId}/` and outside the stored `allowedPrefix` for this bucket is rejected.
+ */
+export function resolveLaboratoryListingPrefix(
+  laboratory: { OrganizationId: string; LaboratoryId: string },
+  requestedPrefix?: string,
+  allowedPrefix?: string,
+  allowsWholeBucket = false,
+): string {
+  const resolvedPrefix = normalizeS3Prefix(requestedPrefix || laboratoryPrefix(laboratory));
+  if (!isInsideLaboratoryReadablePrefix(resolvedPrefix, laboratory, allowedPrefix, allowsWholeBucket)) {
+    throw new UnauthorizedAccessError(
+      allowsWholeBucket
+        ? "S3 prefix must be inside this laboratory's folder or outside every organization's folder"
+        : "S3 prefix must be inside this laboratory's folder or the allowed folder for this bucket",
+    );
+  }
+  return resolvedPrefix;
 }
 
 /**

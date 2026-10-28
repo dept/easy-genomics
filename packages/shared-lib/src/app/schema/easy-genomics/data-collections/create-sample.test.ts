@@ -2,6 +2,17 @@ import { CreateSampleSchema } from './create-sample';
 import { CreateSequenceCollectionSchema } from './create-sequence-collection';
 
 describe('CreateSampleSchema', () => {
+  it('accepts the assembled layout', () => {
+    const parsed = CreateSampleSchema.safeParse({
+      LaboratoryId: 'lab-1',
+      S3Bucket: 'bucket-1',
+      Name: 'WI-01',
+      Layout: 'assembled',
+      Keys: ['org/lab/genomes/WI-01.fasta'],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
   it('requires Name and Keys when creating a new sample', () => {
     const parsed = CreateSampleSchema.safeParse({
       LaboratoryId: 'lab-1',

@@ -12,7 +12,12 @@ import {
   validateOrganizationAdminAccess,
   validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
-import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
+import {
+  assertLaboratoryHasS3BucketAccess,
+  findAllowedPrefix,
+  hasWholeBucketGrant,
+} from '@BE/utils/laboratory-s3-access-utils';
+import { resolveLaboratoryListingPrefix } from '@BE/utils/s3-uri-utils';
 
 const laboratoryService = new LaboratoryService();
 const dataCollectionService = new DataCollectionService();
@@ -45,17 +50,14 @@ export const handler: Handler = async (
       throw new InvalidRequestError('Laboratory has no S3 bucket configured');
     }
 
-    await assertLaboratoryHasS3BucketAccess(laboratory, s3Bucket, s3AccessService);
+    const accessRows = await assertLaboratoryHasS3BucketAccess(laboratory, s3Bucket, s3AccessService);
 
-    const labRoot = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
-    const relative = (body.RelativePrefix || '').replace(/^\/*/, '');
-    let normalizedPrefix = `${labRoot}${relative}`;
-    if (!normalizedPrefix.endsWith('/')) {
-      normalizedPrefix = `${normalizedPrefix}/`;
-    }
-    if (!normalizedPrefix.startsWith(labRoot)) {
-      throw new UnauthorizedAccessError();
-    }
+    const normalizedPrefix = resolveLaboratoryListingPrefix(
+      laboratory,
+      body.S3Prefix,
+      findAllowedPrefix(accessRows, s3Bucket),
+      hasWholeBucketGrant(accessRows, s3Bucket),
+    );
 
     const pageSize = Math.min(body.MaxKeys ?? 1000, 1000);
     const maxTotalKeys = Math.min(body.MaxTotalKeys ?? 15_000, 50000);

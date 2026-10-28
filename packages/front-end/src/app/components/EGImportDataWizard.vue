@@ -9,14 +9,35 @@
     FileUploadRequest,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
   import {
+    DEFAULT_REGEX_GROUPING_PRESET_KEY,
+    FASTA_REGEX_GROUPING_PRESET_KEY,
+    findDuplicateSampleNames,
+    findSharedFasta,
+    folderBelowLabRoot,
     REGEX_GROUPING_PRESETS,
     type RegexGroupingPresetKey,
   } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
   import { delimiterForFilename, parseDelimitedText } from '@easy-genomics/shared-lib/src/app/utils/delimited-text';
   import { TAG_PRESET_COLORS } from '@easy-genomics/shared-lib/src/app/constants/data-collections';
-  import { useToastStore, useUiStore } from '@FE/stores';
+  import { useDataCollectionsStore, useToastStore, useUiStore } from '@FE/stores';
+  import { buildImportDestKey, buildS3CopyJobs } from '@FE/utils/data-collections-copy-jobs';
   import { basenameFromS3Key } from '@FE/utils/data-collections-file-type';
   import { exceedsBatchNameMaxLength } from '@FE/utils/data-collections-name-validation';
+  import {
+    describeSourceListing,
+    type ImportedFileSource,
+    locateSharedFasta,
+    skipsGroupingStep,
+    type SourceListingNotice,
+  } from '@FE/utils/data-collections-source-listing';
+  import {
+    buildLaboratorySourcePrefix,
+    buildSourcePrefix,
+    buildSourceRootOptions,
+    defaultS3ImportLabel,
+    isSourceFolderMissing,
+    type SourceRoot,
+  } from '@FE/utils/data-collections-source-prefix';
   import { matchSheetToSamples, type SheetTagMatchResult } from '@FE/utils/sheet-tag-matching';
 
   type ImportSourceKind = 's3' | 'upload';
@@ -42,6 +63,7 @@
   const { $api } = useNuxtApp();
   const toast = useToastStore();
   const uiStore = useUiStore();
+  const dataCollectionsStore = useDataCollectionsStore();
 
   const IMPORT_STEPS = ['Source', 'Group files', 'Tags', 'Review samples', 'Confirm'] as const;
 
@@ -50,13 +72,47 @@
   const sourceBucket = ref('');
   const sourcePrefix = ref('');
   const grantedBuckets = ref<string[]>([]);
-  const presetKey = ref<RegexGroupingPresetKey>('underscore_r1_r2');
-  const regexPattern = ref(REGEX_GROUPING_PRESETS.underscore_r1_r2.pattern);
+
+  const allowedPrefixes = ref<Record<string, string>>({});
+  const wholeBuckets = ref<string[]>([]);
+  const sourceRoot = ref<SourceRoot>('laboratory');
+  const allowedPrefixForBucket = computed(() => allowedPrefixes.value[sourceBucket.value] ?? '');
+  const allowsWholeBucketForBucket = computed(() => wholeBuckets.value.includes(sourceBucket.value));
+  const searchesAllowedFolder = computed(() => sourceRoot.value === 'allowed' && !!allowedPrefixForBucket.value);
+  const searchesWholeBucket = computed(() => sourceRoot.value === 'bucket' && allowsWholeBucketForBucket.value);
+  /** The allowed folder chosen in "Search in", or '' when the wizard searches this lab's own folder. */
+  const selectedAllowedFolder = computed(() => (searchesAllowedFolder.value ? allowedPrefixForBucket.value : ''));
+  const sourceFolderMissing = computed(() => isSourceFolderMissing(sourcePrefix.value, selectedAllowedFolder.value));
+  const sourceRootOptions = computed(() =>
+    buildSourceRootOptions(allowedPrefixForBucket.value, allowsWholeBucketForBucket.value),
+  );
+  const prefixHint = computed(() => {
+    if (searchesWholeBucket.value) return 'from the bucket root';
+    return selectedAllowedFolder.value ? `optional, inside ${selectedAllowedFolder.value}` : "inside this lab's folder";
+  });
+
+  watch(sourceBucket, () => {
+    sourceRoot.value = 'laboratory';
+  });
+
+  /** The one place the wizard turns the typed Prefix into the absolute prefix it lists, and later copies from. */
+  function resolveSourcePrefix(lab: Pick<Laboratory, 'OrganizationId' | 'LaboratoryId'>): string {
+    if (searchesWholeBucket.value) return buildSourcePrefix('', sourcePrefix.value);
+    return searchesAllowedFolder.value
+      ? buildSourcePrefix(allowedPrefixForBucket.value, sourcePrefix.value)
+      : buildLaboratorySourcePrefix(lab, sourcePrefix.value);
+  }
+  const presetKey = ref<RegexGroupingPresetKey>(DEFAULT_REGEX_GROUPING_PRESET_KEY);
+  const regexPattern = ref(REGEX_GROUPING_PRESETS[DEFAULT_REGEX_GROUPING_PRESET_KEY].pattern);
   const sourceFiles = ref<string[]>([]);
+  const sourceListingNotice = ref<SourceListingNotice | null>(null);
+  const autoGroupedOnePerFastaFile = ref(false);
   const { proposedSets, unmatchedFiles, refreshPreview, resetPreview } = useRegexGroupingPreview(
     sourceFiles,
     regexPattern,
   );
+  const sharedFastaFiles = computed(() => findSharedFasta(sourceFiles.value, unmatchedFiles.value));
+  const skippedFiles = computed(() => unmatchedFiles.value.filter((file) => !sharedFastaFiles.value.includes(file)));
   const excludedSamples = ref<Set<string>>(new Set());
   const tagSheetRows = ref<string[][]>([]);
   const tagSheetError = ref<string>('');
@@ -70,6 +126,13 @@
   const uploadTransactionId = ref(uuidv4());
   const pendingUploadFiles = ref<PendingUploadFile[]>([]);
   const uploadedKeysByName = ref<Record<string, string>>({});
+  const sharedFastaLocations = computed(() => {
+    const source: ImportedFileSource =
+      importSource.value === 'upload'
+        ? { kind: 'upload', bucket: props.lab?.S3Bucket ?? '', uploadedKeysByName: uploadedKeysByName.value }
+        : { kind: 's3', bucket: sourceBucket.value };
+    return locateSharedFasta(sharedFastaFiles.value, source);
+  });
   const isDropzoneActive = ref(false);
   const uploading = ref(false);
   const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -88,6 +151,10 @@
 
   watch(presetKey, (k) => {
     regexPattern.value = REGEX_GROUPING_PRESETS[k].pattern;
+  });
+
+  watch([importSource, sourceBucket, sourcePrefix, sourceRoot], () => {
+    sourceListingNotice.value = null;
   });
 
   watch(step, (n) => {
@@ -114,14 +181,22 @@
     return trimmed.length > 0 && !newBatchNameInvalid.value;
   });
 
-  const activeSets = computed(() => proposedSets.value.filter((s) => !excludedSamples.value.has(s.sampleId)));
+  const activeSets = computed(() => proposedSets.value.filter((s) => !excludedSamples.value.has(s.groupKey)));
 
   const stats = computed(() => {
     const paired = activeSets.value.filter((s) => s.status === 'paired').length;
     const single = activeSets.value.filter((s) => s.status === 'single_end').length;
     const review = activeSets.value.filter((s) => s.status === 'needs_review').length;
-    return { paired, single, review, total: activeSets.value.length };
+    const assembled = activeSets.value.filter((s) => s.status === 'assembled').length;
+    const pairedWithFasta = activeSets.value.filter(
+      (s) => s.status === 'paired' && s.layout === 'paired_end_with_extras',
+    ).length;
+    return { paired, pairedWithFasta, single, review, assembled, total: activeSets.value.length };
   });
+  const duplicateSampleNames = computed(() => findDuplicateSampleNames(activeSets.value));
+  const repeatedSampleIds = computed(
+    () => new Set(findDuplicateSampleNames(proposedSets.value).map((duplicate) => duplicate.sampleId.toLowerCase())),
+  );
 
   const sheetHeaders = computed<string[]>(() => tagSheetRows.value[0] ?? []);
   const columnOptions = computed(() =>
@@ -142,16 +217,15 @@
     if (importSource.value === 'upload') {
       return `upload-${new Date().toISOString().slice(0, 10)}`;
     }
-    const prefix = sourcePrefix.value.split('/').filter(Boolean).pop();
-    return prefix || sourceBucket.value || 'import';
+    return defaultS3ImportLabel(sourcePrefix.value, selectedAllowedFolder.value, sourceBucket.value);
   });
 
   const confirmSourceLabel = computed(() => {
     if (importSource.value === 'upload') {
       return `Upload from computer (${pendingUploadFiles.value.length} files)`;
     }
-    const prefix = sourcePrefix.value.replace(/^\/*/, '').replace(/\/?$/, '/');
-    return `s3://${sourceBucket.value}/${prefix}`;
+    if (!props.lab) return `s3://${sourceBucket.value}/`;
+    return `s3://${sourceBucket.value}/${resolveSourcePrefix(props.lab)}`;
   });
 
   const canContinueStep1 = computed(() => {
@@ -159,7 +233,7 @@
       return (
         sourceBucket.value.trim().length > 0 &&
         grantedBuckets.value.includes(sourceBucket.value) &&
-        sourcePrefix.value.trim().length > 0
+        !sourceFolderMissing.value
       );
     }
     return pendingUploadFiles.value.length > 0 && !uploading.value;
@@ -271,6 +345,8 @@
     try {
       const res = await $api.s3Access.listGrantedBuckets(props.labId);
       grantedBuckets.value = res.buckets;
+      allowedPrefixes.value = res.allowedPrefixes ?? {};
+      wholeBuckets.value = res.wholeBuckets ?? [];
       if (!sourceBucket.value && res.buckets.length) {
         sourceBucket.value = res.buckets[0];
       }
@@ -280,10 +356,28 @@
     }
   });
 
+  function continueAfterListing(): void {
+    const presetWasAutomatic = autoGroupedOnePerFastaFile.value;
+    autoGroupedOnePerFastaFile.value = skipsGroupingStep(sourceFiles.value, sourceListingNotice.value);
+    // Set the pattern as well as the key: the user may have edited the regex while the key stayed the same.
+    if (autoGroupedOnePerFastaFile.value) {
+      presetKey.value = FASTA_REGEX_GROUPING_PRESET_KEY;
+      regexPattern.value = REGEX_GROUPING_PRESETS[FASTA_REGEX_GROUPING_PRESET_KEY].pattern;
+      step.value = 3;
+      return;
+    }
+    // The FASTA preset came from the previous listing, not from the user, so this listing starts on the default.
+    if (presetWasAutomatic) {
+      presetKey.value = DEFAULT_REGEX_GROUPING_PRESET_KEY;
+      regexPattern.value = REGEX_GROUPING_PRESETS[DEFAULT_REGEX_GROUPING_PRESET_KEY].pattern;
+    }
+    step.value = 2;
+  }
+
   async function loadSourceFiles(): Promise<void> {
     if (importSource.value === 'upload') {
       const ok = await uploadPendingFiles();
-      if (ok) step.value = 2;
+      if (ok) continueAfterListing();
       return;
     }
 
@@ -292,40 +386,42 @@
       toast.error('Selected source bucket is not authorized for this laboratory');
       return;
     }
+    sourceListingNotice.value = null;
     uiStore.setRequestPending('dataCollectionsList');
     try {
-      const prefix = sourcePrefix.value.replace(/^\/*/, '');
-      const res = await $api.dataCollections.requestLaboratoryBucketObjects({
+      const listing = await dataCollectionsStore.fetchLaboratoryBucketObjects({
         LaboratoryId: props.labId,
         S3Bucket: sourceBucket.value,
-        RelativePrefix: prefix || undefined,
+        S3Prefix: resolveSourcePrefix(props.lab),
         MaxTotalKeys: 5000,
       });
-      sourceFiles.value = (res.Contents || []).map((o) => o.Key!);
+      if (!listing) return;
+
+      sourceFiles.value = (listing.Contents || []).map((o) => o.Key!);
       refreshPreview();
-      step.value = 2;
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Failed to list source files');
+      sourceListingNotice.value = describeSourceListing(listing);
+      if (sourceListingNotice.value?.kind === 'empty') return;
+      continueAfterListing();
     } finally {
       uiStore.setRequestComplete('dataCollectionsList');
     }
   }
 
-  function toggleExclude(sampleId: string): void {
+  function toggleExclude(groupKey: string): void {
     const next = new Set(excludedSamples.value);
-    if (next.has(sampleId)) next.delete(sampleId);
-    else next.add(sampleId);
+    if (next.has(groupKey)) next.delete(groupKey);
+    else next.add(groupKey);
     excludedSamples.value = next;
   }
 
-  function resolveDestKeyForFile(fileName: string, destPrefix: string): string {
-    const base = basenameFromS3Key(fileName);
+  function resolveDestKeyForFile(fileName: string, listedSourcePrefix: string, destPrefix: string): string {
     if (importSource.value === 'upload') {
+      const base = basenameFromS3Key(fileName);
       const key = uploadedKeysByName.value[base];
       if (!key) throw new Error(`Missing uploaded key for ${base}`);
       return key;
     }
-    return `${destPrefix}${base}`;
+    return buildImportDestKey(fileName, listedSourcePrefix, destPrefix);
   }
 
   async function handleTagSheetFile(event: Event): Promise<void> {
@@ -383,30 +479,25 @@
     try {
       const labRoot = `${props.lab.OrganizationId}/${props.lab.LaboratoryId}/`;
       const destPrefix = `${labRoot}imports/${importLabel.value}/`;
+      const listedSourcePrefix = resolveSourcePrefix(props.lab);
 
       const resolvedTagIds = await resolveSampleTagIds();
 
       const sequenceSets = activeSets.value.map((s) => ({
         Name: s.sampleId,
         Layout: s.layout as SampleLayout,
-        Keys: s.files.map((f) => resolveDestKeyForFile(f.fileName, destPrefix)),
+        Keys: s.files.map((f) => resolveDestKeyForFile(f.fileName, listedSourcePrefix, destPrefix)),
         TagIds: resolvedTagIds[s.sampleId],
         FilenameRegex: regexPattern.value,
       }));
 
       const copyJobs =
         importSource.value === 's3'
-          ? activeSets.value.flatMap((s) =>
-              s.files.map((f) => {
-                const base = basenameFromS3Key(f.fileName);
-                const srcPrefix = sourcePrefix.value.replace(/^\/*/, '').replace(/\/?$/, '/');
-                const srcKey = `${srcPrefix}${base}`;
-                return {
-                  SourceBucket: sourceBucket.value,
-                  SourceKey: srcKey,
-                  DestKey: `${destPrefix}${base}`,
-                };
-              }),
+          ? buildS3CopyJobs(
+              activeSets.value.flatMap((s) => s.files),
+              sourceBucket.value,
+              listedSourcePrefix,
+              destPrefix,
             )
           : undefined;
 
@@ -469,7 +560,9 @@
           >
             <div class="mb-1 text-sm font-medium">Amazon S3</div>
             <div class="mb-2 text-xs text-gray-500">Connected</div>
-            <p class="text-xs text-gray-500">Point at a bucket/prefix where sequencer or partner files are dropped.</p>
+            <p class="text-xs text-gray-500">
+              Import files from this lab's folder, or a folder or whole bucket a system admin allowed for it.
+            </p>
           </button>
 
           <button
@@ -494,9 +587,23 @@
               placeholder="Select a bucket"
             />
           </UFormGroup>
-          <UFormGroup label="Prefix" hint="path within the lab folder">
-            <UInput v-model="sourcePrefix" placeholder="imports/partner-drop/" class="font-mono" />
+          <UFormGroup v-if="sourceRootOptions.length > 1" label="Search in" class="mb-4">
+            <USelect v-model="sourceRoot" :options="sourceRootOptions" class="font-mono" />
           </UFormGroup>
+          <UFormGroup
+            label="Folder"
+            :hint="prefixHint"
+            :required="!selectedAllowedFolder"
+            :help="sourceFolderMissing ? 'Enter a folder to continue.' : undefined"
+          >
+            <UInput v-model="sourcePrefix" placeholder="sequencing/run-1/" class="font-mono" />
+          </UFormGroup>
+          <p v-if="sourceBucket" class="text-text-muted mt-1 break-all font-mono text-xs" role="status">
+            Searches {{ confirmSourceLabel }}
+          </p>
+          <p v-if="sourceListingNotice?.kind === 'empty'" class="mt-2 break-all text-xs text-amber-600" role="status">
+            {{ sourceListingNotice.message }}
+          </p>
           <p v-if="!grantedBuckets.length" class="text-text-muted mt-2 text-xs" role="status">
             No authorized S3 buckets for this lab. Ask an organization admin to grant bucket access.
           </p>
@@ -507,7 +614,7 @@
             ref="fileInputRef"
             type="file"
             multiple
-            accept=".fastq,.fq,.gz,.fasta,.fa,.fa.gz"
+            accept=".fastq,.fq,.gz,.fasta,.fa,.fna,.fa.gz"
             class="hidden"
             @change="onFileInputChange"
           />
@@ -575,11 +682,15 @@
           From {{ sourceFiles.length }} files →
           <strong>{{ proposedSets.length }} samples</strong>
         </p>
+        <p v-if="sourceListingNotice?.kind === 'truncated'" class="mt-2 text-sm text-amber-600" role="status">
+          {{ sourceListingNotice.message }}
+        </p>
         <EGRegexUnmatchedNotice
-          :unmatched-files="unmatchedFiles"
+          :unmatched-files="skippedFiles"
           :proposed-set-count="proposedSets.length"
           notice-class="mt-4"
         />
+        <EGSharedFastaNotice :files="sharedFastaLocations" notice-class="mt-4" />
       </div>
 
       <!-- Step 3: Tags (optional) -->
@@ -630,12 +741,28 @@
       <!-- Step 4: Build -->
       <div v-else-if="step === 4" class="flex min-h-0 flex-1 flex-col">
         <div class="flex gap-2 border-b p-4 text-xs">
-          <span class="rounded-full bg-green-100 px-2 py-1 text-green-800">{{ stats.paired }} paired</span>
-          <span class="rounded-full bg-blue-100 px-2 py-1 text-blue-800">{{ stats.single }} single-end</span>
+          <template v-if="!autoGroupedOnePerFastaFile">
+            <span class="rounded-full bg-green-100 px-2 py-1 text-green-800">
+              {{ stats.paired }} paired
+              <template v-if="stats.pairedWithFasta">· {{ stats.pairedWithFasta }} with FASTA</template>
+            </span>
+            <span class="rounded-full bg-blue-100 px-2 py-1 text-blue-800">{{ stats.single }} single-end</span>
+          </template>
+          <span v-if="stats.assembled" class="rounded-full bg-purple-100 px-2 py-1 text-purple-800">
+            {{ stats.assembled }} assembled
+          </span>
           <span v-if="stats.review" class="rounded-full bg-amber-100 px-2 py-1 text-amber-800">
             {{ stats.review }} needs review
           </span>
         </div>
+        <EGRegexUnmatchedNotice
+          v-if="autoGroupedOnePerFastaFile"
+          :unmatched-files="unmatchedFiles"
+          :proposed-set-count="proposedSets.length"
+          notice-class="mx-4 mt-4"
+        />
+        <EGSharedFastaNotice :files="sharedFastaLocations" notice-class="mx-4 mt-4" />
+        <EGDuplicateSampleNamesNotice :duplicates="duplicateSampleNames" notice-class="mx-4 mt-4" />
         <div class="flex-1 overflow-y-auto">
           <table class="w-full text-sm">
             <thead class="sticky top-0 bg-gray-50">
@@ -649,18 +776,26 @@
             <tbody>
               <tr
                 v-for="s in proposedSets"
-                :key="s.sampleId"
+                :key="s.groupKey"
                 class="border-t"
-                :class="{ 'opacity-40': excludedSamples.has(s.sampleId) }"
+                :class="{ 'opacity-40': excludedSamples.has(s.groupKey) }"
               >
-                <td class="p-3 font-medium">{{ s.sampleId }}</td>
+                <td class="p-3 font-medium">
+                  {{ s.sampleId }}
+                  <span
+                    v-if="repeatedSampleIds.has(s.sampleId.toLowerCase()) && folderBelowLabRoot(s.folder)"
+                    class="block break-all font-mono text-xs font-normal text-gray-400"
+                  >
+                    {{ folderBelowLabRoot(s.folder) }}
+                  </span>
+                </td>
                 <td class="p-3 font-mono text-xs">
                   {{ s.files.map((f) => basenameFromS3Key(f.fileName)).join(', ') }}
                 </td>
                 <td class="p-3 text-xs">{{ s.status }}</td>
                 <td class="p-3 text-right">
-                  <button type="button" class="text-xs text-red-600" @click="toggleExclude(s.sampleId)">
-                    {{ excludedSamples.has(s.sampleId) ? 'Include' : 'Exclude' }}
+                  <button type="button" class="text-xs text-red-600" @click="toggleExclude(s.groupKey)">
+                    {{ excludedSamples.has(s.groupKey) ? 'Include' : 'Exclude' }}
                   </button>
                 </td>
               </tr>

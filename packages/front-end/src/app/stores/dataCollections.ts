@@ -2,6 +2,10 @@ import type { UnlinkedBucketObjectsResponse } from '@easy-genomics/shared-lib/sr
 import { defineStore } from 'pinia';
 import useLabsStore from './labs';
 import useToastStore from './toast';
+import type {
+  LaboratoryBucketObjectsResponse,
+  RequestLaboratoryBucketObjectsBody,
+} from '@FE/repository/modules/data-collections';
 import { resolveUnlinkedScanAction } from '@FE/utils/data-collections-unlinked-scan';
 import { shouldIgnoreUnlinkedBucketObjectsError } from '@FE/utils/laboratory-s3';
 
@@ -82,6 +86,41 @@ const useDataCollectionsStore = defineStore('dataCollectionsStore', {
     },
 
     /**
+     * The added files are linked now, so they leave the cached scan in place. Clearing the scan instead
+     * would blank the bucket header and force a full rescan. The generation bump discards any scan
+     * that was already in flight and would bring them back.
+     */
+    removeFilesFromUnlinkedScan(labId: string, keys: string[]): void {
+      const scan = this.unlinkedScans[labId];
+      if (!scan) return;
+      const linkedKeys = new Set(keys);
+      this.unlinkedScans[labId] = { ...scan, files: scan.files.filter((file) => !linkedKeys.has(file.Key ?? '')) };
+      this.unlinkedScanGeneration[labId] = (this.unlinkedScanGeneration[labId] ?? 0) + 1;
+    },
+
+    async addFilesToSample(request: {
+      labId: string;
+      s3Bucket: string;
+      sampleId: string;
+      keys: string[];
+    }): Promise<boolean> {
+      try {
+        const { $api } = useNuxtApp();
+        await $api.dataCollections.addFilesToSample({
+          LaboratoryId: request.labId,
+          S3Bucket: request.s3Bucket,
+          SampleId: request.sampleId,
+          Keys: request.keys,
+        });
+        this.removeFilesFromUnlinkedScan(request.labId, request.keys);
+        return true;
+      } catch (e: unknown) {
+        useToastStore().error(e instanceof Error && e.message ? e.message : 'Failed to add files to sample.');
+        return false;
+      }
+    },
+
+    /**
      * Load or reuse the unlinked-file scan for a lab. `labId` is captured by the
      * caller so a response is always stored under the lab the request was started for.
      */
@@ -141,6 +180,19 @@ const useDataCollectionsStore = defineStore('dataCollectionsStore', {
         useToastStore().error('Failed to load unlinked files.');
       } finally {
         this.unlinkedScanLoading[labId] = false;
+      }
+    },
+
+    /** Lists the import wizard's source folder. Returns null once the failure has been toasted. */
+    async fetchLaboratoryBucketObjects(
+      body: RequestLaboratoryBucketObjectsBody,
+    ): Promise<LaboratoryBucketObjectsResponse | null> {
+      try {
+        const { $api } = useNuxtApp();
+        return await $api.dataCollections.requestLaboratoryBucketObjects(body);
+      } catch (e: unknown) {
+        useToastStore().error(e instanceof Error ? e.message : 'Failed to list source files');
+        return null;
       }
     },
   },

@@ -7,6 +7,7 @@ export const SAMPLE_LAYOUT_LABELS: Record<string, string> = {
   single_end: 'Single-end (R1 only)',
   long_reads: 'Long-reads (reads)',
   paired_end_with_extras: 'Paired-end + extras',
+  assembled: 'Assembled genome (FASTA)',
 };
 
 /** @deprecated Use SAMPLE_LAYOUT_LABELS */

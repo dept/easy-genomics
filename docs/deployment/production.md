@@ -9,7 +9,7 @@ section in order before running the deploy command.
 - Setting up a dev or pre-prod environment → [`../getting-started/install.md`](../getting-started/install.md)
 
 **Before you start:** satisfy the tooling prerequisites in
-[`../getting-started/prerequisites.md`](../getting-started/prerequisites.md) (`git`, `nvm`, `node v20`, `pnpm`).
+[`../getting-started/prerequisites.md`](../getting-started/prerequisites.md) (`git`, `nvm`, `node v24`, `pnpm`).
 
 ---
 

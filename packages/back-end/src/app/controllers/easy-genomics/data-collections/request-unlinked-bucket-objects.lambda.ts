@@ -18,7 +18,7 @@ export const handler: Handler = async (
 
     const { laboratory } = await assertSequenceCollectionsAccess(event, parsed.data.LaboratoryId);
     const res = await sampleService.listUnlinkedBucketObjects(laboratory, {
-      relativePrefix: parsed.data.RelativePrefix,
+      s3Prefix: parsed.data.S3Prefix,
       maxTotalKeys: parsed.data.MaxTotalKeys,
       maxTransactionFolders: parsed.data.MaxTransactionFolders,
       pageSize: parsed.data.MaxKeys,

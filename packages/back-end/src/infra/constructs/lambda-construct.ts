@@ -155,7 +155,7 @@ export class LambdaConstruct extends Construct {
     const functionRole = hasEventSources ? role : role.withoutPolicyUpdates();
 
     const lambdaHandler: IFunction = new aws_lambda_nodejs.NodejsFunction(this, `${lambdaId}`, {
-      runtime: Runtime.NODEJS_20_X,
+      runtime: Runtime.NODEJS_24_X,
       timeout: Duration.seconds(lambdaTimeoutSeconds),
       memorySize: lambdaMemorySizeMb,
       functionName,

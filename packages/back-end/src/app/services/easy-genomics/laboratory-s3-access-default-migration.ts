@@ -66,7 +66,9 @@ export async function migrateS3AccessOnDefaultModeChange(params: {
       if (!rowIsAllow(row)) {
         continue;
       }
-      if (catalogNameSet.has(row.BucketName)) {
+      // An ALLOW row is a no-op for access in default-on mode, but it is where an allowed folder or a whole-bucket
+      // grant lives.
+      if (catalogNameSet.has(row.BucketName) && !row.AllowedPrefix && !row.AllowsWholeBucket) {
         await accessService.remove(laboratoryId, row.BucketName);
       }
     }
@@ -82,9 +84,11 @@ export async function migrateS3AccessOnDefaultModeChange(params: {
       denyNames.add(row.BucketName);
     }
 
+    const allowRowNames = new Set(rows.filter(rowIsAllow).map((row) => row.BucketName));
+
     const allowUpserts: S3BucketCatalogEntry[] = [];
     for (const entry of catalog) {
-      if (!denyNames.has(entry.name)) {
+      if (!denyNames.has(entry.name) && !allowRowNames.has(entry.name)) {
         allowUpserts.push(entry);
       }
     }

@@ -107,15 +107,27 @@ never modified**.
 
 | Source                   | When to use                                                                           |
 | ------------------------ | ------------------------------------------------------------------------------------- |
-| **Amazon S3**            | Point at a bucket/prefix where sequencer or partner files are dropped.                |
+| **Amazon S3**            | Point at a folder in a granted bucket where sequencer or partner files are dropped.   |
 | **Upload from computer** | Drag and drop local files (each file ≤ **5 GB**). Browser upload into the lab bucket. |
 
-For S3, enter bucket and optional prefix, then continue so Easy Genomics can list objects under that location.
+For S3, pick the bucket and type a **Folder** inside the lab's folder, then continue so Easy Genomics can list the files
+in it. If a system admin has set an allowed folder for the lab in that bucket, **Search in** also offers that folder.
+There the **Folder** is optional: leave it blank to list the allowed folder itself. If a system admin has granted the
+lab the whole bucket, **Search in** offers **Whole bucket** instead: type the **Folder** from the bucket root.
 
 ### Group files
 
 Apply a filename **regex** (presets or custom) to propose sample groups. A preview shows how many samples will be
 created. Files that do not match the pattern are listed as unmatched and skipped unless you change the regex.
+
+When the listing has FASTA files and no FASTQ, the wizard skips this step and makes one sample per FASTA file (the **One
+sample per FASTA file** preset). To group several FASTA files into one sample, go **Back** from Tags and change the
+regex.
+
+When the listing has FASTQ files too, a FASTA joins a sample when its name without the extension is the sample ID and it
+sits in the same folder, for example `A.fasta` next to `A_R1.fastq.gz` and `A_R2.fastq.gz`. Only a sample with both an
+R1 and an R2 takes one. Any other FASTA joins no sample: a blue notice lists it with its S3 URI and a copy button, so
+you can pass it to the workflow as a parameter, for example a reference genome, on the run's **Edit Parameters** step.
 
 ### Tags (optional)
 
@@ -129,7 +141,8 @@ You can skip this step and continue without a tag sheet.
 ### Review samples
 
 Review proposed samples (paired-end, single-end, or needs review). **Exclude** or **Include** individual proposals
-before confirming.
+before confirming. Paired samples that also hold their own FASTA are counted as **with FASTA**, for example "2 paired ·
+2 with FASTA".
 
 ### Confirm
 
@@ -210,6 +223,8 @@ The **Sequence Collections** sub-tab lists saved collections.
 3. Choose a **Schema** preset or customize columns:
    - Presets: **Single**, **Paired**, **Hybrid**, **Assembled**
    - Custom: edit column names and roles; **+ Add column** / remove columns
+   - To pass each sample's own FASTA to the workflow, start from **Paired** and add a column (for example `fasta`) with
+     the **Reference FASTA** role
 4. Review the live **Sample sheet preview** (first rows of the selected samples).
 5. **Save collection** or **Save changes**.
 

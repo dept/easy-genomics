@@ -1,11 +1,17 @@
-import { S3BucketAccessDeniedError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import {
+  InvalidRequestError,
+  S3BucketAccessDeniedError,
+  UnauthorizedAccessError,
+} from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import type {
+  BatchLaboratoryS3AccessAssignment,
   LaboratoryS3Access,
   S3BucketCatalogEntry,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-s3-access';
 import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { isDataTaggedS3Bucket } from '@BE/services/easy-genomics/s3-bucket-catalog-service';
+import { normalizeS3Prefix } from '@BE/utils/s3-uri-utils';
 
 /** Legacy rows and explicit ALLOW. */
 export function rowIsAllow(row: LaboratoryS3Access): boolean {
@@ -66,6 +72,16 @@ export function isS3BucketAccessAllowed(
   return !denyBucketNames(accessRows).has(bucketName);
 }
 
+/** The extra folder an admin allowed for this lab in `bucketName`. Only ALLOW rows carry one. */
+export function findAllowedPrefix(accessRows: LaboratoryS3Access[], bucketName: string): string | undefined {
+  const row = accessRows.find((candidate) => candidate.BucketName === bucketName && rowIsAllow(candidate));
+  return row?.AllowedPrefix || undefined;
+}
+
+export function hasWholeBucketGrant(accessRows: LaboratoryS3Access[], bucketName: string): boolean {
+  return accessRows.some((row) => row.BucketName === bucketName && rowIsAllow(row) && row.AllowsWholeBucket === true);
+}
+
 export function grantedBucketNamesForLaboratory(
   laboratory: Pick<Laboratory, 'EnableNewBucketsByDefault' | 'S3Bucket'>,
   accessRows: LaboratoryS3Access[],
@@ -88,13 +104,14 @@ export function grantedBucketNamesForLaboratory(
  * Deny unless `bucketName` is a data-tagged catalog bucket and the lab is allowed
  * to use it. When `catalog` is omitted, membership is checked via a single-bucket
  * tag lookup (cheaper than listing the full catalog on every request).
+ * Returns the lab's access rows, so callers can read the bucket's allowed prefix without a second query.
  */
 export async function assertLaboratoryHasS3BucketAccess(
   laboratory: Pick<Laboratory, 'LaboratoryId' | 'EnableNewBucketsByDefault' | 'S3Bucket'>,
   bucketName: string,
   accessService: LaboratoryS3AccessService,
   catalog?: S3BucketCatalogEntry[],
-): Promise<void> {
+): Promise<LaboratoryS3Access[]> {
   if (!bucketName) {
     throw new S3BucketAccessDeniedError();
   }
@@ -114,5 +131,51 @@ export async function assertLaboratoryHasS3BucketAccess(
   const rows = await accessService.listByLaboratoryId(laboratory.LaboratoryId);
   if (!isS3BucketAccessAllowed(laboratory, rows, bucketName)) {
     throw new S3BucketAccessDeniedError();
+  }
+  return rows;
+}
+/**
+ * An allowed prefix or a whole-bucket grant moves a lab's read boundary outside its own folder, so setting, changing or
+ * clearing either is a system-admin decision. Callers without that role may only re-send a grant carrying the prefix
+ * and whole-bucket grant already stored.
+ */
+export async function assertAllowedPrefixesUnchanged(
+  assignments: BatchLaboratoryS3AccessAssignment[],
+  accessService: LaboratoryS3AccessService,
+): Promise<void> {
+  const grants = assignments.filter((assignment) => assignment.granted);
+  const rowsByLaboratory = new Map<string, LaboratoryS3Access[]>();
+  for (const laboratoryId of new Set(grants.map((grant) => grant.laboratoryId))) {
+    rowsByLaboratory.set(laboratoryId, await accessService.listByLaboratoryId(laboratoryId));
+  }
+
+  for (const grant of grants) {
+    const storedRows = rowsByLaboratory.get(grant.laboratoryId) ?? [];
+    const storedPrefix = findAllowedPrefix(storedRows, grant.bucketName) ?? '';
+    const requestedPrefix = grant.allowedPrefix ? normalizeS3Prefix(grant.allowedPrefix) : '';
+    const wholeBucketChanged = hasWholeBucketGrant(storedRows, grant.bucketName) !== (grant.allowsWholeBucket === true);
+    if (storedPrefix !== requestedPrefix || wholeBucketChanged) {
+      throw new UnauthorizedAccessError('Only a system administrator can set, change or clear an allowed folder');
+    }
+  }
+}
+
+/**
+ * A whole-bucket grant is for buckets Easy Genomics does not write lab data into, such as a sequencer drop or archive
+ * bucket, so it is refused on any laboratory's default bucket in any organization. The read guard keeps every
+ * organization folder out regardless.
+ */
+export function assertWholeBucketGrantsAllowed(
+  assignments: BatchLaboratoryS3AccessAssignment[],
+  laboratories: Pick<Laboratory, 'S3Bucket'>[],
+): void {
+  const defaultBuckets = new Set(laboratories.map((laboratory) => laboratory.S3Bucket));
+  const refused = assignments.find(
+    (assignment) => assignment.granted && assignment.allowsWholeBucket && defaultBuckets.has(assignment.bucketName),
+  );
+  if (refused) {
+    throw new InvalidRequestError(
+      `Whole-bucket access is not allowed on ${refused.bucketName}: it is a laboratory's default bucket`,
+    );
   }
 }

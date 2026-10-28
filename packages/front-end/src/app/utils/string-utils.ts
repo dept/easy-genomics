@@ -69,3 +69,13 @@ export function toSentenceCase(input: string | undefined): string | undefined {
   if (!input) return input;
   return input.charAt(0).toUpperCase() + input.slice(1);
 }
+
+/**
+ * Split a comma-separated env/input string into trimmed non-empty parts.
+ */
+export function splitCommaSeparatedList(input: string | undefined): string[] {
+  return (input ?? '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+}

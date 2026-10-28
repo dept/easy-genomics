@@ -9,6 +9,7 @@ import useSeqeraPipelinesStore from './seqeraPipelines';
 import useToastStore from './toast';
 import useUiStore from './ui';
 import useUserStore from './user';
+import useWorkflowKeyOutputsStore from './workflowKeyOutputs';
 import useWorkflowRunPresetsStore from './workflowRunPresets';
 
 function resetStores() {
@@ -22,6 +23,7 @@ function resetStores() {
   useUiStore().reset();
   useUserStore().reset();
   useWorkflowRunPresetsStore().reset();
+  useWorkflowKeyOutputsStore().reset();
 }
 export {
   resetStores,
@@ -37,4 +39,5 @@ export {
   useSeqeraPipelinesStore,
   useOmicsWorkflowsStore,
   useWorkflowRunPresetsStore,
+  useWorkflowKeyOutputsStore,
 };

@@ -1,3 +1,4 @@
+import { easyGenomicsApiName } from '@easy-genomics/shared-lib/src/app/utils/api-gateway-names';
 import { CfnOutput, Stack } from 'aws-cdk-lib';
 import { AttributeType, StreamViewType, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { NagSuppressions } from 'cdk-nag';
@@ -103,6 +104,7 @@ export class EasyGenomicsApiStack extends Stack {
     // id, so the deployed API physical id and invoke URL are unchanged on upgrade
     // (Easy Genomics runs in customer-owned accounts — a new URL would break them).
     this.apiGateway = new SpecRestApiConstruct(this, `${this.props.namePrefix}-easy-genomics-apigw`, {
+      restApiName: easyGenomicsApiName(this.props.namePrefix),
       description: 'Easy Genomics API Gateway',
       lambdaFunctions: this.easyGenomicsNestedStack.lambda.lambdaFunctions,
       userPool: this.props.userPool,
@@ -164,6 +166,11 @@ export class EasyGenomicsApiStack extends Stack {
         `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-request-folder-download-job-role/Resource`,
         `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-request-folder-download-job-status-role/Resource`,
         `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-process-folder-download-job-role/Resource`,
+        `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-request-run-export-preview-role/Resource`,
+        `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-request-run-export-job-role/Resource`,
+        `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-request-run-export-job-status-role/Resource`,
+        `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-process-run-export-job-role/Resource`,
+        `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-process-deliver-workflow-key-outputs-role/Resource`,
         `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-update-laboratory-role/Resource`,
         `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-list-buckets-role/Resource`,
         `${stackPath}/${nestedId}/${easyGenomicsId}/${easyGenomicsId}-create-file-upload-request-role/Resource`,
@@ -464,5 +471,21 @@ export class EasyGenomicsApiStack extends Stack {
       lsi: baseLSIAttributes,
     });
     this.dynamoDBTables.set(workflowRunPresetTableName, workflowRunPresetTable);
+
+    // Lab-wide key output definitions for a workflow, inferred from files ticked
+    // on a completed run. One item per laboratory + workflow.
+    const workflowKeyOutputsTableName = `${this.props.namePrefix}-workflow-key-outputs-table`;
+    const workflowKeyOutputsTable = this.dynamoDB.createTable(workflowKeyOutputsTableName, {
+      partitionKey: {
+        name: 'LaboratoryId',
+        type: AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'WorkflowId',
+        type: AttributeType.STRING,
+      },
+      lsi: baseLSIAttributes,
+    });
+    this.dynamoDBTables.set(workflowKeyOutputsTableName, workflowKeyOutputsTable);
   };
 }

@@ -179,4 +179,31 @@ describe('process-folder-download-job Lambda', () => {
     expect(JSON.parse(statusWrites[1].Body).Status).toBe('FAILED');
     expect(JSON.parse(statusWrites[1].Body).ErrorMessage).toContain('does not contain downloadable files');
   });
+
+  it('zips only the supplied object keys', async () => {
+    mockPutObject.mockResolvedValueOnce({}).mockResolvedValueOnce({});
+    mockGetObject.mockResolvedValue({
+      Body: {} as NodeJS.ReadableStream,
+    });
+
+    const result = await handler(
+      createSnsWrappedSqsEvent({
+        ...baseJobMessage,
+        ObjectKeys: [
+          'test-org-id/test-lab-id/results/variants/sample01.consensus.fa',
+          'test-org-id/test-lab-id/results/pangolin/sample01.pangolin.csv',
+        ],
+        ArchiveName: 'key-outputs',
+      }),
+      {} as any,
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockListBucketObjectsV2).not.toHaveBeenCalled();
+    expect(mockArchive.append).toHaveBeenCalledTimes(2);
+    expect(mockArchive.append).toHaveBeenCalledWith(expect.anything(), {
+      name: 'key-outputs/variants/sample01.consensus.fa',
+    });
+  });
 });

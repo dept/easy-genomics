@@ -8,6 +8,7 @@ import {
   UnlinkedBucketObjectsResponse,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import type { LaboratoryS3Access } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-s3-access';
 import {
   GenerateSequenceCollectionSampleSheetResponse,
   LaboratorySequenceCollection,
@@ -21,11 +22,13 @@ import {
 import {
   buildSampleSheetFromSamples,
   SampleForSampleSheet,
+  upgradeLayoutForAddedFiles,
 } from '@easy-genomics/shared-lib/src/app/utils/data-collection-sample-sheet';
 import { isFilenameRegexSafe } from '@easy-genomics/shared-lib/src/app/utils/filename-regex-safety';
 import {
   InvalidRequestError,
   NotFoundError,
+  S3KeyOutOfPrefixError,
   SampleNotFoundError,
   SequenceCollectionNotFoundError,
 } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
@@ -41,6 +44,8 @@ import {
 } from './laboratory-data-tagging-service';
 import { DynamoDBService } from '../dynamodb-service';
 import { S3Service } from '../s3-service';
+import { findAllowedPrefix, hasWholeBucketGrant } from '@BE/utils/laboratory-s3-access-utils';
+import { isInsideLaboratoryReadablePrefix, resolveLaboratoryListingPrefix } from '@BE/utils/s3-uri-utils';
 
 const TABLE_NAME = `${process.env.NAME_PREFIX}-laboratory-data-tagging-table`;
 const GSI1_NAME = 'Gsi1Pk_Index';
@@ -79,8 +84,32 @@ export class LaboratorySampleService extends DynamoDBService {
     this.taggingService.assertKeyUnderLabPrefix(laboratory, key);
   }
 
-  public async assertLaboratoryHasS3BucketAccess(laboratory: Laboratory, bucket: string): Promise<void> {
-    await this.taggingService.assertLaboratoryHasS3BucketAccess(laboratory, bucket);
+  public async assertLaboratoryHasS3BucketAccess(
+    laboratory: Laboratory,
+    bucket: string,
+  ): Promise<LaboratoryS3Access[]> {
+    return this.taggingService.assertLaboratoryHasS3BucketAccess(laboratory, bucket);
+  }
+
+  /**
+   * An import may copy from the lab root, or from the allowed folder or whole-bucket grant stored for this lab and this
+   * source bucket.
+   */
+  private async assertImportSourceReadable(
+    laboratory: Laboratory,
+    sourceBucket: string,
+    sourceKey: string,
+  ): Promise<void> {
+    const accessRows = await this.assertLaboratoryHasS3BucketAccess(laboratory, sourceBucket);
+    const readable = isInsideLaboratoryReadablePrefix(
+      sourceKey,
+      laboratory,
+      findAllowedPrefix(accessRows, sourceBucket),
+      hasWholeBucketGrant(accessRows, sourceBucket),
+    );
+    if (!readable) {
+      throw new S3KeyOutOfPrefixError();
+    }
   }
 
   public async listSamples(laboratoryId: string): Promise<ListLaboratorySamplesResponse> {
@@ -215,8 +244,8 @@ export class LaboratorySampleService extends DynamoDBService {
       ),
     });
 
-    const added = await this.addFilesToSampleInternal(laboratory, userId, bucket, setId, opts.keys);
-    return { ...set, FileCount: added };
+    const addedKeys = await this.addFilesToSampleInternal(laboratory, userId, bucket, setId, opts.keys);
+    return { ...set, FileCount: addedKeys.length };
   }
 
   public async addFilesToSample(
@@ -228,7 +257,8 @@ export class LaboratorySampleService extends DynamoDBService {
   ): Promise<void> {
     const existing = await this.getSample(laboratory.LaboratoryId, setId);
     if (!existing) throw new SampleNotFoundError(setId);
-    await this.addFilesToSampleInternal(laboratory, userId, bucket, setId, keys);
+    const addedKeys = await this.addFilesToSampleInternal(laboratory, userId, bucket, setId, keys);
+    await this.updateSampleAfterFilesAdded(laboratory.LaboratoryId, existing, addedKeys, userId);
   }
 
   public async createOrExtendSample(
@@ -252,13 +282,15 @@ export class LaboratorySampleService extends DynamoDBService {
       if (!isFilenameRegexSafe(opts.filenameRegex)) {
         throw new InvalidRequestError('Filename regex is not allowed');
       }
-      const labPrefix = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
+      // In-place links must stay under the lab root (assertKeyUnderLabPrefix on every key), so never an allowed folder.
+      const labPrefix = resolveLaboratoryListingPrefix(laboratory);
       const { contents } = await this.dataCollectionService.listTransactionInputs({
         bucket,
         labPrefix,
         pageSize: 1000,
       });
-      const regex = new RegExp(opts.filenameRegex);
+      // Case-insensitive to match the grouping preview (groupFilenamesByRegex), which the user saw before submitting.
+      const regex = new RegExp(opts.filenameRegex, 'i');
       for (const obj of contents) {
         if (!obj.Key) continue;
         const base = obj.Key.split('/').pop() || obj.Key;
@@ -651,7 +683,7 @@ export class LaboratorySampleService extends DynamoDBService {
   public async listUnlinkedBucketObjects(
     laboratory: Laboratory,
     opts: {
-      relativePrefix?: string;
+      s3Prefix?: string;
       maxTotalKeys?: number;
       maxTransactionFolders?: number;
       pageSize?: number;
@@ -660,11 +692,7 @@ export class LaboratorySampleService extends DynamoDBService {
     const s3Bucket = laboratory.S3Bucket || '';
     if (!s3Bucket) throw new Error('Laboratory has no S3 bucket configured');
 
-    const labRoot = `${laboratory.OrganizationId}/${laboratory.LaboratoryId}/`;
-    const relative = (opts.relativePrefix || '').replace(/^\/*/, '');
-    let normalizedPrefix = `${labRoot}${relative}`;
-    if (!normalizedPrefix.endsWith('/')) normalizedPrefix = `${normalizedPrefix}/`;
-    if (!normalizedPrefix.startsWith(labRoot)) throw new Error('Prefix is outside laboratory scope');
+    const normalizedPrefix = resolveLaboratoryListingPrefix(laboratory, opts.s3Prefix);
 
     const pageSize = Math.min(opts.pageSize ?? 1000, 1000);
     const maxTotalKeys = Math.min(opts.maxTotalKeys ?? 15_000, 50_000);
@@ -728,8 +756,7 @@ export class LaboratorySampleService extends DynamoDBService {
     };
 
     for (const job of opts.copyJobs || []) {
-      await this.assertLaboratoryHasS3BucketAccess(laboratory, job.sourceBucket);
-      this.assertKeyUnderLabPrefix(laboratory, job.sourceKey);
+      await this.assertImportSourceReadable(laboratory, job.sourceBucket, job.sourceKey);
       this.assertKeyUnderLabPrefix(laboratory, job.destKey);
       await this.s3Service.copyBucketObject({
         Bucket: bucket,
@@ -848,8 +875,8 @@ export class LaboratorySampleService extends DynamoDBService {
       ),
     });
 
-    const added = await this.addFilesToSampleInternal(laboratory, userId, bucket, setId, opts.keys);
-    return { ...set, FileCount: added };
+    const addedKeys = await this.addFilesToSampleInternal(laboratory, userId, bucket, setId, opts.keys);
+    return { ...set, FileCount: addedKeys.length };
   }
 
   private async addFilesToSampleInternal(
@@ -858,12 +885,13 @@ export class LaboratorySampleService extends DynamoDBService {
     bucket: string,
     setId: string,
     keys: string[],
-  ): Promise<number> {
+  ): Promise<string[]> {
     const laboratoryId = laboratory.LaboratoryId;
-    let added = 0;
+    const addedKeys: string[] = [];
+
+    for (const key of keys) this.assertKeyUnderLabPrefix(laboratory, key);
 
     for (const key of keys) {
-      this.assertKeyUnderLabPrefix(laboratory, key);
       const ref = encodeS3ObjectRef(bucket, key);
       const mapSk = skSampleFile(setId, ref);
 
@@ -886,17 +914,17 @@ export class LaboratorySampleService extends DynamoDBService {
           ConditionExpression: 'attribute_not_exists(#sk)',
           ExpressionAttributeNames: { '#sk': 'Sk' },
         });
-        added++;
+        addedKeys.push(key);
         await this.addSampleIdToFileRow(laboratoryId, ref, bucket, key, setId);
       } catch (e: unknown) {
         if (!isConditionalCheckFailed(e)) throw e;
       }
     }
 
-    if (added > 0) {
-      await this.adjustSampleFileCount(laboratoryId, setId, added, userId);
+    if (addedKeys.length > 0) {
+      await this.adjustSampleFileCount(laboratoryId, setId, addedKeys.length, userId);
     }
-    return added;
+    return addedKeys;
   }
 
   private async addSamplesToSequenceCollectionInternal(
@@ -1052,6 +1080,33 @@ export class LaboratorySampleService extends DynamoDBService {
       UpdateExpression: 'ADD FileCount :delta SET ModifiedAt = :ma, ModifiedBy = :mb',
       ExpressionAttributeValues: marshall({
         ':delta': delta,
+        ':ma': new Date().toISOString(),
+        ':mb': userId,
+      }),
+    });
+  }
+
+  /**
+   * ContentsSummary is written once at import and never maintained, so it is removed rather than
+   * left describing files the sample no longer matches; the UI falls back to layout + FileCount.
+   */
+  private async updateSampleAfterFilesAdded(
+    laboratoryId: string,
+    sample: LaboratorySample,
+    addedKeys: string[],
+    userId: string,
+  ): Promise<void> {
+    if (!addedKeys.length) return;
+    const layout = upgradeLayoutForAddedFiles(sample.Layout, addedKeys, sample.SampleIdPattern);
+    if (layout === sample.Layout && !sample.ContentsSummary) return;
+
+    await this.updateItem({
+      TableName: TABLE_NAME,
+      Key: marshall({ LaboratoryId: laboratoryId, Sk: skSample(sample.SampleId) }),
+      UpdateExpression: 'SET #layout = :layout, ModifiedAt = :ma, ModifiedBy = :mb REMOVE ContentsSummary',
+      ExpressionAttributeNames: { '#layout': 'Layout' },
+      ExpressionAttributeValues: marshall({
+        ':layout': layout,
         ':ma': new Date().toISOString(),
         ':mb': userId,
       }),

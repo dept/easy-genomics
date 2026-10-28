@@ -1,4 +1,6 @@
+import { SampleLayoutSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/data-collections/create-sample';
 import {
+  SAMPLE_LAYOUT_LABELS,
   parseSelectionKey,
   selectionFromLegacyKeys,
   selectionHasOnlyFiles,
@@ -8,6 +10,14 @@ import {
 } from '../../../src/app/utils/data-collections-selection';
 
 describe('data-collections-selection', () => {
+  it.each(SampleLayoutSchema.options)('labels the %s layout', (layout) => {
+    expect(SAMPLE_LAYOUT_LABELS[layout]).toBeTruthy();
+  });
+
+  it('labels the assembled layout as an assembled genome', () => {
+    expect(SAMPLE_LAYOUT_LABELS.assembled).toBe('Assembled genome (FASTA)');
+  });
+
   it('toggleSelectionItem adds and removes items', () => {
     let sel = toggleSelectionItem([], { type: 'file', key: 'a' });
     expect(sel).toHaveLength(1);

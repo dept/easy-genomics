@@ -18,6 +18,7 @@
   import { LaboratoryUserDetails } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user-details';
   import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
   import { getRunListStatusPollIntervalMs } from '@easy-genomics/shared-lib/src/app/utils/laboratory-run-progress-polling';
+  import { isCompletedHealthOmicsWorkflowRun } from '@easy-genomics/shared-lib/src/app/utils/workflow-key-output-delivery';
   import { v4 as uuidv4 } from 'uuid';
   import { Pipeline as SeqeraPipeline } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
   import type { LabOmicsWorkflow } from '@FE/stores/omicsWorkflows';
@@ -423,6 +424,10 @@
       [{ label: 'View Files', click: () => viewRunDetails(run, 'File Manager') }],
     ];
 
+    if (canSetKeyOutputsForRun(run)) {
+      buttons.push([{ label: 'Set key outputs', click: () => viewSetKeyOutputsForRun(run) }]);
+    }
+
     if (['SUBMITTED', 'STARTING', 'RUNNING'].includes(run.Status)) {
       buttons.push([{ label: 'Cancel Run', click: () => initCancelRun(run), isHighlighted: true }]);
     }
@@ -430,10 +435,21 @@
     return buttons;
   }
 
+  function canSetKeyOutputsForRun(run: LaboratoryRun): boolean {
+    return isCompletedHealthOmicsWorkflowRun(run);
+  }
+
   function viewRunDetails(run: LaboratoryRun, tab: string = 'Run Details') {
     $router.push({
       path: `/labs/${props.labId}/run/${run.RunId}`,
       query: { tab },
+    });
+  }
+
+  function viewSetKeyOutputsForRun(run: LaboratoryRun): void {
+    $router.push({
+      path: `/labs/${props.labId}/run/${run.RunId}`,
+      query: { tab: 'Files', declareKeyOutputs: '1' },
     });
   }
 
@@ -519,15 +535,6 @@
 
   // Omics Workflows Tab
 
-  const omicsWorkflowsTableColumns = computed(() => [
-    { key: 'Name', label: 'Name' },
-    { key: 'source', label: 'Source' },
-    { key: 'description', label: 'Description' },
-    ...(canCreateOmicsWorkflows.value ? [{ key: 'actions', label: 'Actions' }] : []),
-    { key: 'favourite', label: 'Favorite' },
-    { key: 'run', label: 'Run' },
-  ]);
-
   function canDeleteOmicsWorkflow(workflow: LabOmicsWorkflow): boolean {
     return canDeletePrivateOmicsWorkflow({
       workflow,
@@ -536,22 +543,61 @@
     });
   }
 
+  const canDeliverKeyOutputs = computed(() => userStore.canEditLabUsers(props.labId));
+
+  const omicsWorkflowsTableColumns = [
+    { key: 'Name', label: 'Name' },
+    { key: 'source', label: 'Source' },
+    { key: 'description', label: 'Description' },
+    { key: 'actions', label: 'Actions' },
+    { key: 'favourite', label: 'Favorite' },
+    { key: 'run', label: 'Run' },
+  ];
+
   function omicsWorkflowsActionItems(workflow: LabOmicsWorkflow) {
-    if (!canDeleteOmicsWorkflow(workflow)) {
-      return [];
+    const items: object[][] = [];
+
+    if (canDeliverKeyOutputs.value) {
+      items.push([{ label: 'Deliver', click: () => viewDeliverKeyOutputs(workflow) }]);
     }
-    return [
-      [
+
+    items.push([{ label: 'Key Outputs', click: () => viewSetKeyOutputs(workflow) }]);
+
+    if (canDeleteOmicsWorkflow(workflow)) {
+      items.push([
         {
-          label: 'Delete',
+          label: 'Delete workflow',
           click: () => {
             workflowToDelete.value = workflow;
             isDeleteWorkflowDialogOpen.value = true;
           },
           isHighlighted: true,
         },
-      ],
-    ];
+      ]);
+    }
+
+    return items;
+  }
+
+  function viewSetKeyOutputs(workflow: LabOmicsWorkflow): void {
+    const workflowId = workflow.id;
+    if (!workflowId) return;
+
+    const completed = runsTableItems.value
+      .filter((run) => run.WorkflowExternalId === workflowId && canSetKeyOutputsForRun(run))
+      .sort((a, b) => {
+        const aTime = a.TerminalAt ?? a.ModifiedAt ?? a.CreatedAt ?? '';
+        const bTime = b.TerminalAt ?? b.ModifiedAt ?? b.CreatedAt ?? '';
+        return bTime.localeCompare(aTime);
+      });
+    const run = completed[0];
+    if (!run) {
+      useToastStore().error(
+        `No completed run of ${workflow.name || 'this workflow'} was found. Finish a run first, then you can set key outputs from its files.`,
+      );
+      return;
+    }
+    viewSetKeyOutputsForRun(run);
   }
 
   async function handleDeleteOmicsWorkflow(): Promise<void> {
@@ -592,6 +638,14 @@
     };
 
     await favouriteWorkflowsStore.toggleFavourite(favourite);
+  }
+
+  function viewDeliverKeyOutputs(workflow: LabOmicsWorkflow): void {
+    if (!workflow.id) return;
+    $router.push({
+      path: `/labs/${props.labId}/deliver-key-outputs/${encodeURIComponent(workflow.id)}`,
+      query: workflow.name ? { workflowName: workflow.name } : {},
+    });
   }
 
   function viewRunOmicsWorkflow(workflow: LabOmicsWorkflow) {
@@ -1258,7 +1312,7 @@
       </template>
 
       <template #actions-data="{ row: workflow }">
-        <div v-if="canDeleteOmicsWorkflow(workflow)" class="flex justify-end">
+        <div class="flex justify-end">
           <EGActionButton
             menu-label="Workflow actions"
             :items="omicsWorkflowsActionItems(workflow)"

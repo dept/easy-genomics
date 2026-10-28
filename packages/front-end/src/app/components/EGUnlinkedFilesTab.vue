@@ -22,10 +22,12 @@
       lastScanLabel: string;
       s3Configured?: boolean;
       canEditLabDetails?: boolean;
+      hasSamples?: boolean;
     }>(),
     {
       s3Configured: true,
       canEditLabDetails: false,
+      hasSamples: false,
     },
   );
 
@@ -35,6 +37,7 @@
     rescan: [];
     'build-sample': [];
     'group-with-regex': [];
+    'add-to-sample': [];
     'open-settings': [];
   }>();
 
@@ -262,7 +265,12 @@
               :class="{ 'bg-primary-50': selectedKeys.includes(f.Key) }"
             >
               <td class="p-3">
-                <input type="checkbox" :checked="selectedKeys.includes(f.Key)" @change="toggle(f.Key)" />
+                <input
+                  type="checkbox"
+                  :checked="selectedKeys.includes(f.Key)"
+                  :aria-label="`Select file ${fileName(f.Key)}`"
+                  @change="toggle(f.Key)"
+                />
               </td>
               <td class="p-3 font-mono text-xs">{{ fileName(f.Key) }}</td>
               <td class="p-3 text-xs uppercase text-gray-500">{{ dataCollectionFileKind(f.Key) }}</td>
@@ -289,6 +297,9 @@
           <UButton variant="outline" :disabled="selectedKeys.length < 2" @click="emit('group-with-regex')">
             Group with regex
           </UButton>
+          <UTooltip text="This lab has no samples yet. Build one first." :prevent="hasSamples" :delay-duration="0">
+            <UButton variant="outline" :disabled="!hasSamples" @click="emit('add-to-sample')">Add to sample</UButton>
+          </UTooltip>
           <UButton @click="emit('build-sample')">Build sample manually</UButton>
         </div>
       </div>

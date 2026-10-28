@@ -14,11 +14,15 @@ jest.mock('../../../src/app/services/easy-genomics/s3-bucket-catalog-service', (
   listDataTaggedS3Buckets: jest.fn(),
 }));
 
+import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import type { LaboratoryS3Access } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-s3-access';
 import { LaboratoryS3AccessService } from '../../../src/app/services/easy-genomics/laboratory-s3-access-service';
 import {
   assertLaboratoryHasS3BucketAccess,
+  assertWholeBucketGrantsAllowed,
+  findAllowedPrefix,
   grantedBucketNamesForLaboratory,
+  hasWholeBucketGrant,
   isS3BucketAccessAllowed,
 } from '../../../src/app/utils/laboratory-s3-access-utils';
 
@@ -106,6 +110,97 @@ describe('laboratory-s3-access-utils', () => {
     });
   });
 
+  describe('findAllowedPrefix', () => {
+    const withPrefix = (bucketName: string, effect?: 'ALLOW' | 'DENY'): LaboratoryS3Access => ({
+      ...allowRow(bucketName),
+      ...(effect ? { Effect: effect } : {}),
+      AllowedPrefix: 'sample-3-18/',
+    });
+
+    it('returns the prefix stored on the ALLOW row for that bucket', () => {
+      expect(findAllowedPrefix([withPrefix('bucket-a', 'ALLOW')], 'bucket-a')).toBe('sample-3-18/');
+    });
+
+    it('treats a legacy row without Effect as ALLOW', () => {
+      expect(findAllowedPrefix([withPrefix('bucket-a')], 'bucket-a')).toBe('sample-3-18/');
+    });
+
+    it("never applies one bucket's prefix to another bucket", () => {
+      expect(findAllowedPrefix([withPrefix('bucket-a', 'ALLOW')], 'bucket-b')).toBeUndefined();
+    });
+
+    it('ignores a prefix on a DENY row', () => {
+      expect(findAllowedPrefix([withPrefix('bucket-a', 'DENY')], 'bucket-a')).toBeUndefined();
+    });
+
+    it('returns undefined when the lab has no row for the bucket', () => {
+      expect(findAllowedPrefix([], 'bucket-a')).toBeUndefined();
+    });
+
+    it('strict lab given a prefix on its own S3Bucket keeps access and gains the folder', () => {
+      const rowsAfterSettingPrefix = [withPrefix('bucket-a', 'ALLOW')];
+      expect(isS3BucketAccessAllowed(labStrict, rowsAfterSettingPrefix, 'bucket-a')).toBe(true);
+      expect(findAllowedPrefix(rowsAfterSettingPrefix, 'bucket-a')).toBe('sample-3-18/');
+    });
+  });
+
+  describe('hasWholeBucketGrant', () => {
+    const wholeBucketRow = (bucketName: string, effect?: 'ALLOW' | 'DENY'): LaboratoryS3Access => ({
+      ...allowRow(bucketName),
+      ...(effect ? { Effect: effect } : {}),
+      AllowsWholeBucket: true,
+    });
+
+    it('is true for the ALLOW row of that bucket, legacy rows included', () => {
+      expect(hasWholeBucketGrant([wholeBucketRow('drop-bucket', 'ALLOW')], 'drop-bucket')).toBe(true);
+      expect(hasWholeBucketGrant([wholeBucketRow('drop-bucket')], 'drop-bucket')).toBe(true);
+    });
+
+    it("never applies one bucket's grant to another bucket", () => {
+      expect(hasWholeBucketGrant([wholeBucketRow('drop-bucket', 'ALLOW')], 'bucket-a')).toBe(false);
+    });
+
+    it('ignores the flag on a DENY row', () => {
+      expect(hasWholeBucketGrant([wholeBucketRow('drop-bucket', 'DENY')], 'drop-bucket')).toBe(false);
+    });
+
+    it('is false for a row with only an allowed folder, and for no row', () => {
+      expect(hasWholeBucketGrant([{ ...allowRow('drop-bucket'), AllowedPrefix: 'x/' }], 'drop-bucket')).toBe(false);
+      expect(hasWholeBucketGrant([], 'drop-bucket')).toBe(false);
+    });
+  });
+
+  describe('assertWholeBucketGrantsAllowed', () => {
+    const wholeBucketGrant = {
+      laboratoryId: 'lab-1',
+      bucketName: 'drop-bucket',
+      granted: true,
+      allowsWholeBucket: true,
+    };
+
+    it("rejects a bucket that is any laboratory's default bucket, naming it", () => {
+      expect(() =>
+        assertWholeBucketGrantsAllowed([wholeBucketGrant], [{ S3Bucket: 'bucket-a' }, { S3Bucket: 'drop-bucket' }]),
+      ).toThrow(
+        new InvalidRequestError(
+          "Whole-bucket access is not allowed on drop-bucket: it is a laboratory's default bucket",
+        ),
+      );
+    });
+
+    it('accepts a bucket no laboratory uses as its default', () => {
+      expect(() => assertWholeBucketGrantsAllowed([wholeBucketGrant], [{ S3Bucket: 'bucket-a' }, {}])).not.toThrow();
+    });
+
+    it('ignores revokes and grants without whole-bucket access', () => {
+      const assignments = [
+        { ...wholeBucketGrant, granted: false },
+        { laboratoryId: 'lab-1', bucketName: 'drop-bucket', granted: true },
+      ];
+      expect(() => assertWholeBucketGrantsAllowed(assignments, [{ S3Bucket: 'drop-bucket' }])).not.toThrow();
+    });
+  });
+
   describe('assertLaboratoryHasS3BucketAccess', () => {
     const accessService = new LaboratoryS3AccessService();
 
@@ -134,14 +229,14 @@ describe('laboratory-s3-access-utils', () => {
       mockListByLaboratoryId.mockResolvedValue([]);
       await expect(
         assertLaboratoryHasS3BucketAccess(labDefaultOn, 'bucket-b', accessService, catalog),
-      ).resolves.toBeUndefined();
+      ).resolves.toEqual([]);
     });
 
     it('allows strict configured bucket with zero access rows (migration fallback)', async () => {
       mockListByLaboratoryId.mockResolvedValue([]);
-      await expect(
-        assertLaboratoryHasS3BucketAccess(labStrict, 'bucket-a', accessService, catalog),
-      ).resolves.toBeUndefined();
+      await expect(assertLaboratoryHasS3BucketAccess(labStrict, 'bucket-a', accessService, catalog)).resolves.toEqual(
+        [],
+      );
     });
 
     it('denies strict non-configured bucket with zero access rows', async () => {
@@ -149,6 +244,12 @@ describe('laboratory-s3-access-utils', () => {
       await expect(assertLaboratoryHasS3BucketAccess(labStrict, 'bucket-b', accessService, catalog)).rejects.toThrow(
         'S3 bucket access denied',
       );
+    });
+
+    it('returns the access rows it loaded, so callers can read the allowed prefix', async () => {
+      const rows = [{ ...allowRow('bucket-a'), AllowedPrefix: 'sample-3-18/' }];
+      mockListByLaboratoryId.mockResolvedValueOnce(rows);
+      await expect(assertLaboratoryHasS3BucketAccess(labStrict, 'bucket-a', accessService)).resolves.toEqual(rows);
     });
   });
 });

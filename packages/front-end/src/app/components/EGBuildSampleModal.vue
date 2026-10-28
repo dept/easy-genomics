@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import type { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
   import type { SampleLayout } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
+  import { isFasta } from '@easy-genomics/shared-lib/src/app/utils/sample-regex-grouping';
   import { useToastStore, useUiStore } from '@FE/stores';
 
   const props = defineProps<{
@@ -31,7 +32,9 @@
       const base = first.replace(/_R[12].*$/i, '').replace(/\.R[12].*$/i, '');
       name.value = base || 'sample';
       const hasR2 = props.selectedKeys.some((k) => /R2/i.test(k.split('/').pop() || ''));
-      layout.value = hasR2 ? 'paired_end' : 'single_end';
+      const allFasta = props.selectedKeys.length > 0 && props.selectedKeys.every((key) => isFasta(key));
+      if (allFasta) layout.value = 'assembled';
+      else layout.value = hasR2 ? 'paired_end' : 'single_end';
     },
   );
 
@@ -82,6 +85,7 @@
             { label: 'Single-end', value: 'single_end' },
             { label: 'Long reads', value: 'long_reads' },
             { label: 'Paired-end with extras', value: 'paired_end_with_extras' },
+            { label: 'Assembled genome (FASTA)', value: 'assembled' },
           ]"
         />
       </UFormGroup>

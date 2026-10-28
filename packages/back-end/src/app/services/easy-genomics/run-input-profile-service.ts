@@ -5,6 +5,7 @@ import {
   hashRunSettings,
 } from '@easy-genomics/shared-lib/src/app/utils/run-cost-estimation';
 import { S3Service } from '@BE/services/s3-service';
+import { s3BodyToString } from '@BE/utils/s3-object-body';
 
 const s3Service = new S3Service();
 
@@ -19,20 +20,6 @@ function parseS3Url(url: string): { bucket: string; key: string } | undefined {
   const match = url.match(/^s3:\/\/([^/]+)\/(.+)$/);
   if (!match) return undefined;
   return { bucket: match[1], key: match[2] };
-}
-
-async function streamToString(body: any): Promise<string> {
-  if (!body) return '';
-  if (typeof body === 'string') return body;
-  if (Buffer.isBuffer(body)) return body.toString('utf-8');
-  if (typeof body.transformToString === 'function') {
-    return body.transformToString();
-  }
-  const chunks: Buffer[] = [];
-  for await (const chunk of body as AsyncIterable<Uint8Array>) {
-    chunks.push(Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks).toString('utf-8');
 }
 
 /**
@@ -59,7 +46,7 @@ export async function buildRunInputProfile(params: {
       const parsed = parseS3Url(params.sampleSheetS3Url);
       if (parsed && bucket && parsed.bucket === bucket) {
         const obj = await s3Service.getObject({ Bucket: parsed.bucket, Key: parsed.key });
-        const csv = await streamToString(obj.Body);
+        const csv = await s3BodyToString(obj.Body);
         SampleCount = countSamplesInSampleSheetCsv(csv);
       } else if (parsed && parsed.bucket !== bucket) {
         console.warn(`Ignoring sampleSheetS3Url bucket=${parsed.bucket} (expected laboratory bucket=${bucket})`);

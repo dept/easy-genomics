@@ -37,6 +37,11 @@ import {
   RequestLaboratorySchema,
 } from '../schema/easy-genomics/laboratory';
 import { AddLaboratoryRunSchema, EditLaboratoryRunSchema } from '../schema/easy-genomics/laboratory-run';
+import {
+  RequestRunExportJobSchema,
+  RequestRunExportJobStatusSchema,
+  RequestRunExportPreviewSchema,
+} from '../schema/easy-genomics/laboratory-run/request-run-export-job';
 import { EstimateRunCostRequestSchema } from '../schema/easy-genomics/laboratory-run-cost';
 import { BatchUpdateLaboratoryS3AccessRequestSchema } from '../schema/easy-genomics/laboratory-s3-access';
 import {
@@ -71,6 +76,12 @@ import {
   CreateUserForgotPasswordRequestSchema,
   ConfirmUserForgotPasswordRequestSchema,
 } from '../schema/easy-genomics/user-password';
+import {
+  EditWorkflowKeyOutputDeliverySchema,
+  EditWorkflowKeyOutputsSchema,
+  RequestPreviewWorkflowKeyOutputsSchema,
+  RequestRunWorkflowKeyOutputsSchema,
+} from '../schema/easy-genomics/workflow-key-outputs';
 import {
   CreateWorkflowRunPresetSchema,
   UpdateWorkflowRunPresetSchema,
@@ -280,6 +291,15 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
   'POST /easy-genomics/laboratory/run/request-apply-run-retention-policy': {},
   'POST /easy-genomics/laboratory/run/request-laboratory-run-status-check': {},
   'POST /easy-genomics/laboratory/run/request-laboratory-run-failure-analysis': {},
+  'POST /easy-genomics/laboratory/run/request-run-export-preview': {
+    request: RequestRunExportPreviewSchema,
+  },
+  'POST /easy-genomics/laboratory/run/request-run-export-job': {
+    request: RequestRunExportJobSchema,
+  },
+  'POST /easy-genomics/laboratory/run/request-run-export-job-status': {
+    request: RequestRunExportJobStatusSchema,
+  },
 
   // ── easy-genomics/data-collections/ ─────────────────────────────────────────
 
@@ -490,6 +510,32 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
   'PUT /easy-genomics/workflow-run-preset/update-workflow-run-preset/{id}': {
     request: UpdateWorkflowRunPresetSchema,
     response: 'WorkflowRunPreset',
+  },
+
+  // ── easy-genomics/workflow-key-outputs/ ──────────────────────────────────────
+
+  'POST /easy-genomics/workflow-key-outputs/edit-workflow-key-outputs': {
+    request: EditWorkflowKeyOutputsSchema,
+    response: 'WorkflowKeyOutputs',
+  },
+  'POST /easy-genomics/workflow-key-outputs/edit-workflow-key-output-delivery': {
+    request: EditWorkflowKeyOutputDeliverySchema,
+    response: 'WorkflowKeyOutputs',
+  },
+  'GET /easy-genomics/workflow-key-outputs/list-workflow-key-outputs': {
+    response: 'ListWorkflowKeyOutputsResponse',
+    query: [
+      { name: 'laboratoryId', required: true, description: 'Laboratory owning the key-outputs definition' },
+      { name: 'workflowId', required: true, description: 'Workflow the definition applies to' },
+    ],
+  },
+  'POST /easy-genomics/workflow-key-outputs/request-preview-workflow-key-outputs': {
+    request: RequestPreviewWorkflowKeyOutputsSchema,
+    response: 'PreviewWorkflowKeyOutputsResponse',
+  },
+  'POST /easy-genomics/workflow-key-outputs/request-run-workflow-key-outputs': {
+    request: RequestRunWorkflowKeyOutputsSchema,
+    response: 'RunWorkflowKeyOutputsResponse',
   },
 
   // ── aws-healthomics/run/ ─────────────────────────────────────────────────────

@@ -55,9 +55,19 @@ function decodeUnsafe(token: string): Record<string, string> {
   const parts = token.split('.');
   if (parts.length !== 3) throw new Error('Invalid JWT format');
   const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  return payloadToClaims(payload);
+}
+
+/**
+ * Flatten a JWT payload into API Gateway-style string claims.
+ * Arrays are comma-joined because API Gateway passes cognito:groups as a string,
+ * which validateSystemAdminAccess splits on commas.
+ */
+export function payloadToClaims(payload: Record<string, unknown>): Record<string, string> {
   const claims: Record<string, string> = {};
   for (const [k, v] of Object.entries(payload)) {
     if (typeof v === 'string' || typeof v === 'number') claims[k] = String(v);
+    else if (Array.isArray(v)) claims[k] = v.join(',');
   }
   return claims;
 }
@@ -123,11 +133,7 @@ export async function runAuth(
 
   try {
     const payload = await getVerifier().verify(bearer);
-    const claims: Record<string, string> = {};
-    for (const [k, v] of Object.entries(payload)) {
-      if (typeof v === 'string' || typeof v === 'number') claims[k] = String(v);
-    }
-    return { authorized: true, claims };
+    return { authorized: true, claims: payloadToClaims(payload) };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Invalid token';
     if (debugAuth) {

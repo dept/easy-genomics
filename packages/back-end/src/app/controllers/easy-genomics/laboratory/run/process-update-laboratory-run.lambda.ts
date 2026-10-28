@@ -19,6 +19,7 @@ import { LaboratoryDataTaggingService } from '@BE/services/easy-genomics/laborat
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { captureRunCostOutcome } from '@BE/services/easy-genomics/run-cost-capture-service';
+import { WorkflowKeyOutputsService } from '@BE/services/easy-genomics/workflow-key-outputs-service';
 import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import { SqsService } from '@BE/services/sqs-service';
 import { SsmService } from '@BE/services/ssm-service';
@@ -33,9 +34,11 @@ import { aggregateTaskProgress, OmicsTaskProgress } from '@BE/utils/omics-run-pr
 import { getNextFlowApiQueryParameters, httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 import { aggregateSeqeraProgress } from '@BE/utils/seqera-run-progress-utils';
 import { parseSqsJsonBody } from '@BE/utils/sqs-json-body';
+import { shouldEnqueueKeyOutputDelivery } from '@BE/utils/workflow-key-output-utils';
 
 const laboratoryService = new LaboratoryService();
 const laboratoryRunService = new LaboratoryRunService();
+const workflowKeyOutputsService = new WorkflowKeyOutputsService();
 const laboratoryDataTaggingService = new LaboratoryDataTaggingService();
 const sqsService = new SqsService();
 const ssmService = new SsmService();
@@ -46,6 +49,8 @@ const ssmService = new SsmService();
  * HealthOmics cost uses paginated ListRunTasks; large runs can take well over the
  * Lambda timeout (observed: 5k+ tasks / ~2min). Cap wait time so status/notify
  * writes always complete; uncaptured cost can be healed by process-sync-run-costs.
+ * A timed-out capture leaves its ListRunTasks requests in flight; the Node.js 24
+ * Lambda runtime does not wait for them once the handler returns.
  */
 const COST_CAPTURE_BUDGET_MS = 8_000;
 
@@ -160,6 +165,32 @@ async function compensateFailedNotification(run: LaboratoryRun): Promise<void> {
   }
 }
 
+/**
+ * Best-effort, and only when this workflow opted in. A send failure must not
+ * block the completion email. Already-terminal backfill does not call this,
+ * so older completed runs are not copied when delivery is turned on.
+ */
+async function enqueueKeyOutputDelivery(run: LaboratoryRun): Promise<void> {
+  if (!shouldEnqueueKeyOutputDelivery(run)) return;
+  const queueUrl = process.env.SQS_KEY_OUTPUT_DELIVERY_QUEUE_URL;
+  if (!queueUrl) {
+    console.warn(`SQS_KEY_OUTPUT_DELIVERY_QUEUE_URL not configured, skipping delivery for RunId=${run.RunId}`);
+    return;
+  }
+  try {
+    const definition = await workflowKeyOutputsService.get(run.LaboratoryId, run.WorkflowExternalId!);
+    if (!definition?.Delivery?.Enabled) return;
+    await sqsService.sendMessage({
+      QueueUrl: queueUrl,
+      MessageBody: JSON.stringify({ LaboratoryId: run.LaboratoryId, RunId: run.RunId }),
+      MessageGroupId: `deliver-key-outputs-${run.LaboratoryId}`,
+      MessageDeduplicationId: `deliver-key-outputs-${run.RunId}`,
+    });
+  } catch (err) {
+    console.warn(`Failed to enqueue key output delivery for RunId=${run.RunId} (notification continues):`, err);
+  }
+}
+
 async function publishForNotificationWithCompensation(run: LaboratoryRun): Promise<void> {
   const published = await safePublishForNotification(run);
   if (!published) {
@@ -193,13 +224,7 @@ async function safePropagateExpiresAt(
   }
 }
 
-export const handler: Handler = async (event: SQSEvent, context): Promise<APIGatewayProxyResult> => {
-  // Cost capture may leave paginated Omics ListRunTasks requests in flight after we
-  // abandon them via Promise.race; do not wait for the empty event loop or those
-  // requests will hold the invocation until the Lambda timeout and redrive SQS.
-  if (context && typeof context === 'object') {
-    (context as { callbackWaitsForEmptyEventLoop?: boolean }).callbackWaitsForEmptyEventLoop = false;
-  }
+export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxyResult> => {
   console.log('EVENT: \n' + JSON.stringify(event, null, 2));
   try {
     const sqsRecords: SQSRecord[] = event.Records;
@@ -460,6 +485,7 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         if (published) {
           await publishForNotificationWithCompensation(notifiedRun);
         }
+        await enqueueKeyOutputDelivery(laboratoryRun);
       }
 
       if (nextStatusTerminal && existingRun.RunCostOutcome?.CostCapturedAt == null) {

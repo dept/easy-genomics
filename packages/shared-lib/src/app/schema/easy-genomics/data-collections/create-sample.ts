@@ -1,7 +1,13 @@
 import { z } from 'zod';
 import { SAMPLE_NAME_MAX_LENGTH } from '../../../constants/data-collections';
 
-export const SampleLayoutSchema = z.enum(['paired_end', 'single_end', 'long_reads', 'paired_end_with_extras']);
+export const SampleLayoutSchema = z.enum([
+  'paired_end',
+  'single_end',
+  'long_reads',
+  'paired_end_with_extras',
+  'assembled',
+]);
 
 export const CreateSampleSchema = z
   .object({

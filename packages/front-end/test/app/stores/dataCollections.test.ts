@@ -2,12 +2,16 @@ import { createPinia, setActivePinia } from 'pinia';
 import useDataCollectionsStore, { UNLINKED_SCAN_TTL_MS } from '../../../src/app/stores/dataCollections';
 
 const mockRequestUnlinkedBucketObjects = jest.fn();
+const mockAddFilesToSample = jest.fn();
+const mockRequestLaboratoryBucketObjects = jest.fn();
 const mockToastError = jest.fn();
 
 (global as { useNuxtApp?: () => unknown }).useNuxtApp = () => ({
   $api: {
     dataCollections: {
       requestUnlinkedBucketObjects: mockRequestUnlinkedBucketObjects,
+      addFilesToSample: mockAddFilesToSample,
+      requestLaboratoryBucketObjects: mockRequestLaboratoryBucketObjects,
     },
   },
 });
@@ -138,5 +142,97 @@ describe('dataCollections store unlinked scan cache', () => {
     await pending;
 
     expect(store.unlinkedScan('lab-1')).toBeNull();
+  });
+});
+
+describe('dataCollections store addFilesToSample', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    useDataCollectionsStore().reset();
+    mockAddFilesToSample.mockReset();
+    mockToastError.mockReset();
+  });
+
+  const request = { labId: 'lab-1', s3Bucket: 'bucket', sampleId: 'sample-1', keys: ['org/lab/a_R2.fq.gz'] };
+
+  it('adds the files and drops them from the cached unlinked scan, keeping the rest of the scan', async () => {
+    const store = useDataCollectionsStore();
+    store.setUnlinkedScan('lab-1', {
+      ...scanResponse('org/lab/a_R2.fq.gz'),
+      Contents: [{ Key: 'org/lab/a_R2.fq.gz' }, { Key: 'org/lab/b_R1.fq.gz' }],
+    });
+    const scannedBefore = store.unlinkedScan('lab-1');
+    mockAddFilesToSample.mockResolvedValueOnce(undefined);
+
+    await expect(store.addFilesToSample(request)).resolves.toBe(true);
+
+    expect(mockAddFilesToSample).toHaveBeenCalledWith({
+      LaboratoryId: 'lab-1',
+      S3Bucket: 'bucket',
+      SampleId: 'sample-1',
+      Keys: ['org/lab/a_R2.fq.gz'],
+    });
+    const scanAfter = store.unlinkedScan('lab-1');
+    expect(scanAfter?.files.map((file) => file.Key)).toEqual(['org/lab/b_R1.fq.gz']);
+    expect(scanAfter?.s3Bucket).toBe(scannedBefore?.s3Bucket);
+    expect(scanAfter?.resolvedPrefix).toBe(scannedBefore?.resolvedPrefix);
+  });
+
+  it('shows the API error and keeps the scan when the add fails', async () => {
+    const store = useDataCollectionsStore();
+    store.setUnlinkedScan('lab-1', scanResponse('org/lab/a_R2.fq.gz'));
+    mockAddFilesToSample.mockRejectedValueOnce(new Error('Sample not found'));
+
+    await expect(store.addFilesToSample(request)).resolves.toBe(false);
+
+    expect(mockToastError).toHaveBeenCalledWith('Sample not found');
+    expect(store.unlinkedScan('lab-1')).not.toBeNull();
+  });
+});
+
+describe('dataCollections store source listing', () => {
+  const body = {
+    LaboratoryId: 'lab-1',
+    S3Bucket: 'lab-bucket',
+    S3Prefix: 'org-1/lab-1/sample-3-18/',
+    MaxTotalKeys: 5000,
+  };
+
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockRequestLaboratoryBucketObjects.mockReset();
+    mockToastError.mockReset();
+  });
+
+  it('returns the listing response unchanged', async () => {
+    const response = {
+      Contents: [],
+      IsTruncated: false,
+      S3Bucket: 'lab-bucket',
+      ResolvedPrefix: 'org-1/lab-1/sample-3-18/',
+      ListingTruncated: false,
+      ReturnedKeyCount: 0,
+    };
+    mockRequestLaboratoryBucketObjects.mockResolvedValue(response);
+
+    await expect(useDataCollectionsStore().fetchLaboratoryBucketObjects(body)).resolves.toEqual(response);
+    expect(mockRequestLaboratoryBucketObjects).toHaveBeenCalledWith(body);
+    expect(mockToastError).not.toHaveBeenCalled();
+  });
+
+  it('toasts the error message and returns null when the listing fails', async () => {
+    mockRequestLaboratoryBucketObjects.mockRejectedValue(
+      new Error("S3 prefix must be inside this laboratory's folder"),
+    );
+
+    await expect(useDataCollectionsStore().fetchLaboratoryBucketObjects(body)).resolves.toBeNull();
+    expect(mockToastError).toHaveBeenCalledWith("S3 prefix must be inside this laboratory's folder");
+  });
+
+  it('toasts a generic message for a non-Error rejection', async () => {
+    mockRequestLaboratoryBucketObjects.mockRejectedValue('boom');
+
+    await expect(useDataCollectionsStore().fetchLaboratoryBucketObjects(body)).resolves.toBeNull();
+    expect(mockToastError).toHaveBeenCalledWith('Failed to list source files');
   });
 });

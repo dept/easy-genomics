@@ -8,6 +8,15 @@
     type S3BucketCatalogEntry,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-s3-access';
   import { ButtonVariantEnum } from '@FE/types/buttons';
+  import {
+    allowedPrefixError,
+    allowedPrefixesFromAssignments,
+    changedAllowedPrefixKeys,
+    changedWholeBucketKeys,
+    s3AccessKey,
+    wholeBucketKeysFromAssignments,
+    withAllowedPrefixChanges,
+  } from '@FE/utils/s3-access-allowed-prefixes';
 
   const props = withDefaults(
     defineProps<{
@@ -43,6 +52,49 @@
   const baselineEnableNewByDefault = ref<Record<string, boolean>>({});
   const pendingEnableNewByDefault = ref<Record<string, boolean>>({});
 
+  const baselineAllowedPrefixes = ref<Record<string, string>>({});
+  const pendingAllowedPrefixes = ref<Record<string, string>>({});
+
+  const baselineWholeBuckets = ref<Set<string>>(new Set());
+  const pendingWholeBuckets = ref<Set<string>>(new Set());
+
+  // The back-end lets only a system admin set or change an allowed folder; org admins see it read-only.
+  const canEditAllowedPrefixes = computed(() => useUserStore().isSuperuser);
+
+  const allowedPrefixChangeKeys = computed(() =>
+    changedAllowedPrefixKeys(pendingKeys.value, baselineAllowedPrefixes.value, pendingAllowedPrefixes.value),
+  );
+
+  const wholeBucketChangeKeys = computed(() =>
+    changedWholeBucketKeys(pendingKeys.value, baselineWholeBuckets.value, pendingWholeBuckets.value),
+  );
+
+  const allowedPrefixErrors = computed(() => {
+    const errors: Record<string, string> = {};
+    for (const key of pendingKeys.value) {
+      if (pendingWholeBuckets.value.has(key)) continue;
+      const message = allowedPrefixError(pendingAllowedPrefixes.value[key] ?? '');
+      if (message) errors[key] = message;
+    }
+    return errors;
+  });
+
+  const hasAllowedPrefixErrors = computed(() => Object.keys(allowedPrefixErrors.value).length > 0);
+
+  function setAllowedPrefix(laboratoryId: string, bucketName: string, value: string) {
+    pendingAllowedPrefixes.value = { ...pendingAllowedPrefixes.value, [accessKey(laboratoryId, bucketName)]: value };
+  }
+
+  function setWholeBucket(laboratoryId: string, bucketName: string, ticked: boolean) {
+    const next = new Set(pendingWholeBuckets.value);
+    if (ticked) {
+      next.add(accessKey(laboratoryId, bucketName));
+    } else {
+      next.delete(accessKey(laboratoryId, bucketName));
+    }
+    pendingWholeBuckets.value = next;
+  }
+
   const isConfirmClearDialogOpen = ref(false);
   const pendingClearDefaults = ref<{ labName: string; bucketName: string }[]>([]);
 
@@ -50,9 +102,7 @@
     return a.Effect === 'DENY';
   }
 
-  function accessKey(laboratoryId: string, bucketName: string): string {
-    return `${laboratoryId}::${bucketName}`;
-  }
+  const accessKey = s3AccessKey;
 
   function assignmentsToGrantedKeys(
     assignments: LaboratoryS3Access[],
@@ -137,6 +187,9 @@
         return true;
       }
     }
+    if (allowedPrefixChangeKeys.value.length || wholeBucketChangeKeys.value.length) {
+      return true;
+    }
     return false;
   });
 
@@ -169,6 +222,12 @@
       if (!baselineForLab.has(k)) {
         return true;
       }
+    }
+    if (allowedPrefixChangeKeys.value.some((key) => key.startsWith(accessKey(laboratoryId, '')))) {
+      return true;
+    }
+    if (wholeBucketChangeKeys.value.some((key) => key.startsWith(accessKey(laboratoryId, '')))) {
+      return true;
     }
     return false;
   }
@@ -207,6 +266,12 @@
       const base = assignmentsToGrantedKeys(assignRes.assignments, laboratories.value, catalog.value);
       baselineKeys.value = base;
       pendingKeys.value = new Set(base);
+      const storedPrefixes = allowedPrefixesFromAssignments(assignRes.assignments);
+      baselineAllowedPrefixes.value = storedPrefixes;
+      pendingAllowedPrefixes.value = { ...storedPrefixes };
+      const storedWholeBuckets = wholeBucketKeysFromAssignments(assignRes.assignments);
+      baselineWholeBuckets.value = storedWholeBuckets;
+      pendingWholeBuckets.value = new Set(storedWholeBuckets);
       if (laboratories.value.length && !selectedLabId.value) {
         selectedLabId.value = laboratories.value[0].LaboratoryId;
       }
@@ -299,6 +364,8 @@
   function discardAll() {
     pendingKeys.value = new Set(baselineKeys.value);
     pendingEnableNewByDefault.value = { ...baselineEnableNewByDefault.value };
+    pendingAllowedPrefixes.value = { ...baselineAllowedPrefixes.value };
+    pendingWholeBuckets.value = new Set(baselineWholeBuckets.value);
   }
 
   function buildAssignments(): BatchLaboratoryS3AccessAssignment[] {
@@ -381,7 +448,13 @@
         }
       }
 
-      const assignments = buildAssignments();
+      const assignments = withAllowedPrefixChanges(
+        buildAssignments(),
+        pendingKeys.value,
+        baselineAllowedPrefixes.value,
+        pendingAllowedPrefixes.value,
+        { baseline: baselineWholeBuckets.value, pending: pendingWholeBuckets.value },
+      );
 
       let clearedDefaults: ClearedLaboratoryDefaultBucket[] = [];
       if (assignments.length) {
@@ -402,7 +475,7 @@
       }
     } catch (e) {
       console.error(e);
-      useToastStore().error('Failed to save S3 access');
+      useToastStore().error(e instanceof Error ? e.message : 'Failed to save S3 access');
     } finally {
       isSaving.value = false;
     }
@@ -503,7 +576,15 @@
                 <thead>
                   <tr class="border-background-dark-grey text-text-muted border-b text-xs font-semibold uppercase">
                     <th scope="col" class="pb-3 pr-4">Bucket</th>
-                    <th scope="col" class="pb-3">Access</th>
+                    <th scope="col" class="pb-3 pr-4">Access</th>
+                    <th scope="col" class="pb-3">
+                      Allowed folder
+                      <UTooltip
+                        text="Optional. A folder in this bucket, outside the lab's own folder, that Data Collections may also import from. Or tick Whole bucket to allow everything in the bucket except organization and lab folders; not allowed on a lab's default bucket. Only a system admin can change either. Revoking access removes both."
+                      >
+                        <UIcon name="i-heroicons-information-circle" class="ml-1 align-middle" aria-hidden="true" />
+                      </UTooltip>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -511,11 +592,36 @@
                     <td class="py-3 pr-4">
                       <div class="text-text-body font-mono text-xs font-medium">{{ row.name }}</div>
                     </td>
-                    <td class="py-3">
+                    <td class="py-3 pr-4">
                       <UToggle
                         :model-value="pendingKeys.has(accessKey(selectedLabId, row.name))"
                         :aria-label="`${pendingKeys.has(accessKey(selectedLabId, row.name)) ? 'Revoke' : 'Grant'} access to ${row.name} for ${selectedLab.Name}`"
                         @update:model-value="(v: boolean) => setGranted(selectedLabId!, row, v)"
+                      />
+                    </td>
+                    <td class="py-3">
+                      <UFormGroup :error="allowedPrefixErrors[accessKey(selectedLabId, row.name)] ?? false">
+                        <UInput
+                          :model-value="pendingAllowedPrefixes[accessKey(selectedLabId, row.name)] ?? ''"
+                          :disabled="
+                            !canEditAllowedPrefixes ||
+                            !pendingKeys.has(accessKey(selectedLabId, row.name)) ||
+                            pendingWholeBuckets.has(accessKey(selectedLabId, row.name))
+                          "
+                          :aria-label="`Allowed folder in ${row.name} for ${selectedLab.Name}`"
+                          placeholder="e.g. sequencing-runs/"
+                          class="font-mono"
+                          size="xs"
+                          @update:model-value="(v: string) => setAllowedPrefix(selectedLabId!, row.name, v)"
+                        />
+                      </UFormGroup>
+                      <UCheckbox
+                        class="mt-1"
+                        label="Whole bucket"
+                        :model-value="pendingWholeBuckets.has(accessKey(selectedLabId, row.name))"
+                        :disabled="!canEditAllowedPrefixes || !pendingKeys.has(accessKey(selectedLabId, row.name))"
+                        :aria-label="`Allow all of ${row.name} for ${selectedLab.Name}`"
+                        @update:model-value="(v: boolean) => setWholeBucket(selectedLabId!, row.name, v)"
                       />
                     </td>
                   </tr>
@@ -556,7 +662,7 @@
           <EGButton
             u-button-type="button"
             label="Save all changes"
-            :disabled="!isDirty || isSaving"
+            :disabled="!isDirty || isSaving || hasAllowedPrefixErrors"
             :loading="isSaving"
             :aria-describedby="saveStatusId"
             @click="requestSave"
