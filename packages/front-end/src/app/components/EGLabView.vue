@@ -202,16 +202,26 @@
       "Files sitting in the lab's S3 bucket that didn't come through an import — instrument dumps, manual drops, leftovers. Not grouped into samples yet.",
   };
 
+  const pageTitle = computed(() => {
+    if (activeTabKey.value === 'details') {
+      return 'Lab settings';
+    }
+    return labName.value;
+  });
+
   const pageDescription = computed(() => {
     if (activeTabKey.value === 'dataCollections') {
       return dataCollectionsDescriptions[dataCollectionsExplorerTab.value];
+    }
+    if (activeTabKey.value === 'details') {
+      const name = labName.value || 'this lab';
+      return `These apply to everyone in ${name}, except Notifications, which are just yours.`;
     }
     const descriptions: Record<string, string> = {
       runs: 'View your pipeline runs',
       seqeraPipelines: 'View your Seqera pipelines',
       omicsWorkflows: 'View your HealthOmics workflows',
       users: 'View your lab users',
-      details: 'View your lab settings',
     };
     return descriptions[activeTabKey.value] || '';
   });
@@ -1057,7 +1067,7 @@
   >
     <EGPageHeader
       :class="{ 'shrink-0': activeTabKey === 'dataCollections' }"
-      :title="labName"
+      :title="pageTitle"
       :description="pageDescription"
       :back-action="() => (superuser ? $router.push(`/orgs/${orgId || ''}`) : $router.push('/labs'))"
       :show-back="true"
