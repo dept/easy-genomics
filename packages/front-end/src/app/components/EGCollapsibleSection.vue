@@ -13,17 +13,38 @@
       /** Extra detail shown in a hover tooltip next to the description, e.g. why a feature exists. */
       descriptionTooltip?: string;
       badges?: Badge[];
+      /** Compact status shown in the header (e.g. collapsed storage summary). */
+      summary?: string;
       defaultOpen?: boolean;
+      /** Controlled open state. When set, pair with `@update:open` (or `v-model:open`). */
+      open?: boolean;
     }>(),
     {
       description: '',
       descriptionTooltip: '',
       badges: () => [],
+      summary: '',
       defaultOpen: false,
     },
   );
 
-  const isOpen = ref(props.defaultOpen);
+  const emit = defineEmits<{
+    'update:open': [value: boolean];
+  }>();
+
+  const internalOpen = ref(props.defaultOpen);
+
+  const isOpen = computed({
+    get: () => (props.open !== undefined ? props.open : internalOpen.value),
+    set: (value: boolean) => {
+      internalOpen.value = value;
+      emit('update:open', value);
+    },
+  });
+
+  function toggleOpen() {
+    isOpen.value = !isOpen.value;
+  }
 
   function badgeClass(tone: Badge['tone']): string {
     return tone === 'positive' ? 'bg-alert-success-muted text-alert-success-text' : 'bg-background-dark-grey text-body';
@@ -38,11 +59,14 @@
         class="hover:bg-background-light-grey flex w-full appearance-none flex-col border-0 bg-transparent px-6 pb-4 pt-4 text-left transition-colors"
         :aria-expanded="isOpen"
         :aria-controls="`${headingId}-content`"
-        @click="isOpen = !isOpen"
+        @click="toggleOpen"
       >
         <span class="flex w-full items-center justify-between gap-4" :class="description ? 'pb-1' : ''">
           <span :id="headingId" class="block text-sm font-medium text-black">{{ title }}</span>
           <span class="flex shrink-0 items-center gap-2">
+            <span v-if="summary" class="text-muted max-w-[min(100%,20rem)] truncate text-xs" :title="summary">
+              {{ summary }}
+            </span>
             <UBadge
               v-for="badge in badges"
               :key="badge.label"
