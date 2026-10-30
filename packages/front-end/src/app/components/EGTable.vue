@@ -163,11 +163,12 @@
 </template>
 
 <style scoped lang="scss">
+  /* Fixed layout: auto remeasured columns from visible content (sort/page/long names). */
   :deep(table) {
     font-family: 'Inter', sans-serif;
     font-size: 14px;
     width: 100%;
-    table-layout: auto;
+    table-layout: fixed;
 
     thead {
       button {
@@ -201,12 +202,16 @@
       font-weight: 500;
       padding-left: 40px;
       white-space: normal;
+      min-width: 0;
+      overflow-wrap: break-word;
     }
 
     tbody tr td:not(:first-child) {
       font-size: 12px;
       color: #666666;
       white-space: normal;
+      min-width: 0;
+      overflow-wrap: break-word;
     }
 
     tbody tr td:not(:only-child):last-child {

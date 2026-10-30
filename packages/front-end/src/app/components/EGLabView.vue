@@ -13,6 +13,7 @@
     useSeqeraPipelinesStore,
     useToastStore,
     useUiStore,
+    useWorkflowKeyOutputsStore,
   } from '@FE/stores';
   import useUser from '@FE/composables/useUser';
   import { LaboratoryUserDetails } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user-details';
@@ -49,6 +50,7 @@
   const seqeraPipelinesStore = useSeqeraPipelinesStore();
   const omicsWorkflowsStore = useOmicsWorkflowsStore();
   const favouriteWorkflowsStore = useFavouriteWorkflowsStore();
+  const keyOutputsStore = useWorkflowKeyOutputsStore();
   const runsTableRefreshKey = ref(0);
 
   const { stringSortCompare } = useSort();
@@ -200,16 +202,26 @@
       "Files sitting in the lab's S3 bucket that didn't come through an import — instrument dumps, manual drops, leftovers. Not grouped into samples yet.",
   };
 
+  const pageTitle = computed(() => {
+    if (activeTabKey.value === 'details') {
+      return 'Lab settings';
+    }
+    return labName.value;
+  });
+
   const pageDescription = computed(() => {
     if (activeTabKey.value === 'dataCollections') {
       return dataCollectionsDescriptions[dataCollectionsExplorerTab.value];
+    }
+    if (activeTabKey.value === 'details') {
+      const name = labName.value || 'this lab';
+      return `These apply to everyone in ${name}, except Notifications, which are just yours.`;
     }
     const descriptions: Record<string, string> = {
       runs: 'View your pipeline runs',
       seqeraPipelines: 'View your Seqera pipelines',
       omicsWorkflows: 'View your HealthOmics workflows',
       users: 'View your lab users',
-      details: 'View your lab settings',
     };
     return descriptions[activeTabKey.value] || '';
   });
@@ -288,7 +300,7 @@
     { key: 'WorkflowName', label: 'Workflow name', sortable: true },
     { key: 'CreatedAt', label: 'Created At', sortable: true },
     { key: 'lastUpdated', label: 'Last Updated', sortable: true },
-    { key: 'Status', label: 'Status', sortable: true },
+    { key: 'Status', label: 'Status', sortable: true, class: 'w-32', rowClass: 'w-32' },
     { key: 'WorkflowVersionName', label: 'Workflow version', sortable: true },
     { key: 'Owner', label: 'Owner', sortable: true },
     { key: 'actions', label: 'Actions' },
@@ -413,6 +425,10 @@
             runsTableSort.value.direction,
           ),
         );
+    } catch (error) {
+      console.error('Failed to load lab runs:', error);
+      useToastStore().error('Failed to load runs. Please refresh.');
+      runsTableItems.value = [];
     } finally {
       uiStore.setRequestComplete('loadLabRuns');
     }
@@ -546,27 +562,42 @@
   const canDeliverKeyOutputs = computed(() => userStore.canEditLabUsers(props.labId));
 
   const omicsWorkflowsTableColumns = [
+    { key: 'favourite', label: '' },
     { key: 'Name', label: 'Name' },
-    { key: 'source', label: 'Source' },
     { key: 'description', label: 'Description' },
-    { key: 'actions', label: 'Actions' },
-    { key: 'favourite', label: 'Favorite' },
-    { key: 'run', label: 'Run' },
+    { key: 'source', label: 'Source' },
+    { key: 'integrations', label: 'Integrations' },
+    { key: 'actions', label: '' },
   ];
 
   function omicsWorkflowsActionItems(workflow: LabOmicsWorkflow) {
     const items: object[][] = [];
+    const primaryItems: object[] = [
+      {
+        label: 'Output files',
+        description: 'Choose which result files matter.',
+        icon: 'i-heroicons-document-check',
+        click: () => viewSetKeyOutputs(workflow),
+      },
+    ];
 
     if (canDeliverKeyOutputs.value) {
-      items.push([{ label: 'Deliver', click: () => viewDeliverKeyOutputs(workflow) }]);
+      primaryItems.push({
+        label: 'Integrations',
+        description: 'Copy to S3, send to Microreact.',
+        icon: 'i-heroicons-link',
+        click: () => viewDeliverKeyOutputs(workflow),
+      });
     }
 
-    items.push([{ label: 'Key Outputs', click: () => viewSetKeyOutputs(workflow) }]);
+    items.push(primaryItems);
 
     if (canDeleteOmicsWorkflow(workflow)) {
       items.push([
         {
           label: 'Delete workflow',
+          description: 'Asks you to confirm first',
+          icon: 'i-heroicons-trash',
           click: () => {
             workflowToDelete.value = workflow;
             isDeleteWorkflowDialogOpen.value = true;
@@ -579,25 +610,25 @@
     return items;
   }
 
-  function viewSetKeyOutputs(workflow: LabOmicsWorkflow): void {
-    const workflowId = workflow.id;
-    if (!workflowId) return;
-
-    const completed = runsTableItems.value
-      .filter((run) => run.WorkflowExternalId === workflowId && canSetKeyOutputsForRun(run))
-      .sort((a, b) => {
-        const aTime = a.TerminalAt ?? a.ModifiedAt ?? a.CreatedAt ?? '';
-        const bTime = b.TerminalAt ?? b.ModifiedAt ?? b.CreatedAt ?? '';
-        return bTime.localeCompare(aTime);
-      });
-    const run = completed[0];
-    if (!run) {
-      useToastStore().error(
-        `No completed run of ${workflow.name || 'this workflow'} was found. Finish a run first, then you can set key outputs from its files.`,
-      );
-      return;
+  /** Active delivery integrations for the workflows table (S3 today; Microreact when configured). */
+  function workflowIntegrationLabels(workflow: LabOmicsWorkflow): string[] {
+    const definition = keyOutputsStore.definitionFor(props.labId, workflow.id ?? '');
+    const labels: string[] = [];
+    if (definition?.Delivery?.Enabled) {
+      labels.push('S3');
     }
-    viewSetKeyOutputsForRun(run);
+    return labels;
+  }
+
+  function viewSetKeyOutputs(workflow: LabOmicsWorkflow): void {
+    if (!workflow.id) return;
+    $router.push({
+      path: `/labs/${props.labId}/deliver-key-outputs/${encodeURIComponent(workflow.id)}`,
+      query: {
+        tab: 'output-files',
+        ...(workflow.name ? { workflowName: workflow.name } : {}),
+      },
+    });
   }
 
   async function handleDeleteOmicsWorkflow(): Promise<void> {
@@ -810,6 +841,11 @@
     useUiStore().setRequestPending('getOmicsWorkflows');
     try {
       await omicsWorkflowsStore.loadWorkflowsForLab(props.labId);
+      const workflowIds = omicsWorkflowsStore
+        .workflowsForLab(props.labId)
+        .map((workflow) => workflow.id)
+        .filter((id): id is string => Boolean(id));
+      void keyOutputsStore.loadMany(props.labId, workflowIds);
     } catch (error) {
       console.error('Error retrieving pipelines', error);
     } finally {
@@ -1025,7 +1061,7 @@
   >
     <EGPageHeader
       :class="{ 'shrink-0': activeTabKey === 'dataCollections' }"
-      :title="labName"
+      :title="pageTitle"
       :description="pageDescription"
       :back-action="() => (superuser ? $router.push(`/orgs/${orgId || ''}`) : $router.push('/labs'))"
       :show-back="true"
@@ -1259,10 +1295,10 @@
     id="panel-omicsWorkflows"
     aria-labelledby="tab-omicsWorkflows"
     tabindex="0"
+    class="omics-workflows-table"
   >
     <h2 class="sr-only">HealthOmics workflows</h2>
     <EGTable
-      narrow-run-and-favourite-columns
       :table-data="omicsWorkflows"
       :columns="omicsWorkflowsTableColumns"
       :is-loading="useUiStore().anyRequestPending(['loadLabData', 'getOmicsWorkflows'])"
@@ -1271,7 +1307,7 @@
       <template #favourite-data="{ row: workflow }">
         <button
           type="button"
-          class="text-primary hover:text-primary-dark hover:bg-primary-muted focus-visible:outline-primary-500 flex items-center justify-center rounded-full p-1 transition-all duration-150 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+          class="focus-visible:outline-primary-500 flex items-center justify-center rounded-full p-0.5 transition-all duration-150 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           :aria-label="
             isWorkflowFavourited(workflow.id ?? '') ? 'Remove workflow from favorites' : 'Add workflow to favorites'
           "
@@ -1282,8 +1318,10 @@
         >
           <UIcon
             :name="isWorkflowFavourited(workflow.id ?? '') ? 'i-heroicons-star-solid' : 'i-heroicons-star'"
-            class="h-6 w-6"
-            :class="isWorkflowFavourited(workflow.id ?? '') ? 'text-primary' : 'text-primary/45 hover:text-primary'"
+            class="h-5 w-5"
+            :class="
+              isWorkflowFavourited(workflow.id ?? '') ? 'text-amber-400' : 'text-neutral-300 hover:text-amber-400'
+            "
             aria-hidden="true"
           />
         </button>
@@ -1293,6 +1331,11 @@
         <div class="flex items-center">
           {{ workflow?.name }}
         </div>
+      </template>
+
+      <template #description-data="{ row: workflow }">
+        <span v-if="workflow?.description" class="text-body text-sm">{{ workflow.description }}</span>
+        <span v-else class="text-muted text-sm">No description</span>
       </template>
 
       <template #source-data="{ row: workflow }">
@@ -1307,31 +1350,38 @@
         </UBadge>
       </template>
 
-      <template #description-data="{ row: workflow }">
-        {{ workflow?.description }}
+      <template #integrations-data="{ row: workflow }">
+        <div v-if="workflowIntegrationLabels(workflow).length > 0" class="flex flex-wrap gap-1.5">
+          <span
+            v-for="label in workflowIntegrationLabels(workflow)"
+            :key="label"
+            class="bg-alert-success-muted text-alert-success-text inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium"
+          >
+            <span class="bg-alert-success h-1.5 w-1.5 shrink-0 rounded-full" aria-hidden="true" />
+            {{ label }}
+          </span>
+        </div>
+        <span v-else class="text-muted text-sm">None</span>
       </template>
 
       <template #actions-data="{ row: workflow }">
-        <div class="flex justify-end">
+        <div class="flex items-center justify-end gap-2 whitespace-nowrap">
+          <button
+            type="button"
+            class="hover:border-primary hover:text-primary focus-visible:outline-primary-500 inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-900 transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+            aria-label="Run workflow"
+            title="Run workflow"
+            @click.stop="viewRunOmicsWorkflow(workflow)"
+          >
+            <UIcon name="i-heroicons-play-solid" class="h-4 w-4" aria-hidden="true" />
+            Run
+          </button>
           <EGActionButton
             menu-label="Workflow actions"
             :items="omicsWorkflowsActionItems(workflow)"
-            class="ml-2"
             @click="$event.stopPropagation()"
           />
         </div>
-      </template>
-
-      <template #run-data="{ row: workflow }">
-        <button
-          type="button"
-          class="text-primary hover:text-primary-dark hover:bg-primary-muted focus-visible:outline-primary-500 flex items-center justify-center rounded-full p-1 transition-all duration-150 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-          aria-label="Run workflow"
-          title="Run workflow"
-          @click.stop="viewRunOmicsWorkflow(workflow)"
-        >
-          <UIcon name="i-heroicons-play-circle" class="h-6 w-6" aria-hidden="true" />
-        </button>
       </template>
 
       <template #empty-state>
@@ -1464,5 +1514,38 @@
     /* main mt-6 + bottom breathing room (matches prior syncRootHeight margin) */
     height: calc(100vh - var(--header-height) - 1.5rem - 1rem);
     min-height: 28rem;
+  }
+
+  /* Narrow unlabeled favorite column; name keeps the usual emphasis on the 2nd cell. */
+  .omics-workflows-table :deep(thead tr th:first-child),
+  .omics-workflows-table :deep(tbody tr td:first-child) {
+    width: 3rem;
+    min-width: 3rem;
+    max-width: 3.5rem;
+    padding-left: 1.25rem;
+    padding-right: 0;
+    text-align: center;
+    font-weight: 400;
+    color: inherit;
+  }
+
+  .omics-workflows-table :deep(thead tr th:nth-child(2)) {
+    width: auto;
+    padding-left: 0.5rem;
+    text-align: left;
+  }
+
+  .omics-workflows-table :deep(tbody tr td:nth-child(2)) {
+    padding-left: 0.5rem;
+    color: black;
+    font-weight: 500;
+  }
+
+  /* Run + overflow menu need more than EGTable's default 50px last column. */
+  .omics-workflows-table :deep(thead tr th:last-child),
+  .omics-workflows-table :deep(tbody tr td:last-child) {
+    width: auto;
+    min-width: 11rem;
+    white-space: nowrap;
   }
 </style>

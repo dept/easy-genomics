@@ -11,7 +11,7 @@
   );
 
   const baseConfig = {
-    base: 'inline-flex items-center uppercase',
+    base: 'inline-flex items-center whitespace-nowrap',
     rounded: 'rounded-xl text-md',
     size: {
       sm: 'text-xs px-4 py-1',
@@ -26,6 +26,8 @@
     switch (props.status) {
       case StatusEnum.enum.CANCELLED:
         return 'Cancelled';
+      case StatusEnum.enum.COMPLETED:
+        return 'Completed';
       case StatusEnum.enum.FAILED:
         return 'Failed';
       case StatusEnum.enum.SUCCEEDED:
