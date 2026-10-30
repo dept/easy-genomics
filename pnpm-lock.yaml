@@ -565,7 +565,7 @@ importers:
         version: 1.0.7
       js-yaml:
         specifier: '>=4.2.0 <5.0.0'
-        version: 4.3.0
+        version: 4.3.2
       strnum:
         specifier: ^2.2.2
         version: 2.5.1
@@ -12322,7 +12322,7 @@ snapshots:
     dependencies:
       '@jsdevtools/ono': 7.1.3
       '@types/json-schema': 7.0.15
-      js-yaml: 4.3.0
+      js-yaml: 4.3.2
 
   '@apidevtools/json-schema-ref-parser@9.0.9':
     dependencies:
@@ -15249,7 +15249,7 @@ snapshots:
       camelcase: 5.3.1
       find-up: 4.1.0
       get-package-type: 0.1.0
-      js-yaml: 4.3.0
+      js-yaml: 4.3.2
       resolve-from: 5.0.0
 
   '@istanbuljs/schema@0.1.3': {}
@@ -16979,7 +16979,7 @@ snapshots:
       get-port-please: 3.0.1
       glob: 13.0.6
       handlebars: 4.7.9
-      js-yaml: 4.3.0
+      js-yaml: 4.3.2
       mobx: 6.12.3
       pluralize: 8.0.0
       react: 18.3.1
@@ -17007,7 +17007,7 @@ snapshots:
       colorette: 1.4.0
       https-proxy-agent: 7.0.6
       js-levenshtein: 1.1.6
-      js-yaml: 4.3.0
+      js-yaml: 4.3.2
       minimatch: 9.0.9
       pluralize: 8.0.0
       yaml-ast-parser: 0.0.43
@@ -17027,7 +17027,7 @@ snapshots:
       form-data: 4.0.6
       jest-diff: 29.7.0
       jest-matcher-utils: 29.7.0
-      js-yaml: 4.3.0
+      js-yaml: 4.3.2
       json-pointer: 0.6.2
       jsonpath-plus: 10.3.0
       open: 10.1.0
@@ -20207,7 +20207,7 @@ snapshots:
   cosmiconfig@8.3.6(typescript@5.8.3):
     dependencies:
       import-fresh: 3.3.1
-      js-yaml: 4.3.0
+      js-yaml: 4.3.2
       parse-json: 5.2.0
       path-type: 4.0.0
     optionalDependencies:
@@ -20217,7 +20217,7 @@ snapshots:
     dependencies:
       env-paths: 2.2.1
       import-fresh: 3.3.1
-      js-yaml: 4.3.0
+      js-yaml: 4.3.2
       parse-json: 5.2.0
     optionalDependencies:
       typescript: 5.8.3
@@ -22969,7 +22969,6 @@ snapshots:
   js-yaml@4.3.2:
     dependencies:
       argparse: 2.0.1
-    optional: true
 
   jsc-android@250231.0.0:
     optional: true
@@ -24566,7 +24565,7 @@ snapshots:
     dependencies:
       ansi-colors: 4.1.3
       fast-glob: 3.3.3
-      js-yaml: 4.3.0
+      js-yaml: 4.3.2
       supports-color: 9.4.0
       undici: 6.27.0
       yargs-parser: 21.1.1
