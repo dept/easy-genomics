@@ -1,4 +1,17 @@
-import { getDate, formatRelativeDateTime, getTime } from '../../../src/app/utils/date-time';
+import { getDate, formatCompactDateTime, formatRelativeDateTime, getTime } from '../../../src/app/utils/date-time';
+
+describe('formatCompactDateTime', () => {
+  it('formats a valid ISO date as d MMM yyyy, h:mm aaa in local time', () => {
+    const local = new Date(2026, 9, 14, 14, 8, 0);
+    expect(formatCompactDateTime(local.toISOString())).toBe('14 Oct 2026, 2:08 pm');
+  });
+
+  it('returns null for missing input', () => {
+    expect(formatCompactDateTime(null)).toBeNull();
+    expect(formatCompactDateTime(undefined)).toBeNull();
+    expect(formatCompactDateTime('')).toBeNull();
+  });
+});
 
 describe('getDate', () => {
   it('formats a valid ISO date as yyyy-MM-dd in local time', () => {
