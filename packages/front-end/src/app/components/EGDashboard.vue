@@ -50,6 +50,8 @@
   const recentRunsMyRunsOnly = ref(false);
 
   const IN_PROGRESS_STATUSES = new Set(['SUBMITTED', 'STARTING', 'RUNNING']);
+  const IN_PROGRESS_VISIBLE_INITIAL = 4;
+  const showAllInProgress = ref(false);
 
   interface SearchResult {
     type: 'run' | 'seqera-pipeline' | 'omics-workflow';
@@ -301,6 +303,18 @@
         return dateB - dateA;
       }),
   );
+
+  const inProgressRunningCount = computed(
+    () => inProgressRuns.value.filter((r) => r.Status === 'RUNNING' || r.Status === 'STARTING').length,
+  );
+
+  const inProgressSubmittedCount = computed(() => inProgressRuns.value.filter((r) => r.Status === 'SUBMITTED').length);
+
+  const visibleInProgressRuns = computed(() =>
+    showAllInProgress.value ? inProgressRuns.value : inProgressRuns.value.slice(0, IN_PROGRESS_VISIBLE_INITIAL),
+  );
+
+  const hiddenInProgressCount = computed(() => Math.max(0, inProgressRuns.value.length - IN_PROGRESS_VISIBLE_INITIAL));
 
   const completedRuns = computed(() =>
     filteredRunsForOverview.value.filter((r) => ['COMPLETED', 'SUCCEEDED'].includes(r.Status)),
@@ -752,9 +766,64 @@
 
     <!-- In progress -->
     <section v-if="inProgressRuns.length > 0" class="mt-8" :aria-labelledby="inProgressHeadingId">
-      <EGText :id="inProgressHeadingId" tag="h2" size="sm" class="mb-3">In progress</EGText>
-      <div class="flex flex-col gap-3">
-        <EGInProgressRunCard v-for="run in inProgressRuns" :key="run.RunId" :run="run" :lab-id="labId" />
+      <div class="overflow-hidden rounded-xl border border-neutral-100 bg-white">
+        <div
+          class="flex flex-col gap-3 border-b border-neutral-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div class="flex items-center gap-2.5">
+            <EGText :id="inProgressHeadingId" tag="h2" size="sm" class="mb-0">In progress</EGText>
+            <span
+              class="bg-primary inline-flex items-center justify-center rounded-full px-3 py-1.5 text-sm font-semibold leading-none text-white"
+              :aria-label="`${inProgressRuns.length} in progress`"
+            >
+              {{ inProgressRuns.length }}
+            </span>
+          </div>
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+            <div class="text-body flex items-center gap-4">
+              <span class="inline-flex items-center gap-1.5">
+                <span class="bg-primary h-2 w-2 rounded-full" aria-hidden="true" />
+                {{ inProgressRunningCount }} running
+              </span>
+              <span class="inline-flex items-center gap-1.5">
+                <span class="h-2 w-2 rounded-full bg-neutral-300" aria-hidden="true" />
+                {{ inProgressSubmittedCount }} submitted
+              </span>
+            </div>
+            <button
+              type="button"
+              class="text-primary hover:text-primary-dark focus-visible:outline-primary-500 inline-flex items-center gap-1 border-0 bg-transparent p-0 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+              @click="viewAllRuns"
+            >
+              All pipeline runs
+              <span aria-hidden="true">→</span>
+            </button>
+          </div>
+        </div>
+
+        <ul class="m-0 list-none p-0" :aria-labelledby="inProgressHeadingId">
+          <li v-for="run in visibleInProgressRuns" :key="run.RunId" class="border-b border-neutral-100 last:border-b-0">
+            <EGInProgressRunCard :run="run" :lab-id="labId" />
+          </li>
+        </ul>
+
+        <div v-if="hiddenInProgressCount > 0" class="flex justify-center border-t border-neutral-100 px-5 py-3">
+          <button
+            type="button"
+            class="text-primary hover:text-primary-dark focus-visible:outline-primary-500 inline-flex items-center gap-1 border-0 bg-transparent p-0 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+            :aria-expanded="showAllInProgress"
+            @click="showAllInProgress = !showAllInProgress"
+          >
+            <span v-if="showAllInProgress">Show less</span>
+            <span v-else>Show {{ hiddenInProgressCount }} more</span>
+            <UIcon
+              name="i-heroicons-chevron-down-20-solid"
+              class="h-3.5 w-3.5 transition-transform duration-150"
+              :class="{ 'rotate-180': showAllInProgress }"
+              aria-hidden="true"
+            />
+          </button>
+        </div>
       </div>
     </section>
 
