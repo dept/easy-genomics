@@ -425,6 +425,10 @@
             runsTableSort.value.direction,
           ),
         );
+    } catch (error) {
+      console.error('Failed to load lab runs:', error);
+      useToastStore().error('Failed to load runs. Please refresh.');
+      runsTableItems.value = [];
     } finally {
       uiStore.setRequestComplete('loadLabRuns');
     }
@@ -617,24 +621,14 @@
   }
 
   function viewSetKeyOutputs(workflow: LabOmicsWorkflow): void {
-    const workflowId = workflow.id;
-    if (!workflowId) return;
-
-    const completed = runsTableItems.value
-      .filter((run) => run.WorkflowExternalId === workflowId && canSetKeyOutputsForRun(run))
-      .sort((a, b) => {
-        const aTime = a.TerminalAt ?? a.ModifiedAt ?? a.CreatedAt ?? '';
-        const bTime = b.TerminalAt ?? b.ModifiedAt ?? b.CreatedAt ?? '';
-        return bTime.localeCompare(aTime);
-      });
-    const run = completed[0];
-    if (!run) {
-      useToastStore().error(
-        `No completed run of ${workflow.name || 'this workflow'} was found. Finish a run first, then you can set key outputs from its files.`,
-      );
-      return;
-    }
-    viewSetKeyOutputsForRun(run);
+    if (!workflow.id) return;
+    $router.push({
+      path: `/labs/${props.labId}/deliver-key-outputs/${encodeURIComponent(workflow.id)}`,
+      query: {
+        tab: 'output-files',
+        ...(workflow.name ? { workflowName: workflow.name } : {}),
+      },
+    });
   }
 
   async function handleDeleteOmicsWorkflow(): Promise<void> {
