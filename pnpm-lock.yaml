@@ -164,7 +164,7 @@ importers:
         version: 4.2.0
       '@aws-crypto/encrypt-node':
         specifier: ^4.2.0
-        version: 4.2.0
+        version: 4.2.4
       '@aws-sdk/client-bedrock-runtime':
         specifier: 3.782.0
         version: 3.782.0
@@ -758,11 +758,14 @@ packages:
   '@aws-crypto/decrypt-node@4.2.0':
     resolution: {integrity: sha512-fdi88gr0FtP/2vmweiWrDMsumx+r70oCglWJRjJpg5VvbmEFsHD2WxDiGRrrCnrBiUoIoXFs7uATRq00E2vvKw==}
 
-  '@aws-crypto/encrypt-node@4.2.0':
-    resolution: {integrity: sha512-Uke+5B+tE31mxExu+4aNppOKFvRVBMQj0aQcJIgStyra0v5ekSK3xtRUqFn3SxAZjh2ZSU2kNkf1kINRvcLRCg==}
+  '@aws-crypto/encrypt-node@4.2.4':
+    resolution: {integrity: sha512-Yb2Y1qaE0nY9O3NvSgzkekCJX46aAz+bYzO4P8x7xQYuB36DUHXKe4iix3w5MfZU4rwLjBCIQYNvjTHtPrfLWA==}
 
   '@aws-crypto/hkdf-node@4.0.0':
     resolution: {integrity: sha512-FytH3TF9c0OP+vnicc4YJoxoFoLajdRzzuRchDHmh4yXk32lj/HzgXGPfj+kSyy0chkh4XVONh2/zMRmqsA/hQ==}
+
+  '@aws-crypto/hkdf-node@4.2.4':
+    resolution: {integrity: sha512-ZxLFLKey0Zj1gWapH0+XMbYfn7og3U/Julb5bsJvMZ4JXexoUAvlu+IkkT8BU8Zw175GmqObKg5I+pP9LESJ/g==}
 
   '@aws-crypto/kdf-ctr-mode-node@4.1.0':
     resolution: {integrity: sha512-63A5mgEN3NWdVpHF4Y+4TLl2F62UP6KaFZ6cF5MT7hZ3rDaiyh6u45Tjcxe6/mB5U3FiMBOba/2AXrSX0hNkCw==}
@@ -776,8 +779,14 @@ packages:
   '@aws-crypto/material-management-node@4.2.0':
     resolution: {integrity: sha512-7AaQM7ovVKAURG7xpRK+mXkd/f8WKx3PPWlLrU93Uwg2rHZkL9jOKvYrkc8sfYSLxMzQ4jFYx/h6c9FSCUv7bw==}
 
+  '@aws-crypto/material-management-node@4.2.4':
+    resolution: {integrity: sha512-XtktACylZRE21bcAi59M/wZTjlZxeQdj5CrFfOCmxiewle3L5gePAXUTjXQ4sr3JByjhQrUSNdVJQjE8rxSCVg==}
+
   '@aws-crypto/material-management@4.2.0':
     resolution: {integrity: sha512-6TB629HsI/Wlo3LvT854TZS3naIQ63QEmzmhBdezbA05IqPBqamK8Y/UwPBhI47rdk6vm8oOKjC4AntqYdcZ+A==}
+
+  '@aws-crypto/material-management@4.2.4':
+    resolution: {integrity: sha512-wCot8jAhy0tTW+9yMXDCIGG8qMEBVnu1r/YaqxNMe4AoaK2F2fRX4/8SiGg/SukaG+UOyC0mrEdZwqJZSIgZVw==}
 
   '@aws-crypto/raw-aes-keyring-node@4.2.0':
     resolution: {integrity: sha512-iaKwolSmOqW9fhOGz9v10Ggh89Y65QKfEkCZBfUJ+CIY79xp25QRh40pQTBEq4Gs7C3GpOPARaIlpG2TpMpF6Q==}
@@ -790,6 +799,9 @@ packages:
 
   '@aws-crypto/serialize@4.2.0':
     resolution: {integrity: sha512-FSCxVux4KAV0NV6AOA6ZmBARlxeiavQr2O9ILr6nGzw9DSYvGyy9zYwri1gBsGOGUbJ3mWPFtmb0zonFAwGYuA==}
+
+  '@aws-crypto/serialize@4.2.4':
+    resolution: {integrity: sha512-y8EU4ahcR3Plhpycgd4GH754SKOEb88A18AUS3i0erIgx2fnL0xXITNUgG791INv1ge41L6l3O9fzMX25kL2Vg==}
 
   '@aws-crypto/sha256-browser@5.2.0':
     resolution: {integrity: sha512-AXfN/lGotSQwu6HNcEsIASo7kWXZ5HYWvfOmSNKDsEqC4OashTp8alTmaz+F7TC2L083SFv5RdB+qU3Vs1kZqw==}
@@ -4460,6 +4472,9 @@ packages:
   '@types/duplexify@3.6.4':
     resolution: {integrity: sha512-2eahVPsd+dy3CL6FugAzJcxoraWhUghZGEQJns1kTKfCXWKJ5iG/VkaB05wRVrDKHfOFKqb0X0kXh91eE99RZg==}
 
+  '@types/duplexify@3.6.5':
+    resolution: {integrity: sha512-fB56ACzlW91UdZ5F3VXplVMDngO8QaX5Y2mjvADtN01TT2TMy4WjF0Lg+tFDvt4uMBeTe4SgaD+qCrA7dL5/tA==}
+
   '@types/es-aggregate-error@1.0.6':
     resolution: {integrity: sha512-qJ7LIFp06h1QE1aVxbVd+zJP2wdaugYXYfd6JxsyRMrYHaxb6itXPogW2tz+ylUJ1n1b+JF1PHyYCfYHm0dvUg==}
 
@@ -5565,6 +5580,9 @@ packages:
   bn.js@5.2.4:
     resolution: {integrity: sha512-QL7sb18rJ1PbdsKsqPA0guxL563vIMwRHgzNrW/uzQuRGN1Cjqd/wonUBAVqHox9KwzHA6vCbM0lXx3k4iQMow==}
 
+  bn.js@5.2.5:
+    resolution: {integrity: sha512-Vq886eXykuP5E6HcKSSStP3bJgrE6In5WKxVUvJ8XGpWWYs2xZHWqUwzCtGgEtBcxyd57KBFDPFoUfNzdaHCNg==}
+
   body-parser@1.20.4:
     resolution: {integrity: sha512-ZTgYYLMOXY9qKU/57FAo8F+HA2dGX7bqGc71txDRC1rS4frdFI5R7NhluHxH6M0YItAP0sHB4uqAOcYKxO6uGA==}
     engines: {node: '>= 0.8', npm: 1.2.8000 || >= 1.4.16}
@@ -6657,6 +6675,9 @@ packages:
 
   end-of-stream@1.4.4:
     resolution: {integrity: sha512-+uw1inIHVPQoaVuHzRyXd21icM+cnt4CzD5rW+NC1wjOUSTOs+Te7FOv7AhN7vS9x/oIyhLP5PR1H+phQAHu5Q==}
+
+  end-of-stream@1.4.5:
+    resolution: {integrity: sha512-ooEGc6HP26xXq/N+GCGOT0JKCLDGrq2bQUZrQ7gyrJiZANJ/8YDTxTpQBXGMn+WbIQXNVpyWymm7KYVICQnyOg==}
 
   enhanced-resolve@5.18.1:
     resolution: {integrity: sha512-ZSW3ma5GkcQBIpwZTSRAI8N71Uuwgs93IezB7mf7R60tC8ZbJideoDNKjHn2O9KIlx6rkGTTEk1xUCK2E1Y2Yg==}
@@ -12436,8 +12457,8 @@ snapshots:
 
   '@aws-crypto/cache-material@4.2.0':
     dependencies:
-      '@aws-crypto/material-management': 4.2.0
-      '@aws-crypto/serialize': 4.2.0
+      '@aws-crypto/material-management': 4.2.4
+      '@aws-crypto/serialize': 4.2.4
       '@types/lru-cache': 5.1.1
       lru-cache: 6.0.0
       tslib: 2.8.1
@@ -12453,7 +12474,7 @@ snapshots:
       '@aws-crypto/branch-keystore-node': 4.2.0
       '@aws-crypto/caching-materials-manager-node': 4.2.0
       '@aws-crypto/decrypt-node': 4.2.0
-      '@aws-crypto/encrypt-node': 4.2.0
+      '@aws-crypto/encrypt-node': 4.2.4
       '@aws-crypto/kms-keyring': 4.2.0
       '@aws-crypto/kms-keyring-node': 4.2.0
       '@aws-crypto/material-management-node': 4.2.0
@@ -12478,16 +12499,20 @@ snapshots:
       readable-stream: 3.6.2
       tslib: 2.8.1
 
-  '@aws-crypto/encrypt-node@4.2.0':
+  '@aws-crypto/encrypt-node@4.2.4':
     dependencies:
-      '@aws-crypto/material-management-node': 4.2.0
-      '@aws-crypto/serialize': 4.2.0
-      '@types/duplexify': 3.6.4
+      '@aws-crypto/material-management-node': 4.2.4
+      '@aws-crypto/serialize': 4.2.4
+      '@types/duplexify': 3.6.5
       duplexify: 4.1.3
       readable-stream: 3.6.2
       tslib: 2.8.1
 
   '@aws-crypto/hkdf-node@4.0.0':
+    dependencies:
+      tslib: 2.8.1
+
+  '@aws-crypto/hkdf-node@4.2.4':
     dependencies:
       tslib: 2.8.1
 
@@ -12502,7 +12527,7 @@ snapshots:
       '@aws-crypto/kdf-ctr-mode-node': 4.1.0
       '@aws-crypto/kms-keyring': 4.2.0
       '@aws-crypto/material-management-node': 4.2.0
-      '@aws-crypto/serialize': 4.2.0
+      '@aws-crypto/serialize': 4.2.4
       '@aws-sdk/client-dynamodb': 3.1156.0
       '@aws-sdk/client-kms': 3.782.0
       tslib: 2.8.1
@@ -12518,7 +12543,14 @@ snapshots:
     dependencies:
       '@aws-crypto/hkdf-node': 4.0.0
       '@aws-crypto/material-management': 4.2.0
-      '@aws-crypto/serialize': 4.2.0
+      '@aws-crypto/serialize': 4.2.4
+      tslib: 2.8.1
+
+  '@aws-crypto/material-management-node@4.2.4':
+    dependencies:
+      '@aws-crypto/hkdf-node': 4.2.4
+      '@aws-crypto/material-management': 4.2.4
+      '@aws-crypto/serialize': 4.2.4
       tslib: 2.8.1
 
   '@aws-crypto/material-management@4.2.0':
@@ -12528,17 +12560,24 @@ snapshots:
       tslib: 2.8.1
       uuid: 11.1.1
 
+  '@aws-crypto/material-management@4.2.4':
+    dependencies:
+      asn1.js: 5.4.1
+      bn.js: 5.2.5
+      tslib: 2.8.1
+      uuid: 11.1.1
+
   '@aws-crypto/raw-aes-keyring-node@4.2.0':
     dependencies:
       '@aws-crypto/material-management-node': 4.2.0
       '@aws-crypto/raw-keyring': 4.2.0
-      '@aws-crypto/serialize': 4.2.0
+      '@aws-crypto/serialize': 4.2.4
       tslib: 2.8.1
 
   '@aws-crypto/raw-keyring@4.2.0':
     dependencies:
-      '@aws-crypto/material-management': 4.2.0
-      '@aws-crypto/serialize': 4.2.0
+      '@aws-crypto/material-management': 4.2.4
+      '@aws-crypto/serialize': 4.2.4
       tslib: 2.8.1
 
   '@aws-crypto/raw-rsa-keyring-node@4.2.0':
@@ -12552,6 +12591,14 @@ snapshots:
       '@aws-crypto/material-management': 4.2.0
       asn1.js: 5.4.1
       bn.js: 5.2.4
+      tslib: 2.8.1
+      uuid: 11.1.1
+
+  '@aws-crypto/serialize@4.2.4':
+    dependencies:
+      '@aws-crypto/material-management': 4.2.4
+      asn1.js: 5.4.1
+      bn.js: 5.2.5
       tslib: 2.8.1
       uuid: 11.1.1
 
@@ -18009,6 +18056,10 @@ snapshots:
     dependencies:
       '@types/node': 20.17.30
 
+  '@types/duplexify@3.6.5':
+    dependencies:
+      '@types/node': 20.17.30
+
   '@types/es-aggregate-error@1.0.6':
     dependencies:
       '@types/node': 24.13.1
@@ -19118,7 +19169,7 @@ snapshots:
 
   asn1.js@5.4.1:
     dependencies:
-      bn.js: 5.2.4
+      bn.js: 5.2.5
       inherits: 2.0.4
       minimalistic-assert: 1.0.1
       safer-buffer: 2.1.2
@@ -19452,6 +19503,8 @@ snapshots:
       readable-stream: 3.6.2
 
   bn.js@5.2.4: {}
+
+  bn.js@5.2.5: {}
 
   body-parser@1.20.4:
     dependencies:
@@ -20582,14 +20635,14 @@ snapshots:
 
   duplexify@3.7.1:
     dependencies:
-      end-of-stream: 1.4.4
+      end-of-stream: 1.4.5
       inherits: 2.0.4
       readable-stream: 2.3.8
       stream-shift: 1.0.3
 
   duplexify@4.1.3:
     dependencies:
-      end-of-stream: 1.4.4
+      end-of-stream: 1.4.5
       inherits: 2.0.4
       readable-stream: 3.6.2
       stream-shift: 1.0.3
@@ -20633,6 +20686,10 @@ snapshots:
     optional: true
 
   end-of-stream@1.4.4:
+    dependencies:
+      once: 1.4.0
+
+  end-of-stream@1.4.5:
     dependencies:
       once: 1.4.0
 
@@ -25262,7 +25319,7 @@ snapshots:
 
   pump@3.0.4:
     dependencies:
-      end-of-stream: 1.4.4
+      end-of-stream: 1.4.5
       once: 1.4.0
 
   punycode@1.3.2: {}
