@@ -11,7 +11,7 @@
   );
 
   const baseConfig = {
-    base: 'inline-flex items-center uppercase',
+    base: 'inline-flex items-center whitespace-nowrap uppercase',
     rounded: 'rounded-xl text-md',
     size: {
       sm: 'text-xs px-4 py-1',
