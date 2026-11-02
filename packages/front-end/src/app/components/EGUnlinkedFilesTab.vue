@@ -148,6 +148,18 @@
     emit('update:selectedKeys', [...next]);
   }
 
+  function toggleUnlessTextSelected(key: string): void {
+    if (window.getSelection()?.toString()) return;
+    toggle(key);
+  }
+
+  function onRowKeydown(e: KeyboardEvent, key: string): void {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggle(key);
+    }
+  }
+
   function formatSize(bytes?: number): string {
     if (bytes == null) return '—';
     if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
@@ -261,10 +273,14 @@
             <tr
               v-for="f in sorted"
               :key="f.Key"
-              class="border-t border-gray-100 hover:bg-gray-50"
+              tabindex="0"
+              class="cursor-pointer border-t border-gray-100 hover:bg-gray-50 focus:outline-none focus-visible:bg-gray-50"
               :class="{ 'bg-primary-50': selectedKeys.includes(f.Key) }"
+              :aria-selected="selectedKeys.includes(f.Key)"
+              @click="toggleUnlessTextSelected(f.Key)"
+              @keydown.self="onRowKeydown($event, f.Key)"
             >
-              <td class="p-3">
+              <td class="p-3" @click.stop>
                 <input
                   type="checkbox"
                   :checked="selectedKeys.includes(f.Key)"
