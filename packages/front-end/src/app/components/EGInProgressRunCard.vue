@@ -42,29 +42,52 @@
 </script>
 
 <template>
-  <div class="rounded-xl border border-neutral-100 bg-white px-5 py-4">
-    <div class="mb-3.5 flex items-center justify-between gap-4">
-      <div class="flex items-center gap-2.5 text-[14.5px] font-semibold">
-        <span class="text-body">{{ run.RunName }}</span>
-        <EGStatusChip :status="run.Status" />
-      </div>
-      <button
-        type="button"
-        class="text-primary hover:text-primary-dark focus-visible:outline-primary-500 shrink-0 border-0 bg-transparent p-0 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-        @click="viewProgress"
-      >
-        View progress →
-      </button>
-    </div>
+  <div class="px-5 py-4">
+    <div class="flex items-center justify-between gap-4">
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-center gap-2.5 text-[14.5px] font-semibold leading-snug">
+          <span class="text-body">{{ run.RunName }}</span>
+          <EGStatusChip :status="run.Status" />
+        </div>
 
-    <EGProgressBar
-      v-if="hasProgress"
-      variant="full"
-      :percent="run.ProgressPercent"
-      :completed="run.TasksCompleted"
-      :total="run.TasksTotal"
-    />
-    <p v-else class="text-muted text-sm">Progress updates will appear once the workflow reports tasks.</p>
+        <div class="mt-0.5">
+          <EGProgressBar
+            v-if="hasProgress"
+            variant="full"
+            :percent="run.ProgressPercent"
+            :completed="run.TasksCompleted"
+            :total="run.TasksTotal"
+          />
+          <p v-else class="text-muted m-0 text-sm leading-snug">Waiting for the workflow to report tasks</p>
+        </div>
+      </div>
+
+      <div class="flex shrink-0 items-center gap-3">
+        <button
+          type="button"
+          class="text-primary hover:bg-primary-muted focus-visible:outline-primary-500 flex items-center gap-1 rounded-md border-0 bg-transparent px-2.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+          :class="{ 'bg-primary-muted': expanded }"
+          :aria-expanded="expanded"
+          :aria-controls="detailsId"
+          @click="toggleDetails"
+        >
+          <span>Details</span>
+          <UIcon
+            name="i-heroicons-chevron-down-20-solid"
+            class="h-3.5 w-3.5 transition-transform duration-150"
+            :class="{ 'rotate-180': expanded }"
+            aria-hidden="true"
+          />
+        </button>
+        <button
+          type="button"
+          class="text-primary hover:text-primary-dark focus-visible:outline-primary-500 shrink-0 border-0 bg-transparent p-0 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+          @click="viewProgress"
+        >
+          View progress →
+        </button>
+      </div>
+    </div>
 
     <div :id="detailsId" v-show="expanded" class="mt-4">
       <div class="mb-4 h-px bg-neutral-100" aria-hidden="true" />
@@ -87,21 +110,5 @@
         </div>
       </dl>
     </div>
-
-    <button
-      type="button"
-      class="text-primary focus-visible:outline-primary-500 mt-3 flex items-center gap-1.5 border-0 bg-transparent p-0 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-      :aria-expanded="expanded"
-      :aria-controls="detailsId"
-      @click="toggleDetails"
-    >
-      <span>{{ expanded ? 'Hide details' : 'Show details' }}</span>
-      <UIcon
-        name="i-heroicons-chevron-down-20-solid"
-        class="h-3.5 w-3.5 transition-transform duration-150"
-        :class="{ 'rotate-180': expanded }"
-        aria-hidden="true"
-      />
-    </button>
   </div>
 </template>
