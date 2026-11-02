@@ -24,7 +24,7 @@ import { migrateWorkflowAccessOnDefaultModeChange } from '@BE/services/easy-geno
 import { LLMClassificationService } from '@BE/services/llm-classification/llm-classification-service';
 import { OmicsService } from '@BE/services/omics-service';
 import { SsmService } from '@BE/services/ssm-service';
-import { validateOrganizationAdminAccess } from '@BE/utils/auth-utils';
+import { validateOrganizationAdminAccess, validateSystemAdminAccess } from '@BE/utils/auth-utils';
 import { assertHealthOmicsVpcConfigurationIsActive } from '@BE/utils/laboratory-omics-vpc-utils';
 import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
 import { httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
@@ -55,8 +55,8 @@ export const handler: Handler = async (
     // Lookup by LaboratoryId to confirm existence before updating
     const existing: Laboratory = await laboratoryService.queryByLaboratoryId(id);
 
-    // Only Organisation Admins are allowed to edit laboratories
-    if (!validateOrganizationAdminAccess(event, existing.OrganizationId)) {
+    // Only System Admins and Organisation Admins are allowed to edit laboratories
+    if (!(validateSystemAdminAccess(event) || validateOrganizationAdminAccess(event, existing.OrganizationId))) {
       throw new UnauthorizedAccessError();
     }
 

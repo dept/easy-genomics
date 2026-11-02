@@ -53,6 +53,25 @@ describe('workflowKeyOutputs store', () => {
     expect(store.definitionFor(LAB_ID, WORKFLOW_ID)?.WorkflowId).toBe(WORKFLOW_ID);
   });
 
+  it('loadMany caches missing definitions without toasting on failure', async () => {
+    mockList
+      .mockResolvedValueOnce({
+        LaboratoryId: LAB_ID,
+        WorkflowId: 'wf-a',
+        KeyOutputs: [],
+        Delivery: { Enabled: true, DestinationUri: 's3://b/p/' },
+      })
+      .mockRejectedValueOnce(new Error('network'));
+    const store = useWorkflowKeyOutputsStore();
+
+    await store.loadMany(LAB_ID, ['wf-a', 'wf-b', 'wf-a']);
+
+    expect(mockList).toHaveBeenCalledTimes(2);
+    expect(store.definitionFor(LAB_ID, 'wf-a')?.Delivery?.Enabled).toBe(true);
+    expect(store.definitionFor(LAB_ID, 'wf-b')).toBeNull();
+    expect(mockToastError).not.toHaveBeenCalled();
+  });
+
   it('toasts when load fails', async () => {
     mockList.mockRejectedValue(new Error('network'));
     const store = useWorkflowKeyOutputsStore();
