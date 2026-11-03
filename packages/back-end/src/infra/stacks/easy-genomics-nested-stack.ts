@@ -2807,6 +2807,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
 
     // Queues a manual Microreact send for the delivery consumer below.
     this.iam.addPolicyStatements('/easy-genomics/workflow-key-outputs/request-run-microreact-export', [
+      ...laboratoryReadForWorkflowKeyOutputs,
       new PolicyStatement({
         resources: [
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,

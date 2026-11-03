@@ -25,6 +25,7 @@ import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service
 import { OrganizationService } from '@BE/services/easy-genomics/organization-service';
 import { OmicsService } from '@BE/services/omics-service';
 import { SsmService } from '@BE/services/ssm-service';
+import { logApiGatewayEventWithoutSecrets } from '@BE/utils/api-gateway-log-utils';
 import { validateOrganizationAdminAccess } from '@BE/utils/auth-utils';
 import { assertHealthOmicsVpcConfigurationIsActive } from '@BE/utils/laboratory-omics-vpc-utils';
 import { microreactAccessTokenParameterName } from '@BE/utils/microreact-project';
@@ -39,7 +40,7 @@ const omicsService = new OmicsService();
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
 ): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logApiGatewayEventWithoutSecrets(event);
   try {
     const currentUserId = event.requestContext.authorizer.claims['cognito:username'];
     // Post Request Body

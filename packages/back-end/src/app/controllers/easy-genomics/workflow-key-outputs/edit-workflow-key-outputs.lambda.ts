@@ -4,11 +4,7 @@ import {
   EditWorkflowKeyOutputs,
   EditWorkflowKeyOutputsSchema,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/workflow-key-outputs';
-import {
-  WorkflowKeyOutput,
-  WorkflowKeyOutputDelivery,
-  WorkflowKeyOutputs,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
+import { WorkflowKeyOutput, WorkflowKeyOutputs } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
@@ -16,7 +12,7 @@ import { WorkflowKeyOutputsService } from '@BE/services/easy-genomics/workflow-k
 import {
   authorizeLaboratoryKeyOutputsAccess,
   authorizeLaboratoryManagerKeyOutputsAccess,
-  scrubMicroreactDeliveryRoles,
+  scrubDeliveryForKeyOutputs,
 } from '@BE/utils/workflow-key-output-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -50,12 +46,20 @@ export const handler: Handler = async (
       await authorizeLaboratoryKeyOutputsAccess(event, laboratoryService, request.LaboratoryId);
     }
     const now = new Date().toISOString();
-    const keyOutputs: WorkflowKeyOutput[] = request.KeyOutputs.map((item) => ({
-      KeyOutputId: item.KeyOutputId || uuidv4(),
-      Label: item.Label.trim(),
-      Pattern: item.Pattern.trim(),
-      ExamplePath: item.ExamplePath,
-    }));
+    // Reuse the saved ID when Pattern is unchanged so Microreact roles survive a re-save
+    // that omitted KeyOutputId (older editors).
+    const existingIdByPattern = new Map(
+      (existing?.KeyOutputs ?? []).map((output) => [output.Pattern, output.KeyOutputId]),
+    );
+    const keyOutputs: WorkflowKeyOutput[] = request.KeyOutputs.map((item) => {
+      const pattern = item.Pattern.trim();
+      return {
+        KeyOutputId: item.KeyOutputId || existingIdByPattern.get(pattern) || uuidv4(),
+        Label: item.Label.trim(),
+        Pattern: pattern,
+        ExamplePath: item.ExamplePath,
+      };
+    });
 
     const definition: WorkflowKeyOutputs = {
       LaboratoryId: request.LaboratoryId,
@@ -78,17 +82,3 @@ export const handler: Handler = async (
     return buildErrorResponse(err, event);
   }
 };
-
-/** Keeps S3 delivery settings; drops Microreact roles that no longer match a declared key output. */
-function scrubDeliveryForKeyOutputs(
-  delivery: WorkflowKeyOutputDelivery | undefined,
-  keyOutputs: WorkflowKeyOutput[],
-): WorkflowKeyOutputDelivery | undefined {
-  if (!delivery) return undefined;
-  const microreact = scrubMicroreactDeliveryRoles(delivery.Microreact, keyOutputs);
-  return {
-    Enabled: delivery.Enabled,
-    DestinationUri: delivery.DestinationUri,
-    ...(microreact ? { Microreact: microreact } : {}),
-  };
-}

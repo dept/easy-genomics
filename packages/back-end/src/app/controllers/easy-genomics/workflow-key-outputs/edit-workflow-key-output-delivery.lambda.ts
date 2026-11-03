@@ -4,10 +4,7 @@ import {
   EditWorkflowKeyOutputDelivery,
   EditWorkflowKeyOutputDeliverySchema,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/workflow-key-outputs';
-import {
-  WorkflowKeyOutputMicroreactDelivery,
-  WorkflowKeyOutputs,
-} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
+import { WorkflowKeyOutputs } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
 import { parseKeyOutputDeliveryUri } from '@easy-genomics/shared-lib/src/app/utils/workflow-key-output-delivery';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
@@ -15,8 +12,7 @@ import { WorkflowKeyOutputsService } from '@BE/services/easy-genomics/workflow-k
 import { isPlatformKeyOutputDeliveryBucket } from '@BE/utils/workflow-key-output-delivery';
 import {
   authorizeLaboratoryManagerKeyOutputsAccess,
-  microreactRolesAreDeclared,
-  scrubMicroreactDeliveryRoles,
+  resolveMicroreactDelivery,
 } from '@BE/utils/workflow-key-output-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -79,21 +75,3 @@ export const handler: Handler = async (
     return buildErrorResponse(err, event);
   }
 };
-
-function resolveMicroreactDelivery(
-  requested: EditWorkflowKeyOutputDelivery['Microreact'],
-  saved: WorkflowKeyOutputMicroreactDelivery | undefined,
-  keyOutputs: WorkflowKeyOutputs['KeyOutputs'],
-): WorkflowKeyOutputMicroreactDelivery | undefined {
-  if (requested) {
-    const normalized: WorkflowKeyOutputMicroreactDelivery = {
-      ...requested,
-      Enabled: requested.Enabled ?? false,
-    };
-    if (!microreactRolesAreDeclared(normalized, keyOutputs)) {
-      throw new InvalidRequestError('Microreact roles must be key outputs declared for this workflow');
-    }
-    return scrubMicroreactDeliveryRoles(normalized, keyOutputs);
-  }
-  return scrubMicroreactDeliveryRoles(saved, keyOutputs);
-}

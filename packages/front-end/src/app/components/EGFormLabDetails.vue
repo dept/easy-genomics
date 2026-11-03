@@ -139,6 +139,8 @@
   const isReplacingGitHubAccessToken = ref(false);
   const isReplacingNextFlowTowerAccessToken = ref(false);
   const isReplacingMicroreactAccessToken = ref(false);
+  /** When true, submit sends MicroreactAccessToken: '' so the back-end deletes the SSM parameter. */
+  const shouldClearMicroreactAccessToken = ref(false);
 
   // Accordion open state for Expand all / Collapse all. Defaults match the settings redesign;
   // Create mode opens Storage so the required S3 bucket isn't hidden behind a collapsed card.
@@ -246,8 +248,17 @@
   );
 
   function startReplacingMicroreactAccessToken() {
+    shouldClearMicroreactAccessToken.value = false;
     isReplacingMicroreactAccessToken.value = true;
     state.value.MicroreactAccessToken = '';
+  }
+
+  function clearMicroreactAccessToken() {
+    shouldClearMicroreactAccessToken.value = true;
+    isReplacingMicroreactAccessToken.value = false;
+    isEditingMicroreactAccessToken.value = false;
+    state.value.MicroreactAccessToken = '';
+    validate(state.value);
   }
 
   /**
@@ -509,11 +520,15 @@
       'SeqeraLlmProvider',
       'SeqeraLlmModelId',
       'SeqeraLlmApiKey',
-      // Empty string must not be sent: an older back-end rejects the unknown field.
+      // Empty string must not be sent unless clearing: an older back-end rejects the unknown field.
       'MicroreactAccessToken',
     ] as const;
     const next = { ...input } as Record<string, unknown>;
     for (const key of fields) {
+      if (key === 'MicroreactAccessToken' && shouldClearMicroreactAccessToken.value) {
+        next[key] = '';
+        continue;
+      }
       if (next[key] === null || next[key] === '') next[key] = undefined;
     }
     return next as T;
@@ -718,6 +733,7 @@
     isReplacingGitHubAccessToken.value = false;
     isReplacingNextFlowTowerAccessToken.value = false;
     isReplacingMicroreactAccessToken.value = false;
+    shouldClearMicroreactAccessToken.value = false;
     canSubmit.value = false;
     retentionPreviewCacheMonths.value = null;
     retentionPreviewCounts.value = null;
@@ -883,6 +899,7 @@
       isReplacingGitHubAccessToken.value = false;
       isReplacingNextFlowTowerAccessToken.value = false;
       isReplacingMicroreactAccessToken.value = false;
+      shouldClearMicroreactAccessToken.value = false;
       retentionPreviewCacheMonths.value = null;
       retentionPreviewCounts.value = null;
       await getLabDetails({ showLoader: false });
@@ -965,6 +982,7 @@
     isReplacingGitHubAccessToken.value = false;
     isReplacingNextFlowTowerAccessToken.value = false;
     isReplacingMicroreactAccessToken.value = false;
+    shouldClearMicroreactAccessToken.value = false;
     await getLabDetails({ showLoader: false });
 
     useToastStore().success(`${lab.Name} successfully updated`);
@@ -1204,6 +1222,7 @@
     if (formMode.value !== LabDetailsFormModeEnum.enum.Edit || uneditedLabDetails.value == null) {
       return false;
     }
+    if (shouldClearMicroreactAccessToken.value) return true;
     const baseline = uneditedLabDetails.value as unknown as Record<string, unknown>;
     const current = state.value as unknown as Record<string, unknown>;
     for (const key of LAB_DETAILS_EDIT_COMPARE_KEYS) {
@@ -1664,16 +1683,31 @@
                 </div>
               </div>
               <div v-if="!showMicroreactTokenInput" class="flex shrink-0 items-center gap-2">
-                <UBadge size="sm" class="bg-alert-success-muted text-alert-success-text rounded-xl border-0 ring-0">
+                <UBadge
+                  v-if="!shouldClearMicroreactAccessToken"
+                  size="sm"
+                  class="bg-alert-success-muted text-alert-success-text rounded-xl border-0 ring-0"
+                >
                   Token saved
                 </UBadge>
+                <span v-else class="text-muted text-sm">Will remove on save</span>
                 <EGButton
+                  v-if="!shouldClearMicroreactAccessToken"
                   :size="ButtonSizeEnum.enum.sm"
                   :variant="ButtonVariantEnum.enum.secondary"
                   u-button-type="button"
                   label="Replace token"
                   :disabled="isSubmittingFormData"
                   @click="startReplacingMicroreactAccessToken"
+                />
+                <EGButton
+                  v-if="!shouldClearMicroreactAccessToken"
+                  :size="ButtonSizeEnum.enum.sm"
+                  :variant="ButtonVariantEnum.enum.secondary"
+                  u-button-type="button"
+                  label="Remove token"
+                  :disabled="isSubmittingFormData"
+                  @click="clearMicroreactAccessToken"
                 />
               </div>
             </div>

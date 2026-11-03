@@ -194,6 +194,104 @@ describe('MicroreactExportService', () => {
       );
     });
 
+    it('records a failure when the matched files total more than 25 MB', async () => {
+      mockList.mockResolvedValue([
+        { Key: `${RUN_PREFIX}summary/samples.tsv`, Size: 9 * 1024 * 1024 },
+        { Key: `${RUN_PREFIX}tree/phylogeny.nwk`, Size: 9 * 1024 * 1024 },
+        { Key: `${RUN_PREFIX}tree/other.nwk`, Size: 9 * 1024 * 1024 },
+      ]);
+      mockGetDefinition.mockResolvedValue(
+        definition({
+          Enabled: true,
+          MetadataKeyOutputId: METADATA_ID,
+          TreeKeyOutputIds: [TREE_ID],
+        }),
+      );
+
+      await new MicroreactExportService().exportRun(
+        completedRun(),
+        definition({
+          Enabled: true,
+          MetadataKeyOutputId: METADATA_ID,
+          TreeKeyOutputIds: [TREE_ID],
+        }),
+      );
+
+      expect(mockGetObject).not.toHaveBeenCalled();
+      expect(mockCreateProject).not.toHaveBeenCalled();
+      expect(mockUpdateRun).toHaveBeenCalledWith(
+        expect.objectContaining({ MicroreactErrorMessage: expect.stringContaining('25 MB') }),
+        [],
+      );
+    });
+
+    it('records a failure when too many tree files match', async () => {
+      const treeFiles = Array.from({ length: 11 }, (_unused, index) => ({
+        Key: `${RUN_PREFIX}tree/tree-${index}.nwk`,
+        Size: 10,
+      }));
+      mockList.mockResolvedValue([{ Key: `${RUN_PREFIX}summary/samples.tsv`, Size: 20 }, ...treeFiles]);
+
+      await new MicroreactExportService().exportRun(completedRun(), definition());
+
+      expect(mockGetObject).not.toHaveBeenCalled();
+      expect(mockCreateProject).not.toHaveBeenCalled();
+      expect(mockUpdateRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          MicroreactErrorMessage: expect.stringContaining('Microreact export supports up to'),
+        }),
+        [],
+      );
+    });
+
+    it('records a failure when a tree key output is no longer declared', async () => {
+      const stale = definition({
+        Enabled: true,
+        MetadataKeyOutputId: METADATA_ID,
+        TreeKeyOutputIds: ['cccccccc-cccc-4ccc-8ccc-cccccccccccc'],
+      });
+
+      await new MicroreactExportService().exportRun(completedRun(), stale);
+
+      expect(mockGetObject).not.toHaveBeenCalled();
+      expect(mockCreateProject).not.toHaveBeenCalled();
+      expect(mockUpdateRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          MicroreactErrorMessage: expect.stringContaining('tree key output is no longer declared'),
+        }),
+        [],
+      );
+    });
+
+    it('records a failure when the run has no output root inside the lab folder', async () => {
+      await new MicroreactExportService().exportRun(
+        completedRun({ OutputS3Url: 's3://other-bucket/outside/', InputS3Url: undefined }),
+        definition(),
+      );
+
+      expect(mockList).not.toHaveBeenCalled();
+      expect(mockGetObject).not.toHaveBeenCalled();
+      expect(mockCreateProject).not.toHaveBeenCalled();
+      expect(mockUpdateRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          MicroreactErrorMessage: 'The run has no output location inside its laboratory folder',
+        }),
+        [],
+      );
+    });
+
+    it('records a failure when an S3 object has an empty Body', async () => {
+      mockGetObject.mockResolvedValue({ Body: undefined });
+
+      await new MicroreactExportService().exportRun(completedRun(), definition());
+
+      expect(mockCreateProject).not.toHaveBeenCalled();
+      expect(mockUpdateRun).toHaveBeenCalledWith(
+        expect.objectContaining({ MicroreactErrorMessage: expect.stringContaining('Could not read s3://') }),
+        [],
+      );
+    });
+
     it('records the Microreact API error', async () => {
       mockCreateProject.mockRejectedValue(new InvalidRequestError('Microreact returned HTTP 400: bad schema'));
 
