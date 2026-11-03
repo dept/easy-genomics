@@ -18,18 +18,21 @@
  *      only patched if it can be derived without ambiguity (typically: not).
  *   3. Optionally writes the enriched fields back to the laboratory-run row via the internal
  *      `LaboratoryRunService.update` (the public Edit API does not accept these fields).
- *   4. Invokes `associateInputsWithWorkflowTag` so the tagging table receives the same
- *      `recordLaboratoryRunInputUsage` + workflow file links that new runs get at create time.
- *      All tagging writes are idempotent (see `recordLaboratoryRunInputUsage` /
- *      `getOrCreateWorkflowTag`).
+ *   4. Invokes `recordLaboratoryRunInputAssociations` so the tagging table receives the same
+ *      sample/file run usage + workflow links that new runs get at create time. All tagging writes
+ *      are idempotent (see `recordLaboratoryRunInputUsage` / `getOrCreateWorkflowTag`). A tagging
+ *      failure is reported as an error for that run (exit code 1), never as "associated".
  *
  * Run from packages/back-end:
  *   pnpm run backfill-workflow-run-history-and-usages
  *   pnpm run backfill-workflow-run-history-and-usages:dry-run
  *   pnpm run backfill-workflow-run-history-and-usages -- --lab <laboratoryId>
+ *   pnpm run backfill-workflow-run-history-and-usages -- --run <runId>
  *
  * Options:
  *   --dry-run                       Print what would change without writing to DynamoDB / S3 / platforms.
+ *   --run <runId>                   Process only this laboratory run, even if its row already looks complete
+ *                                   (implies the --force-reassociate filter bypass for that one run).
  *   --lab <laboratoryId>            Limit the backfill to a single laboratory id.
  *   --platform <name>               Filter by `LaboratoryRun.Platform` (e.g. `AWS HealthOmics` or `Seqera Cloud`).
  *   --limit <n>                     Process at most N runs (useful for staged rollouts).
@@ -62,6 +65,8 @@
  *   - SSM:  GetParameter (with decryption) for Seqera labs' access token.
  */
 
+// Must stay first: services below read NAME_PREFIX when they are imported.
+import './lib/load-env-on-import';
 import path from 'path';
 import dotenv from 'dotenv';
 import { GetRunCommandInput, GetRunCommandOutput } from '@aws-sdk/client-omics';
@@ -70,7 +75,7 @@ import { extractS3KeysFromCsv } from '@easy-genomics/shared-lib/src/app/utils/sa
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import { DescribeWorkflowResponse } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
-import { associateInputsWithWorkflowTag } from '../src/app/services/easy-genomics/associate-laboratory-run-workflow-tagging';
+import { recordLaboratoryRunInputAssociations } from '../src/app/services/easy-genomics/associate-laboratory-run-workflow-tagging';
 import { LaboratoryDataTaggingService } from '../src/app/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratoryRunService } from '../src/app/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '../src/app/services/easy-genomics/laboratory-service';
@@ -93,6 +98,8 @@ type KeySource = 'row' | 'sampleSheet' | 'settingsInput' | 'listInputPrefix';
 
 interface Flags {
   dryRun: boolean;
+  /** Process only this run (looked up by RunId), regardless of whether it looks complete. */
+  runId?: string;
   labFilter?: string;
   platformFilter?: Platform;
   limit?: number;
@@ -159,6 +166,7 @@ function parseFlags(): Flags {
 
   return {
     dryRun: process.argv.includes('--dry-run'),
+    runId: getFlagValue('--run'),
     labFilter: getFlagValue('--lab'),
     platformFilter,
     limit: limitRaw ? Math.max(1, Number.parseInt(limitRaw, 10)) : undefined,
@@ -498,20 +506,25 @@ async function main(): Promise<void> {
   const s3 = new S3Service();
   const ssm = new SsmService();
 
-  console.log('Scanning laboratory-run table...');
-  const allRuns = await runService.listAllLaboratoryRuns();
-  console.log(`Scanned ${allRuns.length} laboratory run row(s).\n`);
+  let allRuns: LaboratoryRun[];
+  if (flags.runId) {
+    allRuns = [await runService.queryByRunId(flags.runId)];
+  } else {
+    console.log('Scanning laboratory-run table...');
+    allRuns = await runService.listAllLaboratoryRuns();
+    console.log(`Scanned ${allRuns.length} laboratory run row(s).\n`);
+  }
 
-  // The "needs work" filter mirrors what `associateInputsWithWorkflowTag` actually uses:
+  // The "needs work" filter mirrors what `recordLaboratoryRunInputAssociations` actually uses:
   //   - missing/empty lab-scoped InputFileKeys means usage tagging hasn't happened, or
   //   - missing WorkflowExternalId means the workflow tag was never applied (we may be able
   //     to backfill via the platform).
   // `--force-reassociate` bypasses both filters for environments where we suspect tagging
-  // never ran even when the row looked complete.
+  // never ran even when the row looked complete, and `--run` names a run to process regardless.
   const candidates = allRuns.filter((run) => {
     if (flags.labFilter && run.LaboratoryId !== flags.labFilter) return false;
     if (flags.platformFilter && run.Platform !== flags.platformFilter) return false;
-    if (flags.forceReassociate) return true;
+    if (flags.forceReassociate || flags.runId) return true;
     const hasKeys =
       Array.isArray(run.InputFileKeys) && run.InputFileKeys.some((k) => typeof k === 'string' && k.length > 0);
     const needsKeys = !hasKeys;
@@ -632,13 +645,13 @@ async function main(): Promise<void> {
 
       if (flags.dryRun) {
         console.log(
-          `  [dry-run] would associate run with ${keys.length} file(s) via associateInputsWithWorkflowTag (workflowTag=${enrichedRun.WorkflowExternalId ?? 'none'})`,
+          `  [dry-run] would associate run with ${keys.length} file(s) via recordLaboratoryRunInputAssociations (workflowTag=${enrichedRun.WorkflowExternalId ?? 'none'})`,
         );
         outcome.associated = true;
         continue;
       }
 
-      await associateInputsWithWorkflowTag({
+      await recordLaboratoryRunInputAssociations({
         laboratory,
         userId: run.CreatedBy ?? run.UserId ?? DEFAULT_SCRIPT_USER_ID,
         run: enrichedRun,
@@ -646,7 +659,7 @@ async function main(): Promise<void> {
       });
       outcome.associated = true;
       console.log(
-        `  associated ${keys.length} file(s) via associateInputsWithWorkflowTag (workflowTag=${enrichedRun.WorkflowExternalId ?? 'none'})`,
+        `  associated ${keys.length} file(s) via recordLaboratoryRunInputAssociations (workflowTag=${enrichedRun.WorkflowExternalId ?? 'none'})`,
       );
     } catch (err) {
       outcome.error = (err as Error).message ?? String(err);
