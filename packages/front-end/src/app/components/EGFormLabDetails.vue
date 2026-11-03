@@ -1644,54 +1644,60 @@
               </EGFormGroup>
             </div>
 
-            <div v-if="isEditing && state.AwsHealthOmicsEnabled" class="mt-2">
-              <div class="flex items-start justify-between gap-3">
+          </section>
+
+          <div v-if="isEditing" class="mt-6">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex min-w-0 items-start gap-3">
+                <div
+                  class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-neutral-100"
+                  aria-hidden="true"
+                >
+                  <img src="@/assets/images/microreact-logo.svg" alt="" class="h-6 w-6" width="24" height="24" />
+                </div>
                 <div class="min-w-0">
-                  <p class="text-sm text-black">Microreact</p>
+                  <p class="text-sm font-medium text-black">Microreact (optional)</p>
                   <p class="text-muted mt-0.5 text-xs">
-                    Personal access token. Key outputs sent to Microreact create projects in this token's account. A
-                    saved token is never shown again.
+                    Projects sent from runs are created in this token&apos;s account. Find it in Microreact under Account
+                    settings, API access token.
                   </p>
                 </div>
-                <div v-if="!showMicroreactTokenInput" class="flex shrink-0 items-center gap-2">
-                  <UBadge size="sm" class="bg-alert-success-muted text-alert-success-text rounded-xl border-0 ring-0">
-                    Token saved
-                  </UBadge>
-                  <EGButton
-                    :size="ButtonSizeEnum.enum.sm"
-                    :variant="ButtonVariantEnum.enum.secondary"
-                    u-button-type="button"
-                    label="Replace token"
-                    :disabled="isSubmittingFormData"
-                    @click="startReplacingMicroreactAccessToken"
-                  />
-                </div>
               </div>
-              <EGFormGroup v-if="showMicroreactTokenInput" class="mt-3" name="MicroreactAccessToken" eager-validation>
-                <EGPasswordInput
-                  v-if="formMode === LabDetailsFormModeEnum.enum.Create"
-                  v-model="state.MicroreactAccessToken"
-                  :password="true"
-                  :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
-                  :disabled="!isEditing || isSubmittingFormData"
+              <div v-if="!showMicroreactTokenInput" class="flex shrink-0 items-center gap-2">
+                <UBadge size="sm" class="bg-alert-success-muted text-alert-success-text rounded-xl border-0 ring-0">
+                  Token saved
+                </UBadge>
+                <EGButton
+                  :size="ButtonSizeEnum.enum.sm"
+                  :variant="ButtonVariantEnum.enum.secondary"
+                  u-button-type="button"
+                  label="Replace token"
+                  :disabled="isSubmittingFormData"
+                  @click="startReplacingMicroreactAccessToken"
                 />
-                <EGPasswordInput
-                  v-else
-                  v-model="state.MicroreactAccessToken"
-                  :select-on-focus="true"
-                  :password="true"
-                  placeholder="Add or update the Microreact access token. Note: A previously set token will never be shown."
-                  :show-toggle-password-button="isEditingMicroreactAccessToken"
-                  :autocomplete="AutoCompleteOptionsEnum.enum.Off"
-                  eager-validation
-                  :disabled="!isEditing || isSubmittingFormData"
-                />
-              </EGFormGroup>
-              <p v-if="showMicroreactTokenInput" class="text-muted mt-1 text-xs">
-                Find it in Microreact under Account settings, API access token.
-              </p>
+              </div>
             </div>
-          </section>
+            <EGFormGroup v-if="showMicroreactTokenInput" class="mt-3" name="MicroreactAccessToken" eager-validation>
+              <EGPasswordInput
+                v-if="formMode === LabDetailsFormModeEnum.enum.Create"
+                v-model="state.MicroreactAccessToken"
+                :password="true"
+                :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
+                :disabled="!isEditing || isSubmittingFormData"
+              />
+              <EGPasswordInput
+                v-else
+                v-model="state.MicroreactAccessToken"
+                :select-on-focus="true"
+                :password="true"
+                placeholder="Add or update the Microreact access token. Note: A previously set token will never be shown."
+                :show-toggle-password-button="isEditingMicroreactAccessToken"
+                :autocomplete="AutoCompleteOptionsEnum.enum.Off"
+                eager-validation
+                :disabled="!isEditing || isSubmittingFormData"
+              />
+            </EGFormGroup>
+          </div>
         </template>
       </EGCollapsibleSection>
 

@@ -504,14 +504,14 @@
           <div class="flex flex-wrap items-start justify-between gap-4">
             <div class="flex min-w-0 items-start gap-3">
               <div
-                class="bg-primary-muted text-primary flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-neutral-100"
                 aria-hidden="true"
               >
-                <UIcon name="i-heroicons-share" class="h-5 w-5" />
+                <img src="@/assets/images/microreact-logo.svg" alt="" class="h-6 w-6" width="24" height="24" />
               </div>
               <div class="min-w-0">
-                <h2 class="text-heading text-base font-semibold">Send to Microreact</h2>
-                <p class="text-muted mt-0.5 text-sm">Create a private project from this workflow's output files</p>
+                <h2 class="text-heading text-base font-semibold">Microreact</h2>
+                <p class="text-muted mt-0.5 text-sm">Create a private project on microreact.org from output files</p>
               </div>
             </div>
             <div class="flex items-center gap-2">
@@ -521,7 +521,7 @@
               <UToggle
                 v-model="microreactEnabled"
                 :disabled="!canEditIntegrations"
-                aria-label="Send to Microreact"
+                aria-label="Microreact"
               />
             </div>
           </div>
