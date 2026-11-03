@@ -593,6 +593,31 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     }
   });
 
+  it('grants create-laboratory-run the S3 access check it runs when recording sample run usage', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+
+    const policies = iamInstance.policyStatements.get('/easy-genomics/laboratory/run/create-laboratory-run');
+    expect(policies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: expect.arrayContaining(['dynamodb:Query']),
+          resources: expect.arrayContaining([expect.stringContaining('laboratory-s3-access-table')]),
+        }),
+        expect.objectContaining({
+          actions: expect.arrayContaining(['s3:GetBucketTagging']),
+        }),
+        expect.objectContaining({
+          resources: expect.arrayContaining([expect.stringContaining('data-tagging-table')]),
+        }),
+      ]),
+    );
+  });
+
   it('adds sqs:SendMessage IAM policy for process-poll-active-runs to re-enqueue status checks', () => {
     const app = new App();
     const parentStack = new Stack(app, 'parent-stack');
