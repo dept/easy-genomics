@@ -133,7 +133,7 @@ describe('edit-workflow-key-outputs Lambda', () => {
     expect(mockSave).toHaveBeenCalled();
   });
 
-  it('rejects a technician when delivery is already enabled', async () => {
+  it('allows a technician to save key outputs when delivery is already enabled', async () => {
     (WorkflowKeyOutputsService as jest.MockedClass<typeof WorkflowKeyOutputsService>).prototype.get = jest
       .fn()
       .mockResolvedValue({
@@ -152,8 +152,8 @@ describe('edit-workflow-key-outputs Lambda', () => {
       () => {},
     );
 
-    expect(result.statusCode).toEqual(403);
-    expect(mockSave).not.toHaveBeenCalled();
+    expect(result.statusCode).toEqual(200);
+    expect(mockSave).toHaveBeenCalled();
   });
 
   it('rejects a technician when Microreact automatic sending is enabled', async () => {

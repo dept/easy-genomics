@@ -25,7 +25,7 @@
     $router.push('/labs');
   }
 
-  const canEditIntegrations = computed(() => userStore.canEditLabUsers(labId));
+  const canEditIntegrations = computed(() => userStore.isOrgAdmin());
 
   const enabled = ref(false);
   const destinationUri = ref('');
@@ -52,18 +52,28 @@
     { key: 'integrations', label: 'Integrations' },
   ];
 
+  const visibleDetailTabs = computed(() =>
+    detailTabs.filter((tab) => tab.key === 'output-files' || canEditIntegrations.value),
+  );
+
   function tabFromQuery(raw: unknown): DetailTabKey {
     const value = typeof raw === 'string' ? raw.toLowerCase() : '';
     if (value === 'output-files' || value === 'outputs' || value === 'output') return 'output-files';
     return 'integrations';
   }
 
-  const activeTab = ref<DetailTabKey>(tabFromQuery($route.query.tab));
+  function resolveTab(raw: unknown): DetailTabKey {
+    const requested = tabFromQuery(raw);
+    if (requested === 'integrations' && !canEditIntegrations.value) return 'output-files';
+    return requested;
+  }
+
+  const activeTab = ref<DetailTabKey>(resolveTab($route.query.tab));
 
   watch(
-    () => $route.query.tab,
-    (tab) => {
-      activeTab.value = tabFromQuery(tab);
+    () => [$route.query.tab, canEditIntegrations.value] as const,
+    () => {
+      activeTab.value = resolveTab($route.query.tab);
     },
   );
 
@@ -388,9 +398,14 @@
   </template>
 
   <template v-else>
-    <div class="mb-6 flex border-b border-gray-200" role="tablist" aria-label="Workflow output settings">
+    <div
+      v-if="visibleDetailTabs.length > 1"
+      class="mb-6 flex border-b border-gray-200"
+      role="tablist"
+      aria-label="Workflow output settings"
+    >
       <button
-        v-for="tab in detailTabs"
+        v-for="tab in visibleDetailTabs"
         :key="tab.key"
         type="button"
         role="tab"

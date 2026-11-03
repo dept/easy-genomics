@@ -57,8 +57,8 @@ describe('edit-workflow-key-output-delivery Lambda', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (validateSystemAdminAccess as jest.Mock).mockReturnValue(false);
-    (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(false);
-    (validateLaboratoryManagerAccess as jest.Mock).mockReturnValue(true);
+    (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(true);
+    (validateLaboratoryManagerAccess as jest.Mock).mockReturnValue(false);
     (validateLaboratoryTechnicianAccess as jest.Mock).mockReturnValue(false);
 
     (LaboratoryService as jest.MockedClass<typeof LaboratoryService>).prototype.queryByLaboratoryId = jest
@@ -99,7 +99,27 @@ describe('edit-workflow-key-output-delivery Lambda', () => {
     expect(body.CreatedBy).toEqual('original-user');
   });
 
+  it('rejects a laboratory manager', async () => {
+    (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(false);
+    (validateLaboratoryManagerAccess as jest.Mock).mockReturnValue(true);
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        Enabled: true,
+        DestinationUri: 's3://results-bucket/incoming',
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toEqual(403);
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
   it('rejects a technician', async () => {
+    (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(false);
     (validateLaboratoryManagerAccess as jest.Mock).mockReturnValue(false);
     (validateLaboratoryTechnicianAccess as jest.Mock).mockReturnValue(true);
 

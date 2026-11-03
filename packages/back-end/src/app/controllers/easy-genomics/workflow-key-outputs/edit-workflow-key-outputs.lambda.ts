@@ -39,8 +39,8 @@ export const handler: Handler = async (
     }
 
     const existing = await workflowKeyOutputsService.get(request.LaboratoryId, request.WorkflowId);
-    // Technicians cannot change which files automatic delivery (S3 or Microreact) would send.
-    if (existing?.Delivery?.Enabled || existing?.Delivery?.Microreact?.Enabled) {
+    // S3 delivery stays editable by technicians. Microreact automatic sending does not.
+    if (existing?.Delivery?.Microreact?.Enabled) {
       await authorizeLaboratoryManagerKeyOutputsAccess(event, laboratoryService, request.LaboratoryId);
     } else {
       await authorizeLaboratoryKeyOutputsAccess(event, laboratoryService, request.LaboratoryId);
