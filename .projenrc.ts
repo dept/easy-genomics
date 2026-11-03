@@ -612,13 +612,11 @@ const frontEndApp = new awscdk.AwsCdkTypeScriptApp({
     'esrun',
     'file-saver',
     'jwt-decode',
-    // Pinned to 3.21.2 — the last release where `nuxt dev` works for ssr:false apps.
-    // 3.21.3+ broke the dev-server Vite Node IPC socket for ssr:false (every page
-    // request 500s with "Vite Node IPC socket path not configured"); the 4.x-only fix
-    // (nuxt/nuxt#34959) was never backported to 3.x (nuxt/nuxt#35114, closed as won't-fix).
-    // 3.21.7+ separately crashes `nuxt dev` outright for ssr:false ("No entry found in
-    // rollupOptions.input", nuxt/nuxt#35033) — so no 3.21.x patch above .2 works here.
-    'nuxt@3.21.2',
+    // Pinned to an exact 3.21.x. 3.21.3–3.21.8 broke `nuxt dev` for ssr:false apps
+    // (Vite Node IPC socket 500s, nuxt/nuxt#35114; "No entry found in rollupOptions.input",
+    // nuxt/nuxt#35033). 3.21.9 fixed both on 3.x ("use spa entry for vite-node fallback").
+    // Before moving this pin, check that `nuxt dev` serves /signin, / and /labs with 200s.
+    'nuxt@3.21.11',
     'pinia',
     'pinia-plugin-persistedstate',
     'playwright',
