@@ -2622,6 +2622,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
       '/easy-genomics/data-collections/request-list-file-tags',
       '/easy-genomics/data-collections/request-sequence-collection-sample-sheet',
       '/easy-genomics/data-collections/process-expired-laboratory-data',
+      // Recording sample run usage runs the access check; the hook swallows its denial.
+      '/easy-genomics/laboratory/run/create-laboratory-run',
       '/easy-genomics/laboratory/run/update-laboratory-run',
       '/easy-genomics/laboratory/run/request-apply-run-retention-policy',
       '/easy-genomics/laboratory/run/process-laboratory-run-stream',
