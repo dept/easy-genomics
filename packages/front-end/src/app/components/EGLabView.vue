@@ -554,12 +554,12 @@
   function canDeleteOmicsWorkflow(workflow: LabOmicsWorkflow): boolean {
     return canDeletePrivateOmicsWorkflow({
       workflow,
-      canCreateOmicsWorkflows: canCreateOmicsWorkflows.value,
+      canCreateOmicsWorkflows: userStore.isOrgAdmin(),
       userIds: [userStore.currentUserDetails.id, userStore.currentUserDetails.internalId],
     });
   }
 
-  const canDeliverKeyOutputs = computed(() => userStore.canEditLabUsers(props.labId));
+  const canManageWorkflowIntegrations = computed(() => userStore.isOrgAdmin());
 
   const omicsWorkflowsTableColumns = [
     { key: 'favourite', label: '' },
@@ -581,7 +581,7 @@
       },
     ];
 
-    if (canDeliverKeyOutputs.value) {
+    if (canManageWorkflowIntegrations.value) {
       primaryItems.push({
         label: 'Integrations',
         description: 'Copy to S3, send to Microreact.',

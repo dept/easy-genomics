@@ -11,7 +11,7 @@ import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service
 import { WorkflowKeyOutputsService } from '@BE/services/easy-genomics/workflow-key-outputs-service';
 import { isPlatformKeyOutputDeliveryBucket } from '@BE/utils/workflow-key-output-delivery';
 import {
-  authorizeLaboratoryManagerKeyOutputsAccess,
+  authorizeOrganizationAdminKeyOutputsAccess,
   resolveMicroreactDelivery,
 } from '@BE/utils/workflow-key-output-utils';
 
@@ -39,7 +39,7 @@ export const handler: Handler = async (
       throw new InvalidRequestError();
     }
 
-    await authorizeLaboratoryManagerKeyOutputsAccess(event, laboratoryService, request.LaboratoryId);
+    await authorizeOrganizationAdminKeyOutputsAccess(event, laboratoryService, request.LaboratoryId);
 
     const destination = request.DestinationUri ? parseKeyOutputDeliveryUri(request.DestinationUri) : null;
     if (destination && isPlatformKeyOutputDeliveryBucket(destination.bucket)) {

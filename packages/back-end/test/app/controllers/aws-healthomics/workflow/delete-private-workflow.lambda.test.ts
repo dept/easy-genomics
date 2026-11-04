@@ -15,7 +15,7 @@ jest.mock('../../../../../src/app/utils/omics-shared-workflow-utils', () => ({
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
 import { LaboratoryWorkflowAccessService } from '../../../../../src/app/services/easy-genomics/laboratory-workflow-access-service';
 import { createOmicsServiceForLab } from '../../../../../src/app/services/omics-lab-factory';
-import { validateOrganizationAdminOrLaboratoryManagerAccess } from '../../../../../src/app/utils/auth-utils';
+import { validateOrganizationAdminAccess, validateSystemAdminAccess } from '../../../../../src/app/utils/auth-utils';
 import { resolveSharedWorkflowOwnerId } from '../../../../../src/app/utils/omics-shared-workflow-utils';
 
 describe('delete-private-workflow.lambda', () => {
@@ -26,7 +26,8 @@ describe('delete-private-workflow.lambda', () => {
 
   let mockLabService: jest.MockedClass<typeof LaboratoryService>;
   let mockAccessService: jest.MockedClass<typeof LaboratoryWorkflowAccessService>;
-  let mockValidateAdminOrManager: jest.MockedFunction<typeof validateOrganizationAdminOrLaboratoryManagerAccess>;
+  let mockValidateOrgAdmin: jest.MockedFunction<typeof validateOrganizationAdminAccess>;
+  let mockValidateSystemAdmin: jest.MockedFunction<typeof validateSystemAdminAccess>;
   let omicsService: {
     getWorkflow: jest.Mock;
     deleteWorkflow: jest.Mock;
@@ -88,9 +89,11 @@ describe('delete-private-workflow.lambda', () => {
 
     mockLabService = LaboratoryService as jest.MockedClass<typeof LaboratoryService>;
     mockAccessService = LaboratoryWorkflowAccessService as jest.MockedClass<typeof LaboratoryWorkflowAccessService>;
-    mockValidateAdminOrManager = validateOrganizationAdminOrLaboratoryManagerAccess as any;
+    mockValidateOrgAdmin = validateOrganizationAdminAccess as any;
+    mockValidateSystemAdmin = validateSystemAdminAccess as any;
 
-    mockValidateAdminOrManager.mockReturnValue(true);
+    mockValidateOrgAdmin.mockReturnValue(true);
+    mockValidateSystemAdmin.mockReturnValue(false);
 
     mockLabService.prototype.queryByLaboratoryId = jest.fn().mockResolvedValue({
       OrganizationId: ORG_ID,
@@ -124,7 +127,7 @@ describe('delete-private-workflow.lambda', () => {
   });
 
   it('returns 403 for a laboratory technician', async () => {
-    mockValidateAdminOrManager.mockReturnValue(false);
+    mockValidateOrgAdmin.mockReturnValue(false);
 
     const result = await handler(createEvent(WF_ID, { laboratoryId: LAB_ID }), createContext(), () => {});
 
@@ -227,8 +230,8 @@ describe('delete-private-workflow.lambda', () => {
     expect(omicsService.deleteWorkflow).not.toHaveBeenCalled();
   });
 
-  it('returns 403 when the caller cannot manage workflows', async () => {
-    mockValidateAdminOrManager.mockReturnValue(false);
+  it('returns 403 when the caller is not an organisation admin', async () => {
+    mockValidateOrgAdmin.mockReturnValue(false);
 
     const result = await handler(createEvent(WF_ID, { laboratoryId: LAB_ID }), createContext(), () => {});
 

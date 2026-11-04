@@ -81,7 +81,7 @@ export async function authorizeLaboratoryKeyOutputsAccess(
   return laboratory;
 }
 
-/** Lab managers, organisation admins, and system admins. Technicians cannot change delivery. */
+/** Lab managers, organisation admins, and system admins. Technicians cannot change Microreact delivery. */
 export async function authorizeLaboratoryManagerKeyOutputsAccess(
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
   laboratoryService: LaboratoryService,
@@ -96,6 +96,21 @@ export async function authorizeLaboratoryManagerKeyOutputsAccess(
       validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
     )
   ) {
+    throw new UnauthorizedAccessError();
+  }
+
+  return laboratory;
+}
+
+/** Organisation admins and system admins. Lab managers and technicians cannot change integrations. */
+export async function authorizeOrganizationAdminKeyOutputsAccess(
+  event: APIGatewayProxyWithCognitoAuthorizerEvent,
+  laboratoryService: LaboratoryService,
+  laboratoryId: string,
+): Promise<Laboratory> {
+  const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(laboratoryId);
+
+  if (!(validateSystemAdminAccess(event) || validateOrganizationAdminAccess(event, laboratory.OrganizationId))) {
     throw new UnauthorizedAccessError();
   }
 
