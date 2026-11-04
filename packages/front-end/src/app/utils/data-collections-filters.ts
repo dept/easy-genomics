@@ -17,6 +17,23 @@ import type { LaboratorySample } from '@easy-genomics/shared-lib/src/app/types/e
  *   - `nowEpoch` is parameterised so tests get deterministic behaviour.
  */
 
+/** Retention column: permanent files never expire; otherwise the soonest run expiry, or an em dash. */
+export function formatRetentionExpiryLabel(
+  isPermanent: boolean,
+  usages: LaboratoryRunUsageSummary[] | undefined,
+  nowEpoch: number = Math.floor(Date.now() / 1000),
+): string {
+  if (isPermanent) return 'Never';
+  const epoch = soonestExpiresAtForUsages(usages);
+  if (epoch === undefined) return '—';
+  const diffDays = Math.round((epoch - nowEpoch) / 86400);
+  if (diffDays <= 0) return 'Expired';
+  if (diffDays === 1) return 'in 1 day';
+  if (diffDays < 30) return `in ${diffDays} days`;
+  const months = Math.round(diffDays / 30);
+  return months <= 1 ? 'in ~1 month' : `in ~${months} months`;
+}
+
 export function soonestExpiresAtForUsages(usages: LaboratoryRunUsageSummary[] | undefined): number | undefined {
   if (!usages || !usages.length) return undefined;
   let soonest: number | undefined;
