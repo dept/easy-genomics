@@ -1224,15 +1224,43 @@ describe('LaboratoryDataTaggingService.applyTagsToSamples', () => {
     );
   });
 
-  it('rejects system-managed permanent tags', async () => {
+  it('copies the permanent tag onto the sample files', async () => {
     (svc as unknown as { getTagRow: jest.Mock }).getTagRow = jest.fn().mockResolvedValue({
       TagId: 'perm-1',
       Kind: 'permanent',
       Name: 'Permanent',
     });
-    await expect(svc.applyTagsToSamples(labFixture(), 'user-1', ['set-1'], ['perm-1'], [])).rejects.toThrow(
-      'Permanent tags are system-managed',
+    mockGetItem.mockResolvedValue({
+      Item: marshall({ LaboratoryId: 'lab-1', Sk: 'SAMPLE#set-1', SampleId: 'set-1', TagIds: [] }),
+    });
+    (svc as unknown as { queryItems: jest.Mock }).queryItems = jest.fn().mockResolvedValue({
+      Items: [marshall({ S3Bucket: 'my-bucket', ObjectKey: 'org-1/lab-1/reads.fq' })],
+    });
+    const applyFiles = jest.spyOn(svc, 'applyTagsToFiles').mockResolvedValue(undefined);
+
+    await svc.applyTagsToSamples(labFixture(), 'user-1', ['set-1'], ['perm-1'], []);
+
+    expect(applyFiles).toHaveBeenCalledWith(
+      expect.objectContaining({ LaboratoryId: 'lab-1' }),
+      'user-1',
+      'my-bucket',
+      ['org-1/lab-1/reads.fq'],
+      ['perm-1'],
+      [],
     );
+    expect((svc as unknown as { putSequenceSetMapRow: jest.Mock }).putSequenceSetMapRow).not.toHaveBeenCalled();
+  });
+});
+
+describe('LaboratoryDataTaggingService.sampleIdsWithPermanentFiles', () => {
+  it('collects sample ids from files that already carry the permanent tag', async () => {
+    const svc = new LaboratoryDataTaggingService();
+    jest.spyOn(svc, 'listFilesByTag').mockResolvedValue({ Files: [{ Bucket: 'b', Key: 'org/lab/reads.fq' }] });
+    (svc as unknown as { getFileRow: jest.Mock }).getFileRow = jest.fn().mockResolvedValue({ SampleIds: ['sample-1'] });
+
+    const ids = await svc.sampleIdsWithPermanentFiles('lab-1');
+
+    expect([...ids]).toEqual(['sample-1']);
   });
 });
 
