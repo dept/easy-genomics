@@ -2,6 +2,7 @@
   import { EditWorkflowKeyOutputDeliverySchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/workflow-key-outputs';
   import { isCompletedHealthOmicsWorkflowRun } from '@easy-genomics/shared-lib/src/app/utils/workflow-key-output-delivery';
   import type { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
+  import type { WorkflowKeyOutput } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
   import { ButtonSizeEnum, ButtonVariantEnum } from '@FE/types/buttons';
   import { v4 as uuidv4 } from 'uuid';
 
@@ -29,11 +30,22 @@
   const enabled = ref(false);
   const destinationUri = ref('');
   const destinationError = ref('');
+  const keyOutputs = ref<WorkflowKeyOutput[]>([]);
   const keyOutputCount = ref(0);
   const definitionLoaded = ref(false);
   const savedEnabled = ref(false);
   const savedDestinationUri = ref('');
   const workflowName = ref(typeof $route.query.workflowName === 'string' ? $route.query.workflowName : '');
+
+  const microreactEnabled = ref(false);
+  const microreactMetadataId = ref('');
+  const microreactTreeIds = ref<string[]>([]);
+  const microreactError = ref('');
+  const savedMicroreactEnabled = ref(false);
+  const savedMicroreactMetadataId = ref('');
+  const savedMicroreactTreeIds = ref<string[]>([]);
+  /** True when DynamoDB already has Microreact settings, so Save can clear them. */
+  const hadSavedMicroreact = ref(false);
 
   const detailTabs: { key: DetailTabKey; label: string }[] = [
     { key: 'output-files', label: 'Output files' },
@@ -55,16 +67,26 @@
     },
   );
 
+  /** Drop metadata and tree roles that are no longer declared output files. */
+  function dropMicroreactIdsMissingFrom(outputs: WorkflowKeyOutput[]) {
+    const declaredIds = new Set(outputs.map((output) => output.KeyOutputId));
+    const metadataId =
+      microreactMetadataId.value && declaredIds.has(microreactMetadataId.value) ? microreactMetadataId.value : '';
+    microreactMetadataId.value = metadataId;
+    microreactTreeIds.value = microreactTreeIds.value.filter((id) => declaredIds.has(id) && id !== metadataId);
+    // Auto-send needs a metadata role; drop Enabled when the saved ID is gone.
+    if (!metadataId) microreactEnabled.value = false;
+  }
+
   onBeforeMount(async () => {
     uiStore.setSidebarVisible(true);
 
-    if (!labsStore.labs[labId]) {
-      uiStore.setRequestPending('loadLabData');
-      try {
-        await labsStore.loadLab(labId);
-      } finally {
-        uiStore.setRequestComplete('loadLabData');
-      }
+    // Always reload: the lab list does not carry HasMicroreactAccessToken.
+    uiStore.setRequestPending('loadLabData');
+    try {
+      await labsStore.loadLab(labId);
+    } finally {
+      uiStore.setRequestComplete('loadLabData');
     }
 
     if (!omicsWorkflowsStore.workflows[workflowId]) {
@@ -90,7 +112,20 @@
     destinationUri.value = nextDestinationUri;
     savedEnabled.value = nextEnabled;
     savedDestinationUri.value = nextDestinationUri;
+    keyOutputs.value = definition.KeyOutputs;
     keyOutputCount.value = definition.KeyOutputs.length;
+    const savedMicroreact = definition.Delivery?.Microreact;
+    const rawMetadataId = savedMicroreact?.MetadataKeyOutputId ?? '';
+    const rawTreeIds = savedMicroreact?.TreeKeyOutputIds ?? [];
+    const rawEnabled = Boolean(savedMicroreact?.Enabled);
+    microreactEnabled.value = rawEnabled;
+    microreactMetadataId.value = rawMetadataId;
+    microreactTreeIds.value = [...rawTreeIds];
+    savedMicroreactEnabled.value = rawEnabled;
+    savedMicroreactMetadataId.value = rawMetadataId;
+    savedMicroreactTreeIds.value = [...rawTreeIds];
+    hadSavedMicroreact.value = Boolean(rawEnabled || rawMetadataId || rawTreeIds.length);
+    dropMicroreactIdsMissingFrom(definition.KeyOutputs);
     workflowName.value = definition.WorkflowName || workflowName.value;
     definitionLoaded.value = true;
   });
@@ -118,8 +153,20 @@
         return bTime.localeCompare(aTime);
       }),
   );
+  function sameTreeIds(left: string[], right: string[]): boolean {
+    if (left.length !== right.length) return false;
+    const sortedLeft = [...left].sort();
+    const sortedRight = [...right].sort();
+    return sortedLeft.every((id, index) => id === sortedRight[index]);
+  }
+
   const hasUnsavedChanges = computed(
-    () => enabled.value !== savedEnabled.value || destinationUri.value.trim() !== savedDestinationUri.value.trim(),
+    () =>
+      enabled.value !== savedEnabled.value ||
+      destinationUri.value.trim() !== savedDestinationUri.value.trim() ||
+      microreactEnabled.value !== savedMicroreactEnabled.value ||
+      microreactMetadataId.value !== savedMicroreactMetadataId.value ||
+      !sameTreeIds(microreactTreeIds.value, savedMicroreactTreeIds.value),
   );
   const canSave = computed(() => definitionLoaded.value && canEditIntegrations.value && hasUnsavedChanges.value);
 
@@ -177,6 +224,26 @@
     $router.push(labTab(item.label));
   }
 
+  const hasMicroreactToken = computed(() => labsStore.labs[labId]?.HasMicroreactAccessToken === true);
+  const metadataOptions = computed(() => [
+    { label: 'Not sent', value: '' },
+    ...keyOutputs.value.map((output) => ({ label: `${output.Label} (${output.Pattern})`, value: output.KeyOutputId })),
+  ]);
+  const treeCandidates = computed(() =>
+    keyOutputs.value.filter((output) => output.KeyOutputId !== microreactMetadataId.value),
+  );
+
+  watch(microreactMetadataId, (metadataId) => {
+    microreactTreeIds.value = microreactTreeIds.value.filter((id) => id !== metadataId);
+    microreactError.value = '';
+  });
+
+  function toggleTree(keyOutputId: string, selected: boolean) {
+    microreactTreeIds.value = selected
+      ? [...microreactTreeIds.value, keyOutputId]
+      : microreactTreeIds.value.filter((id) => id !== keyOutputId);
+  }
+
   function backToWorkflowsTab() {
     $router.push(labTab('HealthOmics Workflows'));
   }
@@ -188,33 +255,76 @@
     });
   }
 
-  function validateDestination(): boolean {
-    const parsed = EditWorkflowKeyOutputDeliverySchema.safeParse({
+  function deliveryRequest() {
+    const request: {
+      LaboratoryId: string;
+      WorkflowId: string;
+      Enabled: boolean;
+      DestinationUri?: string;
+      Microreact?: {
+        Enabled: boolean;
+        MetadataKeyOutputId?: string;
+        TreeKeyOutputIds?: string[];
+      };
+    } = {
       LaboratoryId: labId,
       WorkflowId: workflowId,
       Enabled: enabled.value,
       DestinationUri: destinationUri.value.trim() || undefined,
-    });
-    if (!parsed.success) {
-      const issue = parsed.error.issues.find((item) => item.path.includes('DestinationUri')) ?? parsed.error.issues[0];
-      destinationError.value = issue?.message ?? 'Enter an s3://bucket/prefix destination';
-      return false;
+    };
+
+    const hasMicroreactConfig =
+      microreactEnabled.value || Boolean(microreactMetadataId.value) || microreactTreeIds.value.length > 0;
+    // Omit Microreact for S3-only saves so an empty {Enabled:false} is not written. Still send
+    // it when clearing previously saved settings.
+    if (hasMicroreactConfig || hadSavedMicroreact.value) {
+      request.Microreact = {
+        Enabled: microreactEnabled.value,
+        MetadataKeyOutputId: microreactMetadataId.value || undefined,
+        TreeKeyOutputIds: microreactTreeIds.value.length ? microreactTreeIds.value : undefined,
+      };
     }
+    return request;
+  }
+
+  function validateDelivery(): boolean {
+    const parsed = EditWorkflowKeyOutputDeliverySchema.safeParse(deliveryRequest());
     destinationError.value = '';
-    return true;
+    microreactError.value = '';
+    if (parsed.success) return true;
+
+    const destinationIssue = parsed.error.issues.find((item) => item.path.includes('DestinationUri'));
+    const microreactIssue = parsed.error.issues.find((item) => item.path.includes('Microreact'));
+    if (destinationIssue) destinationError.value = destinationIssue.message;
+    if (microreactIssue) microreactError.value = microreactIssue.message;
+    if (!destinationIssue && !microreactIssue) {
+      destinationError.value = parsed.error.issues[0]?.message ?? 'Enter an s3://bucket/prefix destination';
+    }
+    return false;
   }
 
   async function saveDelivery() {
-    if (!canSave.value || !validateDestination()) return;
+    if (!canSave.value || !validateDelivery()) return;
     const nextEnabled = enabled.value;
     const nextDestinationUri = destinationUri.value.trim();
+    const nextMicroreactEnabled = microreactEnabled.value;
+    const nextMicroreactMetadataId = microreactMetadataId.value;
+    const nextMicroreactTreeIds = [...microreactTreeIds.value];
+    const { DestinationUri, Microreact } = deliveryRequest();
     const saved = await keyOutputsStore.saveDelivery(labId, workflowId, {
       Enabled: nextEnabled,
-      DestinationUri: nextDestinationUri || undefined,
+      DestinationUri,
+      Microreact,
     });
     if (!saved) return;
     savedEnabled.value = nextEnabled;
     savedDestinationUri.value = nextDestinationUri;
+    savedMicroreactEnabled.value = nextMicroreactEnabled;
+    savedMicroreactMetadataId.value = nextMicroreactMetadataId;
+    savedMicroreactTreeIds.value = nextMicroreactTreeIds;
+    hadSavedMicroreact.value = Boolean(
+      nextMicroreactEnabled || nextMicroreactMetadataId || nextMicroreactTreeIds.length,
+    );
     backToWorkflowsTab();
   }
 
@@ -226,6 +336,10 @@
   function onOutputFilesSaved() {
     const definition = keyOutputsStore.definitionFor(labId, workflowId);
     keyOutputCount.value = definition?.KeyOutputs.length ?? keyOutputCount.value;
+    if (definition) {
+      keyOutputs.value = definition.KeyOutputs;
+      dropMicroreactIdsMissingFrom(definition.KeyOutputs);
+    }
   }
 </script>
 
@@ -381,6 +495,74 @@
               buckets and laboratory data prefixes can&apos;t be used.
             </p>
           </div>
+        </article>
+
+        <article
+          class="w-full rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6"
+          data-testid="microreact-delivery"
+        >
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div class="flex min-w-0 items-start gap-3">
+              <div
+                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-neutral-100"
+                aria-hidden="true"
+              >
+                <img src="@/assets/images/microreact-logo.svg" alt="" class="h-6 w-6" width="24" height="24" />
+              </div>
+              <div class="min-w-0">
+                <h2 class="text-heading text-base font-semibold">Microreact</h2>
+                <p class="text-muted mt-0.5 text-sm">Create a private project on microreact.org from output files</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-medium" :class="microreactEnabled ? 'text-primary' : 'text-muted'">
+                {{ microreactEnabled ? 'On' : 'Off' }}
+              </span>
+              <UToggle
+                v-model="microreactEnabled"
+                :disabled="!canEditIntegrations"
+                aria-label="Microreact"
+              />
+            </div>
+          </div>
+
+          <div v-if="microreactEnabled" class="mt-6 space-y-6">
+            <EGFormGroup label="Metadata table" name="microreactMetadata">
+              <USelect
+                v-model="microreactMetadataId"
+                :options="metadataOptions"
+                value-attribute="value"
+                option-attribute="label"
+                :disabled="!canEditIntegrations || keyOutputCount === 0"
+                data-testid="microreact-metadata-select"
+              />
+              <p class="text-muted mt-1 text-sm">A CSV or TSV whose first column is the sample ID.</p>
+            </EGFormGroup>
+
+            <EGFormGroup v-if="microreactMetadataId && treeCandidates.length" label="Trees" name="microreactTrees">
+              <div class="space-y-2">
+                <UCheckbox
+                  v-for="output in treeCandidates"
+                  :key="output.KeyOutputId"
+                  :model-value="microreactTreeIds.includes(output.KeyOutputId)"
+                  :label="`${output.Label} (${output.Pattern})`"
+                  :disabled="!canEditIntegrations"
+                  @update:model-value="(selected: boolean) => toggleTree(output.KeyOutputId, selected)"
+                />
+              </div>
+              <p class="text-muted mt-1 text-sm">Newick files whose leaf labels match the sample IDs.</p>
+            </EGFormGroup>
+
+            <p v-if="microreactError" class="text-alert-danger text-sm">{{ microreactError }}</p>
+            <p class="text-muted text-sm">
+              Files are sent to microreact.org as a new private project in the account that owns the laboratory's
+              access token. Anyone in the laboratory can also send a completed run from its run page.
+            </p>
+          </div>
+          <p v-if="!hasMicroreactToken" class="text-alert-danger mt-4 text-sm">
+            This laboratory has no Microreact access token. An organization admin can add one in the laboratory
+            settings.
+          </p>
         </article>
       </div>
 

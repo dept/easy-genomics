@@ -122,6 +122,7 @@ describe('update-laboratory.lambda', () => {
     mockLabService.prototype.update = jest.fn();
     mockSsmService.prototype.getParameter = jest.fn();
     mockSsmService.prototype.putParameter = jest.fn();
+    mockSsmService.prototype.deleteParameter = jest.fn();
 
     mockOmicsService = OmicsService as jest.MockedClass<typeof OmicsService>;
     mockOmicsService.prototype.getConfiguration = jest.fn().mockResolvedValue({ status: 'ACTIVE' });
@@ -147,6 +148,60 @@ describe('update-laboratory.lambda', () => {
     expect(mockSsmService.prototype.putParameter).toHaveBeenCalledWith(
       expect.objectContaining({
         Overwrite: true,
+      }),
+    );
+  });
+
+  it('stores a new Microreact access token in SSM', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+    });
+    (mockLabService.prototype.update as jest.Mock).mockResolvedValue({ OrganizationId: ORG_ID, LaboratoryId: LAB_ID });
+    (mockSsmService.prototype.putParameter as jest.Mock).mockResolvedValue({});
+
+    const result = await handler(
+      createEvent(LAB_ID, { ...baseRequest, MicroreactAccessToken: 'mr-token' }),
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockSsmService.prototype.putParameter).toHaveBeenCalledWith({
+      Name: `/easy-genomics/organization/${ORG_ID}/laboratory/${LAB_ID}/microreact-access-token`,
+      Description: `Easy Genomics Laboratory ${LAB_ID} Microreact access token`,
+      Value: 'mr-token',
+      Type: 'SecureString',
+      Overwrite: true,
+    });
+  });
+
+  it('deletes the Microreact access token when an empty string is sent', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+    });
+    (mockLabService.prototype.update as jest.Mock).mockResolvedValue({ OrganizationId: ORG_ID, LaboratoryId: LAB_ID });
+    (mockSsmService.prototype.deleteParameter as jest.Mock).mockResolvedValue({});
+
+    const result = await handler(
+      createEvent(LAB_ID, {
+        ...baseRequest,
+        NextFlowTowerEnabled: false,
+        NextFlowTowerAccessToken: undefined,
+        MicroreactAccessToken: '',
+      }),
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockSsmService.prototype.deleteParameter).toHaveBeenCalledWith({
+      Name: `/easy-genomics/organization/${ORG_ID}/laboratory/${LAB_ID}/microreact-access-token`,
+    });
+    expect(mockSsmService.prototype.putParameter).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        Name: `/easy-genomics/organization/${ORG_ID}/laboratory/${LAB_ID}/microreact-access-token`,
       }),
     );
   });
