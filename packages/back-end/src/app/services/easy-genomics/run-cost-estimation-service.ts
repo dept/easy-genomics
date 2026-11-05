@@ -23,7 +23,15 @@ const SUCCESS_STATUSES = new Set(['COMPLETED', 'SUCCEEDED']);
 export class RunCostEstimationService {
   private readonly laboratoryRunService = new LaboratoryRunService();
 
-  public async estimate(laboratory: Laboratory, request: EstimateRunCostRequest): Promise<EstimateRunCostResponse> {
+  /**
+   * `throwOnHistoryError` rethrows a failed history query instead of returning an unavailable
+   * estimate, so a run limit check can tell "estimate failed" apart from "no estimate".
+   */
+  public async estimate(
+    laboratory: Laboratory,
+    request: EstimateRunCostRequest,
+    options?: { throwOnHistoryError?: boolean },
+  ): Promise<EstimateRunCostResponse> {
     const exclusions = defaultCostExclusions();
     const disclaimer =
       'Estimated compute cost based on similar completed runs of this workflow. This is not an invoice. S3, data transfer, and run storage are not included.';
@@ -64,6 +72,7 @@ export class RunCostEstimationService {
         limit: HISTORY_QUERY_LIMIT,
       });
     } catch (err) {
+      if (options?.throwOnHistoryError) throw err;
       // GSI may not exist yet in older stacks; fall back to empty history.
       console.warn('queryByWorkflowExternalId failed (returning unavailable estimate):', err);
       historical = [];
