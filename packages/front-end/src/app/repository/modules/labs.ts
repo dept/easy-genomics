@@ -9,6 +9,7 @@ import {
   UpdateLaboratoryUserNotificationPreference,
   UpdateLaboratoryUserNotificationPreferenceSchema,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-user';
+import type { UpdateLaboratoryRunLimits } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
@@ -67,6 +68,21 @@ class LabsModule extends HttpFactory {
 
     if (!res) {
       throw new Error('Failed to update Laboratory');
+    }
+
+    return res;
+  }
+
+  /**
+   * Replace a Laboratory's run limits; a field missing from runLimits is cleared
+   * @param labId
+   * @param runLimits
+   */
+  async updateRunLimits(labId: string, runLimits: UpdateLaboratoryRunLimits): Promise<Laboratory> {
+    const res = await this.call<Laboratory>('PUT', `/laboratory/update-laboratory-run-limits/${labId}`, runLimits);
+
+    if (!res) {
+      throw new Error('Failed to update Laboratory run limits');
     }
 
     return res;
