@@ -16,6 +16,7 @@ import {
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
+import { RunLimitCheckService } from '@BE/services/easy-genomics/run-limit-check-service';
 import { SsmService } from '@BE/services/ssm-service';
 import {
   validateLaboratoryManagerAccess,
@@ -28,6 +29,17 @@ import { getNextFlowApiQueryParameters, httpRequest, REST_API_METHOD } from '@BE
 const laboratoryService = new LaboratoryService();
 const ssmService = new SsmService();
 const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
+const runLimitCheckService = new RunLimitCheckService();
+
+/** Seqera validates the launch body itself, so a paramsText that isn't JSON is checked as having no settings. */
+function parseLaunchParams(paramsText?: string): Record<string, unknown> | undefined {
+  if (!paramsText) return undefined;
+  try {
+    return JSON.parse(paramsText);
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * This POST /nf-tower/workflow/create-workflow-execution?laboratoryId={LaboratoryId}
@@ -82,6 +94,18 @@ export const handler: Handler = async (
 
     const createWorkflowLaunchRequest: CreateWorkflowLaunchRequest = JSON.parse(rawBody);
     console.log('createWorkflowLaunchRequest:', createWorkflowLaunchRequest);
+
+    const launchParams = parseLaunchParams(createWorkflowLaunchRequest.launch?.paramsText);
+    await runLimitCheckService.assertLaunchWithinLimits(
+      laboratory,
+      {
+        platform: 'Seqera Cloud',
+        workflowExternalId: pipelineId,
+        sampleSheetS3Url: typeof launchParams?.input === 'string' ? launchParams.input : undefined,
+        settings: launchParams,
+      },
+      event.requestContext.authorizer?.claims?.UserId ?? event.requestContext.authorizer?.claims?.['cognito:username'],
+    );
 
     // Retrieve Seqera Cloud / NextFlow Tower AccessToken from SSM
     const getParameterResponse: GetParameterCommandOutput | void = await ssmService
