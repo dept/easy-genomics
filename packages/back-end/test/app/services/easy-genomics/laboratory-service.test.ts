@@ -31,3 +31,54 @@ describe('LaboratoryService.listAllLaboratories', () => {
     findAll.mockRestore();
   });
 });
+
+describe('LaboratoryService.updateRunLimits', () => {
+  const laboratory = { OrganizationId: 'o1', LaboratoryId: 'l1', Name: 'Lab A' } as Laboratory;
+
+  const setup = () => {
+    const svc = new LaboratoryService();
+    const updateItem = jest
+      .spyOn(svc as unknown as { updateItem: jest.Mock }, 'updateItem')
+      .mockResolvedValue({ $metadata: { httpStatusCode: 200 } });
+    const queryByLaboratoryId = jest.spyOn(svc, 'queryByLaboratoryId').mockResolvedValue(laboratory);
+    return { svc, updateItem, queryByLaboratoryId };
+  };
+
+  it('sets only RunLimits and the modified fields on the existing lab', async () => {
+    const { svc, updateItem, queryByLaboratoryId } = setup();
+    const runLimits = { CostWarnAboveUsd: 150, SamplesBlockAbove: 500 };
+
+    const result = await svc.updateRunLimits(laboratory, runLimits, 'admin-user');
+
+    const input = updateItem.mock.calls[0][0];
+    expect(input.Key).toEqual(marshall({ OrganizationId: 'o1', LaboratoryId: 'l1' }));
+    expect(input.UpdateExpression).toBe('SET #ModifiedAt = :modifiedAt, #ModifiedBy = :modifiedBy, #RunLimits = :runLimits');
+    expect(input.ConditionExpression).toBe('attribute_exists(#OrganizationId) AND attribute_exists(#LaboratoryId)');
+    expect(input.ExpressionAttributeValues[':runLimits']).toEqual({ M: marshall(runLimits) });
+    expect(input.ExpressionAttributeValues[':modifiedBy']).toEqual({ S: 'admin-user' });
+    expect(input.ExpressionAttributeValues[':modifiedAt'].S).toEqual(expect.any(String));
+    expect(queryByLaboratoryId).toHaveBeenCalledWith('l1');
+    expect(result).toBe(laboratory);
+  });
+
+  it('removes RunLimits when every limit is cleared', async () => {
+    const { svc, updateItem } = setup();
+
+    await svc.updateRunLimits(laboratory, {}, 'admin-user');
+
+    const input = updateItem.mock.calls[0][0];
+    expect(input.UpdateExpression).toBe('REMOVE #RunLimits SET #ModifiedAt = :modifiedAt, #ModifiedBy = :modifiedBy');
+    expect(input.ExpressionAttributeValues[':runLimits']).toBeUndefined();
+    expect(input.ExpressionAttributeValues[':modifiedBy']).toEqual({ S: 'admin-user' });
+  });
+
+  it('does not write undefined limit fields', async () => {
+    const { svc, updateItem } = setup();
+
+    await svc.updateRunLimits(laboratory, { CostWarnAboveUsd: 150, CostBlockAboveUsd: undefined }, 'admin-user');
+
+    expect(updateItem.mock.calls[0][0].ExpressionAttributeValues[':runLimits']).toEqual({
+      M: { CostWarnAboveUsd: { N: '150' } },
+    });
+  });
+});

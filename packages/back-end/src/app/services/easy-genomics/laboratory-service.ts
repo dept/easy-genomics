@@ -4,11 +4,12 @@ import {
   QueryCommandOutput,
   ScanCommandOutput,
   TransactWriteItemsCommandOutput,
+  UpdateItemCommandOutput,
 } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { InvalidRequestError, LaboratoryNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { LaboratorySchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
-import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import { Laboratory, LaboratoryRunLimits } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
 
@@ -239,6 +240,50 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
       } else {
         throw new Error(`${logRequestMessage} unsuccessful: HTTP Status Code=${response.$metadata.httpStatusCode}`);
       }
+    }
+  };
+
+  /**
+   * Writes only the RunLimits attribute, so it never overwrites lab settings saved at the same time.
+   * Clearing every limit removes the attribute, so the lab looks exactly like one that never had limits.
+   */
+  public updateRunLimits = async (
+    laboratory: Laboratory,
+    runLimits: LaboratoryRunLimits,
+    modifiedBy: string,
+  ): Promise<Laboratory> => {
+    const logRequestMessage = `Update Laboratory Run Limits OrganizationId=${laboratory.OrganizationId}, LaboratoryId=${laboratory.LaboratoryId} request`;
+    console.info(logRequestMessage);
+
+    const marshalledRunLimits = marshall(runLimits, { removeUndefinedValues: true });
+    const hasRunLimits = Object.keys(marshalledRunLimits).length > 0;
+    const setModified = 'SET #ModifiedAt = :modifiedAt, #ModifiedBy = :modifiedBy';
+
+    const response: UpdateItemCommandOutput = await this.updateItem({
+      TableName: this.LABORATORY_TABLE_NAME,
+      Key: marshall({ OrganizationId: laboratory.OrganizationId, LaboratoryId: laboratory.LaboratoryId }),
+      ConditionExpression: 'attribute_exists(#OrganizationId) AND attribute_exists(#LaboratoryId)',
+      UpdateExpression: hasRunLimits
+        ? `${setModified}, #RunLimits = :runLimits`
+        : `REMOVE #RunLimits ${setModified}`,
+      ExpressionAttributeNames: {
+        '#OrganizationId': 'OrganizationId',
+        '#LaboratoryId': 'LaboratoryId',
+        '#RunLimits': 'RunLimits',
+        '#ModifiedAt': 'ModifiedAt',
+        '#ModifiedBy': 'ModifiedBy',
+      },
+      ExpressionAttributeValues: {
+        ...(hasRunLimits ? { ':runLimits': { M: marshalledRunLimits } } : {}),
+        ':modifiedAt': { S: new Date().toISOString() },
+        ':modifiedBy': { S: modifiedBy },
+      },
+    });
+
+    if (response.$metadata.httpStatusCode === 200) {
+      return this.queryByLaboratoryId(laboratory.LaboratoryId);
+    } else {
+      throw new Error(`${logRequestMessage} unsuccessful: HTTP Status Code=${response.$metadata.httpStatusCode}`);
     }
   };
 
