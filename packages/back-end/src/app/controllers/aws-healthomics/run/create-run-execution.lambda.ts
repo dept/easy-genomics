@@ -13,6 +13,7 @@ import { coerceNumericWorkflowParams } from '@easy-genomics/shared-lib/src/app/u
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
+import { RunLimitCheckService } from '@BE/services/easy-genomics/run-limit-check-service';
 import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import { OmicsService } from '@BE/services/omics-service';
 import {
@@ -25,6 +26,7 @@ import { resolveSharedWorkflowOwnerId } from '@BE/utils/omics-shared-workflow-ut
 
 const laboratoryService = new LaboratoryService();
 const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
+const runLimitCheckService = new RunLimitCheckService();
 
 /**
  * Derives the S3 bucket to host the laboratory's HealthOmics run cache. Prefers the Laboratory's
@@ -159,6 +161,20 @@ export const handler: Handler = async (
       laboratoryWorkflowAccessService,
     );
 
+    const parsedParameters = JSON.parse(request.parameters!.toString());
+    // The check hashes the uncoerced parameters, the same object the review step sends.
+    await runLimitCheckService.assertLaunchWithinLimits(
+      laboratory,
+      {
+        platform: 'AWS HealthOmics',
+        workflowExternalId: request.workflowId!,
+        workflowVersionName: request.workflowVersionName,
+        sampleSheetS3Url: typeof parsedParameters?.input === 'string' ? parsedParameters.input : undefined,
+        settings: parsedParameters,
+      },
+      event.requestContext.authorizer?.claims?.UserId ?? event.requestContext.authorizer?.claims?.['cognito:username'],
+    );
+
     // User metadata is optional: IAM access control is enforced via LaboratoryId/OrganizationId tagging.
     // We still accept missing `sub/email` so run creation doesn't fail for users depending on claim mapping.
     const userId: string | undefined =
@@ -172,7 +188,6 @@ export const handler: Handler = async (
       omicsUserId,
     );
 
-    const parsedParameters = JSON.parse(request.parameters!.toString());
     // HealthOmics parameterTemplate is untyped, so clients send JSON strings. Coerce
     // unambiguous numeric literals for StartRun; already-numeric values pass through.
     const parameters =

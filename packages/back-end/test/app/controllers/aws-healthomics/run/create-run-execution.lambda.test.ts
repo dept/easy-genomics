@@ -1,3 +1,7 @@
+import {
+  RunCostEstimateFailedError,
+  RunSampleLimitExceededError,
+} from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { handler } from '../../../../../src/app/controllers/aws-healthomics/run/create-run-execution.lambda';
 
@@ -9,6 +13,12 @@ jest.mock('../../../../../src/app/services/omics-lab-factory', () => ({
   createOmicsServiceForLab: jest.fn(),
 }));
 jest.mock('../../../../../src/app/utils/auth-utils');
+const mockAssertLaunchWithinLimits = jest.fn();
+jest.mock('../../../../../src/app/services/easy-genomics/run-limit-check-service', () => ({
+  RunLimitCheckService: jest.fn().mockImplementation(() => ({
+    assertLaunchWithinLimits: (...args: unknown[]) => mockAssertLaunchWithinLimits(...args),
+  })),
+}));
 jest.mock('../../../../../src/app/utils/laboratory-workflow-access-utils', () => ({
   ...jest.requireActual('../../../../../src/app/utils/laboratory-workflow-access-utils'),
   assertLaboratoryHasWorkflowAccess: jest.fn(),
@@ -120,6 +130,7 @@ describe('create-run-execution.lambda', () => {
     mockValidateOrgAdmin.mockReturnValue(true);
     mockValidateLabManager.mockReturnValue(false);
     mockValidateLabTechnician.mockReturnValue(false);
+    mockAssertLaunchWithinLimits.mockReset().mockResolvedValue(undefined);
   });
 
   it('starts a run with expected tags including user info', async () => {
@@ -393,5 +404,91 @@ describe('create-run-execution.lambda', () => {
 
     expect(result.statusCode).toBe(403);
     expect(mockOmicsService.prototype.startRun).not.toHaveBeenCalled();
+  });
+
+  describe('run limits', () => {
+    const limitedLab = {
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+      S3Bucket: 'lab-bucket',
+      RunLimits: { SamplesBlockAbove: 500 },
+    };
+    const rawParameters = {
+      input: 's3://lab-bucket/run/samplesheet.csv',
+      outdir: 's3://lab-bucket/output',
+      max_cpus: '4',
+    };
+    const limitedRequest = { ...baseRequest, workflowVersionName: 'v2', parameters: JSON.stringify(rawParameters) };
+    const eventWithUserId = () =>
+      createEvent(limitedRequest, {
+        requestContext: {
+          authorizer: { claims: { sub: 'sub-123', UserId: 'user-id-123', email: 'user@example.com' } },
+        } as any,
+      });
+
+    beforeEach(() => {
+      (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue(limitedLab);
+      (mockOmicsService.prototype.startRun as jest.Mock).mockResolvedValue({ id: 'run-123' });
+    });
+
+    it('checks the run with the raw parsed parameters before launching', async () => {
+      const result = await handler(eventWithUserId(), createContext(), () => {});
+
+      expect(result.statusCode).toBe(200);
+      expect(mockAssertLaunchWithinLimits).toHaveBeenCalledWith(
+        limitedLab,
+        {
+          platform: 'AWS HealthOmics',
+          workflowExternalId: 'wf-123',
+          workflowVersionName: 'v2',
+          sampleSheetS3Url: 's3://lab-bucket/run/samplesheet.csv',
+          settings: rawParameters,
+        },
+        'user-id-123',
+      );
+      expect(mockAssertLaunchWithinLimits.mock.calls[0][1].settings.max_cpus).toBe('4');
+    });
+
+    it('refuses a run over the sample block amount without touching HealthOmics', async () => {
+      mockAssertLaunchWithinLimits.mockRejectedValue(new RunSampleLimitExceededError(1000, 500));
+
+      const result = await handler(eventWithUserId(), createContext(), () => {});
+
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).ErrorCode).toBe('EG-340');
+      expect(createOmicsServiceForLab).not.toHaveBeenCalled();
+      expect(mockOmicsService.prototype.startRun).not.toHaveBeenCalled();
+    });
+
+    it('refuses a run whose cost estimate failed', async () => {
+      mockAssertLaunchWithinLimits.mockRejectedValue(new RunCostEstimateFailedError());
+
+      const result = await handler(eventWithUserId(), createContext(), () => {});
+
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body).ErrorCode).toBe('EG-342');
+      expect(mockOmicsService.prototype.startRun).not.toHaveBeenCalled();
+    });
+
+    it('checks a retry in a lab with a run cache like a new launch', async () => {
+      (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+        ...limitedLab,
+        HealthOmicsRunCacheId: 'cache-1',
+      });
+
+      await handler(eventWithUserId(), createContext(), () => {});
+
+      expect(mockAssertLaunchWithinLimits).toHaveBeenCalledTimes(1);
+    });
+
+    it('authorizes before checking the limits', async () => {
+      mockValidateOrgAdmin.mockReturnValue(false);
+
+      const result = await handler(eventWithUserId(), createContext(), () => {});
+
+      expect(result.statusCode).toBe(403);
+      expect(mockAssertLaunchWithinLimits).not.toHaveBeenCalled();
+    });
   });
 });
