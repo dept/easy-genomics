@@ -1169,6 +1169,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       S3Bucket: string;
       ObjectKey: string;
       TagIds: string[];
+      SampleIds?: string[];
       LaboratoryRunUsages?: Record<string, LaboratoryRunUsageSummary>;
     }>
   > {
@@ -1177,6 +1178,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       S3Bucket: string;
       ObjectKey: string;
       TagIds: string[];
+      SampleIds?: string[];
       LaboratoryRunUsages?: Record<string, LaboratoryRunUsageSummary>;
     }> = [];
 
@@ -1202,6 +1204,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
           S3Bucket: row.S3Bucket as string,
           ObjectKey: row.ObjectKey as string,
           TagIds: (row.TagIds as string[]) || [],
+          SampleIds: (row.SampleIds as string[]) || undefined,
           LaboratoryRunUsages: (row.LaboratoryRunUsages as Record<string, LaboratoryRunUsageSummary>) || undefined,
         });
       }
@@ -1329,20 +1332,34 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     return { Files: files, NextCursor: nextCursor };
   }
 
-  /** Samples that own at least one file already carrying the system Permanent tag. */
-  public async sampleIdsWithPermanentFiles(laboratoryId: string): Promise<Set<string>> {
-    const tagId = deterministicPermanentTagId(laboratoryId);
-    const sampleIds = new Set<string>();
-    let cursor: string | undefined;
+  /** Samples whose row carries the system Permanent tag. One query; the retention sweep reads this. */
+  public async listPermanentSampleIds(laboratoryId: string): Promise<Set<string>> {
+    const permanentTagId = deterministicPermanentTagId(laboratoryId);
+    const ids = new Set<string>();
+    let startKey: Record<string, unknown> | undefined;
     do {
-      const page = await this.listFilesByTag(laboratoryId, tagId, 200, cursor);
-      for (const file of page.Files) {
-        const row = await this.getFileRow(laboratoryId, encodeS3ObjectRef(file.Bucket, file.Key));
-        for (const sampleId of row?.SampleIds || []) sampleIds.add(sampleId);
+      const response: QueryCommandOutput = await this.queryItems({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: '#pk = :pk AND begins_with(#sk, :prefix)',
+        ExpressionAttributeNames: { '#pk': 'LaboratoryId', '#sk': 'Sk' },
+        ExpressionAttributeValues: {
+          ':pk': { S: laboratoryId },
+          ':prefix': { S: 'SAMPLE#' },
+        },
+        ...(startKey ? { ExclusiveStartKey: startKey as never } : {}),
+      });
+      for (const item of response.Items || []) {
+        const row = unmarshall(item) as Record<string, unknown>;
+        const tagIds = (row.TagIds as string[]) || [];
+        if (!tagIds.includes(permanentTagId)) continue;
+        const sampleId =
+          (typeof row.SampleId === 'string' && row.SampleId) ||
+          (typeof row.Sk === 'string' ? row.Sk.replace(/^SAMPLE#/, '') : '');
+        if (sampleId) ids.add(sampleId);
       }
-      cursor = page.NextCursor;
-    } while (cursor);
-    return sampleIds;
+      startKey = response.LastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (startKey);
+    return ids;
   }
 
   public async applyTagsToFiles(
@@ -1413,47 +1430,29 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
 
       const now = new Date().toISOString();
       const hasUsages = !!existing?.LaboratoryRunUsages && Object.keys(existing.LaboratoryRunUsages).length > 0;
-      if (tagIds.size === 0) {
-        if (existing && !hasUsages) {
-          await this.deleteItem({
-            TableName: TABLE_NAME,
-            Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
-          });
-        } else if (existing && hasUsages) {
-          // Preserve run history even when all tags are removed from this file.
-          await this.putItem({
-            TableName: TABLE_NAME,
-            Item: marshall(
-              {
-                LaboratoryId: laboratoryId,
-                Sk: skFile(ref),
-                S3Bucket: bucket,
-                ObjectKey: key,
-                TagIds: [],
-                LaboratoryRunUsages: existing.LaboratoryRunUsages,
-                ModifiedAt: now,
-                ModifiedBy: userId,
-              },
-              { removeUndefinedValues: true },
-            ),
-          });
-        }
-      } else {
+      const sampleIds = existing?.SampleIds?.filter((id) => id.length > 0);
+      const hasSampleLinks = !!sampleIds?.length;
+      const fileItem = {
+        LaboratoryId: laboratoryId,
+        Sk: skFile(ref),
+        S3Bucket: bucket,
+        ObjectKey: key,
+        TagIds: [...tagIds],
+        ...(hasSampleLinks ? { SampleIds: sampleIds } : {}),
+        ...(hasUsages ? { LaboratoryRunUsages: existing!.LaboratoryRunUsages } : {}),
+        ModifiedAt: now,
+        ModifiedBy: userId,
+      };
+      if (tagIds.size === 0 && existing && !hasUsages && !hasSampleLinks) {
+        await this.deleteItem({
+          TableName: TABLE_NAME,
+          Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
+        });
+      } else if (existing || tagIds.size > 0) {
+        // Full put, so SampleIds has to be copied or a linked file shows up as unlinked.
         await this.putItem({
           TableName: TABLE_NAME,
-          Item: marshall(
-            {
-              LaboratoryId: laboratoryId,
-              Sk: skFile(ref),
-              S3Bucket: bucket,
-              ObjectKey: key,
-              TagIds: [...tagIds],
-              ...(hasUsages ? { LaboratoryRunUsages: existing!.LaboratoryRunUsages } : {}),
-              ModifiedAt: now,
-              ModifiedBy: userId,
-            },
-            { removeUndefinedValues: true },
-          ),
+          Item: marshall(fileItem, { removeUndefinedValues: true }),
         });
       }
     }
@@ -1910,7 +1909,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       for (const aid of add) {
         if (!tagIds.has(aid)) {
           tagIds.add(aid);
-          // FileCount for Permanent tracks files, not samples. The file copy below owns it.
+          // Permanent stays on the sample row. File rows keep their own tag and SampleIds.
           if (!permanentAdd.has(aid)) {
             await this.putSequenceSetMapRow(laboratoryId, aid, setId);
             await this.adjustTagFileCount(laboratoryId, aid, 1);
@@ -1930,73 +1929,6 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         }),
       });
     }
-
-    if (permanentAdd.size || permanentRemove.size) {
-      await this.copyPermanentTagOntoSampleFiles(
-        laboratory,
-        userId,
-        sequenceSetIds,
-        [...permanentAdd],
-        [...permanentRemove],
-      );
-    }
-  }
-
-  /**
-   * Retention only reads the Permanent tag on FILE# rows. Copy it onto every file in the samples
-   * just tagged so the sweep skips them.
-   * shortcut: removing Permanent from a sample also clears it on files shared with another sample;
-   * upgrade when one file must stay protected by a second sample.
-   */
-  private async copyPermanentTagOntoSampleFiles(
-    laboratory: Laboratory,
-    userId: string,
-    sampleIds: string[],
-    addTagIds: string[],
-    removeTagIds: string[],
-  ): Promise<void> {
-    const byBucket = new Map<string, Set<string>>();
-    for (const sampleId of sampleIds) {
-      for (const ref of await this.listSampleObjectRefs(laboratory.LaboratoryId, sampleId)) {
-        const keys = byBucket.get(ref.bucket) ?? new Set<string>();
-        keys.add(ref.key);
-        byBucket.set(ref.bucket, keys);
-      }
-    }
-    for (const [bucket, keys] of byBucket) {
-      const list = [...keys];
-      if (!list.length) continue;
-      if (addTagIds.length) {
-        await this.applyTagsToFiles(laboratory, userId, bucket, list, addTagIds, []);
-      }
-      if (removeTagIds.length) {
-        await this.applyTagsToFiles(laboratory, userId, bucket, list, [], removeTagIds);
-      }
-    }
-  }
-
-  private async listSampleObjectRefs(
-    laboratoryId: string,
-    sampleId: string,
-  ): Promise<Array<{ bucket: string; key: string }>> {
-    const out: Array<{ bucket: string; key: string }> = [];
-    let startKey: Record<string, unknown> | undefined;
-    do {
-      const response: QueryCommandOutput = await this.queryItems({
-        TableName: TABLE_NAME,
-        IndexName: GSI1_NAME,
-        KeyConditionExpression: '#gpk = :gpk',
-        ExpressionAttributeNames: { '#gpk': 'Gsi1Pk' },
-        ExpressionAttributeValues: { ':gpk': { S: `${laboratoryId}#SAMPLE#${sampleId}` } },
-        ...(startKey ? { ExclusiveStartKey: startKey as never } : {}),
-      });
-      for (const item of response.Items || []) {
-        const row = unmarshall(item) as Record<string, string>;
-        if (row.S3Bucket && row.ObjectKey) out.push({ bucket: row.S3Bucket, key: row.ObjectKey });
-      }
-      startKey = response.LastEvaluatedKey as Record<string, unknown> | undefined;
-    } while (startKey);
-    return out;
   }
 
   public async applyWorkflowToSamples(
