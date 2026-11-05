@@ -16,6 +16,7 @@ import { LaboratoryUserService } from '@BE/services/easy-genomics/laboratory-use
 import { SqsService } from '@BE/services/sqs-service';
 import { SsmService } from '@BE/services/ssm-service';
 import { validateOrganizationAdminAccess } from '@BE/utils/auth-utils';
+import { microreactAccessTokenParameterName } from '@BE/utils/microreact-project';
 
 const laboratoryService = new LaboratoryService();
 const laboratoryUserService = new LaboratoryUserService();
@@ -62,6 +63,11 @@ export const handler: Handler = async (
     await ssmService
       .deleteParameter({
         Name: `/easy-genomics/organization/${existingLaboratory.OrganizationId}/laboratory/${existingLaboratory.LaboratoryId}/llm-api-key-seqera`,
+      })
+      .catch(() => {});
+    await ssmService
+      .deleteParameter({
+        Name: microreactAccessTokenParameterName(existingLaboratory.OrganizationId, existingLaboratory.LaboratoryId),
       })
       .catch(() => {});
 
