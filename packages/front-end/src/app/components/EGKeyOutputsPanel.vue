@@ -5,6 +5,7 @@
     isKeyOutputRoleTruncated,
     uniqueKeyOutputObjectKeys,
   } from '@easy-genomics/shared-lib/src/app/utils/workflow-key-output-download';
+  import type { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
   import type {
     RunWorkflowKeyOutput,
     RunWorkflowKeyOutputMatch,
@@ -25,6 +26,8 @@
     workflowName?: string | null;
     canEdit?: boolean;
     delivery?: WorkflowKeyOutputDelivery | null;
+    /** When set and Microreact delivery is configured, show the Microreact row under Sent to. */
+    run?: LaboratoryRun | null;
   }>();
 
   const emit = defineEmits<{
@@ -53,9 +56,9 @@
     return sizeLabel ? `Download all · ${countLabel}, ${sizeLabel}` : `Download all · ${countLabel}`;
   });
 
-  const showDelivery = computed(
-    () => !!props.delivery?.Enabled && !!props.delivery.DestinationUri?.trim(),
-  );
+  const showS3Delivery = computed(() => !!props.delivery?.Enabled && !!props.delivery.DestinationUri?.trim());
+  const showMicroreact = computed(() => Boolean(props.run && props.delivery?.Microreact?.MetadataKeyOutputId));
+  const showDelivery = computed(() => showS3Delivery.value || showMicroreact.value);
 
   function roleMeta(role: RunWorkflowKeyOutput): string {
     const countLabel = role.MatchCount === 1 ? '1 file' : `${role.MatchCount.toLocaleString()} files`;
@@ -201,9 +204,7 @@
               >
                 <UIcon
                   :name="
-                    downloadingKey === role.Matches[0].Key
-                      ? 'i-heroicons-arrow-path'
-                      : 'i-heroicons-arrow-down-tray'
+                    downloadingKey === role.Matches[0].Key ? 'i-heroicons-arrow-path' : 'i-heroicons-arrow-down-tray'
                   "
                   class="h-4 w-4"
                   :class="{ 'animate-spin': downloadingKey === role.Matches[0].Key }"
@@ -242,7 +243,11 @@
             </div>
           </div>
 
-          <ul v-if="isExpanded(role.KeyOutputId)" class="mt-3 list-none space-y-2 border-l border-gray-100 pl-4" role="list">
+          <ul
+            v-if="isExpanded(role.KeyOutputId)"
+            class="mt-3 list-none space-y-2 border-l border-gray-100 pl-4"
+            role="list"
+          >
             <li
               v-for="file in role.Matches"
               :key="file.Key"
@@ -290,12 +295,20 @@
 
     <div v-if="showDelivery" class="border-stroke-light mt-2 border-t border-solid pt-4">
       <h4 class="text-muted mb-3 text-xs font-medium uppercase tracking-wide">Sent to</h4>
-      <div class="flex min-w-0 items-start gap-3">
-        <UIcon name="i-heroicons-cloud" class="text-muted mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
-        <div class="min-w-0">
-          <p class="text-sm font-medium text-black">Amazon S3</p>
-          <p class="text-muted mt-0.5 break-all text-sm">{{ delivery?.DestinationUri }}</p>
+      <div class="space-y-4">
+        <div v-if="showS3Delivery" class="flex flex-wrap items-start justify-between gap-3">
+          <div class="flex min-w-0 items-start gap-3">
+            <UIcon name="i-heroicons-cloud" class="text-muted mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-black">Amazon S3</p>
+              <p class="text-muted mt-0.5 break-all text-sm">{{ delivery?.DestinationUri }}</p>
+            </div>
+          </div>
+          <UBadge size="sm" class="bg-alert-success-muted text-alert-success-text rounded-xl border-0 ring-0">
+            Copied
+          </UBadge>
         </div>
+        <EGMicroreactExport v-if="showMicroreact && run" :lab-id="labId" :run="run" />
       </div>
     </div>
   </section>

@@ -15,6 +15,7 @@ import { WorkflowKeyOutputsService } from '@BE/services/easy-genomics/workflow-k
 import {
   authorizeLaboratoryKeyOutputsAccess,
   authorizeLaboratoryManagerKeyOutputsAccess,
+  scrubDeliveryForKeyOutputs,
 } from '@BE/utils/workflow-key-output-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -41,18 +42,27 @@ export const handler: Handler = async (
     }
 
     const existing = await workflowKeyOutputsService.get(request.LaboratoryId, request.WorkflowId);
-    if (existing?.Delivery?.Enabled) {
+    // S3 delivery stays editable by technicians. Microreact automatic sending does not.
+    if (existing?.Delivery?.Microreact?.Enabled) {
       await authorizeLaboratoryManagerKeyOutputsAccess(event, laboratoryService, request.LaboratoryId);
     } else {
       await authorizeLaboratoryKeyOutputsAccess(event, laboratoryService, request.LaboratoryId);
     }
     const now = new Date().toISOString();
-    const keyOutputs: WorkflowKeyOutput[] = request.KeyOutputs.map((item) => ({
-      KeyOutputId: item.KeyOutputId || uuidv4(),
-      Label: item.Label.trim(),
-      Pattern: item.Pattern.trim(),
-      ExamplePath: item.ExamplePath,
-    }));
+    // Reuse the saved ID when Pattern is unchanged so Microreact roles survive a re-save
+    // that omitted KeyOutputId (older editors).
+    const existingIdByPattern = new Map(
+      (existing?.KeyOutputs ?? []).map((output) => [output.Pattern, output.KeyOutputId]),
+    );
+    const keyOutputs: WorkflowKeyOutput[] = request.KeyOutputs.map((item) => {
+      const pattern = item.Pattern.trim();
+      return {
+        KeyOutputId: item.KeyOutputId || existingIdByPattern.get(pattern) || uuidv4(),
+        Label: item.Label.trim(),
+        Pattern: pattern,
+        ExamplePath: item.ExamplePath,
+      };
+    });
 
     const definition: WorkflowKeyOutputs = {
       LaboratoryId: request.LaboratoryId,
@@ -61,7 +71,7 @@ export const handler: Handler = async (
       Platform: request.Platform,
       SourceRunId: request.SourceRunId,
       KeyOutputs: keyOutputs,
-      Delivery: existing?.Delivery,
+      Delivery: scrubDeliveryForKeyOutputs(existing?.Delivery, keyOutputs),
       CreatedAt: existing?.CreatedAt ?? now,
       CreatedBy: existing?.CreatedBy ?? currentUserId,
       ModifiedAt: now,

@@ -681,6 +681,7 @@
               :workflow-name="labRun.WorkflowName"
               :can-edit="canDeclareKeyOutputs"
               :delivery="keyOutputDelivery"
+              :run="labRun"
               @edit="isDeclaringKeyOutputs = true"
             />
             <div v-else-if="canDeclareKeyOutputs && !hasKeyOutputs" class="flex justify-end">
@@ -724,10 +725,7 @@
           :s3-prefix="fileExplorerS3Prefix"
           :output-files="outputFileTags"
         />
-        <p
-          v-else-if="labRun && !isLoading"
-          class="text-muted rounded-lg border border-dashed p-6 text-center text-sm"
-        >
+        <p v-else-if="labRun && !isLoading" class="text-muted rounded-lg border border-dashed p-6 text-center text-sm">
           No S3 location is recorded for this run, so files cannot be listed.
         </p>
       </div>

@@ -1,5 +1,5 @@
 import { TransactionCanceledException } from '@aws-sdk/client-dynamodb';
-import { GetParameterCommandOutput } from '@aws-sdk/client-ssm';
+import { GetParameterCommandOutput, ParameterNotFound } from '@aws-sdk/client-ssm';
 import { ListComputeEnvsResponse } from '@easy-genomics/shared-lib/lib/app/types/nf-tower/nextflow-tower-api';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import {
@@ -24,9 +24,11 @@ import { migrateWorkflowAccessOnDefaultModeChange } from '@BE/services/easy-geno
 import { LLMClassificationService } from '@BE/services/llm-classification/llm-classification-service';
 import { OmicsService } from '@BE/services/omics-service';
 import { SsmService } from '@BE/services/ssm-service';
+import { logApiGatewayEventWithoutSecrets } from '@BE/utils/api-gateway-log-utils';
 import { validateOrganizationAdminAccess, validateSystemAdminAccess } from '@BE/utils/auth-utils';
 import { assertHealthOmicsVpcConfigurationIsActive } from '@BE/utils/laboratory-omics-vpc-utils';
 import { assertLaboratoryHasS3BucketAccess } from '@BE/utils/laboratory-s3-access-utils';
+import { microreactAccessTokenParameterName } from '@BE/utils/microreact-project';
 import { httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -38,7 +40,7 @@ const llmClassificationService = new LLMClassificationService();
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
 ): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logApiGatewayEventWithoutSecrets(event);
   try {
     // Get Path Parameter
     const id: string = event.pathParameters?.id || '';
@@ -245,6 +247,26 @@ export const handler: Handler = async (
         Name: `/easy-genomics/organization/${existing.OrganizationId}/laboratory/${existing.LaboratoryId}/llm-api-key-seqera`,
         Description: `Easy Genomics Laboratory ${existing.LaboratoryId} Seqera BYOK LLM API key`,
         Value: request.SeqeraLlmApiKey,
+        Type: 'SecureString',
+        Overwrite: true,
+      });
+    }
+    // Empty string clears the token (third-party credential). Undefined leaves it unchanged.
+    if (request.MicroreactAccessToken === '') {
+      try {
+        await ssmService.deleteParameter({
+          Name: microreactAccessTokenParameterName(existing.OrganizationId, existing.LaboratoryId),
+        });
+      } catch (err: any) {
+        if (!(err instanceof ParameterNotFound) && err?.name !== 'ParameterNotFound') {
+          throw err;
+        }
+      }
+    } else if (request.MicroreactAccessToken) {
+      await ssmService.putParameter({
+        Name: microreactAccessTokenParameterName(existing.OrganizationId, existing.LaboratoryId),
+        Description: `Easy Genomics Laboratory ${existing.LaboratoryId} Microreact access token`,
+        Value: request.MicroreactAccessToken,
         Type: 'SecureString',
         Overwrite: true,
       });

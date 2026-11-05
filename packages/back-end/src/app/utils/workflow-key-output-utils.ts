@@ -1,7 +1,13 @@
-import { UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
-import { isCompletedHealthOmicsWorkflowRun } from '@easy-genomics/shared-lib/src/app/utils/workflow-key-output-delivery';
+import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
+import {
+  WorkflowKeyOutput,
+  WorkflowKeyOutputDelivery,
+  WorkflowKeyOutputMicroreactDelivery,
+  WorkflowKeyOutputs,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
+import { isCompletedHealthOmicsWorkflowRun } from '@easy-genomics/shared-lib/src/app/utils/workflow-key-output-delivery';
 import { APIGatewayProxyWithCognitoAuthorizerEvent } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import {
@@ -61,21 +67,19 @@ export async function authorizeLaboratoryKeyOutputsAccess(
 ): Promise<Laboratory> {
   const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(laboratoryId);
 
-  if (
-    !(
-      validateSystemAdminAccess(event) ||
-      validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
-      validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
-      validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
-    )
-  ) {
+  if (!(
+    validateSystemAdminAccess(event) ||
+    validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
+    validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
+    validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
+  )) {
     throw new UnauthorizedAccessError();
   }
 
   return laboratory;
 }
 
-/** Lab managers, organisation admins, and system admins. Technicians cannot change delivery. */
+/** Lab managers, organisation admins, and system admins. Technicians cannot change Microreact delivery. */
 export async function authorizeLaboratoryManagerKeyOutputsAccess(
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
   laboratoryService: LaboratoryService,
@@ -83,15 +87,103 @@ export async function authorizeLaboratoryManagerKeyOutputsAccess(
 ): Promise<Laboratory> {
   const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(laboratoryId);
 
-  if (
-    !(
-      validateSystemAdminAccess(event) ||
-      validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
-      validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
-    )
-  ) {
+  if (!(
+    validateSystemAdminAccess(event) ||
+    validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
+    validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
+  )) {
     throw new UnauthorizedAccessError();
   }
 
   return laboratory;
+}
+
+/** Organisation admins and system admins. Lab managers and technicians cannot change integrations. */
+export async function authorizeOrganizationAdminKeyOutputsAccess(
+  event: APIGatewayProxyWithCognitoAuthorizerEvent,
+  laboratoryService: LaboratoryService,
+  laboratoryId: string,
+): Promise<Laboratory> {
+  const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(laboratoryId);
+
+  if (!(validateSystemAdminAccess(event) || validateOrganizationAdminAccess(event, laboratory.OrganizationId))) {
+    throw new UnauthorizedAccessError();
+  }
+
+  return laboratory;
+}
+
+/**
+ * Drops Microreact role IDs that are no longer declared key outputs. Returns
+ * undefined when nothing remains to store, so an empty `{ Enabled: false }` is
+ * not written. Auto-send turns off when the metadata role disappears.
+ */
+export function scrubMicroreactDeliveryRoles(
+  microreact: WorkflowKeyOutputMicroreactDelivery | undefined,
+  keyOutputs: WorkflowKeyOutput[],
+): WorkflowKeyOutputMicroreactDelivery | undefined {
+  if (!microreact) return undefined;
+
+  const declared = new Set(keyOutputs.map((output) => output.KeyOutputId));
+  const metadataId =
+    microreact.MetadataKeyOutputId && declared.has(microreact.MetadataKeyOutputId)
+      ? microreact.MetadataKeyOutputId
+      : undefined;
+  const treeIds = (microreact.TreeKeyOutputIds ?? []).filter((id) => declared.has(id) && id !== metadataId);
+  const scrubbed: WorkflowKeyOutputMicroreactDelivery = {
+    Enabled: Boolean(microreact.Enabled && metadataId),
+    ...(metadataId ? { MetadataKeyOutputId: metadataId } : {}),
+    ...(treeIds.length ? { TreeKeyOutputIds: treeIds } : {}),
+  };
+
+  if (!scrubbed.Enabled && !scrubbed.MetadataKeyOutputId && !scrubbed.TreeKeyOutputIds?.length) {
+    return undefined;
+  }
+  return scrubbed;
+}
+
+/** True when every Microreact role ID is a declared key output for the workflow. */
+export function microreactRolesAreDeclared(
+  microreact: WorkflowKeyOutputMicroreactDelivery,
+  keyOutputs: WorkflowKeyOutput[],
+): boolean {
+  const declared = new Set(keyOutputs.map((output) => output.KeyOutputId));
+  const roles = [microreact.MetadataKeyOutputId, ...(microreact.TreeKeyOutputIds ?? [])].filter(Boolean);
+  return roles.every((id) => declared.has(id!));
+}
+
+/** Keeps S3 delivery settings; drops Microreact roles that no longer match a declared key output. */
+export function scrubDeliveryForKeyOutputs(
+  delivery: WorkflowKeyOutputDelivery | undefined,
+  keyOutputs: WorkflowKeyOutput[],
+): WorkflowKeyOutputDelivery | undefined {
+  if (!delivery) return undefined;
+  const microreact = scrubMicroreactDeliveryRoles(delivery.Microreact, keyOutputs);
+  return {
+    Enabled: delivery.Enabled,
+    DestinationUri: delivery.DestinationUri,
+    ...(microreact ? { Microreact: microreact } : {}),
+  };
+}
+
+/**
+ * Applies a delivery-edit Microreact payload, or keeps the saved roles when the
+ * request omits Microreact. Always drops IDs that are no longer declared.
+ */
+export function resolveMicroreactDelivery(
+  requested: Partial<WorkflowKeyOutputMicroreactDelivery> | undefined,
+  saved: WorkflowKeyOutputMicroreactDelivery | undefined,
+  keyOutputs: WorkflowKeyOutputs['KeyOutputs'],
+): WorkflowKeyOutputMicroreactDelivery | undefined {
+  if (requested) {
+    const normalized: WorkflowKeyOutputMicroreactDelivery = {
+      ...requested,
+      Enabled: requested.Enabled ?? false,
+    };
+    if (!microreactRolesAreDeclared(normalized, keyOutputs)) {
+      throw new InvalidRequestError('Microreact roles must be key outputs declared for this workflow');
+    }
+    return scrubMicroreactDeliveryRoles(normalized, keyOutputs);
+  }
+  return scrubMicroreactDeliveryRoles(saved, keyOutputs);
 }

@@ -11,6 +11,7 @@ import {
   validateOrganizationAdminAccess,
   validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
+import { microreactAccessTokenParameterName } from '@BE/utils/microreact-project';
 
 const laboratoryService = new LaboratoryService();
 const ssmService = new SsmService();
@@ -28,13 +29,11 @@ export const handler: Handler = async (
     const existing: Laboratory = await laboratoryService.queryByLaboratoryId(id);
 
     // Only the SystemAdmin or any User with access to the Laboratory is allowed access to this API
-    if (
-      !(
-        validateSystemAdminAccess(event) ||
-        validateOrganizationAdminAccess(event, existing.OrganizationId) ||
-        validateOrganizationAccess(event, existing.OrganizationId, existing.LaboratoryId)
-      )
-    ) {
+    if (!(
+      validateSystemAdminAccess(event) ||
+      validateOrganizationAdminAccess(event, existing.OrganizationId) ||
+      validateOrganizationAccess(event, existing.OrganizationId, existing.LaboratoryId)
+    )) {
       throw new UnauthorizedAccessError();
     }
 
@@ -66,6 +65,10 @@ export const handler: Handler = async (
       })
       .then((value: GetParameterCommandOutput) => !!value.Parameter)
       .catch(() => false);
+    const hasMicroreactAccessToken: boolean = await ssmService
+      .getParameter({ Name: microreactAccessTokenParameterName(existing.OrganizationId, existing.LaboratoryId) })
+      .then((value: GetParameterCommandOutput) => !!value.Parameter)
+      .catch(() => false);
 
     // Return Laboratory details with boolean indicators in place of any secret values.
     const response: ReadLaboratory = {
@@ -74,6 +77,7 @@ export const handler: Handler = async (
       HasGitHubAccessToken: hasGitHubAccessToken,
       HasHealthOmicsLlmApiKey: hasHealthOmicsLlmApiKey,
       HasSeqeraLlmApiKey: hasSeqeraLlmApiKey,
+      HasMicroreactAccessToken: hasMicroreactAccessToken,
     };
     return buildResponse(200, JSON.stringify(response), event);
   } catch (err: any) {

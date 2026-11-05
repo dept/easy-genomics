@@ -13,7 +13,7 @@ import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handl
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
 import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
-import { validateOrganizationAdminOrLaboratoryManagerAccess } from '@BE/utils/auth-utils';
+import { validateOrganizationAdminAccess, validateSystemAdminAccess } from '@BE/utils/auth-utils';
 import { resolveSharedWorkflowOwnerId } from '@BE/utils/omics-shared-workflow-utils';
 import { deletePrivateOmicsWorkflow } from '@BE/utils/private-workflow-delete-utils';
 import {
@@ -29,7 +29,7 @@ const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
  * DELETE /aws-healthomics/workflow/delete-private-workflow/{id}?laboratoryId={LaboratoryId}
  *
  * Deletes a private HealthOmics workflow that the caller created through Easy Genomics.
- * Permission matches the Create Workflow UI: org admin or lab manager.
+ * Organisation admins and system admins only. The caller must still be the creator.
  */
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -45,13 +45,7 @@ export const handler: Handler = async (
     const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(laboratoryId);
     if (!laboratory) throw new LaboratoryNotFoundError();
 
-    if (
-      !validateOrganizationAdminOrLaboratoryManagerAccess(
-        event,
-        laboratory.OrganizationId,
-        laboratory.LaboratoryId,
-      )
-    ) {
+    if (!(validateSystemAdminAccess(event) || validateOrganizationAdminAccess(event, laboratory.OrganizationId))) {
       throw new UnauthorizedAccessError();
     }
 
@@ -63,11 +57,7 @@ export const handler: Handler = async (
       event.requestContext.authorizer.claims['cognito:username'] ??
       event.requestContext.authorizer.claims.sub ??
       'unknown-user';
-    const omicsService = await createOmicsServiceForLab(
-      laboratory.LaboratoryId,
-      laboratory.OrganizationId,
-      userId,
-    );
+    const omicsService = await createOmicsServiceForLab(laboratory.LaboratoryId, laboratory.OrganizationId, userId);
 
     const sharedOwnerId = await resolveSharedWorkflowOwnerId(omicsService, id);
     if (sharedOwnerId) {

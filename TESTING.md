@@ -149,6 +149,36 @@ Run against a deployed environment with a completed HealthOmics run that has out
 - [ ] **E2E** — add a lab-manager Playwright spec: declare key outputs from a completed HealthOmics run, download from
       the panel, save a delivery destination.
 
+### Microreact export
+
+Sends declared key outputs to microreact.org as a private project (auto on run completion when enabled, or manual from
+the run Overview). Unit tests cover token missing/rejected, file-size and tree-count limits, role scrubbing, and
+enqueue. Not yet executed against a real Microreact account. Playwright E2E is outstanding.
+
+#### Manual steps
+
+Needs a lab with a Microreact API access token and a completed HealthOmics run that has a CSV/TSV metadata key output
+(and optionally Newick trees). Not yet executed.
+
+- [ ] **Token save** — org admin saves a Microreact token under Lab Settings → Connections; Token saved appears; Replace
+      token updates it; Remove token clears it after save.
+- [ ] **Integrations both targets** — enable Copy to S3 and Microreact with metadata (+ optional trees); save; both stay
+      on after reload.
+- [ ] **Integrations Microreact only** — enable Microreact alone; save; S3 stays off.
+- [ ] **Missing token warning** — with Microreact on and no lab token, Integrations shows the lab-settings warning.
+- [ ] **Auto-send** — with Microreact Enabled, a new completed HealthOmics run shows Sent to → Microreact with Open
+      project / Send again after delivery finishes.
+- [ ] **Manual send** — with metadata chosen but Enabled off, Overview shows Send to Microreact; it queues, polls, then
+      shows Sent with the project URL.
+- [ ] **Send again** — after a successful send, Send again creates another project (new URL).
+- [ ] **Rejected / missing token at send** — remove the token, then send; run records Failed with a clear message.
+- [ ] **No matching metadata file** — pattern matches nothing on the run; export fails with that message.
+- [ ] **Oversize files** — a matching file over 10 MB (or files totaling over 25 MB) fails without calling Microreact.
+- [ ] **Re-save key outputs keeps roles** — after Microreact roles are set, re-save the same output files; Metadata /
+      Trees and Enabled stay intact.
+- [ ] **E2E outstanding** — lab-manager Playwright: save token → configure Microreact delivery → completed run shows
+      Sent to Microreact (or mock the Microreact API in a future harness).
+
 ---
 
 ## Create HealthOmics workflow — preselected parameter file

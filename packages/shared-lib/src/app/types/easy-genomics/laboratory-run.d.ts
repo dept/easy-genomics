@@ -161,6 +161,13 @@ export interface LaboratoryRun extends BaseAttributes {
   /** Completed analyses, newest first, up to 50. Entry 0 mirrors the flat Failure* fields. */
   AnalysisHistory?: AnalysisHistoryEntry[];
 
+  /** State of the latest Microreact export. Absent means it was never sent. */
+  MicroreactStatus?: 'Queued' | 'Succeeded' | 'Failed';
+  /** Project created by the latest successful export. Each export creates a new project. */
+  MicroreactProjectUrl?: string;
+  MicroreactErrorMessage?: string;
+  MicroreactRequestedAt?: string;
+
   /**
    * Sparse marker present only while the run is non-terminal. Backs the `PollStatus_Index`
    * GSI so the notification poller can query "every active run" in O(1) regardless of total

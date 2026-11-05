@@ -4,6 +4,7 @@ import {
   buildSourcePrefix,
   buildSourceRootOptions,
   defaultS3ImportLabel,
+  folderSearchScopeNote,
   isSourceFolderMissing,
 } from '../../../src/app/utils/data-collections-source-prefix';
 
@@ -138,5 +139,23 @@ describe('a folder typed from the bucket root', () => {
         `org-1/lab-1/imports/${label}/`,
       ),
     ).toBe('org-1/lab-1/imports/run-1/S1_R1_001.fastq.gz');
+  });
+});
+
+describe('folderSearchScopeNote', () => {
+  it('says paths start at the bucket root when the whole bucket is searched', () => {
+    expect(folderSearchScopeNote(true, '')).toBe('Paths start at the bucket root.');
+  });
+
+  it('names the allowed folder and allows a blank folder when an allowed folder is searched', () => {
+    expect(folderSearchScopeNote(false, 'partner-drop/runs/')).toBe(
+      'Paths start inside partner-drop/runs/. Leave it blank to search the whole allowed folder.',
+    );
+  });
+
+  it("explains the lab folder, without offering a blank folder, when this lab's folder is searched", () => {
+    expect(folderSearchScopeNote(false, '')).toBe(
+      "Paths start inside this lab's folder in the bucket, so you don't need to type the lab or organization IDs.",
+    );
   });
 });

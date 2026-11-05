@@ -38,13 +38,36 @@ export interface WorkflowKeyOutput {
   ExamplePath?: string;
 }
 
+/** Cap on Newick trees sent to one Microreact project. */
+export const MICROREACT_TREE_KEY_OUTPUTS_LIMIT = 10;
+
 /**
- * Where to copy this workflow's key outputs after a run completes successfully.
- * One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+ * Sends a completed run's key outputs to Microreact as a new private project,
+ * using the lab's Microreact access token. `MetadataKeyOutputId` names the
+ * CSV/TSV key output whose first column is the sample ID; each tree key output
+ * is a Newick file whose leaf labels match that ID.
+ */
+export interface WorkflowKeyOutputMicroreactDelivery {
+  Enabled: boolean;
+  MetadataKeyOutputId?: string;
+  TreeKeyOutputIds?: string[];
+}
+
+/**
+ * Where to deliver this workflow's key outputs after a run completes successfully:
+ * an external `s3://bucket/prefix` copy, a Microreact project, or both.
  */
 export interface WorkflowKeyOutputDelivery {
   Enabled: boolean;
   DestinationUri?: string;
+  Microreact?: WorkflowKeyOutputMicroreactDelivery;
+}
+
+export type MicroreactExportStatus = 'Queued' | 'Succeeded' | 'Failed';
+
+export interface RequestRunMicroreactExportResponse {
+  RunId: string;
+  MicroreactStatus: MicroreactExportStatus;
 }
 
 export interface WorkflowKeyOutputs extends BaseAttributes {
