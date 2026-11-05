@@ -299,6 +299,28 @@ describe('update-laboratory.lambda', () => {
     );
   });
 
+  // RunLimits is saved only through update-laboratory-run-limits; a general lab save must
+  // carry the stored limits through rather than wipe them.
+  it('keeps the stored RunLimits on a general laboratory save', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      RunLimits: { SamplesBlockAbove: 500 },
+    });
+    (mockLabService.prototype.update as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+    });
+
+    const result = await handler(createEvent(LAB_ID, baseRequest), createContext(), () => {});
+
+    expect(result.statusCode).toBe(200);
+    expect(mockLabService.prototype.update).toHaveBeenCalledWith(
+      expect.objectContaining({ RunLimits: { SamplesBlockAbove: 500 } }),
+      expect.anything(),
+    );
+  });
+
   it('returns 400 when id path parameter is missing', async () => {
     const result = await handler(createEvent(undefined, baseRequest), createContext(), () => {});
 
