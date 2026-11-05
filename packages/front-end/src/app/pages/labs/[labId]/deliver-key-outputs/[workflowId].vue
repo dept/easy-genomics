@@ -533,7 +533,11 @@
               <span class="text-sm font-medium" :class="microreactEnabled ? 'text-primary' : 'text-muted'">
                 {{ microreactEnabled ? 'On' : 'Off' }}
               </span>
-              <UToggle v-model="microreactEnabled" :disabled="!canEditIntegrations" aria-label="Microreact" />
+              <UToggle
+                v-model="microreactEnabled"
+                :disabled="!canEditIntegrations"
+                aria-label="Microreact"
+              />
             </div>
           </div>
 
@@ -566,8 +570,8 @@
 
             <p v-if="microreactError" class="text-alert-danger text-sm">{{ microreactError }}</p>
             <p class="text-muted text-sm">
-              Files are sent to microreact.org as a new private project in the account that owns the laboratory's access
-              token. Anyone in the laboratory can also send a completed run from its run page.
+              Files are sent to microreact.org as a new private project in the account that owns the laboratory's
+              access token. Anyone in the laboratory can also send a completed run from its run page.
             </p>
           </div>
           <p v-if="!hasMicroreactToken" class="text-alert-danger mt-4 text-sm">

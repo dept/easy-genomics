@@ -29,11 +29,13 @@ export const handler: Handler = async (
     const existing: Laboratory = await laboratoryService.queryByLaboratoryId(id);
 
     // Only the SystemAdmin or any User with access to the Laboratory is allowed access to this API
-    if (!(
-      validateSystemAdminAccess(event) ||
-      validateOrganizationAdminAccess(event, existing.OrganizationId) ||
-      validateOrganizationAccess(event, existing.OrganizationId, existing.LaboratoryId)
-    )) {
+    if (
+      !(
+        validateSystemAdminAccess(event) ||
+        validateOrganizationAdminAccess(event, existing.OrganizationId) ||
+        validateOrganizationAccess(event, existing.OrganizationId, existing.LaboratoryId)
+      )
+    ) {
       throw new UnauthorizedAccessError();
     }
 

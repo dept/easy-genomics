@@ -45,7 +45,9 @@ export const handler: Handler = async (
     const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(laboratoryId);
     if (!laboratory) throw new LaboratoryNotFoundError();
 
-    if (!(validateSystemAdminAccess(event) || validateOrganizationAdminAccess(event, laboratory.OrganizationId))) {
+    if (
+      !(validateSystemAdminAccess(event) || validateOrganizationAdminAccess(event, laboratory.OrganizationId))
+    ) {
       throw new UnauthorizedAccessError();
     }
 
@@ -57,7 +59,11 @@ export const handler: Handler = async (
       event.requestContext.authorizer.claims['cognito:username'] ??
       event.requestContext.authorizer.claims.sub ??
       'unknown-user';
-    const omicsService = await createOmicsServiceForLab(laboratory.LaboratoryId, laboratory.OrganizationId, userId);
+    const omicsService = await createOmicsServiceForLab(
+      laboratory.LaboratoryId,
+      laboratory.OrganizationId,
+      userId,
+    );
 
     const sharedOwnerId = await resolveSharedWorkflowOwnerId(omicsService, id);
     if (sharedOwnerId) {

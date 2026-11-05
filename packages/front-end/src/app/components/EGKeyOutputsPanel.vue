@@ -56,8 +56,12 @@
     return sizeLabel ? `Download all · ${countLabel}, ${sizeLabel}` : `Download all · ${countLabel}`;
   });
 
-  const showS3Delivery = computed(() => !!props.delivery?.Enabled && !!props.delivery.DestinationUri?.trim());
-  const showMicroreact = computed(() => Boolean(props.run && props.delivery?.Microreact?.MetadataKeyOutputId));
+  const showS3Delivery = computed(
+    () => !!props.delivery?.Enabled && !!props.delivery.DestinationUri?.trim(),
+  );
+  const showMicroreact = computed(
+    () => Boolean(props.run && props.delivery?.Microreact?.MetadataKeyOutputId),
+  );
   const showDelivery = computed(() => showS3Delivery.value || showMicroreact.value);
 
   function roleMeta(role: RunWorkflowKeyOutput): string {
@@ -204,7 +208,9 @@
               >
                 <UIcon
                   :name="
-                    downloadingKey === role.Matches[0].Key ? 'i-heroicons-arrow-path' : 'i-heroicons-arrow-down-tray'
+                    downloadingKey === role.Matches[0].Key
+                      ? 'i-heroicons-arrow-path'
+                      : 'i-heroicons-arrow-down-tray'
                   "
                   class="h-4 w-4"
                   :class="{ 'animate-spin': downloadingKey === role.Matches[0].Key }"
@@ -243,11 +249,7 @@
             </div>
           </div>
 
-          <ul
-            v-if="isExpanded(role.KeyOutputId)"
-            class="mt-3 list-none space-y-2 border-l border-gray-100 pl-4"
-            role="list"
-          >
+          <ul v-if="isExpanded(role.KeyOutputId)" class="mt-3 list-none space-y-2 border-l border-gray-100 pl-4" role="list">
             <li
               v-for="file in role.Matches"
               :key="file.Key"

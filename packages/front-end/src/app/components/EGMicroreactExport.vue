@@ -75,7 +75,13 @@
 <template>
   <div class="flex flex-wrap items-start justify-between gap-3" data-testid="microreact-export">
     <div class="flex min-w-0 items-start gap-3">
-      <img src="@/assets/images/microreact-logo.svg" alt="" class="mt-0.5 h-5 w-5 shrink-0" width="20" height="20" />
+      <img
+        src="@/assets/images/microreact-logo.svg"
+        alt=""
+        class="mt-0.5 h-5 w-5 shrink-0"
+        width="20"
+        height="20"
+      />
       <div class="min-w-0">
         <p class="text-sm font-medium text-black">Microreact</p>
         <p class="mt-0.5 text-sm" :class="isFailed ? 'text-alert-danger' : 'text-muted'">

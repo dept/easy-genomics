@@ -1662,6 +1662,7 @@
                 />
               </EGFormGroup>
             </div>
+
           </section>
 
           <div v-if="isEditing" class="mt-6">
@@ -1676,8 +1677,8 @@
                 <div class="min-w-0">
                   <p class="text-sm font-medium text-black">Microreact (optional)</p>
                   <p class="text-muted mt-0.5 text-xs">
-                    Projects sent from runs are created in this token&apos;s account. Find it in Microreact under
-                    Account settings, API access token.
+                    Projects sent from runs are created in this token&apos;s account. Find it in Microreact under Account
+                    settings, API access token.
                   </p>
                 </div>
               </div>

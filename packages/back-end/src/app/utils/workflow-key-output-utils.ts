@@ -67,12 +67,14 @@ export async function authorizeLaboratoryKeyOutputsAccess(
 ): Promise<Laboratory> {
   const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(laboratoryId);
 
-  if (!(
-    validateSystemAdminAccess(event) ||
-    validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
-    validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
-    validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
-  )) {
+  if (
+    !(
+      validateSystemAdminAccess(event) ||
+      validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
+      validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
+      validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
+    )
+  ) {
     throw new UnauthorizedAccessError();
   }
 
@@ -87,11 +89,13 @@ export async function authorizeLaboratoryManagerKeyOutputsAccess(
 ): Promise<Laboratory> {
   const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(laboratoryId);
 
-  if (!(
-    validateSystemAdminAccess(event) ||
-    validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
-    validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
-  )) {
+  if (
+    !(
+      validateSystemAdminAccess(event) ||
+      validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
+      validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
+    )
+  ) {
     throw new UnauthorizedAccessError();
   }
 
