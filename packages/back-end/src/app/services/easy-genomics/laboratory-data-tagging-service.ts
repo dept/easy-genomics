@@ -1425,32 +1425,46 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       }
 
       const now = new Date().toISOString();
-      const hasUsages = !!existing?.LaboratoryRunUsages && Object.keys(existing.LaboratoryRunUsages).length > 0;
-      const sampleIds = existing?.SampleIds?.filter((id) => id.length > 0);
-      const hasSampleLinks = !!sampleIds?.length;
-      const fileItem = {
-        LaboratoryId: laboratoryId,
-        Sk: skFile(ref),
-        S3Bucket: bucket,
-        ObjectKey: key,
-        TagIds: [...tagIds],
-        ...(hasSampleLinks ? { SampleIds: sampleIds } : {}),
-        ...(hasUsages ? { LaboratoryRunUsages: existing!.LaboratoryRunUsages } : {}),
-        ModifiedAt: now,
-        ModifiedBy: userId,
-      };
-      if (tagIds.size === 0 && existing && !hasUsages && !hasSampleLinks) {
-        await this.deleteItem({
-          TableName: TABLE_NAME,
-          Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
-        });
-      } else if (existing || tagIds.size > 0) {
-        // Full put, so SampleIds has to be copied or a linked file shows up as unlinked.
+      const fileKey = marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) });
+      if (!existing) {
+        if (tagIds.size === 0) continue;
         await this.putItem({
           TableName: TABLE_NAME,
-          Item: marshall(fileItem, { removeUndefinedValues: true }),
+          Item: marshall(
+            {
+              LaboratoryId: laboratoryId,
+              Sk: skFile(ref),
+              S3Bucket: bucket,
+              ObjectKey: key,
+              TagIds: [...tagIds],
+              ModifiedAt: now,
+              ModifiedBy: userId,
+            },
+            { removeUndefinedValues: true },
+          ),
         });
+        continue;
       }
+      const hasUsages = !!existing.LaboratoryRunUsages && Object.keys(existing.LaboratoryRunUsages).length > 0;
+      const hasSampleLinks = (existing.SampleIds || []).some((id) => id.length > 0);
+      // UpdateItem writes TagIds only, so SampleIds and run usages on the existing row stay.
+      if (tagIds.size === 0 && !hasUsages && !hasSampleLinks) {
+        await this.deleteItem({
+          TableName: TABLE_NAME,
+          Key: fileKey,
+        });
+        continue;
+      }
+      await this.updateItem({
+        TableName: TABLE_NAME,
+        Key: fileKey,
+        UpdateExpression: 'SET TagIds = :tids, ModifiedAt = :ma, ModifiedBy = :mb',
+        ExpressionAttributeValues: marshall({
+          ':tids': [...tagIds],
+          ':ma': now,
+          ':mb': userId,
+        }),
+      });
     }
   }
 

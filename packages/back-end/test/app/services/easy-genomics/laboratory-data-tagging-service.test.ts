@@ -229,20 +229,25 @@ describe('LaboratoryDataTaggingService.applyTagsToFiles', () => {
     });
 
     await svc.applyTagsToFiles(lab, 'user-1', bucket, [key], [extraId], []);
-    const added = mockPutItem.mock.calls
-      .map((c) => (c[0]?.Item ? (unmarshall(c[0].Item) as { Sk?: string; SampleIds?: string[] }) : undefined))
-      .find((row) => row?.Sk?.startsWith('FILE#'));
-    expect(added?.SampleIds).toEqual(['sample-1']);
+    const filePutsAfterAdd = mockPutItem.mock.calls
+      .map((c) => (c[0]?.Item ? (unmarshall(c[0].Item) as { Sk?: string }) : undefined))
+      .filter((row) => row?.Sk?.startsWith('FILE#'));
+    expect(filePutsAfterAdd).toHaveLength(0);
+    const addedUpdate = mockUpdateItem.mock.calls
+      .map((c) => c[0])
+      .find((input) => String(unmarshall(input.Key).Sk).startsWith('FILE#'));
+    expect(addedUpdate?.UpdateExpression).toBe('SET TagIds = :tids, ModifiedAt = :ma, ModifiedBy = :mb');
+    expect(unmarshall(addedUpdate.ExpressionAttributeValues)[':tids']).toEqual([tagId, extraId]);
 
-    mockPutItem.mockClear();
+    mockUpdateItem.mockClear();
     mockDeleteItem.mockClear();
     await svc.applyTagsToFiles(lab, 'user-1', bucket, [key], [], [tagId]);
 
     expect(mockDeleteItem.mock.calls.some((c) => String(unmarshall(c[0].Key).Sk).startsWith('FILE#'))).toBe(false);
-    const filePuts = mockPutItem.mock.calls
-      .map((c) => (c[0]?.Item ? (unmarshall(c[0].Item) as { Sk?: string; SampleIds?: string[]; TagIds?: string[] }) : undefined))
-      .filter((row) => row?.Sk?.startsWith('FILE#'));
-    expect(filePuts).toEqual([expect.objectContaining({ SampleIds: ['sample-1'], TagIds: [] })]);
+    const removedUpdate = mockUpdateItem.mock.calls
+      .map((c) => c[0])
+      .find((input) => String(unmarshall(input.Key).Sk).startsWith('FILE#'));
+    expect(unmarshall(removedUpdate.ExpressionAttributeValues)[':tids']).toEqual([]);
   });
 
   it('rejects adding more than one batch tag in a single request', async () => {
@@ -713,7 +718,7 @@ describe('LaboratoryDataTaggingService preserves FILE rows when run usage histor
     (svc as unknown as { updateItem: typeof mockUpdateItem }).updateItem = mockUpdateItem;
   });
 
-  it('rewrites the FILE row with empty TagIds when all tags are removed but usages remain', async () => {
+  it('keeps the FILE row when all tags are removed but usages remain', async () => {
     const lab = labFixture();
     const bucket = lab.S3Bucket!;
     const key = 'org-1/lab-1/preserved.fq.gz';
@@ -766,12 +771,15 @@ describe('LaboratoryDataTaggingService preserves FILE rows when run usage histor
       }),
     ).toBe(false);
 
-    const filePut = mockPutItem.mock.calls
-      .map((c) => unmarshall(c[0].Item) as { Sk?: string; TagIds?: string[]; LaboratoryRunUsages?: unknown })
-      .find((row) => row.Sk === `FILE#${ref}`);
-    expect(filePut).toBeDefined();
-    expect(filePut!.TagIds).toEqual([]);
-    expect(filePut!.LaboratoryRunUsages).toBeDefined();
+    const filePuts = mockPutItem.mock.calls
+      .map((c) => (c[0]?.Item ? (unmarshall(c[0].Item) as { Sk?: string }) : undefined))
+      .filter((row) => row?.Sk === `FILE#${ref}`);
+    expect(filePuts).toHaveLength(0);
+    const update = mockUpdateItem.mock.calls
+      .map((c) => c[0])
+      .find((input) => unmarshall(input.Key).Sk === `FILE#${ref}`);
+    expect(update?.UpdateExpression).toBe('SET TagIds = :tids, ModifiedAt = :ma, ModifiedBy = :mb');
+    expect(unmarshall(update.ExpressionAttributeValues)[':tids']).toEqual([]);
   });
 });
 
