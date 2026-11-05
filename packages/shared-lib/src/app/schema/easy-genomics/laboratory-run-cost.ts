@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RunLimitVerdictSchema } from './laboratory-run-limits';
 
 /**
  * Pre-run input features persisted at create-laboratory-run for historical
@@ -89,6 +90,8 @@ export const EstimateRunCostResponseSchema = z
     label: z.string(),
     disclaimer: z.string(),
     exclusions: z.array(z.string()),
+    /** Present only when the lab has at least one run limit amount set. */
+    limitVerdict: RunLimitVerdictSchema.optional(),
   })
   .strict();
 export type EstimateRunCostResponse = z.infer<typeof EstimateRunCostResponseSchema>;
