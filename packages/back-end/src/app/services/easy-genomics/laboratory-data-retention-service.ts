@@ -153,6 +153,7 @@ export class LaboratoryDataRetentionService {
   private async loadFileRowIndex(laboratory: Laboratory): Promise<FileRowIndex> {
     const rows = await this.taggingService.listAllFileRowsForLab(laboratory.LaboratoryId);
     const permanentTagId = permanentTagIdForLaboratory(laboratory.LaboratoryId);
+    const permanentSampleIds = await this.taggingService.listPermanentSampleIds(laboratory.LaboratoryId);
 
     const trackedKeys = new Set<string>();
     const permanentKeys = new Set<string>();
@@ -162,7 +163,9 @@ export class LaboratoryDataRetentionService {
       if (!row.ObjectKey) continue;
       trackedKeys.add(row.ObjectKey);
       refByKey.set(row.ObjectKey, row.Ref);
-      if ((row.TagIds || []).includes(permanentTagId)) permanentKeys.add(row.ObjectKey);
+      const taggedPermanent = (row.TagIds || []).includes(permanentTagId);
+      const samplePermanent = (row.SampleIds || []).some((id) => permanentSampleIds.has(id));
+      if (taggedPermanent || samplePermanent) permanentKeys.add(row.ObjectKey);
     }
 
     return { rows, trackedKeys, permanentKeys, refByKey };
@@ -190,7 +193,8 @@ export class LaboratoryDataRetentionService {
 
       if (!hasWorkflowTag) continue;
       if (hasUsages) continue;
-      if (tagIds.has(permanentTagId)) {
+      // File tag, or a linked sample that is still permanent. Unmarking one sample does not clear the other.
+      if (tagIds.has(permanentTagId) || (!!row.ObjectKey && fileRows.permanentKeys.has(row.ObjectKey))) {
         stats.permanentProtected++;
         continue;
       }

@@ -191,6 +191,60 @@ describe('LaboratoryDataTaggingService.applyTagsToFiles', () => {
     expect(fileRow.TagIds).toContain(tagId);
   });
 
+  it('keeps SampleIds on a linked file when a tag is added and when the last tag is removed', async () => {
+    const lab = labFixture();
+    const bucket = lab.S3Bucket!;
+    const key = 'org-1/lab-1/linked.fq.gz';
+    const tagId = 'tag-uuid-2';
+    const extraId = 'tag-uuid-3';
+    const ref = encodeS3ObjectRef(bucket, key);
+
+    mockGetItem.mockImplementation(async (input: { Key?: Record<string, AttributeValue> }) => {
+      const k = unmarshall(input.Key as Record<string, AttributeValue>) as { Sk?: string };
+      if (k.Sk === `TAG#${tagId}` || k.Sk === `TAG#${extraId}`) {
+        return {
+          Item: marshall({
+            LaboratoryId: lab.LaboratoryId,
+            Sk: k.Sk,
+            TagId: k.Sk?.slice('TAG#'.length),
+            Name: 'Beta',
+            ColorHex: '#AABBCC',
+            FileCount: 1,
+          }),
+        };
+      }
+      if (k.Sk === `FILE#${ref}`) {
+        return {
+          Item: marshall({
+            LaboratoryId: lab.LaboratoryId,
+            Sk: k.Sk,
+            S3Bucket: bucket,
+            ObjectKey: key,
+            TagIds: [tagId],
+            SampleIds: ['sample-1'],
+          }),
+        };
+      }
+      return {};
+    });
+
+    await svc.applyTagsToFiles(lab, 'user-1', bucket, [key], [extraId], []);
+    const added = mockPutItem.mock.calls
+      .map((c) => (c[0]?.Item ? (unmarshall(c[0].Item) as { Sk?: string; SampleIds?: string[] }) : undefined))
+      .find((row) => row?.Sk?.startsWith('FILE#'));
+    expect(added?.SampleIds).toEqual(['sample-1']);
+
+    mockPutItem.mockClear();
+    mockDeleteItem.mockClear();
+    await svc.applyTagsToFiles(lab, 'user-1', bucket, [key], [], [tagId]);
+
+    expect(mockDeleteItem.mock.calls.some((c) => String(unmarshall(c[0].Key).Sk).startsWith('FILE#'))).toBe(false);
+    const filePuts = mockPutItem.mock.calls
+      .map((c) => (c[0]?.Item ? (unmarshall(c[0].Item) as { Sk?: string; SampleIds?: string[]; TagIds?: string[] }) : undefined))
+      .filter((row) => row?.Sk?.startsWith('FILE#'));
+    expect(filePuts).toEqual([expect.objectContaining({ SampleIds: ['sample-1'], TagIds: [] })]);
+  });
+
   it('rejects adding more than one batch tag in a single request', async () => {
     const lab = labFixture();
     const bucket = lab.S3Bucket!;
@@ -1224,43 +1278,69 @@ describe('LaboratoryDataTaggingService.applyTagsToSamples', () => {
     );
   });
 
-  it('copies the permanent tag onto the sample files', async () => {
+  it('stores Permanent on the sample and does not rewrite file rows', async () => {
+    const permanentId = svc.getPermanentTagId('lab-1');
     (svc as unknown as { getTagRow: jest.Mock }).getTagRow = jest.fn().mockResolvedValue({
-      TagId: 'perm-1',
+      TagId: permanentId,
       Kind: 'permanent',
       Name: 'Permanent',
     });
     mockGetItem.mockResolvedValue({
       Item: marshall({ LaboratoryId: 'lab-1', Sk: 'SAMPLE#set-1', SampleId: 'set-1', TagIds: [] }),
     });
-    (svc as unknown as { queryItems: jest.Mock }).queryItems = jest.fn().mockResolvedValue({
-      Items: [marshall({ S3Bucket: 'my-bucket', ObjectKey: 'org-1/lab-1/reads.fq' })],
-    });
-    const applyFiles = jest.spyOn(svc, 'applyTagsToFiles').mockResolvedValue(undefined);
+    const applyFiles = jest.spyOn(svc, 'applyTagsToFiles');
 
-    await svc.applyTagsToSamples(labFixture(), 'user-1', ['set-1'], ['perm-1'], []);
+    await svc.applyTagsToSamples(labFixture(), 'user-1', ['set-1'], [permanentId], []);
 
-    expect(applyFiles).toHaveBeenCalledWith(
-      expect.objectContaining({ LaboratoryId: 'lab-1' }),
-      'user-1',
-      'my-bucket',
-      ['org-1/lab-1/reads.fq'],
-      ['perm-1'],
-      [],
-    );
+    expect(applyFiles).not.toHaveBeenCalled();
     expect((svc as unknown as { putSequenceSetMapRow: jest.Mock }).putSequenceSetMapRow).not.toHaveBeenCalled();
+    const sampleUpdate = mockUpdateItem.mock.calls
+      .map((c) => c[0])
+      .find((input) => String(unmarshall(input.Key).Sk) === 'SAMPLE#set-1');
+    expect(unmarshall(sampleUpdate.ExpressionAttributeValues)[':tids']).toEqual([permanentId]);
+  });
+
+  it('removes Permanent from the sample without rewriting file rows', async () => {
+    const permanentId = svc.getPermanentTagId('lab-1');
+    (svc as unknown as { getTagRow: jest.Mock }).getTagRow = jest.fn().mockResolvedValue({
+      TagId: permanentId,
+      Kind: 'permanent',
+      Name: 'Permanent',
+    });
+    mockGetItem.mockResolvedValue({
+      Item: marshall({
+        LaboratoryId: 'lab-1',
+        Sk: 'SAMPLE#set-1',
+        SampleId: 'set-1',
+        TagIds: [permanentId],
+      }),
+    });
+    const applyFiles = jest.spyOn(svc, 'applyTagsToFiles');
+
+    await svc.applyTagsToSamples(labFixture(), 'user-1', ['set-1'], [], [permanentId]);
+
+    expect(applyFiles).not.toHaveBeenCalled();
+    const sampleUpdate = mockUpdateItem.mock.calls
+      .map((c) => c[0])
+      .find((input) => String(unmarshall(input.Key).Sk) === 'SAMPLE#set-1');
+    expect(unmarshall(sampleUpdate.ExpressionAttributeValues)[':tids']).toEqual([]);
   });
 });
 
-describe('LaboratoryDataTaggingService.sampleIdsWithPermanentFiles', () => {
-  it('collects sample ids from files that already carry the permanent tag', async () => {
+describe('LaboratoryDataTaggingService.listPermanentSampleIds', () => {
+  it('returns only samples whose row carries the permanent tag id', async () => {
     const svc = new LaboratoryDataTaggingService();
-    jest.spyOn(svc, 'listFilesByTag').mockResolvedValue({ Files: [{ Bucket: 'b', Key: 'org/lab/reads.fq' }] });
-    (svc as unknown as { getFileRow: jest.Mock }).getFileRow = jest.fn().mockResolvedValue({ SampleIds: ['sample-1'] });
+    const permanentId = svc.getPermanentTagId('lab-1');
+    (svc as unknown as { queryItems: jest.Mock }).queryItems = jest.fn().mockResolvedValue({
+      Items: [
+        marshall({ Sk: 'SAMPLE#keep', SampleId: 'keep', TagIds: [permanentId] }),
+        marshall({ Sk: 'SAMPLE#plain', SampleId: 'plain', TagIds: ['other'] }),
+      ],
+    });
 
-    const ids = await svc.sampleIdsWithPermanentFiles('lab-1');
+    const ids = await svc.listPermanentSampleIds('lab-1');
 
-    expect([...ids]).toEqual(['sample-1']);
+    expect([...ids]).toEqual(['keep']);
   });
 });
 

@@ -141,11 +141,6 @@ export class LaboratorySampleService extends DynamoDBService {
       startKey = response.LastEvaluatedKey as Record<string, unknown> | undefined;
     } while (startKey);
 
-    const permanentFromFiles = await this.taggingService.sampleIdsWithPermanentFiles(laboratoryId);
-    for (const set of sets) {
-      if (permanentFromFiles.has(set.SampleId)) set.IsPermanent = true;
-    }
-
     sets.sort((a, b) => a.Name.localeCompare(b.Name));
     return { Samples: sets };
   }
@@ -264,17 +259,6 @@ export class LaboratorySampleService extends DynamoDBService {
     if (!existing) throw new SampleNotFoundError(setId);
     const addedKeys = await this.addFilesToSampleInternal(laboratory, userId, bucket, setId, keys);
     await this.updateSampleAfterFilesAdded(laboratory.LaboratoryId, existing, addedKeys, userId);
-    // Files joined later must carry the same Permanent tag or the retention sweep will delete them.
-    if (existing.IsPermanent && addedKeys.length) {
-      await this.taggingService.applyTagsToFiles(
-        laboratory,
-        userId,
-        bucket,
-        addedKeys,
-        [permanentTagIdForLaboratory(laboratory.LaboratoryId)],
-        [],
-      );
-    }
   }
 
   public async createOrExtendSample(
