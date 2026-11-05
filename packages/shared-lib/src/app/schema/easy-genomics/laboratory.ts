@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LaboratoryRunLimitsSchema } from './laboratory-run-limits';
 
 export const LaboratorySchema = z
   .object({
@@ -65,6 +66,8 @@ export const LaboratorySchema = z
      * last completed task. Managed internally; not set via the create/update Laboratory APIs.
      */
     HealthOmicsRunCacheId: z.string().optional(),
+    /** Saved only through update-laboratory-run-limits, never through Create / Update. */
+    RunLimits: LaboratoryRunLimitsSchema.optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
@@ -153,6 +156,8 @@ export const ReadLaboratorySchema = z
     HasSeqeraLlmApiKey: z.boolean().optional(),
     HasMicroreactAccessToken: z.boolean().optional(),
     HealthOmicsRunCacheId: z.string().optional(),
+    /** Saved only through update-laboratory-run-limits, never through Create / Update. */
+    RunLimits: LaboratoryRunLimitsSchema.optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
