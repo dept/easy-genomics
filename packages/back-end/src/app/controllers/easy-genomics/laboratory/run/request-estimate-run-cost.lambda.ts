@@ -13,6 +13,7 @@ import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomic
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { RunCostEstimationService } from '@BE/services/easy-genomics/run-cost-estimation-service';
+import { RunLimitCheckService } from '@BE/services/easy-genomics/run-limit-check-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
@@ -21,12 +22,16 @@ import {
 
 const laboratoryService = new LaboratoryService();
 const runCostEstimationService = new RunCostEstimationService();
+const runLimitCheckService = new RunLimitCheckService();
 
 /**
  * POST /easy-genomics/laboratory/run/request-estimate-run-cost?laboratoryId={id}
  *
  * Pre-run historical compute cost estimate. Read-only DynamoDB + optional S3
  * HeadObject/GetObject for input profile — never calls Cost Explorer.
+ *
+ * When the lab has run limits, the response also carries `limitVerdict`: the same verdict launch
+ * reaches, from the same server-derived inputs. Client-sent sizes never feed it.
  */
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -56,7 +61,18 @@ export const handler: Handler = async (
       throw new UnauthorizedAccessError();
     }
 
-    const response = await runCostEstimationService.estimate(laboratory, request);
+    const { platform, workflowExternalId, workflowVersionName, sampleSheetS3Url, settings } = request;
+    const [estimate, limitVerdict] = await Promise.all([
+      runCostEstimationService.estimate(laboratory, request),
+      runLimitCheckService.checkRunLimits(laboratory, {
+        platform,
+        workflowExternalId,
+        workflowVersionName,
+        sampleSheetS3Url,
+        settings,
+      }),
+    ]);
+    const response = limitVerdict ? { ...estimate, limitVerdict } : estimate;
     return buildResponse(200, JSON.stringify(response), event);
   } catch (err: any) {
     console.error(err);
