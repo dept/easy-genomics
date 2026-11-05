@@ -35,6 +35,7 @@
     buildSourcePrefix,
     buildSourceRootOptions,
     defaultS3ImportLabel,
+    folderSearchScopeNote,
     isSourceFolderMissing,
     type SourceRoot,
   } from '@FE/utils/data-collections-source-prefix';
@@ -90,6 +91,22 @@
     if (searchesWholeBucket.value) return 'from the bucket root';
     return selectedAllowedFolder.value ? `optional, inside ${selectedAllowedFolder.value}` : "inside this lab's folder";
   });
+
+  const folderScopeNote = computed(() => folderSearchScopeNote(searchesWholeBucket.value, selectedAllowedFolder.value));
+
+  const folderInfoOpen = ref(false);
+
+  /**
+   * Keyboard toggle for the hover popover. Clicks on the trigger are prevented, so a hover followed by a click (or a
+   * tap after touchstart) doesn't toggle the panel straight back shut; that also stops Headless from handling a
+   * synthetic click, so the key toggles the open state directly.
+   */
+  function onFolderInfoKeydown(e: KeyboardEvent): void {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    e.stopPropagation();
+    folderInfoOpen.value = !folderInfoOpen.value;
+  }
 
   watch(sourceBucket, () => {
     sourceRoot.value = 'laboratory';
@@ -596,7 +613,59 @@
             :required="!selectedAllowedFolder"
             :help="sourceFolderMissing ? 'Enter a folder to continue.' : undefined"
           >
-            <UInput v-model="sourcePrefix" placeholder="sequencing/run-1/" class="font-mono" />
+            <template #label>
+              Folder
+              <UPopover
+                v-model:open="folderInfoOpen"
+                mode="hover"
+                :popper="{ placement: 'bottom-start' }"
+                :ui="{ background: 'bg-zinc-900', ring: 'ring-0', rounded: 'rounded-xl', shadow: 'shadow-xl' }"
+                class="ml-1 inline-flex align-middle"
+              >
+                <span
+                  tabindex="0"
+                  class="focus-visible:ring-primary-500 inline-flex rounded-full focus:outline-none focus-visible:ring-2"
+                  aria-label="How the folder search works"
+                  @click.prevent
+                  @keydown="onFolderInfoKeydown"
+                >
+                  <UIcon name="i-heroicons-information-circle" class="text-muted h-4 w-4" aria-hidden="true" />
+                </span>
+                <template #panel>
+                  <div class="w-[min(23rem,calc(100vw-2rem))] text-white">
+                    <div class="space-y-3 p-4">
+                      <h3 class="text-sm font-semibold">Searches sub-folders</h3>
+                      <p class="text-[13px] leading-relaxed text-zinc-200">
+                        We search this folder, the folders inside it, and the folders inside those. Deeper folders, and
+                        any
+                        <code class="font-mono">results/</code>
+                        ,
+                        <code class="font-mono">work/</code>
+                        or
+                        <code class="font-mono">workflow-definitions/</code>
+                        folder, are skipped. Pick the lowest folder that holds all your files to keep unrelated runs
+                        out.
+                      </p>
+                      <pre class="whitespace-pre-wrap rounded-lg bg-white/5 px-3 py-2.5 font-mono text-xs leading-6">
+sequencing/run-1/ <span class="text-green-400">✓</span>
+  sample_A_R1.fastq.gz <span class="text-green-400">✓</span>
+  lane2/sample_B_R1.fastq.gz <span class="text-green-400">✓</span>
+sequencing/run-2/ (not searched)</pre>
+                    </div>
+                    <p class="break-words border-t border-white/10 px-4 py-3 text-xs leading-relaxed text-zinc-400">
+                      {{ folderScopeNote }}
+                    </p>
+                  </div>
+                </template>
+              </UPopover>
+            </template>
+            <UInput
+              v-model="sourcePrefix"
+              placeholder="sequencing/run-1/"
+              class="font-mono"
+              aria-label="Folder"
+              :aria-required="!selectedAllowedFolder"
+            />
           </UFormGroup>
           <p v-if="sourceBucket" class="text-text-muted mt-1 break-all font-mono text-xs" role="status">
             Searches {{ confirmSourceLabel }}

@@ -681,6 +681,7 @@
               :workflow-name="labRun.WorkflowName"
               :can-edit="canDeclareKeyOutputs"
               :delivery="keyOutputDelivery"
+              :run="labRun"
               @edit="isDeclaringKeyOutputs = true"
             />
             <div v-else-if="canDeclareKeyOutputs && !hasKeyOutputs" class="flex justify-end">
