@@ -251,10 +251,14 @@
       jsonError.value = parsed.error;
       return;
     }
+    // Prefer draft KeyOutputIds so Microreact roles survive an unchanged re-save.
+    // Match parsed JSON rows to draft by Pattern when the user edited JSON.
+    const draftIdByPattern = new Map(draft.value.map((item) => [item.Pattern.trim(), item.KeyOutputId]));
     const saved = await keyOutputsStore.save(
       props.labId,
       run.WorkflowExternalId,
       parsed.outputs.map((item) => ({
+        KeyOutputId: draftIdByPattern.get(item.Pattern.trim()),
         Label: item.Label.trim(),
         Pattern: item.Pattern.trim(),
         ExamplePath: item.ExamplePath,
