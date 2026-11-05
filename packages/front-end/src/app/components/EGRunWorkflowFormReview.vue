@@ -1,7 +1,6 @@
 <script setup lang="ts">
   import { useRunStore, useToastStore, useLabsStore } from '@FE/stores';
   import { ButtonSizeEnum } from '@FE/types/buttons';
-  import type { EstimateRunCostResponse } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
   import { prepareWorkflowLaunchParams } from '@easy-genomics/shared-lib/src/app/utils/coerce-numeric-workflow-params';
 
   const props = defineProps<{
@@ -29,8 +28,6 @@
 
   const labName = useLabsStore().labs[props.labId]?.Name ?? '';
   const isLaunchingRun = ref(false);
-  const costEstimate = ref<EstimateRunCostResponse | null>(null);
-  const costEstimateLoading = ref(false);
   const emit = defineEmits(['submit-launch-request', 'submit-launch-request-error', 'has-launched', 'previous-tab']);
 
   const schema = JSON.parse(JSON.stringify(props.schema));
@@ -39,24 +36,19 @@
     return prepareWorkflowLaunchParams(props.params);
   }
 
-  onMounted(async () => {
-    costEstimateLoading.value = true;
-    try {
-      costEstimate.value = await $api.labs.estimateRunCost(props.labId, {
-        platform: 'AWS HealthOmics',
-        workflowExternalId: props.workflowId,
-        workflowVersionName: props.workflowVersionName,
-        inputFileKeys: wipOmicsRun.value?.inputFileKeys,
-        sampleSheetS3Url: (props.params as any)?.input,
-        settings: paramsForLaunch(),
-      });
-    } catch (error) {
-      console.warn('Pre-run cost estimate unavailable:', error);
-      costEstimate.value = null;
-    } finally {
-      costEstimateLoading.value = false;
-    }
-  });
+  const { costEstimate, costEstimateLoading, review, loadEstimate, handleLaunchError } = useRunLimitReview(
+    props.labId,
+    () => ({
+      platform: 'AWS HealthOmics',
+      workflowExternalId: props.workflowId,
+      workflowVersionName: props.workflowVersionName,
+      inputFileKeys: wipOmicsRun.value?.inputFileKeys,
+      sampleSheetS3Url: (props.params as any)?.input,
+      settings: paramsForLaunch(),
+    }),
+  );
+
+  onMounted(loadEstimate);
 
   async function launchRun() {
     emit('submit-launch-request');
@@ -87,7 +79,9 @@
         externalRunId = startOmicsRes.id;
       } catch (error) {
         console.error('Error submitting run to AWS HealthOmics:', error);
-        useToastStore().error('Failed to submit run to AWS HealthOmics. Please try again.');
+        if (!handleLaunchError(error)) {
+          useToastStore().error('Failed to submit run to AWS HealthOmics. Please try again.');
+        }
         emit('submit-launch-request-error');
         return;
       }
@@ -165,9 +159,11 @@
             {{ wipOmicsRun.description }}
           </dd>
         </div>
+        <EGRunLimitRows :review="review" />
         <EGRunCostRow :estimate="costEstimate" :loading="costEstimateLoading" class="border-b" />
       </dl>
     </section>
+    <EGRunLimitMessage :message="review.message" class="mt-4" />
   </EGCard>
   <EGCard>
     <h3 class="text-muted text-base font-medium">Selected Workflow Parameters</h3>
@@ -187,7 +183,13 @@
 
   <div class="mt-6 flex justify-between">
     <EGButton :size="ButtonSizeEnum.enum.sm" variant="secondary" label="Previous step" @click="emit('previous-tab')" />
-    <EGButton :loading="isLaunchingRun" :size="ButtonSizeEnum.enum.sm" @click="launchRun" label="Launch Workflow Run" />
+    <EGButton
+      :loading="isLaunchingRun"
+      :disabled="review.launchDisabled"
+      :size="ButtonSizeEnum.enum.sm"
+      @click="launchRun"
+      :label="review.launchAnyway ? 'Launch anyway' : 'Launch Workflow Run'"
+    />
   </div>
 </template>
 
