@@ -2404,6 +2404,15 @@ export class EasyGenomicsNestedStack extends NestedStack {
         resources: laboratoryDataTaggingDynamoResources,
         actions: laboratoryDataTaggingDynamoActions,
       }),
+      new PolicyStatement({
+        // listFileTags hides usages whose run row is gone. That lookup is a Query on the run table.
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
     ]);
 
     // /easy-genomics/data-collections/add-tags-to-files
@@ -2563,8 +2572,9 @@ export class EasyGenomicsNestedStack extends NestedStack {
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
         ],
-        // Query is the live-run fence. UpdateItem stamps ExpiresAt from the lab retention policy.
-        actions: ['dynamodb:Query', 'dynamodb:UpdateItem'],
+        // Query is the live-run fence. GetItem re-checks a usage's run immediately before delete.
+        // UpdateItem stamps ExpiresAt from the lab retention policy.
+        actions: ['dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:UpdateItem'],
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
