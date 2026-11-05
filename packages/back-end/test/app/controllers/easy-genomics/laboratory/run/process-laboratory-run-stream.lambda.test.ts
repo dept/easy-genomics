@@ -57,7 +57,7 @@ describe('process-laboratory-run-stream.lambda', () => {
     });
   });
 
-  it('removes per-file run usage entries on REMOVE events with preserveEmptyFileRow', async () => {
+  it('leaves per-file run usage entries in place so the sweep can still recognise untagged inputs', async () => {
     const event = buildEvent([
       {
         eventName: 'REMOVE',
@@ -71,10 +71,7 @@ describe('process-laboratory-run-stream.lambda', () => {
 
     await handler(event, ctx, jest.fn());
 
-    expect(mockRemove).toHaveBeenCalledTimes(1);
-    const [, , runIdMap, options] = mockRemove.mock.calls[0];
-    expect(runIdMap).toEqual({ 'run-1': ['org-1/lab-1/a.fq.gz', 'org-1/lab-1/b.fq.gz'] });
-    expect(options).toEqual({ preserveEmptyFileRow: true });
+    expect(mockRemove).not.toHaveBeenCalled();
   });
 
   it('logs TTL provenance when principalId === dynamodb.amazonaws.com', async () => {
@@ -146,12 +143,17 @@ describe('process-laboratory-run-stream.lambda', () => {
     expect(mockRemove).not.toHaveBeenCalled();
   });
 
-  it('rethrows errors from the tagging service so the event source can retry / DLQ', async () => {
-    mockRemove.mockRejectedValueOnce(new Error('ddb explode'));
+  it('rethrows errors from output bookkeeping so the event source can retry / DLQ', async () => {
+    mockRecordExpiredRunOutput.mockRejectedValueOnce(new Error('ddb explode'));
     const event = buildEvent([
       {
         eventName: 'REMOVE',
-        oldImage: { LaboratoryId: 'lab-1', RunId: 'run-6', InputFileKeys: ['org-1/lab-1/a.fq.gz'] },
+        oldImage: {
+          LaboratoryId: 'lab-1',
+          RunId: 'run-6',
+          InputFileKeys: ['org-1/lab-1/a.fq.gz'],
+          OutputS3Url: 's3://my-bucket/org-1/lab-1/aws-healthomics/run-6/results',
+        },
       },
     ]);
     await expect(handler(event, ctx, jest.fn())).rejects.toThrow(/ddb explode/);
@@ -185,7 +187,7 @@ describe('process-laboratory-run-stream.lambda', () => {
       });
     });
 
-    it('records outputs alongside the per-file unlinking when the run had inputs', async () => {
+    it('records outputs when the run had inputs and does not clear those inputs usages', async () => {
       const event = buildEvent([
         {
           eventName: 'REMOVE',
@@ -200,7 +202,7 @@ describe('process-laboratory-run-stream.lambda', () => {
 
       await handler(event, ctx, jest.fn());
 
-      expect(mockRemove).toHaveBeenCalledTimes(1);
+      expect(mockRemove).not.toHaveBeenCalled();
       expect(mockRecordExpiredRunOutput).toHaveBeenCalledTimes(1);
     });
 

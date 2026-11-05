@@ -16,6 +16,8 @@ const mockListExpiredRunOutputs: jest.Mock = jest.fn();
 const mockMarkExpiredRunOutputCompleted: jest.Mock = jest.fn();
 const mockRecordExpiredRunOutput: jest.Mock = jest.fn();
 const mockListAllRunsForLaboratory: jest.Mock = jest.fn();
+const mockUpdateRetentionMetadata: jest.Mock = jest.fn();
+const mockUpdateRunUsageExpiresAt: jest.Mock = jest.fn();
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service', () => ({
   LaboratoryService: jest.fn().mockImplementation(() => ({
@@ -26,6 +28,7 @@ jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service', ()
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-run-service', () => ({
   LaboratoryRunService: jest.fn().mockImplementation(() => ({
     listAllRunsForLaboratory: mockListAllRunsForLaboratory,
+    updateRetentionMetadata: mockUpdateRetentionMetadata,
   })),
 }));
 
@@ -53,6 +56,7 @@ jest.mock('../../../../../src/app/services/easy-genomics/laboratory-data-tagging
       deleteFileRowAndAssociations: mockDeleteRow,
       listTags: mockListTags,
       listExpiredRunOutputsForLab: mockListExpiredRunOutputs,
+      updateRunUsageExpiresAt: mockUpdateRunUsageExpiresAt,
       markExpiredRunOutputCompleted: mockMarkExpiredRunOutputCompleted,
       recordExpiredRunOutput: mockRecordExpiredRunOutput,
       assertLaboratoryHasS3BucketAccess: (laboratory: unknown, bucket: string) =>
@@ -74,6 +78,7 @@ jest.mock('../../../../../src/app/services/s3-service', () => ({
 }));
 
 import { handler } from '../../../../../src/app/controllers/easy-genomics/data-collections/process-expired-laboratory-data.lambda';
+import { orderedLaboratoriesForSweep } from '../../../../../src/app/services/easy-genomics/laboratory-data-retention-service';
 import { permanentTagIdForLaboratory } from '../../../../../src/app/services/easy-genomics/laboratory-data-tagging-service';
 
 const ctx = {} as Context;
@@ -107,6 +112,8 @@ function resetMocks(): void {
   mockMarkExpiredRunOutputCompleted.mockReset().mockResolvedValue(undefined);
   mockRecordExpiredRunOutput.mockReset().mockResolvedValue(undefined);
   mockListAllRunsForLaboratory.mockReset().mockResolvedValue([]);
+  mockUpdateRetentionMetadata.mockReset().mockResolvedValue({});
+  mockUpdateRunUsageExpiresAt.mockReset().mockResolvedValue(undefined);
   mockListS3AccessByLaboratoryId
     .mockReset()
     .mockResolvedValue([{ LaboratoryId: 'lab-1', OrganizationId: 'org-1', BucketName: 'my-bucket' }]);
@@ -143,7 +150,10 @@ describe('process-expired-laboratory-data.lambda eligibility', () => {
     expect(mockDeleteRow).toHaveBeenCalledWith('lab-1', 'r1');
   });
 
-  it('skips files that still have at least one referencing run', async () => {
+  it('skips files that a surviving run still references', async () => {
+    mockListAllRunsForLaboratory.mockResolvedValue([
+      { RunId: 'run-1', LaboratoryId: 'lab-1', Status: 'RUNNING' },
+    ]);
     mockListFileRows.mockResolvedValueOnce([
       {
         Ref: 'r1',
@@ -156,6 +166,128 @@ describe('process-expired-laboratory-data.lambda eligibility', () => {
     await handler(event, ctx, jest.fn());
     expect(mockDeleteObject).not.toHaveBeenCalled();
     expect(mockDeleteRow).not.toHaveBeenCalled();
+  });
+
+  it('deletes an untagged file whose only usage points at a run that no longer exists', async () => {
+    mockListFileRows.mockResolvedValueOnce([
+      {
+        Ref: 'r1',
+        S3Bucket: 'my-bucket',
+        ObjectKey: 'org-1/lab-1/a.fq.gz',
+        TagIds: [],
+        LaboratoryRunUsages: { 'gone-run': { RunId: 'gone-run' } },
+      },
+    ]);
+    await handler(event, ctx, jest.fn());
+    expect(mockDeleteObject).toHaveBeenCalledWith({ Bucket: 'my-bucket', Key: 'org-1/lab-1/a.fq.gz' });
+    expect(mockDeleteRow).toHaveBeenCalledWith('lab-1', 'r1');
+  });
+
+  it('keeps an untagged file while one of its runs is still alive', async () => {
+    mockListAllRunsForLaboratory.mockResolvedValue([
+      { RunId: 'run-live', LaboratoryId: 'lab-1', Status: 'COMPLETED', TerminalAt: '2099-01-01T00:00:00.000Z', ExpiresAt: 4_000_000_000 },
+    ]);
+    mockListFileRows.mockResolvedValueOnce([
+      {
+        Ref: 'r1',
+        S3Bucket: 'my-bucket',
+        ObjectKey: 'org-1/lab-1/a.fq.gz',
+        TagIds: [],
+        LaboratoryRunUsages: {
+          'gone-run': { RunId: 'gone-run' },
+          'run-live': { RunId: 'run-live' },
+        },
+      },
+    ]);
+    await handler(event, ctx, jest.fn());
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+  });
+
+  it('deletes an old untagged file left in an expired run folder', async () => {
+    const key = 'org-1/lab-1/aws-healthomics/11111111-1111-4111-8111-111111111111/reads.fq.gz';
+    mockListFileRows.mockResolvedValueOnce([
+      { Ref: 'r1', S3Bucket: 'my-bucket', ObjectKey: key, TagIds: [], LaboratoryRunUsages: undefined },
+    ]);
+    mockListAllObjectsUnderPrefix.mockResolvedValueOnce([
+      { Key: key, LastModified: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000) },
+    ]);
+    await handler(event, ctx, jest.fn());
+    expect(mockDeleteObject).toHaveBeenCalledWith({ Bucket: 'my-bucket', Key: key });
+  });
+
+  it('keeps a recent untagged file in a run folder that has no run record yet', async () => {
+    const key = 'org-1/lab-1/aws-healthomics/11111111-1111-4111-8111-111111111111/reads.fq.gz';
+    mockListFileRows.mockResolvedValueOnce([
+      { Ref: 'r1', S3Bucket: 'my-bucket', ObjectKey: key, TagIds: [], LaboratoryRunUsages: undefined },
+    ]);
+    mockListAllObjectsUnderPrefix.mockResolvedValueOnce([{ Key: key, LastModified: new Date() }]);
+    await handler(event, ctx, jest.fn());
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a workflow-definition upload as an expired run input', async () => {
+    const key = 'org-1/lab-1/workflow-definitions/11111111-1111-4111-8111-111111111111/main.nf';
+    mockListFileRows.mockResolvedValueOnce([
+      { Ref: 'r1', S3Bucket: 'my-bucket', ObjectKey: key, TagIds: [], LaboratoryRunUsages: undefined },
+    ]);
+    await handler(event, ctx, jest.fn());
+    expect(mockListAllObjectsUnderPrefix).not.toHaveBeenCalled();
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+  });
+
+  it('does not treat usages as stale when the run list cannot be loaded', async () => {
+    mockListAllRunsForLaboratory.mockRejectedValueOnce(new Error('DynamoDB throttled'));
+    mockListFileRows.mockResolvedValueOnce([
+      {
+        Ref: 'r1',
+        S3Bucket: 'my-bucket',
+        ObjectKey: 'org-1/lab-1/a.fq.gz',
+        TagIds: [],
+        LaboratoryRunUsages: { 'run-1': { RunId: 'run-1' } },
+      },
+    ]);
+    await handler(event, ctx, jest.fn());
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+  });
+
+  it('stamps ExpiresAt on a terminal run the apply API never reached', async () => {
+    mockListAllRunsForLaboratory.mockResolvedValue([
+      {
+        RunId: 'old-run',
+        LaboratoryId: 'lab-1',
+        Status: 'COMPLETED',
+        TerminalAt: '2020-01-01T00:00:00.000Z',
+        CreatedAt: '2020-01-01T00:00:00.000Z',
+        InputFileKeys: ['org-1/lab-1/a.fq.gz'],
+      },
+    ]);
+    await handler(event, ctx, jest.fn());
+    expect(mockUpdateRetentionMetadata).toHaveBeenCalledTimes(1);
+    expect(mockUpdateRetentionMetadata.mock.calls[0][0].RunId).toBe('old-run');
+    expect(mockUpdateRetentionMetadata.mock.calls[0][0].set.ExpiresAt).toEqual(expect.any(Number));
+    expect(mockUpdateRunUsageExpiresAt).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops before the timeout and leaves the deletion for the next run', async () => {
+    mockListFileRows.mockResolvedValue([
+      {
+        Ref: 'r1',
+        S3Bucket: 'my-bucket',
+        ObjectKey: 'org-1/lab-1/a.fq.gz',
+        TagIds: ['wf-1'],
+      },
+    ]);
+    const expired = { getRemainingTimeInMillis: () => 0 } as Context;
+    await handler(event, expired, jest.fn());
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+  });
+
+  it('rotates which laboratory is visited first so one large lab cannot starve the rest', () => {
+    const labs = [{ LaboratoryId: 'a' }, { LaboratoryId: 'b' }, { LaboratoryId: 'c' }];
+    const first = orderedLaboratoriesForSweep(labs, '2026-01-01T04:00:00.000Z');
+    const next = orderedLaboratoriesForSweep(labs, '2026-01-02T04:00:00.000Z');
+    expect(first.map((item) => item.LaboratoryId).sort()).toEqual(['a', 'b', 'c']);
+    expect(next).toEqual([...first.slice(1), first[0]]);
   });
 
   it('skips never-used orphans (no workflow tag, no usages)', async () => {

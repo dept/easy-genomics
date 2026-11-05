@@ -1,8 +1,9 @@
-import { Handler, ScheduledEvent } from 'aws-lambda';
+import { Context, Handler, ScheduledEvent } from 'aws-lambda';
 import {
   LaboratoryDataRetentionService,
   RetentionSweepOptions,
   emptyRetentionSweepStats,
+  orderedLaboratoriesForSweep,
 } from '@BE/services/easy-genomics/laboratory-data-retention-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 
@@ -13,6 +14,10 @@ const METRIC_NAMESPACE = 'EasyGenomics/DataRetention';
 
 const DEFAULT_MAX_DELETES_PER_LAB_SWEEP = 25_000;
 const DEFAULT_MAX_ORPHAN_FOLDERS_PER_LAB_SWEEP = 500;
+/** Leave time to log the summary before the 15-minute Lambda is killed. */
+const DEADLINE_RESERVE_MS = 15_000;
+/** First retention-metadata pass per lab, so deletion still runs the same night. */
+const RETENTION_WRITE_SLICE_MS = 60_000;
 
 /**
  * Scheduled (daily) Lambda that performs the S3 deletion half of the run-retention cascade. The
@@ -29,12 +34,18 @@ const DEFAULT_MAX_ORPHAN_FOLDERS_PER_LAB_SWEEP = 500;
  *
  * `MAX_DELETES_PER_LAB_SWEEP` caps objects deleted per lab per invocation (shared across input
  * files and outputs); `0` is a kill switch. `MAX_ORPHAN_FOLDERS_PER_LAB_SWEEP` caps how many
- * previously-unseen run folders one invocation inspects per lab. Metrics are emitted as
- * CloudWatch EMF under `EasyGenomics/DataRetention`.
+ * previously-unseen run folders one invocation inspects per lab. Both caps resume on the next
+ * run. Laboratories are rotated by day so one large lab cannot starve the others, and the
+ * invocation stops before its timeout so the next run continues the remainder. Metrics are
+ * emitted as CloudWatch EMF under `EasyGenomics/DataRetention`.
  *
  * Triggered by an EventBridge Scheduled Rule (see `easy-genomics-nested-stack.ts`).
  */
-export const handler: Handler<ScheduledEvent, void> = async (event: ScheduledEvent): Promise<void> => {
+export const handler: Handler<ScheduledEvent, void> = async (
+  event: ScheduledEvent,
+  context: Context,
+): Promise<void> => {
+  const deadlineMs = deadlineFromContext(context);
   const options: RetentionSweepOptions = {
     dryRun: process.env.DRY_RUN !== 'false',
     maxDeletesPerLab: parseNumericEnv('MAX_DELETES_PER_LAB_SWEEP', DEFAULT_MAX_DELETES_PER_LAB_SWEEP),
@@ -44,6 +55,8 @@ export const handler: Handler<ScheduledEvent, void> = async (event: ScheduledEve
     ),
     outputDeletionEnabled: process.env.OUTPUT_DELETION_ENABLED === 'true',
     orphanReconciliationEnabled: process.env.ORPHAN_RECONCILIATION_ENABLED === 'true',
+    deadlineMs,
+    retentionWriteSliceMs: RETENTION_WRITE_SLICE_MS,
   };
 
   console.log('Starting expired laboratory data sweep', { ...options, eventId: event?.id, time: event?.time });
@@ -51,8 +64,12 @@ export const handler: Handler<ScheduledEvent, void> = async (event: ScheduledEve
   const totals = emptyRetentionSweepStats();
   let labsHitDeleteCap = 0;
 
-  const laboratories = await laboratoryService.listAllLaboratories();
+  const laboratories = orderedLaboratoriesForSweep(await laboratoryService.listAllLaboratories(), event?.time);
   for (const laboratory of laboratories) {
+    if (deadlineMs != null && Date.now() >= deadlineMs) {
+      console.warn('Sweep stopping before timeout; remaining laboratories continue on the next run.');
+      break;
+    }
     try {
       const stats = await retentionService.sweepLaboratory(laboratory, options);
       totals.eligible += stats.eligible;
@@ -67,6 +84,10 @@ export const handler: Handler<ScheduledEvent, void> = async (event: ScheduledEve
       totals.orphanFoldersRecorded += stats.orphanFoldersRecorded;
       totals.errors += stats.errors;
       if (stats.hitDeleteCap) labsHitDeleteCap++;
+      if (stats.stoppedForDeadline) {
+        console.warn('Sweep stopping before timeout; remaining laboratories continue on the next run.');
+        break;
+      }
     } catch (err) {
       console.error(`Sweep failed for lab ${laboratory.LaboratoryId} (continuing):`, err);
       totals.errors++;
@@ -95,6 +116,13 @@ export const handler: Handler<ScheduledEvent, void> = async (event: ScheduledEve
     LabsHitDeleteCap: labsHitDeleteCap,
   });
 };
+
+function deadlineFromContext(context: Context | undefined): number | undefined {
+  if (context == null || typeof context.getRemainingTimeInMillis !== 'function') return undefined;
+  const remaining = context.getRemainingTimeInMillis();
+  if (!Number.isFinite(remaining)) return undefined;
+  return Date.now() + Math.max(0, remaining - DEADLINE_RESERVE_MS);
+}
 
 /** Falls back to `fallback` for unset, empty, malformed or negative values. `0` is honoured. */
 function parseNumericEnv(name: string, fallback: number): number {

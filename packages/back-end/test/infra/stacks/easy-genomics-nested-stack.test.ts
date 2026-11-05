@@ -731,7 +731,7 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
       );
 
       expect(runTableQuery).toBeDefined();
-      expect(runTableQuery.Action).toEqual('dynamodb:Query');
+      expect(runTableQuery.Action).toEqual(expect.arrayContaining(['dynamodb:Query', 'dynamodb:UpdateItem']));
     });
 
     it('grants the stream lambda dynamodb:PutItem so it can record RUNOUTPUT# markers', () => {

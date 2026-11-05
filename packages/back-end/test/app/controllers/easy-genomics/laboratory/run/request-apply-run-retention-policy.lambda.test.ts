@@ -72,7 +72,7 @@ describe('request-apply-run-retention-policy.lambda', () => {
     mockUpdateRetention = jest.fn().mockResolvedValue({});
     mockQueryLab = jest.fn();
 
-    (LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>).prototype.queryByLaboratoryId =
+    (LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>).prototype.listAllRunsForLaboratory =
       mockQueryRuns;
     (LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>).prototype.updateRetentionMetadata =
       mockUpdateRetention;
@@ -113,5 +113,47 @@ describe('request-apply-run-retention-policy.lambda', () => {
     expect(result.statusCode).toBe(200);
     expect(mockUpdateRetention).not.toHaveBeenCalled();
     expect(propagateSpy).not.toHaveBeenCalled();
+    const body = JSON.parse(result.body);
+    expect(body.TerminalRuns).toBe(1);
+    expect(body.DryRun).toBe(true);
+  });
+
+  it('updates every terminal run returned by the full laboratory query, not only the first page', async () => {
+    mockQueryRuns.mockResolvedValue([
+      {
+        RunId: 'run-1',
+        LaboratoryId: LAB_ID,
+        OrganizationId: ORG_ID,
+        Status: 'COMPLETED',
+        TerminalAt: '2020-01-01T00:00:00.000Z',
+        CreatedAt: '2020-01-01T00:00:00.000Z',
+        InputFileKeys: [inputKey],
+      },
+      {
+        RunId: 'run-2',
+        LaboratoryId: LAB_ID,
+        OrganizationId: ORG_ID,
+        Status: 'FAILED',
+        TerminalAt: '2020-06-01T00:00:00.000Z',
+        CreatedAt: '2020-06-01T00:00:00.000Z',
+        InputFileKeys: [],
+      },
+    ]);
+
+    const result = await handler(createEvent({ retentionMonths: 6 }), createContext(), () => {});
+
+    expect(result.statusCode).toBe(200);
+    const body = JSON.parse(result.body);
+    expect(body.TerminalRuns).toBe(2);
+    expect(body.Updated).toBe(2);
+    expect(body.Deferred).toBe(0);
+    expect(propagateSpy).toHaveBeenCalledTimes(1);
+    expect(propagateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ LaboratoryId: LAB_ID }),
+      'lab-bucket',
+      'run-1',
+      [inputKey],
+      expect.any(Number),
+    );
   });
 });

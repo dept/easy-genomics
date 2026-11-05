@@ -1,31 +1,25 @@
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
-import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/src/app/utils/common';
 import {
   InvalidRequestError,
   LaboratoryNotFoundError,
   UnauthorizedAccessError,
 } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
-import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
-import { LaboratoryDataTaggingService } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
-import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
+import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Context, Handler } from 'aws-lambda';
+import { LaboratoryDataRetentionService } from '@BE/services/easy-genomics/laboratory-data-retention-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
   validateOrganizationAdminAccess,
 } from '@BE/utils/auth-utils';
-import {
-  calculateExpiresAtEpochSeconds,
-  getRetentionMonthsOrDefault,
-  getTerminalAtIsoString,
-  isTerminalLaboratoryRunStatus,
-  shouldExpireWithRetentionMonths,
-} from '@BE/utils/laboratory-run-ttl-utils';
+import { getRetentionMonthsOrDefault } from '@BE/utils/laboratory-run-ttl-utils';
 
-const laboratoryRunService = new LaboratoryRunService();
 const laboratoryService = new LaboratoryService();
-const laboratoryDataTaggingService = new LaboratoryDataTaggingService();
+const retentionService = new LaboratoryDataRetentionService();
+
+/** Return before API Gateway's 29s integration timeout; the daily sweep finishes whatever is left. */
+const API_DEADLINE_RESERVE_MS = 8_000;
 
 type RequestBody = {
   retentionMonths?: number;
@@ -34,6 +28,7 @@ type RequestBody = {
 
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
+  context: Context,
 ): Promise<APIGatewayProxyResult> => {
   try {
     const laboratoryId: string = event.queryStringParameters?.laboratoryId || '';
@@ -57,84 +52,20 @@ export const handler: Handler = async (
     // ?? preserves an explicit body value of 0; do not use || here.
     const retentionMonths = getRetentionMonthsOrDefault(body.retentionMonths ?? laboratory.RunRetentionMonths);
 
-    const runs: LaboratoryRun[] = await laboratoryRunService.queryByLaboratoryId(laboratoryId);
-    const terminalRuns = runs.filter((r) => isTerminalLaboratoryRunStatus(r.Status));
-
-    let updated = 0;
-    let removed = 0;
-    let skipped = 0;
-    let runsExpireImmediately = 0;
-    let runsExpirationDateUpdated = 0;
-
-    for (const run of terminalRuns) {
-      const now = new Date();
-      const nowEpochSeconds = Math.floor(now.getTime() / 1000);
-      const terminalAtIso = getTerminalAtIsoString(run, now);
-
-      const needsTerminalAt = run.TerminalAt == null;
-      const shouldHaveExpiry = shouldExpireWithRetentionMonths(retentionMonths);
-      const desiredExpiresAt = shouldHaveExpiry
-        ? calculateExpiresAtEpochSeconds(new Date(terminalAtIso), retentionMonths)
+    const remaining =
+      context != null && typeof context.getRemainingTimeInMillis === 'function'
+        ? context.getRemainingTimeInMillis()
+        : undefined;
+    const deadlineMs =
+      !dryRun && remaining != null && Number.isFinite(remaining)
+        ? Date.now() + Math.max(0, remaining - API_DEADLINE_RESERVE_MS)
         : undefined;
 
-      const needsExpiresAtSet = shouldHaveExpiry && run.ExpiresAt !== desiredExpiresAt;
-      const needsExpiresAtRemove = !shouldHaveExpiry && run.ExpiresAt != null;
-
-      if (!needsTerminalAt && !needsExpiresAtSet && !needsExpiresAtRemove) {
-        skipped++;
-        continue;
-      }
-
-      if (needsExpiresAtSet && desiredExpiresAt != null) {
-        if (desiredExpiresAt <= nowEpochSeconds) {
-          runsExpireImmediately++;
-        } else {
-          runsExpirationDateUpdated++;
-        }
-      } else if (needsExpiresAtRemove) {
-        runsExpirationDateUpdated++;
-      }
-
-      if (dryRun) {
-        if (needsExpiresAtRemove) removed++;
-        if (needsTerminalAt || needsExpiresAtSet) updated++;
-        continue;
-      }
-
-      const result = await laboratoryRunService.updateRetentionMetadata({
-        LaboratoryId: run.LaboratoryId,
-        RunId: run.RunId,
-        set: {
-          ...(needsTerminalAt ? { TerminalAt: terminalAtIso } : {}),
-          ...(needsExpiresAtSet && desiredExpiresAt != null ? { ExpiresAt: desiredExpiresAt } : {}),
-          ModifiedAt: now.toISOString(),
-          ModifiedBy: 'Run Retention Policy',
-        },
-        remove: needsExpiresAtRemove ? ['ExpiresAt'] : [],
-      });
-
-      // Mirror the new (or cleared) ExpiresAt onto each input file's LaboratoryRunUsages entry
-      // so the sequence collections UI reflects the policy change without re-reading the run table.
-      // Best-effort: tagging-side failures must not roll back the retention update.
-      if (laboratory.S3Bucket && (run.InputFileKeys || []).length > 0) {
-        try {
-          await laboratoryDataTaggingService.updateRunUsageExpiresAt(
-            laboratory,
-            laboratory.S3Bucket,
-            run.RunId,
-            run.InputFileKeys || [],
-            needsExpiresAtRemove ? undefined : desiredExpiresAt,
-          );
-        } catch (err) {
-          console.warn(`Failed to propagate ExpiresAt to tagging for RunId=${run.RunId} (continuing):`, err);
-        }
-      }
-
-      if (needsExpiresAtRemove) removed++;
-      if (needsTerminalAt || needsExpiresAtSet) updated++;
-      // keep lint happy, ensure we "use" result
-      void result;
-    }
+    const applied = await retentionService.applyRunRetentionPolicy(laboratory, retentionMonths, {
+      dryRun,
+      modifiedBy: 'Run Retention Policy',
+      deadlineMs,
+    });
 
     return buildResponse(
       200,
@@ -142,12 +73,13 @@ export const handler: Handler = async (
         Status: 'Success',
         LaboratoryId: laboratoryId,
         RetentionMonthsApplied: retentionMonths,
-        TerminalRuns: terminalRuns.length,
-        Updated: updated,
-        Removed: removed,
-        Skipped: skipped,
-        RunsExpireImmediately: runsExpireImmediately,
-        RunsExpirationDateUpdated: runsExpirationDateUpdated,
+        TerminalRuns: applied.terminalRuns,
+        Updated: applied.updated,
+        Removed: applied.removed,
+        Skipped: applied.skipped,
+        RunsExpireImmediately: applied.runsExpireImmediately,
+        RunsExpirationDateUpdated: applied.runsExpirationDateUpdated,
+        Deferred: applied.deferred,
         DryRun: dryRun,
       }),
       event,
