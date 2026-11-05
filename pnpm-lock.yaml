@@ -370,7 +370,7 @@ importers:
         version: 1.2.150
       '@nuxt/ui':
         specifier: 2.18.4
-        version: 2.18.4(axios@1.21.0)(change-case@4.1.2)(jwt-decode@4.0.0)(magicast@0.5.5)(qrcode@1.5.0)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3))(vite@7.3.7(@types/node@20.17.30)(jiti@2.7.0)(sass@1.107.1)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))(vue@3.5.44(typescript@5.9.3))
+        version: 2.18.4(axios@1.21.0)(change-case@4.1.2)(jwt-decode@4.0.0)(magicast@0.5.5)(qrcode@1.5.0)(tsx@4.23.15)(vite@7.3.7(@types/node@20.17.30)(jiti@2.7.0)(sass@1.107.1)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))(vue@3.5.44(typescript@5.9.3))(yaml@2.9.1)
       '@pinia/nuxt':
         specifier: ^0.9.0
         version: 0.9.0(magicast@0.5.5)(pinia@2.3.1(typescript@5.9.3)(vue@3.5.44(typescript@5.9.3)))
@@ -460,7 +460,7 @@ importers:
         version: 2.6.0
       tailwindcss:
         specifier: ^3.4.17
-        version: 3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3))
+        version: 3.4.19(tsx@4.23.15)(yaml@2.9.1)
       unplugin-vue-components:
         specifier: ^0.28.0
         version: 0.28.0(@babel/parser@7.29.13)(@nuxt/kit@3.21.11(magicast@0.5.5))(rollup@4.62.2)(vue@3.5.44(typescript@5.9.3))
@@ -640,8 +640,8 @@ importers:
 
 packages:
 
-  '@alloc/quick-lru@5.2.0':
-    resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
+  '@alloc/quick-lru@5.3.0':
+    resolution: {integrity: sha512-U4+70Pc5ZS9osnCBCE5Jha/ciHM+Yp+CNMNC/7HvYbNRk1Ldd+f7qO65W5qfhu/TCv+/ozljlXXe9Nj8419DMA==}
     engines: {node: '>=10'}
 
   '@ampproject/remapping@2.3.0':
@@ -2612,19 +2612,11 @@ packages:
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
 
-  '@jridgewell/gen-mapping@0.3.8':
-    resolution: {integrity: sha512-imAbBGkb+ebQyxKgzv5Hu2nmROxoDOXHh80evxdoXNOrvAnVx7zimzc1Oo5h9RlfV4vPXaE2iM5pOFbvOCClWA==}
-    engines: {node: '>=6.0.0'}
-
   '@jridgewell/remapping@2.3.5':
     resolution: {integrity: sha512-LI9u/+laYG4Ds1TDKSJW2YPrIlcVYOwi2fUC6xB43lueCjgxV4lffOCZCtYFiH6TNOX+tQKXx97T4IKHbhyHEQ==}
 
   '@jridgewell/resolve-uri@3.1.2':
     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
-    engines: {node: '>=6.0.0'}
-
-  '@jridgewell/set-array@1.2.1':
-    resolution: {integrity: sha512-R8gLRTZeyp03ymzP/6Lil/28tGeGEzhx1q2k703KGWRAI1VdvPIXdG70VJc2pAMw3NA6JKL5hhFu1sJX0Mnn/A==}
     engines: {node: '>=6.0.0'}
 
   '@jridgewell/source-map@0.3.11':
@@ -8246,10 +8238,6 @@ packages:
     resolution: {integrity: sha512-/imKNG4EbWNrVjoNC/1H5/9GFy+tqjGBHCaSsN+P2RnPqjsLmv6UD3Ej+Kj8nBWaRAwyk7kK5ZUc+OEatnTR3A==}
     hasBin: true
 
-  jiti@2.4.2:
-    resolution: {integrity: sha512-rg9zJN+G4n2nfJl5MW3BMygZX56zKPNVEYYqq7adpmMh4Jn2QNEwhvQlFy6jPVdcod7txZtKHWnyZiA3a0zP7A==}
-    hasBin: true
-
   jiti@2.7.0:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
@@ -8466,6 +8454,10 @@ packages:
 
   lilconfig@3.1.3:
     resolution: {integrity: sha512-/vlFKAoH5Cgt3Ie+JLhRbwOsCQePABiU3tJ1egGvyQ+33R/vcwM2Zl2QR/LzjsBeItPt3oSVXapn+m4nQDvpzw==}
+    engines: {node: '>=14'}
+
+  lilconfig@3.1.4:
+    resolution: {integrity: sha512-zJZyBmQhArDRefuWTypZxwDpFDIYmrj8ypSBvwGD5P13Y95s6DjzKgu4DVdGbeQa5PDEsAOCAPNk4X+QOR006w==}
     engines: {node: '>=14'}
 
   lines-and-columns@1.2.4:
@@ -9654,10 +9646,6 @@ packages:
     engines: {node: '>=0.10'}
     hasBin: true
 
-  pify@2.3.0:
-    resolution: {integrity: sha512-udgsAY+fTnvv7kI7aaxbqwWNb0AHiB0qBO89PZKPkoTmGOgdbrHDKD+0B2X4uTfJ/FT1R09r9gTsjUjNJotuog==}
-    engines: {node: '>=0.10.0'}
-
   pify@4.0.1:
     resolution: {integrity: sha512-uB80kBFb/tfd68bVleG9T5GGsGPjJrLAUpR5PZIrhBnIaRTQRjqdJSsIKkOP6OAIFbj7GOrcudc5pNjZ+geV2g==}
     engines: {node: '>=6'}
@@ -9801,22 +9789,28 @@ packages:
     peerDependencies:
       postcss: '>=8.5.23 <9.0.0'
 
-  postcss-js@4.0.1:
-    resolution: {integrity: sha512-dDLF8pEO191hJMtlHFPRa8xsizHaM82MLfNkUHdUtVEV3tgTp5oj+8qbEqYM57SLfc74KSbw//4SeJma2LRVIw==}
+  postcss-js@4.1.0:
+    resolution: {integrity: sha512-oIAOTqgIo7q2EOwbhb8UalYePMvYoIeRY2YKntdpFQXNosSu3vLrniGgmH9OKs/qAkfoj5oB3le/7mINW1LCfw==}
     engines: {node: ^12 || ^14 || >= 16}
     peerDependencies:
       postcss: '>=8.5.23 <9.0.0'
 
-  postcss-load-config@4.0.2:
-    resolution: {integrity: sha512-bSVhyJGL00wMVoPUzAVAnbEoWyqRxkjv64tUl427SKnPrENtq6hJwUojroMz2VB+Q1edmi4IfrAPpami5VVgMQ==}
-    engines: {node: '>= 14'}
+  postcss-load-config@6.0.1:
+    resolution: {integrity: sha512-oPtTM4oerL+UXmx+93ytZVN82RrlY/wPUV8IeDxFrzIjXOLF1pN+EmKPLbubvKHT2HC20xXsCAH2Z+CKV6Oz/g==}
+    engines: {node: '>= 18'}
     peerDependencies:
+      jiti: '>=1.21.0'
       postcss: '>=8.5.23 <9.0.0'
-      ts-node: '>=9.0.0'
+      tsx: ^4.8.1
+      yaml: '>=2.8.3'
     peerDependenciesMeta:
+      jiti:
+        optional: true
       postcss:
         optional: true
-      ts-node:
+      tsx:
+        optional: true
+      yaml:
         optional: true
 
   postcss-merge-longhand@7.0.7:
@@ -10268,8 +10262,8 @@ packages:
     resolution: {integrity: sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==}
     engines: {node: '>=0.10.0'}
 
-  read-cache@1.0.0:
-    resolution: {integrity: sha512-Owdv/Ft7IjOgm/i0xvNDZ1LrRANRfew4b2prF3OWMQLxLfu3bS8FVhCsrSCMK4lR56Y9ya+AThoTpDCTxCmpRA==}
+  read-cache@1.0.2:
+    resolution: {integrity: sha512-/peqiBB/n07gQGLsWaHho3WfvUyRscw0gYTsEFMhrIe/nWLkYaf5SbKYjGYqtRV3aPwykJgF2VEMo1ac4bnsGA==}
 
   read-pkg-up@7.0.1:
     resolution: {integrity: sha512-zK0TB7Xd6JpCLmlLmufqykGE+/TlOePD6qKClNW7hHDKFh/J7/7gCWGR7joEQEW1bKq3a3yUZSObOoWLFQ4ohg==}
@@ -10442,16 +10436,6 @@ packages:
   resolve.exports@2.0.3:
     resolution: {integrity: sha512-OcXjMsGdhL4XnbShKpAcSqPMzQoYkYyhbEaeSko47MjRP9NfEQMhZkXL1DoFlt9LWQn4YttrdnV6X2OiyzBi+A==}
     engines: {node: '>=10'}
-
-  resolve@1.22.10:
-    resolution: {integrity: sha512-NPRy+/ncIMeDlTAsuqwKIiferiawhefFJtkNSW0qZJEqMEb+qBt/77B/jGeeek+F0uOeN05CDa6HXbbIgtVX4w==}
-    engines: {node: '>= 0.4'}
-    hasBin: true
-
-  resolve@1.22.13:
-    resolution: {integrity: sha512-Dj/cW9zBV2aRj6XzCxuGIs3ESZKv02jixne3q6jFZYZ3/Tg09gHHviSMDL4kObh9pqSahdRHEnDoaP2gn8YLhA==}
-    engines: {node: '>= 0.4'}
-    hasBin: true
 
   resolve@1.22.14:
     resolution: {integrity: sha512-1ZjYvR9sbkiwC5+9QHetqW5HmA2pHRMaoupD01t2HlYnV/vydC2zPwLixhsMieSWVZt0JJRg5LVIk0Ow1D/TrA==}
@@ -11064,8 +11048,8 @@ packages:
   stylis@4.3.6:
     resolution: {integrity: sha512-yQ3rwFWRfwNUY7H5vpU0wfdkNSnvnJinhF9830Swlaxl03zsOjCfmX0ugac+3LtK0lYSgwL/KXc8oYL3mG4YFQ==}
 
-  sucrase@3.35.0:
-    resolution: {integrity: sha512-8EbVDiu9iN/nESwxeSxDKe0dunta1GOlHufmSSXxMD2z2/tMZpDMpvXQGsc+ajGo8y2uYUmixaSRUc/QPoQ0GA==}
+  sucrase@3.35.1:
+    resolution: {integrity: sha512-DhuTmvZWux4H1UOnWMB3sk0sbaCVOoQZjv8u1rDoTV0HTdGem9hkAZtl4JZy8P2z4Bg0nT+YMeOFyVr4zcG5Tw==}
     engines: {node: '>=16 || 14 >=14.17'}
     hasBin: true
 
@@ -11135,8 +11119,8 @@ packages:
   tailwind-merge@2.6.0:
     resolution: {integrity: sha512-P+Vu1qXfzediirmHOC3xKGAYeZtPcV9g76X+xg2FD4tYgR71ewMA35Y3sCz3zhiN/dwefRpJX0yBcgwi1fXNQA==}
 
-  tailwindcss@3.4.17:
-    resolution: {integrity: sha512-w33E2aCvSDP0tW9RZuNXadXlkHXqFzSkQew/aIa2i/Sj8fThxwovwlXHSPXTbAHwEIhBFXAedUhP2tueAKP8Og==}
+  tailwindcss@3.4.19:
+    resolution: {integrity: sha512-3ofp+LL8E+pK/JuPLPggVAIaEuhvIz4qNcf3nA1Xn2o/7fb7s/TYpHhwGDv1ZU3PkBluUVaF8PyCHcm48cKLWQ==}
     engines: {node: '>=14.0.0'}
     hasBin: true
 
@@ -12274,12 +12258,12 @@ packages:
 
 snapshots:
 
-  '@alloc/quick-lru@5.2.0': {}
+  '@alloc/quick-lru@5.3.0': {}
 
   '@ampproject/remapping@2.3.0':
     dependencies:
-      '@jridgewell/gen-mapping': 0.3.8
-      '@jridgewell/trace-mapping': 0.3.25
+      '@jridgewell/gen-mapping': 0.3.13
+      '@jridgewell/trace-mapping': 0.3.31
 
   '@antfu/install-pkg@1.0.0':
     dependencies:
@@ -13505,7 +13489,7 @@ snapshots:
     dependencies:
       '@babel/parser': 7.27.0
       '@babel/types': 7.27.0
-      '@jridgewell/gen-mapping': 0.3.8
+      '@jridgewell/gen-mapping': 0.3.13
       '@jridgewell/trace-mapping': 0.3.25
       jsesc: 3.1.0
 
@@ -15149,9 +15133,9 @@ snapshots:
       '@hapi/hoek': 11.0.7
     optional: true
 
-  '@headlessui/tailwindcss@0.2.2(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3)))':
+  '@headlessui/tailwindcss@0.2.2(tailwindcss@3.4.19(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
-      tailwindcss: 3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3))
+      tailwindcss: 3.4.19(tsx@4.23.15)(yaml@2.9.1)
 
   '@headlessui/vue@1.7.23(vue@3.5.44(typescript@5.9.3))':
     dependencies:
@@ -15475,20 +15459,12 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.6.0
       '@jridgewell/trace-mapping': 0.3.31
 
-  '@jridgewell/gen-mapping@0.3.8':
-    dependencies:
-      '@jridgewell/set-array': 1.2.1
-      '@jridgewell/sourcemap-codec': 1.5.0
-      '@jridgewell/trace-mapping': 0.3.25
-
   '@jridgewell/remapping@2.3.5':
     dependencies:
       '@jridgewell/gen-mapping': 0.3.13
       '@jridgewell/trace-mapping': 0.3.31
 
   '@jridgewell/resolve-uri@3.1.2': {}
-
-  '@jridgewell/set-array@1.2.1': {}
 
   '@jridgewell/source-map@0.3.11':
     dependencies:
@@ -15767,7 +15743,7 @@ snapshots:
       exsolve: 1.0.4
       globby: 14.1.0
       ignore: 7.0.3
-      jiti: 2.4.2
+      jiti: 2.7.0
       klona: 2.0.6
       knitwork: 1.2.0
       mlly: 1.7.4
@@ -15988,20 +15964,20 @@ snapshots:
       '@types/webpack-bundle-analyzer': 3.9.5
       '@types/webpack-hot-middleware': 2.25.5
 
-  '@nuxt/ui@2.18.4(axios@1.21.0)(change-case@4.1.2)(jwt-decode@4.0.0)(magicast@0.5.5)(qrcode@1.5.0)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3))(vite@7.3.7(@types/node@20.17.30)(jiti@2.7.0)(sass@1.107.1)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))(vue@3.5.44(typescript@5.9.3))':
+  '@nuxt/ui@2.18.4(axios@1.21.0)(change-case@4.1.2)(jwt-decode@4.0.0)(magicast@0.5.5)(qrcode@1.5.0)(tsx@4.23.15)(vite@7.3.7(@types/node@20.17.30)(jiti@2.7.0)(sass@1.107.1)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))(vue@3.5.44(typescript@5.9.3))(yaml@2.9.1)':
     dependencies:
-      '@headlessui/tailwindcss': 0.2.2(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3)))
+      '@headlessui/tailwindcss': 0.2.2(tailwindcss@3.4.19(tsx@4.23.15)(yaml@2.9.1))
       '@headlessui/vue': 1.7.23(vue@3.5.44(typescript@5.9.3))
       '@iconify-json/heroicons': 1.2.3
       '@nuxt/icon': 1.11.0(magicast@0.5.5)(vite@7.3.7(@types/node@20.17.30)(jiti@2.7.0)(sass@1.107.1)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))(vue@3.5.44(typescript@5.9.3))
       '@nuxt/kit': 3.16.2(magicast@0.5.5)
       '@nuxtjs/color-mode': 3.5.2(magicast@0.5.5)
-      '@nuxtjs/tailwindcss': 6.13.2(magicast@0.5.5)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3))
+      '@nuxtjs/tailwindcss': 6.13.2(magicast@0.5.5)(tsx@4.23.15)(yaml@2.9.1)
       '@popperjs/core': 2.11.8
-      '@tailwindcss/aspect-ratio': 0.4.2(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3)))
-      '@tailwindcss/container-queries': 0.1.1(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3)))
-      '@tailwindcss/forms': 0.5.10(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3)))
-      '@tailwindcss/typography': 0.5.16(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3)))
+      '@tailwindcss/aspect-ratio': 0.4.2(tailwindcss@3.4.19(tsx@4.23.15)(yaml@2.9.1))
+      '@tailwindcss/container-queries': 0.1.1(tailwindcss@3.4.19(tsx@4.23.15)(yaml@2.9.1))
+      '@tailwindcss/forms': 0.5.10(tailwindcss@3.4.19(tsx@4.23.15)(yaml@2.9.1))
+      '@tailwindcss/typography': 0.5.16(tailwindcss@3.4.19(tsx@4.23.15)(yaml@2.9.1))
       '@vueuse/core': 10.11.1(vue@3.5.44(typescript@5.9.3))
       '@vueuse/integrations': 10.11.1(axios@1.21.0)(change-case@4.1.2)(fuse.js@6.6.2)(jwt-decode@4.0.0)(qrcode@1.5.0)(vue@3.5.44(typescript@5.9.3))
       '@vueuse/math': 10.11.1(vue@3.5.44(typescript@5.9.3))
@@ -16011,7 +15987,7 @@ snapshots:
       pathe: 1.1.2
       scule: 1.3.0
       tailwind-merge: 2.6.0
-      tailwindcss: 3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3))
+      tailwindcss: 3.4.19(tsx@4.23.15)(yaml@2.9.1)
     transitivePeerDependencies:
       - '@vue/composition-api'
       - async-validator
@@ -16026,10 +16002,11 @@ snapshots:
       - qrcode
       - sortablejs
       - supports-color
-      - ts-node
+      - tsx
       - universal-cookie
       - vite
       - vue
+      - yaml
 
   '@nuxt/vite-builder@3.21.11(@types/node@20.17.30)(eslint@8.57.1)(magicast@0.5.5)(nuxt@3.21.11(@oxc-project/types@0.143.0)(@parcel/watcher@2.6.0)(@types/node@20.17.30)(@vue/compiler-sfc@3.5.44)(cac@6.7.14)(commander@15.0.0)(confbox@0.3.2)(db0@0.3.4)(dotenv@16.4.7)(esbuild@0.24.2)(eslint@8.57.1)(giget@3.3.0)(ioredis@5.11.1)(magicast@0.5.5)(optionator@0.9.4)(rollup-plugin-visualizer@7.0.1(rollup@4.62.2))(rollup@4.62.2)(sass@1.107.1)(terser@5.51.2)(tsx@4.23.15)(typescript@5.9.3)(vite@7.3.7(@types/node@20.17.30)(jiti@2.7.0)(sass@1.107.1)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))(xml2js@0.6.2)(yaml@2.9.1))(optionator@0.9.4)(rollup-plugin-visualizer@7.0.1(rollup@4.62.2))(rollup@4.62.2)(sass@1.107.1)(terser@5.51.2)(tsx@4.23.15)(typescript@5.9.3)(vue@3.5.44(typescript@5.9.3))(yaml@2.9.1)':
     dependencies:
@@ -16133,7 +16110,7 @@ snapshots:
       - eslint-import-resolver-webpack
       - supports-color
 
-  '@nuxtjs/tailwindcss@6.13.2(magicast@0.5.5)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3))':
+  '@nuxtjs/tailwindcss@6.13.2(magicast@0.5.5)(tsx@4.23.15)(yaml@2.9.1)':
     dependencies:
       autoprefixer: 10.4.21(postcss@8.5.32)
       c12: 3.0.3(magicast@0.5.5)
@@ -16144,14 +16121,15 @@ snapshots:
       pathe: 2.0.3
       postcss: 8.5.32
       postcss-nesting: 13.0.1(postcss@8.5.32)
-      tailwind-config-viewer: 2.0.4(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3)))
-      tailwindcss: 3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3))
+      tailwind-config-viewer: 2.0.4(tailwindcss@3.4.19(tsx@4.23.15)(yaml@2.9.1))
+      tailwindcss: 3.4.19(tsx@4.23.15)(yaml@2.9.1)
       ufo: 1.6.1
       unctx: 2.4.1
     transitivePeerDependencies:
       - magicast
       - supports-color
-      - ts-node
+      - tsx
+      - yaml
 
   '@nx/nx-darwin-arm64@22.7.12':
     optional: true
@@ -17039,7 +17017,7 @@ snapshots:
       '@types/resolve': 1.20.2
       deepmerge: 4.3.1
       is-module: 1.0.0
-      resolve: 1.22.13
+      resolve: 1.22.14
     optionalDependencies:
       rollup: 4.62.2
 
@@ -17915,26 +17893,26 @@ snapshots:
       '@stoplight/yaml-ast-parser': 0.0.50
       tslib: 2.8.1
 
-  '@tailwindcss/aspect-ratio@0.4.2(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3)))':
+  '@tailwindcss/aspect-ratio@0.4.2(tailwindcss@3.4.19(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
-      tailwindcss: 3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3))
+      tailwindcss: 3.4.19(tsx@4.23.15)(yaml@2.9.1)
 
-  '@tailwindcss/container-queries@0.1.1(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3)))':
+  '@tailwindcss/container-queries@0.1.1(tailwindcss@3.4.19(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
-      tailwindcss: 3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3))
+      tailwindcss: 3.4.19(tsx@4.23.15)(yaml@2.9.1)
 
-  '@tailwindcss/forms@0.5.10(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3)))':
+  '@tailwindcss/forms@0.5.10(tailwindcss@3.4.19(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
       mini-svg-data-uri: 1.4.4
-      tailwindcss: 3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3))
+      tailwindcss: 3.4.19(tsx@4.23.15)(yaml@2.9.1)
 
-  '@tailwindcss/typography@0.5.16(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3)))':
+  '@tailwindcss/typography@0.5.16(tailwindcss@3.4.19(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
       lodash.castarray: 4.4.0
       lodash.isplainobject: 4.0.6
       lodash.merge: 4.6.2
       postcss-selector-parser: 6.1.5
-      tailwindcss: 3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3))
+      tailwindcss: 3.4.19(tsx@4.23.15)(yaml@2.9.1)
 
   '@tanstack/virtual-core@3.13.6': {}
 
@@ -19585,7 +19563,7 @@ snapshots:
       dotenv: 16.4.7
       exsolve: 1.0.4
       giget: 2.0.0
-      jiti: 2.4.2
+      jiti: 2.7.0
       ohash: 2.0.11
       pathe: 2.0.3
       perfect-debounce: 1.0.0
@@ -20128,7 +20106,7 @@ snapshots:
     dependencies:
       '@types/node': 24.13.1
       cosmiconfig: 9.0.0(typescript@5.9.3)
-      jiti: 2.4.2
+      jiti: 2.7.0
       typescript: 5.9.3
     optional: true
 
@@ -20307,7 +20285,7 @@ snapshots:
   cssnano@7.1.9(postcss@8.5.32):
     dependencies:
       cssnano-preset-default: 7.0.17(postcss@8.5.32)
-      lilconfig: 3.1.3
+      lilconfig: 3.1.4
       postcss: 8.5.32
 
   csso@5.0.5:
@@ -21016,9 +20994,9 @@ snapshots:
       eslint-plugin-es: 4.1.0(eslint@8.57.1)
       eslint-utils: 3.0.0(eslint@8.57.1)
       ignore: 5.3.2
-      is-core-module: 2.17.0
+      is-core-module: 2.18.0
       minimatch: 9.0.9
-      resolve: 1.22.13
+      resolve: 1.22.14
       semver: 7.8.5
 
   eslint-plugin-node@11.1.0(eslint@8.57.1):
@@ -21028,7 +21006,7 @@ snapshots:
       eslint-utils: 2.1.0
       ignore: 5.3.2
       minimatch: 9.0.9
-      resolve: 1.22.13
+      resolve: 1.22.14
       semver: 6.3.1
 
   eslint-plugin-prettier@5.5.7(eslint-config-prettier@9.1.0(eslint@8.57.1))(eslint@8.57.1)(prettier@3.9.10):
@@ -22177,7 +22155,6 @@ snapshots:
   is-core-module@2.18.0:
     dependencies:
       hasown: 2.0.4
-    optional: true
 
   is-data-view@1.0.2:
     dependencies:
@@ -22708,7 +22685,7 @@ snapshots:
       jest-pnp-resolver: 1.2.3(jest-resolve@29.7.0)
       jest-util: 29.7.0
       jest-validate: 29.7.0
-      resolve: 1.22.13
+      resolve: 1.22.14
       resolve.exports: 2.0.3
       slash: 3.0.0
 
@@ -22851,8 +22828,6 @@ snapshots:
       - ts-node
 
   jiti@1.21.7: {}
-
-  jiti@2.4.2: {}
 
   jiti@2.7.0: {}
 
@@ -23109,6 +23084,8 @@ snapshots:
     optional: true
 
   lilconfig@3.1.3: {}
+
+  lilconfig@3.1.4: {}
 
   lines-and-columns@1.2.4: {}
 
@@ -24037,14 +24014,14 @@ snapshots:
   normalize-package-data@2.5.0:
     dependencies:
       hosted-git-info: 2.8.9
-      resolve: 1.22.13
+      resolve: 1.22.14
       semver: 5.7.2
       validate-npm-package-license: 3.0.4
 
   normalize-package-data@3.0.3:
     dependencies:
       hosted-git-info: 4.1.0
-      is-core-module: 2.17.0
+      is-core-module: 2.18.0
       semver: 7.8.5
       validate-npm-package-license: 3.0.4
 
@@ -24859,8 +24836,6 @@ snapshots:
 
   pidtree@0.6.0: {}
 
-  pify@2.3.0: {}
-
   pify@4.0.1:
     optional: true
 
@@ -25007,21 +24982,22 @@ snapshots:
     dependencies:
       postcss: 8.5.32
       postcss-value-parser: 4.2.0
-      read-cache: 1.0.0
-      resolve: 1.22.10
+      read-cache: 1.0.2
+      resolve: 1.22.14
 
-  postcss-js@4.0.1(postcss@8.5.32):
+  postcss-js@4.1.0(postcss@8.5.32):
     dependencies:
       camelcase-css: 2.0.1
       postcss: 8.5.32
 
-  postcss-load-config@4.0.2(postcss@8.5.32)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3)):
+  postcss-load-config@6.0.1(jiti@1.21.7)(postcss@8.5.32)(tsx@4.23.15)(yaml@2.9.1):
     dependencies:
-      lilconfig: 3.1.3
-      yaml: 2.9.0
+      lilconfig: 3.1.4
     optionalDependencies:
+      jiti: 1.21.7
       postcss: 8.5.32
-      ts-node: 10.9.2(@types/node@20.17.30)(typescript@5.9.3)
+      tsx: 4.23.15
+      yaml: 2.9.1
 
   postcss-merge-longhand@7.0.7(postcss@8.5.32):
     dependencies:
@@ -25445,9 +25421,7 @@ snapshots:
     dependencies:
       loose-envify: 1.4.0
 
-  read-cache@1.0.0:
-    dependencies:
-      pify: 2.3.0
+  read-cache@1.0.2: {}
 
   read-pkg-up@7.0.1:
     dependencies:
@@ -25666,26 +25640,12 @@ snapshots:
 
   resolve.exports@2.0.3: {}
 
-  resolve@1.22.10:
-    dependencies:
-      is-core-module: 2.17.0
-      path-parse: 1.0.7
-      supports-preserve-symlinks-flag: 1.0.0
-
-  resolve@1.22.13:
-    dependencies:
-      es-errors: 1.3.0
-      is-core-module: 2.17.0
-      path-parse: 1.0.7
-      supports-preserve-symlinks-flag: 1.0.0
-
   resolve@1.22.14:
     dependencies:
       es-errors: 1.3.0
       is-core-module: 2.18.0
       path-parse: 1.0.7
       supports-preserve-symlinks-flag: 1.0.0
-    optional: true
 
   resolve@2.0.0-next.7:
     dependencies:
@@ -26384,14 +26344,14 @@ snapshots:
 
   stylis@4.3.6: {}
 
-  sucrase@3.35.0:
+  sucrase@3.35.1:
     dependencies:
-      '@jridgewell/gen-mapping': 0.3.8
+      '@jridgewell/gen-mapping': 0.3.13
       commander: 4.1.1
-      glob: 13.0.6
       lines-and-columns: 1.2.4
       mz: 2.7.0
       pirates: 4.0.7
+      tinyglobby: 0.2.17
       ts-interface-checker: 0.1.13
 
   sudo-prompt@9.2.1:
@@ -26458,7 +26418,7 @@ snapshots:
 
   tagged-tag@1.0.0: {}
 
-  tailwind-config-viewer@2.0.4(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3))):
+  tailwind-config-viewer@2.0.4(tailwindcss@3.4.19(tsx@4.23.15)(yaml@2.9.1)):
     dependencies:
       '@koa/router': 12.0.2
       commander: 6.2.1
@@ -26468,15 +26428,15 @@ snapshots:
       open: 7.4.2
       portfinder: 1.0.35
       replace-in-file: 6.3.5
-      tailwindcss: 3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3))
+      tailwindcss: 3.4.19(tsx@4.23.15)(yaml@2.9.1)
     transitivePeerDependencies:
       - supports-color
 
   tailwind-merge@2.6.0: {}
 
-  tailwindcss@3.4.17(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3)):
+  tailwindcss@3.4.19(tsx@4.23.15)(yaml@2.9.1):
     dependencies:
-      '@alloc/quick-lru': 5.2.0
+      '@alloc/quick-lru': 5.3.0
       arg: 5.0.2
       chokidar: 3.6.0
       didyoumean: 1.2.2
@@ -26485,21 +26445,22 @@ snapshots:
       glob-parent: 6.0.2
       is-glob: 4.0.3
       jiti: 1.21.7
-      lilconfig: 3.1.3
+      lilconfig: 3.1.4
       micromatch: 4.0.8
       normalize-path: 3.0.0
       object-hash: 3.0.0
       picocolors: 1.1.1
       postcss: 8.5.32
       postcss-import: 15.1.0(postcss@8.5.32)
-      postcss-js: 4.0.1(postcss@8.5.32)
-      postcss-load-config: 4.0.2(postcss@8.5.32)(ts-node@10.9.2(@types/node@20.17.30)(typescript@5.9.3))
+      postcss-js: 4.1.0(postcss@8.5.32)
+      postcss-load-config: 6.0.1(jiti@1.21.7)(postcss@8.5.32)(tsx@4.23.15)(yaml@2.9.1)
       postcss-nested: 6.2.0(postcss@8.5.32)
       postcss-selector-parser: 6.1.5
-      resolve: 1.22.10
-      sucrase: 3.35.0
+      resolve: 1.22.14
+      sucrase: 3.35.1
     transitivePeerDependencies:
-      - ts-node
+      - tsx
+      - yaml
 
   tapable@2.2.1: {}
 
