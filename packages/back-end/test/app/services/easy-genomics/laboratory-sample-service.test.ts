@@ -757,6 +757,20 @@ describe('LaboratorySampleService.addFilesToSample', () => {
     expect(update.UpdateExpression).toContain('REMOVE ContentsSummary');
   });
 
+  it('does not rewrite file tags when the sample is permanent', async () => {
+    jest.spyOn(svc, 'getSample').mockResolvedValue(sampleFixture({ IsPermanent: true }));
+    const applyFiles = jest.spyOn(
+      (svc as unknown as { taggingService: { applyTagsToFiles: () => Promise<void> } }).taggingService,
+      'applyTagsToFiles',
+    );
+
+    await svc.addFilesToSample(labFixture(), 'user-1', 'my-bucket', 'sample-1', [
+      'org-1/lab-1/NA12878_R2_001.fastq.gz',
+    ]);
+
+    expect(applyFiles).not.toHaveBeenCalled();
+  });
+
   it('rejects the whole request before writing when any key is outside the lab folder', async () => {
     jest.spyOn(svc, 'getSample').mockResolvedValue(sampleFixture());
 
