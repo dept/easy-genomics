@@ -753,13 +753,7 @@
                     />
                   </div>
                   <div class="absolute right-2 top-2 flex items-center gap-1.5" @mousedown.stop @click.stop>
-                    <UIcon
-                      v-if="s.IsPermanent"
-                      name="i-heroicons-lock-closed"
-                      class="h-3.5 w-3.5 shrink-0 text-red-600"
-                      title="This sample is protected from auto-deletion when run retention expires."
-                      aria-label="Protected from auto-deletion"
-                    />
+                    <EGPermanentLockIcon v-if="s.IsPermanent" noun="sample" />
                     <UCheckbox
                       :model-value="isSelected(s.SampleId)"
                       :label="`Select sample ${s.Name}`"
@@ -892,13 +886,7 @@
                     </td>
                     <td class="p-3 font-medium">
                       <span class="inline-flex items-center gap-1.5">
-                        <UIcon
-                          v-if="s.IsPermanent"
-                          name="i-heroicons-lock-closed"
-                          class="h-3.5 w-3.5 shrink-0 text-red-600"
-                          title="This sample is protected from auto-deletion when run retention expires."
-                          aria-label="Protected from auto-deletion"
-                        />
+                        <EGPermanentLockIcon v-if="s.IsPermanent" noun="sample" />
                         {{ s.Name }}
                       </span>
                     </td>

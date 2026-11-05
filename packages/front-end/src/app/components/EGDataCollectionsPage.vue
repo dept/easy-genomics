@@ -67,10 +67,13 @@
 
   const selectedSampleIds = ref<string[]>([]);
   const selectedFileKeys = ref<string[]>([]);
-  const fileKeyToIsPermanent = ref<Record<string, boolean>>({});
-  const fileKeyToRunUsages = ref<Record<string, LaboratoryRunUsageSummary[]>>({});
+  const fileKeyToIsPermanent = computed(
+    () => dataCollectionsStore.fileRetentionByLab[props.labId]?.permanentByKey ?? {},
+  );
+  const fileKeyToRunUsages = computed(
+    () => dataCollectionsStore.fileRetentionByLab[props.labId]?.runUsagesByKey ?? {},
+  );
   const filePermanentBusy = ref(false);
-  let fileTagLoadSeq = 0;
 
   const permanentTag = computed(() => tags.value.find((t) => t.Kind === 'permanent'));
 
@@ -154,79 +157,18 @@
   }
 
   function clearUnlinkedFiles(labId: string = props.labId): void {
-    fileTagLoadSeq += 1;
-    fileKeyToIsPermanent.value = {};
-    fileKeyToRunUsages.value = {};
     dataCollectionsStore.clearUnlinkedScan(labId);
   }
 
-  async function loadUnlinkedFileTags(): Promise<void> {
-    const labId = props.labId;
-    const scan = dataCollectionsStore.unlinkedScan(labId);
-    const seq = ++fileTagLoadSeq;
-    if (!scan?.s3Bucket || !scan.files.length) {
-      if (seq === fileTagLoadSeq) {
-        fileKeyToIsPermanent.value = {};
-        fileKeyToRunUsages.value = {};
-      }
-      return;
-    }
-    const permanent: Record<string, boolean> = {};
-    const usages: Record<string, LaboratoryRunUsageSummary[]> = {};
-    try {
-      for (let i = 0; i < scan.files.length; i += 100) {
-        if (seq !== fileTagLoadSeq) return;
-        const keys = scan.files
-          .slice(i, i + 100)
-          .map((file) => file.Key)
-          .filter((key): key is string => !!key);
-        if (!keys.length) continue;
-        const res = await $api.dataCollections.requestListFileTags({
-          LaboratoryId: labId,
-          S3Bucket: scan.s3Bucket,
-          Keys: keys,
-        });
-        for (const file of res.Files) {
-          if (file.IsPermanent) permanent[file.Key] = true;
-          if (file.LaboratoryRunUsages?.length) usages[file.Key] = file.LaboratoryRunUsages;
-        }
-      }
-    } catch {
-      if (seq === fileTagLoadSeq) toast.error('Failed to load file retention.');
-      return;
-    }
-    if (seq !== fileTagLoadSeq) return;
-    fileKeyToIsPermanent.value = permanent;
-    fileKeyToRunUsages.value = usages;
-  }
-
   async function setSelectedFilesPermanent(keep: boolean): Promise<void> {
-    const scan = dataCollectionsStore.unlinkedScan(props.labId);
     const tagId = permanentTag.value?.TagId;
     const keys = [...selectedFileKeys.value];
-    if (!scan?.s3Bucket || !tagId || !keys.length) return;
-    fileTagLoadSeq += 1;
+    if (!tagId || !keys.length) return;
     filePermanentBusy.value = true;
     uiStore.setRequestPending('dataCollectionsMutate');
     try {
-      for (let i = 0; i < keys.length; i += 100) {
-        await $api.dataCollections.addTagsToFiles({
-          LaboratoryId: props.labId,
-          S3Bucket: scan.s3Bucket,
-          Keys: keys.slice(i, i + 100),
-          ...(keep ? { AddTagIds: [tagId] } : { RemoveTagIds: [tagId] }),
-        });
-      }
-      const next = { ...fileKeyToIsPermanent.value };
-      for (const key of keys) {
-        if (keep) next[key] = true;
-        else delete next[key];
-      }
-      fileKeyToIsPermanent.value = next;
-      toast.success(keep ? 'Files will be kept permanently' : 'Permanent protection removed');
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Update failed');
-      await loadUnlinkedFileTags();
+      const saved = await dataCollectionsStore.setUnlinkedFilesPermanent(props.labId, keys, keep, tagId);
+      if (saved) toast.success(keep ? 'Files will be kept permanently' : 'Permanent protection removed');
     } finally {
       filePermanentBusy.value = false;
       uiStore.setRequestComplete('dataCollectionsMutate');
@@ -252,7 +194,7 @@
     }
 
     await dataCollectionsStore.loadUnlinkedScan(labId, opts);
-    if (labId === props.labId) await loadUnlinkedFileTags();
+    if (labId === props.labId) await dataCollectionsStore.loadUnlinkedFileTags(labId);
   }
 
   async function refreshAll(): Promise<void> {

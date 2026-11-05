@@ -310,13 +310,7 @@
               </td>
               <td class="p-3 font-mono text-xs">
                 <span class="inline-flex items-center gap-1.5">
-                  <UIcon
-                    v-if="isPermanent(f.Key)"
-                    name="i-heroicons-lock-closed"
-                    class="h-3.5 w-3.5 shrink-0 text-red-600"
-                    title="This file is protected from auto-deletion when run retention expires."
-                    aria-label="Protected from auto-deletion"
-                  />
+                  <EGPermanentLockIcon v-if="isPermanent(f.Key)" noun="file" />
                   {{ fileName(f.Key) }}
                 </span>
               </td>

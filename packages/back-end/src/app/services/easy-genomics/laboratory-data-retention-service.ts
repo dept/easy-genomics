@@ -174,7 +174,8 @@ export class LaboratoryDataRetentionService {
   /**
    * Input files are shared between runs and tracked per-file, so they are deleted only when their
    * FILE# row shows no remaining usages, carries a workflow tag (proving it was once used, which
-   * distinguishes an expired file from a never-used orphan) and is not marked Permanent.
+   * distinguishes an expired file from a never-used orphan) and is not in `permanentKeys`.
+   * That set is every file with the Permanent tag or a link to a sample that still has it.
    */
   private async sweepInputFiles(
     laboratory: Laboratory,
@@ -182,7 +183,6 @@ export class LaboratoryDataRetentionService {
     fileRows: FileRowIndex,
     stats: RetentionSweepStats,
   ): Promise<void> {
-    const permanentTagId = permanentTagIdForLaboratory(laboratory.LaboratoryId);
     const workflowTagIds = await this.loadWorkflowTagIds(laboratory.LaboratoryId);
     let loggedDeleteCap = false;
 
@@ -193,8 +193,7 @@ export class LaboratoryDataRetentionService {
 
       if (!hasWorkflowTag) continue;
       if (hasUsages) continue;
-      // File tag, or a linked sample that is still permanent. Unmarking one sample does not clear the other.
-      if (tagIds.has(permanentTagId) || (!!row.ObjectKey && fileRows.permanentKeys.has(row.ObjectKey))) {
+      if (row.ObjectKey && fileRows.permanentKeys.has(row.ObjectKey)) {
         stats.permanentProtected++;
         continue;
       }
@@ -455,9 +454,8 @@ export class LaboratoryDataRetentionService {
         );
         stats.outputPrefixesSkippedInUse += (row.SampleSheetKeys || []).length - sheetKeys.length;
 
-        // Files under results/ are taggable through the File Manager API, so the Permanent tag has
-        // to be honoured here too — otherwise prefix deletion silently overrides the protection
-        // the FILE#-row sweep enforces.
+        // Files under results/ are taggable, and a linked permanent sample protects them too.
+        // permanentKeys is the same set the FILE#-row sweep uses.
         const candidates = [...listed, ...sheetKeys];
         const keys = candidates.filter((key) => !fileRows.permanentKeys.has(key));
         stats.outputObjectsProtected += candidates.length - keys.length;

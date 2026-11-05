@@ -482,6 +482,25 @@ describe('process-expired-laboratory-data.lambda expired run outputs', () => {
     expect(mockMarkExpiredRunOutputCompleted).toHaveBeenCalledWith('lab-1', 'run-1');
   });
 
+  it('leaves a run output linked to a permanent sample and counts it as protected', async () => {
+    const keptKey = `${outputPrefix}keep-me.bam`;
+    mockListPermanentSampleIds.mockResolvedValue(new Set(['sample-1']));
+    mockListFileRows.mockResolvedValue([{ Ref: 'r-keep', ObjectKey: keptKey, TagIds: [], SampleIds: ['sample-1'] }]);
+    mockListExpiredRunOutputs.mockResolvedValueOnce([{ ...marker, SampleSheetKeys: undefined }]);
+    mockListAllObjectKeysUnderPrefix.mockResolvedValueOnce([keptKey, `${outputPrefix}drop-me.bam`]);
+    const log = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await handler(event, ctx, jest.fn());
+
+    const deleted = mockDeleteObjects.mock.calls[0][0].Delete.Objects.map((o: { Key: string }) => o.Key);
+    expect(deleted).toEqual([`${outputPrefix}drop-me.bam`]);
+    const emf = log.mock.calls
+      .map((call) => call[0])
+      .find((line) => typeof line === 'string' && line.includes('OutputObjectsProtected'));
+    expect(JSON.parse(String(emf)).OutputObjectsProtected).toBe(1);
+    log.mockRestore();
+  });
+
   it('removes the FILE# row of a tracked object it deletes, so no row is left dangling', async () => {
     const trackedKey = `${outputPrefix}tracked.bam`;
     mockListFileRows.mockResolvedValue([{ Ref: 'r-tracked', ObjectKey: trackedKey, TagIds: [] }]);
