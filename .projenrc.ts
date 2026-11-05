@@ -302,7 +302,7 @@ const sharedLib = new typescript.TypeScriptProject({
     '@types/aws-lambda',
     '@types/js-yaml',
     '@types/uuid',
-    '@redocly/cli@~1.34.15',
+    '@redocly/cli@~1.34.17',
     `aws-cdk-lib@^${cdkVersion}`,
     'openapi-typescript',
     'tsx',
@@ -784,8 +784,8 @@ root.addFields({
     overrides: {
       // CVE-2026-12151 (WebSocket DoS), CVE-2026-9679 (header injection),
       // CVE-2026-11525 (SameSite downgrade), CVE-2026-6733 (queue poisoning)
-      // Capped at <7: undici 7+ requires Node.js 22; Lambda + CI run Node 20
-      undici: '>=6.27.0 <7.0.0',
+      // Capped at <7: keeps undici within its current major
+      undici: '>=6.29.1 <7.0.0',
       // CVE-2026-12143 (CRLF injection via multipart field names)
       // Bare key (no @version selector): pnpm matches selectors against the declared specifier,
       // not the resolved version. @types/node-fetch declares form-data@^3.0.0 but resolves to
@@ -797,20 +797,18 @@ root.addFields({
       tar: '>=7.5.16',
       // CVE-2026-54269 (schema-derived names can shadow runtime-significant properties)
       // Capped at <8: protobufjs 8.x has breaking API changes; all consumers pin ~7
-      protobufjs: '>=7.6.3 <8.0.0',
+      protobufjs: '>=7.6.5 <8.0.0',
       // CVE-2026-53550 (quadratic-complexity DoS in merge key handling via repeated aliases)
       // Also forces any transitive js-yaml 3.x to resolve to the safe 4.x line
       // Capped at <5: js-yaml 5.x ESM build drops the default export, which breaks
       // openapi-typescript@6 (`import yaml from 'js-yaml'`) in shared-lib generate:api-types
-      'js-yaml': '>=4.2.0 <5.0.0',
+      'js-yaml': '>=4.3.2 <5.0.0',
 
       // --- PR3: CRITICAL severity ---
       // CVE-2024-55565: newline injection in quoted shell args (RCE in shell pipelines)
-      'shell-quote': '>=1.8.4',
-      // CVE-2022-24433, CVE-2022-25912, CVE-2024-22012: option-parsing RCE + blockUnsafeOperations bypass
-      'simple-git': '>=3.36.0',
+      'shell-quote': '>=1.11.0 <2.0.0',
       // CVE-2025-29244 + 3 others + XMLBuilder comment/CDATA injection: entity expansion / encoding bypass DoS and XSS
-      'fast-xml-parser': '>=5.7.0',
+      'fast-xml-parser': '>=5.10.1 <6.0.0',
 
       // --- PR3: HIGH severity ---
       // 9 advisories: ReDoS via repeated wildcards and nested extglobs
@@ -852,33 +850,34 @@ root.addFields({
       // CVE-2025-31136: attribute values with unescaped XML special chars
       'fast-xml-builder': '>=1.1.7',
       // GHSA-r9p9-qp4c-cf58: DoS via DOCTYPE entity expansion in SVG (billion laughs variant)
-      svgo: '>=3.3.3',
+      svgo: '>=4.1.0 <5.0.0',
       // CVE-2021-23337, CVE-2020-28500, CVE-2019-10744: template injection + prototype pollution
       lodash: '>=4.17.23',
       // CVE-2024-55955, CVE-2023-42226: RCE via RegExp.flags + CPU exhaustion DoS
-      'serialize-javascript': '>=7.0.5',
+      'serialize-javascript': '>=7.1.3 <8.0.0',
 
       // --- PR3: MODERATE severity ---
       // CVE-2024-55892 + 3 others: ReDoS in bracket notation + comma parsing
-      qs: '>=6.15.2',
+      qs: '>=6.16.1 <7.0.0',
       // CVE-2024-55951 + 3 others: ReDoS in zero-step sequence + brace expansion
-      'brace-expansion': '>=2.0.3',
+      // Capped at <3: 5.x exports a named { expand }, which breaks eslint's minimatch@3 (`expand is not a function`)
+      'brace-expansion': '>=2.1.7 <3.0.0',
       // CVE-2024-47764: DoS in BigInt.mod via crafted input
       'bn.js': '>=5.2.3',
       // CVE-2025-27105: stack overflow via deeply nested input
       yaml: '>=2.8.3',
       // CVE-2022-21676: predictable results from non-integer seed
       // Capped at <4.0.0: nanoid v4+ is ESM-only, breaks postcss CJS require()
-      nanoid: '>=3.3.8 <4.0.0',
+      nanoid: '>=3.3.18 <4.0.0',
       // CVE-2023-44270: XSS via unescaped </style> in CSS strings
-      postcss: '>=8.5.10',
+      postcss: '>=8.5.23 <9.0.0',
       // CVE-2024-55566: missing bounds check in v3/v5/v6 with buffer offset
       // Capped at <12: uuid 12+ is ESM-only and breaks jest-junit (CJS consumer)
       uuid: '>=11.1.1 <12.0.0',
       // CVE-2024-55951: uncaught RangeError on deeply nested input
       joi: '>=17.13.4',
       // CVE-2025-29782: NTLMv2 hash disclosure via UNC path in launch-editor
-      'launch-editor': '>=2.14.1',
+      'launch-editor': '>=2.14.2 <3.0.0',
 
       // --- PR3: LOW severity ---
       // CVE-2023-0842 + 1: DoS in parsePatch() via crafted unified diffs
@@ -890,12 +889,39 @@ root.addFields({
 
       // --- Dependabot follow-up: transitive copies not covered by direct-dep bumps ---
       axios: '>=1.20.0 <2.0.0', // force nx's transitive axios 1.8.4 up (prototype-pollution + SSRF cluster)
-      'fast-uri': '>=3.1.2', // path traversal + host confusion
+      'fast-uri': '>=4.2.3 <5.0.0', // path traversal + host confusion
       tmp: '>=0.2.6', // path traversal + symlink write
       got: '>=11.8.5', // redirect-to-UNIX-socket
-      'follow-redirects': '>=1.16.0', // auth header leak on cross-domain redirect
+      'follow-redirects': '>=1.16.1 <2.0.0', // auth header leak on cross-domain redirect
       '@opentelemetry/core': '>=2.8.0', // unbounded memory alloc in W3C baggage
       h3: '>=1.15.9', // request smuggling + path traversal + SSE injection
+
+      // --- Dependabot wave 1: in-major floors for transitive deps ---
+      // CVE-2026-71319: unauthenticated DevTools RPC -> RCE on the dev machine; 3.4.3+ drops simple-git (CVE-2026-102826/7/8/9)
+      // Capped at <4: nuxt 3.21.x declares @nuxt/devtools ^3
+      '@nuxt/devtools': '>=3.4.4 <4.0.0',
+      // CVE-2026-81176 + 7 others: DoS (quadratic uneval expansion, malformed input), __proto__ rejection bypass, shared-memory serialization
+      devalue: '>=5.9.3 <6.0.0',
+      // CVE-2026-104846, CVE-2026-116580 + 3 others: fromJSON invokes attacker-chosen callables; memory exhaustion / DoS on array and TypedArray lengths
+      seroval: '>=1.6.8 <2.0.0',
+      // CVE-2026-112945/6 + bundled launch-editor advisories: files outside server.fs.allow served, cross-origin script execution
+      // Capped at <8: nuxt 3.21.x builds on vite 7
+      vite: '>=7.3.7 <8.0.0',
+      // CVE-2026-104844, CVE-2026-9358: quadratic selector parsing + uncontrolled AST recursion DoS; selector keys because two majors are in the tree
+      'postcss-selector-parser@6': '>=6.1.5 <7.0.0',
+      'postcss-selector-parser@7': '>=7.1.6 <8.0.0',
+      // CVE-2026-106444/5/6: JavaScript injection via AST type confusion, own-property bypass, unsafe precompiled template embedding
+      handlebars: '>=4.7.10 <5.0.0',
+      // CVE-2026-90711: IP spoofing via IPv4-mapped IPv6 trust subnet
+      'proxy-addr': '>=2.0.8 <3.0.0',
+      // CVE-2026-101910/12/13: SSRF-relevant classifier gaps (NAT64 range, link-local mask, cross-family subnet comparison)
+      'ip-address': '>=10.7.1 <11.0.0',
+      // browserslist CVE-2026-73088 (crash / prototype write via custom stats); baseline-browser-mapping CVE-2026-45819 (DoS on invalid input)
+      browserslist: '>=4.28.7 <5.0.0',
+      'baseline-browser-mapping': '>=2.11.0 <3.0.0',
+      // GHSA-g2v6-rqmx-r4w6: @vue/server-renderer XSS via missing CR in attribute-name blacklist; this pulls the matching server-renderer.
+      // Capped at <3.6 to stay within Vue 3.5
+      vue: '>=3.5.42 <3.6.0',
     },
   },
 });
