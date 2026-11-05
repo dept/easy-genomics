@@ -1,4 +1,7 @@
-import type { UnlinkedBucketObjectsResponse } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
+import type {
+  LaboratoryRunUsageSummary,
+  UnlinkedBucketObjectsResponse,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
 import { defineStore } from 'pinia';
 import useLabsStore from './labs';
 import useToastStore from './toast';
@@ -26,8 +29,25 @@ export interface UnlinkedScan {
  */
 export const UNLINKED_SCAN_TTL_MS = 5 * 60 * 1000;
 
+/** Matches the file-tag API limit. Same size as SEQUENCE_SET_IDS_CHUNK on the samples tab. */
+export const FILE_KEYS_CHUNK = 100;
+
 /** In-flight promises are kept off Pinia state so they are never serialized. */
 const unlinkedScanInFlight = new Map<string, Promise<void>>();
+
+/** Bumped per lab so a late file-tag response cannot overwrite a newer load or a failed write's reload. */
+const fileTagLoadGeneration = new Map<string, number>();
+
+export interface FileRetention {
+  permanentByKey: Record<string, boolean>;
+  runUsagesByKey: Record<string, LaboratoryRunUsageSummary[]>;
+}
+
+function bumpFileTagLoad(labId: string): number {
+  const next = (fileTagLoadGeneration.get(labId) ?? 0) + 1;
+  fileTagLoadGeneration.set(labId, next);
+  return next;
+}
 
 interface DataCollectionsStoreState {
   /** Indexed by labId. Deliberately not persisted: a scan can hold thousands of keys. */
@@ -35,12 +55,14 @@ interface DataCollectionsStoreState {
   /** Bumped on invalidate so a late response cannot resurrect a cleared scan. */
   unlinkedScanGeneration: Record<string, number>;
   unlinkedScanLoading: Record<string, boolean>;
+  fileRetentionByLab: Record<string, FileRetention>;
 }
 
 const initialState = (): DataCollectionsStoreState => ({
   unlinkedScans: {},
   unlinkedScanGeneration: {},
   unlinkedScanLoading: {},
+  fileRetentionByLab: {},
 });
 
 const useDataCollectionsStore = defineStore('dataCollectionsStore', {
@@ -69,6 +91,7 @@ const useDataCollectionsStore = defineStore('dataCollectionsStore', {
     reset() {
       Object.assign(this, initialState());
       unlinkedScanInFlight.clear();
+      fileTagLoadGeneration.clear();
     },
 
     setUnlinkedScan(labId: string, response: UnlinkedBucketObjectsResponse, scannedAt: number = Date.now()): void {
@@ -82,7 +105,9 @@ const useDataCollectionsStore = defineStore('dataCollectionsStore', {
 
     clearUnlinkedScan(labId: string): void {
       delete this.unlinkedScans[labId];
+      delete this.fileRetentionByLab[labId];
       this.unlinkedScanGeneration[labId] = (this.unlinkedScanGeneration[labId] ?? 0) + 1;
+      bumpFileTagLoad(labId);
     },
 
     /**
@@ -180,6 +205,73 @@ const useDataCollectionsStore = defineStore('dataCollectionsStore', {
         useToastStore().error('Failed to load unlinked files.');
       } finally {
         this.unlinkedScanLoading[labId] = false;
+      }
+    },
+
+    async loadUnlinkedFileTags(labId: string): Promise<void> {
+      const scan = this.unlinkedScans[labId];
+      const seq = bumpFileTagLoad(labId);
+      if (!scan?.s3Bucket || !scan.files.length) {
+        if (fileTagLoadGeneration.get(labId) === seq) {
+          this.fileRetentionByLab[labId] = { permanentByKey: {}, runUsagesByKey: {} };
+        }
+        return;
+      }
+      const permanentByKey: Record<string, boolean> = {};
+      const runUsagesByKey: Record<string, LaboratoryRunUsageSummary[]> = {};
+      try {
+        const { $api } = useNuxtApp();
+        for (let i = 0; i < scan.files.length; i += FILE_KEYS_CHUNK) {
+          if (fileTagLoadGeneration.get(labId) !== seq) return;
+          const keys = scan.files
+            .slice(i, i + FILE_KEYS_CHUNK)
+            .map((file) => file.Key)
+            .filter((key): key is string => !!key);
+          if (!keys.length) continue;
+          const res = await $api.dataCollections.requestListFileTags({
+            LaboratoryId: labId,
+            S3Bucket: scan.s3Bucket,
+            Keys: keys,
+          });
+          for (const file of res.Files) {
+            if (file.IsPermanent) permanentByKey[file.Key] = true;
+            if (file.LaboratoryRunUsages?.length) runUsagesByKey[file.Key] = file.LaboratoryRunUsages;
+          }
+        }
+      } catch {
+        if (fileTagLoadGeneration.get(labId) === seq) useToastStore().error('Failed to load file retention.');
+        return;
+      }
+      if (fileTagLoadGeneration.get(labId) !== seq) return;
+      this.fileRetentionByLab[labId] = { permanentByKey, runUsagesByKey };
+    },
+
+    async setUnlinkedFilesPermanent(labId: string, keys: string[], keep: boolean, tagId: string): Promise<boolean> {
+      const scan = this.unlinkedScans[labId];
+      if (!scan?.s3Bucket || !tagId || !keys.length) return false;
+      bumpFileTagLoad(labId);
+      try {
+        const { $api } = useNuxtApp();
+        for (let i = 0; i < keys.length; i += FILE_KEYS_CHUNK) {
+          await $api.dataCollections.addTagsToFiles({
+            LaboratoryId: labId,
+            S3Bucket: scan.s3Bucket,
+            Keys: keys.slice(i, i + FILE_KEYS_CHUNK),
+            ...(keep ? { AddTagIds: [tagId] } : { RemoveTagIds: [tagId] }),
+          });
+        }
+        const current = this.fileRetentionByLab[labId] ?? { permanentByKey: {}, runUsagesByKey: {} };
+        const permanentByKey = { ...current.permanentByKey };
+        for (const key of keys) {
+          if (keep) permanentByKey[key] = true;
+          else delete permanentByKey[key];
+        }
+        this.fileRetentionByLab[labId] = { ...current, permanentByKey };
+        return true;
+      } catch (e: unknown) {
+        useToastStore().error(e instanceof Error ? e.message : 'Update failed');
+        await this.loadUnlinkedFileTags(labId);
+        return false;
       }
     },
 

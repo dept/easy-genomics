@@ -5,6 +5,7 @@ import type {
 import type { LaboratorySample } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
 import {
   filterSamplesBySearch,
+  formatRetentionExpiryLabel,
   isExpiringSoon,
   soonestExpiresAtForUsages,
 } from '../../../src/app/utils/data-collections-filters';
@@ -38,6 +39,15 @@ describe('soonestExpiresAtForUsages', () => {
       usage('r4', NOW + 45 * DAY),
     ]);
     expect(result).toBe(NOW + 10 * DAY);
+  });
+});
+
+describe('formatRetentionExpiryLabel', () => {
+  it('shows Never for permanent files and a relative date otherwise', () => {
+    expect(formatRetentionExpiryLabel(true, [usage('r1', NOW + 1)], NOW)).toBe('Never');
+    expect(formatRetentionExpiryLabel(false, undefined, NOW)).toBe('—');
+    expect(formatRetentionExpiryLabel(false, [usage('r1', NOW + 2 * DAY)], NOW)).toBe('in 2 days');
+    expect(formatRetentionExpiryLabel(false, [usage('r1', NOW - DAY)], NOW)).toBe('Expired');
   });
 });
 

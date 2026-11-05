@@ -467,3 +467,19 @@ as the system-admin test user, in Influenza Genomics.
       back and save. No 403, and the toggle keeps its value after a reload.
 - [ ] **Quality** — on a lab with a whole-bucket grant, turn **Enable new buckets by default** off and on, saving each
       time. The grant survives both saves.
+
+---
+
+## Keep permanently on samples and files (EGV-387)
+
+Permanent protection on a sample stays on the sample row. The retention sweep treats a file as permanent when that file's `SampleIds` includes a permanent sample, so tagging, deleting a tag, or setting a batch must not drop those links. The Files tab lock and expiry come from the data-collections store.
+
+Not yet verified by hand. No E2E test was added.
+
+### Manual steps
+
+- [ ] **Sample on** — open Data Collections, Samples tab. Mark a sample **Keep permanently**. The sample shows the lock, and its expiry reads **Never**.
+- [ ] **Sample off** — choose **Remove permanent**. The lock goes away and the expiry is no longer **Never**.
+- [ ] **Files on** — open the Files tab. Select an unlinked file, choose **Keep permanently**. The row shows the lock and **Never**.
+- [ ] **Files off** — choose **Remove permanent**. The lock goes away and the expiry is no longer **Never**.
+- [ ] **Shared file** — a file that belongs to two samples stays protected after only one of those samples is unmarked.
