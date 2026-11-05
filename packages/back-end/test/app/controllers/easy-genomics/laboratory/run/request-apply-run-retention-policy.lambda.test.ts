@@ -92,6 +92,7 @@ describe('request-apply-run-retention-policy.lambda', () => {
 
   afterEach(() => {
     propagateSpy.mockRestore();
+    jest.useRealTimers();
   });
 
   it('does not call updateRunUsageExpiresAt on a dry run even when runs would be updated', async () => {
@@ -155,5 +156,42 @@ describe('request-apply-run-retention-policy.lambda', () => {
       [inputKey],
       expect.any(Number),
     );
+  });
+
+  it('defers every terminal run when the API deadline has already passed', async () => {
+    jest.useFakeTimers({ now: 1_700_000_000_000 });
+    mockQueryRuns.mockResolvedValue([
+      {
+        RunId: 'run-1',
+        LaboratoryId: LAB_ID,
+        OrganizationId: ORG_ID,
+        Status: 'COMPLETED',
+        TerminalAt: '2020-01-01T00:00:00.000Z',
+        CreatedAt: '2020-01-01T00:00:00.000Z',
+        InputFileKeys: [inputKey],
+      },
+      {
+        RunId: 'run-2',
+        LaboratoryId: LAB_ID,
+        OrganizationId: ORG_ID,
+        Status: 'FAILED',
+        TerminalAt: '2020-06-01T00:00:00.000Z',
+        CreatedAt: '2020-06-01T00:00:00.000Z',
+        InputFileKeys: [],
+      },
+    ]);
+
+    const result = await handler(
+      createEvent({ retentionMonths: 6 }),
+      { ...createContext(), getRemainingTimeInMillis: () => 8_000 },
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    const body = JSON.parse(result.body);
+    expect(body.Deferred).toBe(2);
+    expect(body.Updated).toBe(0);
+    expect(mockUpdateRetention).not.toHaveBeenCalled();
+    jest.useRealTimers();
   });
 });

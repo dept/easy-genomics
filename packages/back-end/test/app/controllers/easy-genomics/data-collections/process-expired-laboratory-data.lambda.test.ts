@@ -16,8 +16,11 @@ const mockListExpiredRunOutputs: jest.Mock = jest.fn();
 const mockMarkExpiredRunOutputCompleted: jest.Mock = jest.fn();
 const mockRecordExpiredRunOutput: jest.Mock = jest.fn();
 const mockListAllRunsForLaboratory: jest.Mock = jest.fn();
+const mockRunRowExists: jest.Mock = jest.fn();
 const mockUpdateRetentionMetadata: jest.Mock = jest.fn();
 const mockUpdateRunUsageExpiresAt: jest.Mock = jest.fn();
+const mockGetFileRow: jest.Mock = jest.fn();
+const mockRemoveUsages: jest.Mock = jest.fn();
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service', () => ({
   LaboratoryService: jest.fn().mockImplementation(() => ({
@@ -28,6 +31,7 @@ jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service', ()
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-run-service', () => ({
   LaboratoryRunService: jest.fn().mockImplementation(() => ({
     listAllRunsForLaboratory: mockListAllRunsForLaboratory,
+    runRowExists: mockRunRowExists,
     updateRetentionMetadata: mockUpdateRetentionMetadata,
   })),
 }));
@@ -53,7 +57,9 @@ jest.mock('../../../../../src/app/services/easy-genomics/laboratory-data-tagging
     ...actual,
     LaboratoryDataTaggingService: jest.fn().mockImplementation(() => ({
       listAllFileRowsForLab: mockListFileRows,
+      getFileRow: (...args: unknown[]) => mockGetFileRow(...args),
       deleteFileRowAndAssociations: mockDeleteRow,
+      removeLaboratoryRunUsageForRunIds: (...args: unknown[]) => mockRemoveUsages(...args),
       listTags: mockListTags,
       listExpiredRunOutputsForLab: mockListExpiredRunOutputs,
       updateRunUsageExpiresAt: mockUpdateRunUsageExpiresAt,
@@ -112,6 +118,13 @@ function resetMocks(): void {
   mockMarkExpiredRunOutputCompleted.mockReset().mockResolvedValue(undefined);
   mockRecordExpiredRunOutput.mockReset().mockResolvedValue(undefined);
   mockListAllRunsForLaboratory.mockReset().mockResolvedValue([]);
+  mockRunRowExists.mockReset().mockResolvedValue(false);
+  mockGetFileRow.mockReset().mockImplementation(async (_laboratoryId: string, ref: string) => {
+    const last = mockListFileRows.mock.results[mockListFileRows.mock.results.length - 1];
+    const rows = last ? await last.value : [];
+    return (rows || []).find((row: { Ref: string }) => row.Ref === ref) ?? null;
+  });
+  mockRemoveUsages.mockReset().mockResolvedValue(undefined);
   mockUpdateRetentionMetadata.mockReset().mockResolvedValue({});
   mockUpdateRunUsageExpiresAt.mockReset().mockResolvedValue(undefined);
   mockListS3AccessByLaboratoryId
@@ -120,6 +133,10 @@ function resetMocks(): void {
 }
 
 describe('process-expired-laboratory-data.lambda eligibility', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   beforeEach(() => {
     resetMocks();
     // Orphan reconciliation has its own suite below; disable it here so these tests exercise the
@@ -203,40 +220,62 @@ describe('process-expired-laboratory-data.lambda eligibility', () => {
     expect(mockDeleteObject).not.toHaveBeenCalled();
   });
 
-  it('deletes an old untagged file left in an expired run folder', async () => {
+  it('keeps an old untagged upload that lives under a transaction-id folder', async () => {
     const key = 'org-1/lab-1/aws-healthomics/11111111-1111-4111-8111-111111111111/reads.fq.gz';
     mockListFileRows.mockResolvedValueOnce([
-      { Ref: 'r1', S3Bucket: 'my-bucket', ObjectKey: key, TagIds: [], LaboratoryRunUsages: undefined },
+      { Ref: 'r1', S3Bucket: 'my-bucket', ObjectKey: key, TagIds: ['batch-1'], LaboratoryRunUsages: undefined },
     ]);
-    mockListAllObjectsUnderPrefix.mockResolvedValueOnce([
-      { Key: key, LastModified: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000) },
-    ]);
-    await handler(event, ctx, jest.fn());
-    expect(mockDeleteObject).toHaveBeenCalledWith({ Bucket: 'my-bucket', Key: key });
-  });
-
-  it('keeps a recent untagged file in a run folder that has no run record yet', async () => {
-    const key = 'org-1/lab-1/aws-healthomics/11111111-1111-4111-8111-111111111111/reads.fq.gz';
-    mockListFileRows.mockResolvedValueOnce([
-      { Ref: 'r1', S3Bucket: 'my-bucket', ObjectKey: key, TagIds: [], LaboratoryRunUsages: undefined },
-    ]);
-    mockListAllObjectsUnderPrefix.mockResolvedValueOnce([{ Key: key, LastModified: new Date() }]);
     await handler(event, ctx, jest.fn());
     expect(mockDeleteObject).not.toHaveBeenCalled();
-  });
-
-  it('does not treat a workflow-definition upload as an expired run input', async () => {
-    const key = 'org-1/lab-1/workflow-definitions/11111111-1111-4111-8111-111111111111/main.nf';
-    mockListFileRows.mockResolvedValueOnce([
-      { Ref: 'r1', S3Bucket: 'my-bucket', ObjectKey: key, TagIds: [], LaboratoryRunUsages: undefined },
-    ]);
-    await handler(event, ctx, jest.fn());
     expect(mockListAllObjectsUnderPrefix).not.toHaveBeenCalled();
+  });
+
+  it('keeps an untagged file listed on a surviving run even when its usage was not recorded', async () => {
+    const key = 'org-1/lab-1/aws-healthomics/99999999-8888-4777-8666-555555555555/reads.fq.gz';
+    mockListAllRunsForLaboratory.mockResolvedValue([
+      { RunId: '99999999-8888-4777-8666-555555555555', LaboratoryId: 'lab-1', Status: 'RUNNING', InputFileKeys: [key] },
+    ]);
+    mockListFileRows.mockResolvedValueOnce([
+      { Ref: 'r1', S3Bucket: 'my-bucket', ObjectKey: key, TagIds: [], LaboratoryRunUsages: undefined },
+    ]);
+    await handler(event, ctx, jest.fn());
     expect(mockDeleteObject).not.toHaveBeenCalled();
+  });
+
+  it('does not delete when a consistent re-read finds the usage run still exists', async () => {
+    mockListFileRows.mockResolvedValueOnce([
+      {
+        Ref: 'r1',
+        S3Bucket: 'my-bucket',
+        ObjectKey: 'org-1/lab-1/a.fq.gz',
+        TagIds: [],
+        LaboratoryRunUsages: { 'run-new': { RunId: 'run-new' } },
+      },
+    ]);
+    mockRunRowExists.mockImplementation(async (_laboratoryId: string, runId: string) => runId === 'run-new');
+    await handler(event, ctx, jest.fn());
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockRunRowExists).toHaveBeenCalledWith('lab-1', 'run-new');
+  });
+
+  it('keeps a Permanent file whose only usage points at a deleted run', async () => {
+    const permanentTagId = permanentTagIdForLaboratory(lab.LaboratoryId);
+    mockListFileRows.mockResolvedValueOnce([
+      {
+        Ref: 'r1',
+        S3Bucket: 'my-bucket',
+        ObjectKey: 'org-1/lab-1/locked.fq.gz',
+        TagIds: [permanentTagId],
+        LaboratoryRunUsages: { 'gone-run': { RunId: 'gone-run' } },
+      },
+    ]);
+    await handler(event, ctx, jest.fn());
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockRemoveUsages).toHaveBeenCalled();
   });
 
   it('does not treat usages as stale when the run list cannot be loaded', async () => {
-    mockListAllRunsForLaboratory.mockRejectedValueOnce(new Error('DynamoDB throttled'));
+    mockListAllRunsForLaboratory.mockRejectedValue(new Error('DynamoDB throttled'));
     mockListFileRows.mockResolvedValueOnce([
       {
         Ref: 'r1',
@@ -245,9 +284,19 @@ describe('process-expired-laboratory-data.lambda eligibility', () => {
         TagIds: [],
         LaboratoryRunUsages: { 'run-1': { RunId: 'run-1' } },
       },
+      {
+        Ref: 'r2',
+        S3Bucket: 'my-bucket',
+        ObjectKey: 'org-1/lab-1/b.fq.gz',
+        TagIds: ['wf-1'],
+        LaboratoryRunUsages: undefined,
+      },
     ]);
     await handler(event, ctx, jest.fn());
-    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockDeleteObject).toHaveBeenCalledTimes(1);
+    expect(mockDeleteObject).toHaveBeenCalledWith({ Bucket: 'my-bucket', Key: 'org-1/lab-1/b.fq.gz' });
+    expect(mockUpdateRetentionMetadata).not.toHaveBeenCalled();
+    expect(mockListAllObjectsUnderPrefix).not.toHaveBeenCalled();
   });
 
   it('stamps ExpiresAt on a terminal run the apply API never reached', async () => {
@@ -266,6 +315,47 @@ describe('process-expired-laboratory-data.lambda eligibility', () => {
     expect(mockUpdateRetentionMetadata.mock.calls[0][0].RunId).toBe('old-run');
     expect(mockUpdateRetentionMetadata.mock.calls[0][0].set.ExpiresAt).toEqual(expect.any(Number));
     expect(mockUpdateRunUsageExpiresAt).toHaveBeenCalledTimes(1);
+  });
+
+  it('finishes runs the first retention pass deferred once deletes are done', async () => {
+    jest.useFakeTimers({ now: 1_700_000_000_000 });
+    const run = (id: string) => ({
+      RunId: id,
+      LaboratoryId: 'lab-1',
+      Status: 'COMPLETED',
+      TerminalAt: '2020-01-01T00:00:00.000Z',
+      CreatedAt: '2020-01-01T00:00:00.000Z',
+      InputFileKeys: [] as string[],
+    });
+    mockListAllRunsForLaboratory.mockResolvedValue([run('run-1'), run('run-2')]);
+    mockUpdateRetentionMetadata.mockImplementation(async () => {
+      jest.setSystemTime(Date.now() + 61_000);
+    });
+
+    await handler(event, { getRemainingTimeInMillis: () => 180_000 } as Context, jest.fn());
+
+    expect(mockUpdateRetentionMetadata.mock.calls.map((call) => call[0].RunId)).toEqual(['run-1', 'run-2']);
+    jest.useRealTimers();
+  });
+
+  it('stops inside the file sweep when the deadline passes after the laboratory is entered', async () => {
+    jest.useFakeTimers({ now: 1_700_000_000_000 });
+    mockListFileRows.mockImplementation(async () => {
+      jest.setSystemTime(Date.now() + 20_000);
+      return [
+        {
+          Ref: 'r1',
+          S3Bucket: 'my-bucket',
+          ObjectKey: 'org-1/lab-1/a.fq.gz',
+          TagIds: ['wf-1'],
+        },
+      ];
+    });
+
+    await handler(event, { getRemainingTimeInMillis: () => 20_000 } as Context, jest.fn());
+
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+    jest.useRealTimers();
   });
 
   it('stops before the timeout and leaves the deletion for the next run', async () => {
@@ -475,7 +565,7 @@ describe('process-expired-laboratory-data.lambda expired run outputs', () => {
 
   it('skips a prefix that a surviving run still publishes into', async () => {
     mockListExpiredRunOutputs.mockResolvedValueOnce([marker]);
-    mockListAllRunsForLaboratory.mockResolvedValueOnce([
+    mockListAllRunsForLaboratory.mockResolvedValue([
       { RunId: 'run-2', OutputS3Url: `s3://my-bucket/${outputPrefix}` },
     ]);
 
@@ -487,7 +577,7 @@ describe('process-expired-laboratory-data.lambda expired run outputs', () => {
 
   it('skips a prefix that a surviving legacy run still claims via InputS3Url', async () => {
     mockListExpiredRunOutputs.mockResolvedValueOnce([marker]);
-    mockListAllRunsForLaboratory.mockResolvedValueOnce([{ RunId: 'run-2', InputS3Url: `s3://my-bucket/${runFolder}` }]);
+    mockListAllRunsForLaboratory.mockResolvedValue([{ RunId: 'run-2', InputS3Url: `s3://my-bucket/${runFolder}` }]);
 
     await handler(event, ctx, jest.fn());
 
@@ -499,7 +589,7 @@ describe('process-expired-laboratory-data.lambda expired run outputs', () => {
     // `prefillFromFailedRun` copies SampleSheetS3Url verbatim, so a live run's sheet can sit in an
     // expired run's folder. A marker carrying only sample sheets has no prefix check to fall back on.
     mockListExpiredRunOutputs.mockResolvedValueOnce([{ ...marker, OutputPrefix: undefined }]);
-    mockListAllRunsForLaboratory.mockResolvedValueOnce([
+    mockListAllRunsForLaboratory.mockResolvedValue([
       { RunId: 'run-2', SampleSheetS3Url: `s3://my-bucket/${sampleSheetKey}` },
     ]);
 
@@ -689,6 +779,19 @@ describe('process-expired-laboratory-data.lambda orphaned run folder reconciliat
     process.env.OUTPUT_DELETION_ENABLED = 'false';
     mockListChildPrefixes.mockReset();
     mockListAllObjectsUnderPrefix.mockReset();
+  });
+
+  it('leaves an orphan folder unrecorded when the object listing throws', async () => {
+    mockListChildPrefixes.mockImplementation(async (_bucket: string, prefix: string) => {
+      if (prefix === labPrefix) return [platformPrefix];
+      if (prefix === platformPrefix) return [runFolder];
+      return [];
+    });
+    mockListAllObjectsUnderPrefix.mockRejectedValue(new Error('S3 throttled'));
+
+    await handler(event, ctx, jest.fn());
+
+    expect(mockRecordExpiredRunOutput).not.toHaveBeenCalled();
   });
 
   it('records the results prefix and sample sheet of an orphaned run folder', async () => {

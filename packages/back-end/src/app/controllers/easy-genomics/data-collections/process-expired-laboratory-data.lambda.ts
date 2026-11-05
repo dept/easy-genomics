@@ -2,7 +2,7 @@ import { Context, Handler, ScheduledEvent } from 'aws-lambda';
 import {
   LaboratoryDataRetentionService,
   RetentionSweepOptions,
-  emptyRetentionSweepStats,
+  deadlineFromContext,
   orderedLaboratoriesForSweep,
 } from '@BE/services/easy-genomics/laboratory-data-retention-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
@@ -45,7 +45,7 @@ export const handler: Handler<ScheduledEvent, void> = async (
   event: ScheduledEvent,
   context: Context,
 ): Promise<void> => {
-  const deadlineMs = deadlineFromContext(context);
+  const deadlineMs = deadlineFromContext(context, DEADLINE_RESERVE_MS);
   const options: RetentionSweepOptions = {
     dryRun: process.env.DRY_RUN !== 'false',
     maxDeletesPerLab: parseNumericEnv('MAX_DELETES_PER_LAB_SWEEP', DEFAULT_MAX_DELETES_PER_LAB_SWEEP),
@@ -61,38 +61,9 @@ export const handler: Handler<ScheduledEvent, void> = async (
 
   console.log('Starting expired laboratory data sweep', { ...options, eventId: event?.id, time: event?.time });
 
-  const totals = emptyRetentionSweepStats();
-  let labsHitDeleteCap = 0;
-
   const laboratories = orderedLaboratoriesForSweep(await laboratoryService.listAllLaboratories(), event?.time);
-  for (const laboratory of laboratories) {
-    if (deadlineMs != null && Date.now() >= deadlineMs) {
-      console.warn('Sweep stopping before timeout; remaining laboratories continue on the next run.');
-      break;
-    }
-    try {
-      const stats = await retentionService.sweepLaboratory(laboratory, options);
-      totals.eligible += stats.eligible;
-      totals.deleted += stats.deleted;
-      totals.permanentProtected += stats.permanentProtected;
-      totals.outputPrefixesDeleted += stats.outputPrefixesDeleted;
-      totals.outputObjectsDeleted += stats.outputObjectsDeleted;
-      totals.outputObjectsProtected += stats.outputObjectsProtected;
-      totals.sampleSheetsDeleted += stats.sampleSheetsDeleted;
-      totals.outputPrefixesSkippedInUse += stats.outputPrefixesSkippedInUse;
-      totals.orphanFoldersScanned += stats.orphanFoldersScanned;
-      totals.orphanFoldersRecorded += stats.orphanFoldersRecorded;
-      totals.errors += stats.errors;
-      if (stats.hitDeleteCap) labsHitDeleteCap++;
-      if (stats.stoppedForDeadline) {
-        console.warn('Sweep stopping before timeout; remaining laboratories continue on the next run.');
-        break;
-      }
-    } catch (err) {
-      console.error(`Sweep failed for lab ${laboratory.LaboratoryId} (continuing):`, err);
-      totals.errors++;
-    }
-  }
+  const totals = await retentionService.sweepAllLaboratories(laboratories, options);
+  const labsHitDeleteCap = totals.labsHitDeleteCap;
 
   console.log('Expired laboratory data sweep summary:', {
     ...options,
@@ -116,13 +87,6 @@ export const handler: Handler<ScheduledEvent, void> = async (
     LabsHitDeleteCap: labsHitDeleteCap,
   });
 };
-
-function deadlineFromContext(context: Context | undefined): number | undefined {
-  if (context == null || typeof context.getRemainingTimeInMillis !== 'function') return undefined;
-  const remaining = context.getRemainingTimeInMillis();
-  if (!Number.isFinite(remaining)) return undefined;
-  return Date.now() + Math.max(0, remaining - DEADLINE_RESERVE_MS);
-}
 
 /** Falls back to `fallback` for unset, empty, malformed or negative values. `0` is honoured. */
 function parseNumericEnv(name: string, fallback: number): number {

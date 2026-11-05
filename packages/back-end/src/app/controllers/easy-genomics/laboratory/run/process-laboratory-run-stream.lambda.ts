@@ -17,9 +17,9 @@ const laboratoryDataTaggingService = new LaboratoryDataTaggingService();
  * cascade described in the "Permanent tag and S3 expiry" plan:
  *
  *   1. Unmarshal the OLD image of the removed run row.
- *   2. Leave each input file's `LaboratoryRunUsages` entry in place. Removing it made an
- *      untagged input indistinguishable from a never-used upload, so the sweep skipped the
- *      file forever. The sweep deletes the file (and the row) once no surviving run references it.
+ *   2. Leave each input file's `LaboratoryRunUsages` entry in place until the sweep deletes the
+ *      file. A usage whose run row is gone is how the sweep recognises an expired input that
+ *      never received a workflow tag.
  *   3. Record the run's output directory and generated sample sheet as a RUNOUTPUT# row
  *      (via `recordExpiredRunOutput`). The run record is the only place those locations are
  *      stored, so they must be captured here before the OLD image is discarded.

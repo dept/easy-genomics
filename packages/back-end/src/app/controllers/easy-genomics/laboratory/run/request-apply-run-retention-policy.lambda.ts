@@ -6,7 +6,10 @@ import {
   UnauthorizedAccessError,
 } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Context, Handler } from 'aws-lambda';
-import { LaboratoryDataRetentionService } from '@BE/services/easy-genomics/laboratory-data-retention-service';
+import {
+  LaboratoryDataRetentionService,
+  deadlineFromContext,
+} from '@BE/services/easy-genomics/laboratory-data-retention-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import {
   validateLaboratoryManagerAccess,
@@ -52,14 +55,7 @@ export const handler: Handler = async (
     // ?? preserves an explicit body value of 0; do not use || here.
     const retentionMonths = getRetentionMonthsOrDefault(body.retentionMonths ?? laboratory.RunRetentionMonths);
 
-    const remaining =
-      context != null && typeof context.getRemainingTimeInMillis === 'function'
-        ? context.getRemainingTimeInMillis()
-        : undefined;
-    const deadlineMs =
-      !dryRun && remaining != null && Number.isFinite(remaining)
-        ? Date.now() + Math.max(0, remaining - API_DEADLINE_RESERVE_MS)
-        : undefined;
+    const deadlineMs = dryRun ? undefined : deadlineFromContext(context, API_DEADLINE_RESERVE_MS);
 
     const applied = await retentionService.applyRunRetentionPolicy(laboratory, retentionMonths, {
       dryRun,
