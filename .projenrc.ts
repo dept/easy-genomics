@@ -773,6 +773,7 @@ root.gitignore.addPatterns(
   '.claude/',
 );
 // Exception: Include .env example files (used for local dev setup documentation)
+root.gitignore.addPatterns('/.nx/cache', '/.nx/workspace-data');
 root.gitignore.addPatterns('!packages/back-end/.env.local.example', '!config/.env.nuxt.local.example');
 
 // Security: force minimum patched versions for transitive deps with active Dependabot alerts.
@@ -814,9 +815,6 @@ root.addFields({
       // eslint-plugin-import declares ^3.1.2 (CJS-compatible); scoped override keeps it on safe 3.x.
       minimatch: '>=9.0.7 <10.0.0',
       'eslint-plugin-import>minimatch': '>=3.1.2 <4.0.0',
-      // nx@15 uses minimatch as a CJS default function (old 3.x API: const minimatch = require('minimatch'); minimatch(f, p)).
-      // minimatch 9.x exports a named function, not a default — this breaks nx's hasher and project-graph locators.
-      'nx>minimatch': '>=3.1.4 <4.0.0',
       // eslint@8 uses the same old CJS default-function pattern and declares ^3.1.2.
       // The global >=9 override would break eslint's eslint-helpers.js without this scoped pin.
       'eslint>minimatch': '>=3.1.2 <4.0.0',

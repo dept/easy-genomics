@@ -7,26 +7,20 @@ export class Nx extends Component {
     super(<IConstruct>rootProject);
 
     // Add nx library dependencies
-    rootProject.addDevDeps('nx@^15', '@nrwl/devkit@^15', '@nrwl/workspace@^15');
+    rootProject.addDevDeps('nx@^22.7.10');
 
     // Add nx.json file
     new JsonFile(<IConstruct>rootProject, 'nx.json', {
       obj: {
         extends: 'nx/presets/npm.json',
-        tasksRunnerOptions: {
-          default: {
-            runner: '@nrwl/workspace/tasks-runners/default',
-            options: {
-              // By default nx uses a local cache to prevent re-running targets
-
-              // that have not had their inputs changed (eg. no changes to source files).
-              // The following specifies what targets are cacheable.
-              cacheableOperations: ['build'],
-            },
-          },
-        },
+        // Never prompt to connect to Nx Cloud, so scripted builds and deploys cannot stop at a prompt.
+        neverConnectToCloud: true,
         targetDefaults: {
           build: {
+            // By default nx uses a local cache to prevent re-running targets
+            // that have not had their inputs changed (eg. no changes to source files).
+            cache: true,
+
             // Specifies the build target of a project is dependent on the
             // build target of dependant projects (via the caret)
             dependsOn: ['^build'],

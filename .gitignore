@@ -105,6 +105,8 @@ AGENTS.md
 .cursor/mcp.json
 .cursor/rules/
 .claude/
+/.nx/cache
+/.nx/workspace-data
 !packages/back-end/.env.local.example
 !config/.env.nuxt.local.example
 !/.projenrc.ts

@@ -17,16 +17,6 @@
       "type": "build"
     },
     {
-      "name": "@nrwl/devkit",
-      "version": "^15",
-      "type": "build"
-    },
-    {
-      "name": "@nrwl/workspace",
-      "version": "^15",
-      "type": "build"
-    },
-    {
       "name": "@types/aws-lambda",
       "type": "build"
     },
@@ -110,7 +100,7 @@
     },
     {
       "name": "nx",
-      "version": "^15",
+      "version": "^22.7.10",
       "type": "build"
     },
     {
