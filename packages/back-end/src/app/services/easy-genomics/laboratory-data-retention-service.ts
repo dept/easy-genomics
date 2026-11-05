@@ -1,10 +1,18 @@
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import {
   LaboratoryDataTaggingService,
   permanentTagIdForLaboratory,
 } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { S3Service } from '@BE/services/s3-service';
+import {
+  calculateExpiresAtEpochSeconds,
+  getRetentionMonthsOrDefault,
+  getTerminalAtIsoString,
+  isTerminalLaboratoryRunStatus,
+  shouldExpireWithRetentionMonths,
+} from '@BE/utils/laboratory-run-ttl-utils';
 import {
   isBelowRunFolderRoot,
   isRunFolderName,
@@ -30,6 +38,52 @@ const MAX_RUN_FOLDER_DEPTH = 2;
  */
 const ORPHAN_SCAN_MIN_AGE_DAYS = 30;
 
+function orphanQuietCutoff(nowMs: number = Date.now()): Date {
+  return new Date(nowMs - ORPHAN_SCAN_MIN_AGE_DAYS * 24 * 60 * 60 * 1000);
+}
+
+export type ApplyRunRetentionResult = {
+  terminalRuns: number;
+  updated: number;
+  removed: number;
+  skipped: number;
+  runsExpireImmediately: number;
+  runsExpirationDateUpdated: number;
+  deferred: number;
+  hitDeadline: boolean;
+};
+
+/**
+ * Rotates which laboratory is first so a lab that fills the whole invocation cannot starve the
+ * others. The next scheduled run starts further along the same stable order.
+ */
+export function orderedLaboratoriesForSweep<T extends { LaboratoryId: string }>(
+  laboratories: T[],
+  eventTime?: string,
+): T[] {
+  if (laboratories.length <= 1) return laboratories;
+  const sorted = [...laboratories].sort((a, b) => a.LaboratoryId.localeCompare(b.LaboratoryId));
+  const parsed = eventTime ? new Date(eventTime) : new Date();
+  const epochMs = Number.isNaN(parsed.getTime()) ? Date.now() : parsed.getTime();
+  const start = Math.floor(epochMs / 86_400_000) % sorted.length;
+  return [...sorted.slice(start), ...sorted.slice(0, start)];
+}
+
+function pastDeadline(deadlineMs?: number): boolean {
+  return deadlineMs != null && Date.now() >= deadlineMs;
+}
+
+/** Epoch ms when this invocation should stop, leaving `reserveMs` for the caller to finish. */
+export function deadlineFromContext(
+  context: { getRemainingTimeInMillis?: () => number } | undefined,
+  reserveMs: number,
+): number | undefined {
+  if (context == null || typeof context.getRemainingTimeInMillis !== 'function') return undefined;
+  const remaining = context.getRemainingTimeInMillis();
+  if (!Number.isFinite(remaining)) return undefined;
+  return Date.now() + Math.max(0, remaining - reserveMs);
+}
+
 export type RetentionSweepOptions = {
   /** Only `false` enables real deletes; anything else audits. */
   dryRun: boolean;
@@ -41,6 +95,13 @@ export type RetentionSweepOptions = {
   outputDeletionEnabled: boolean;
   /** Discovers outputs orphaned by runs that expired before the cascade existed. */
   orphanReconciliationEnabled: boolean;
+  /** Stop cleanly before the Lambda is killed. Unset means run until the work is done. */
+  deadlineMs?: number;
+  /**
+   * How long the first retention-metadata pass may spend writing before deletion runs.
+   * A later pass uses whatever time is left after deletes. Unset means no slice limit.
+   */
+  retentionWriteSliceMs?: number;
 };
 
 export type RetentionSweepStats = {
@@ -56,6 +117,7 @@ export type RetentionSweepStats = {
   orphanFoldersRecorded: number;
   errors: number;
   hitDeleteCap: boolean;
+  stoppedForDeadline: boolean;
 };
 
 export function emptyRetentionSweepStats(): RetentionSweepStats {
@@ -72,6 +134,7 @@ export function emptyRetentionSweepStats(): RetentionSweepStats {
     orphanFoldersRecorded: 0,
     errors: 0,
     hitDeleteCap: false,
+    stoppedForDeadline: false,
   };
 }
 
@@ -112,6 +175,46 @@ export class LaboratoryDataRetentionService {
   }
 
   /**
+   * Walks laboratories in the given order and stops before `options.deadlineMs`. One laboratory
+   * throwing does not stop the others.
+   */
+  public async sweepAllLaboratories(
+    laboratories: Laboratory[],
+    options: RetentionSweepOptions,
+  ): Promise<RetentionSweepStats & { labsHitDeleteCap: number }> {
+    const totals = { ...emptyRetentionSweepStats(), labsHitDeleteCap: 0 };
+    for (const laboratory of laboratories) {
+      if (pastDeadline(options.deadlineMs)) {
+        console.warn('Sweep stopping before timeout; remaining laboratories continue on the next run.');
+        break;
+      }
+      try {
+        const stats = await this.sweepLaboratory(laboratory, options);
+        totals.eligible += stats.eligible;
+        totals.deleted += stats.deleted;
+        totals.permanentProtected += stats.permanentProtected;
+        totals.outputPrefixesDeleted += stats.outputPrefixesDeleted;
+        totals.outputObjectsDeleted += stats.outputObjectsDeleted;
+        totals.outputObjectsProtected += stats.outputObjectsProtected;
+        totals.sampleSheetsDeleted += stats.sampleSheetsDeleted;
+        totals.outputPrefixesSkippedInUse += stats.outputPrefixesSkippedInUse;
+        totals.orphanFoldersScanned += stats.orphanFoldersScanned;
+        totals.orphanFoldersRecorded += stats.orphanFoldersRecorded;
+        totals.errors += stats.errors;
+        if (stats.hitDeleteCap) totals.labsHitDeleteCap++;
+        if (stats.stoppedForDeadline) {
+          console.warn('Sweep stopping before timeout; remaining laboratories continue on the next run.');
+          break;
+        }
+      } catch (err) {
+        console.error(`Sweep failed for lab ${laboratory.LaboratoryId} (continuing):`, err);
+        totals.errors++;
+      }
+    }
+    return totals;
+  }
+
+  /**
    * Runs all three retention phases for one laboratory: the FILE#-row input sweep, orphan
    * reconciliation, then the recorded-output sweep. Reconciliation runs before the output sweep so
    * anything it finds is deleted in the same invocation.
@@ -120,34 +223,193 @@ export class LaboratoryDataRetentionService {
     const stats = emptyRetentionSweepStats();
     if (!laboratory.S3Bucket) return stats;
 
+    const runsForStamp = await this.loadRunsForSweep(laboratory.LaboratoryId, stats);
+
+    let retentionDeferred = 0;
+    if (runsForStamp && !pastDeadline(options.deadlineMs)) {
+      const wrote = await this.applySweepRetention(laboratory, runsForStamp, options, options.retentionWriteSliceMs);
+      retentionDeferred = wrote.deferred;
+      this.logRetentionReconcile(laboratory.LaboratoryId, wrote);
+      if (wrote.hitDeadline) {
+        stats.stoppedForDeadline = true;
+        return stats;
+      }
+    }
+
     const fileRows = await this.loadFileRowIndex(laboratory);
-    await this.sweepInputFiles(laboratory, options, fileRows, stats);
+    // The stamp above can take the whole write slice. Reload so a run created in that window is
+    // visible before any input is classified as stale.
+    const runs = runsForStamp ? await this.loadRunsForSweep(laboratory.LaboratoryId, stats) : undefined;
+    await this.sweepInputFiles(laboratory, options, fileRows, stats, runs);
+    if (stats.stoppedForDeadline) return stats;
 
-    if (!options.outputDeletionEnabled && !options.orphanReconciliationEnabled) return stats;
-
-    // Fail closed: every output decision below is "no surviving run references this, so delete
-    // it". Without a complete live set that inference is unsound, so a failed load skips the
-    // destructive phases for this lab rather than proceeding on partial data.
-    let liveReferences: LiveRunReferences;
-    try {
-      liveReferences = await this.loadLiveRunReferences(laboratory.LaboratoryId);
-    } catch (err) {
-      console.error(
-        `  Skipping output retention for lab ${laboratory.LaboratoryId}: could not establish the set of surviving runs:`,
-        err,
-      );
-      stats.errors++;
-      return stats;
+    if (runs && (options.outputDeletionEnabled || options.orphanReconciliationEnabled)) {
+      const liveReferences = this.liveRunReferencesFrom(runs);
+      if (options.orphanReconciliationEnabled) {
+        await this.reconcileOrphanedRunFolders(laboratory, options, liveReferences, fileRows, stats);
+      }
+      if (!stats.stoppedForDeadline && options.outputDeletionEnabled) {
+        await this.sweepRunOutputs(laboratory, options, liveReferences, fileRows, stats);
+      }
     }
 
-    if (options.orphanReconciliationEnabled) {
-      await this.reconcileOrphanedRunFolders(laboratory, options, liveReferences, fileRows, stats);
-    }
-    if (options.outputDeletionEnabled) {
-      await this.sweepRunOutputs(laboratory, options, liveReferences, fileRows, stats);
+    if (runsForStamp && retentionDeferred > 0 && !stats.stoppedForDeadline && !pastDeadline(options.deadlineMs)) {
+      const rest = await this.applySweepRetention(laboratory, runsForStamp, options);
+      this.logRetentionReconcile(laboratory.LaboratoryId, rest);
+      if (rest.hitDeadline) stats.stoppedForDeadline = true;
     }
 
     return stats;
+  }
+
+  private applySweepRetention(
+    laboratory: Laboratory,
+    runs: LaboratoryRun[],
+    options: RetentionSweepOptions,
+    maxWriteMs?: number,
+  ): Promise<ApplyRunRetentionResult> {
+    return this.applyRunRetentionPolicy(laboratory, getRetentionMonthsOrDefault(laboratory.RunRetentionMonths), {
+      dryRun: options.dryRun,
+      modifiedBy: 'Run Retention Sweep',
+      deadlineMs: options.deadlineMs,
+      maxWriteMs,
+      runs,
+    });
+  }
+
+  /** `undefined` means the load failed. Callers must not treat a missing run as permission to delete. */
+  private async loadRunsForSweep(
+    laboratoryId: string,
+    stats: RetentionSweepStats,
+  ): Promise<LaboratoryRun[] | undefined> {
+    try {
+      return await this.runService.listAllRunsForLaboratory(laboratoryId);
+    } catch (err) {
+      console.error(
+        `  Skipping retention reconcile, stale-usage deletes, and output retention for lab ${laboratoryId}: could not load runs:`,
+        err,
+      );
+      stats.errors++;
+      return undefined;
+    }
+  }
+
+  /**
+   * Rewrites `ExpiresAt` on every terminal run so it matches the laboratory policy. Follows every
+   * DynamoDB page. Writes stop at `deadlineMs` or after `maxWriteMs`, whichever comes first.
+   * Runs left unwritten are reported as `deferred` and are safe to retry.
+   */
+  public async applyRunRetentionPolicy(
+    laboratory: Laboratory,
+    retentionMonths: number,
+    options: {
+      dryRun: boolean;
+      modifiedBy: string;
+      deadlineMs?: number;
+      maxWriteMs?: number;
+      runs?: LaboratoryRun[];
+    },
+  ): Promise<ApplyRunRetentionResult> {
+    const result: ApplyRunRetentionResult = {
+      terminalRuns: 0,
+      updated: 0,
+      removed: 0,
+      skipped: 0,
+      runsExpireImmediately: 0,
+      runsExpirationDateUpdated: 0,
+      deferred: 0,
+      hitDeadline: false,
+    };
+
+    const runs = options.runs ?? (await this.runService.listAllRunsForLaboratory(laboratory.LaboratoryId));
+    const terminalRuns = runs.filter((run) => isTerminalLaboratoryRunStatus(run.Status));
+    result.terminalRuns = terminalRuns.length;
+    const writeUntil = options.maxWriteMs != null ? Date.now() + options.maxWriteMs : undefined;
+
+    for (const run of terminalRuns) {
+      const now = new Date();
+      const nowEpochSeconds = Math.floor(now.getTime() / 1000);
+      const terminalAtIso = getTerminalAtIsoString(run, now);
+      const needsTerminalAt = run.TerminalAt == null;
+      const shouldHaveExpiry = shouldExpireWithRetentionMonths(retentionMonths);
+      const desiredExpiresAt = shouldHaveExpiry
+        ? calculateExpiresAtEpochSeconds(new Date(terminalAtIso), retentionMonths)
+        : undefined;
+      const needsExpiresAtSet = shouldHaveExpiry && run.ExpiresAt !== desiredExpiresAt;
+      const needsExpiresAtRemove = !shouldHaveExpiry && run.ExpiresAt != null;
+
+      if (!needsTerminalAt && !needsExpiresAtSet && !needsExpiresAtRemove) {
+        result.skipped++;
+        continue;
+      }
+
+      const countExpiry = (): void => {
+        if (needsExpiresAtSet && desiredExpiresAt != null) {
+          if (desiredExpiresAt <= nowEpochSeconds) result.runsExpireImmediately++;
+          else result.runsExpirationDateUpdated++;
+        } else if (needsExpiresAtRemove) {
+          result.runsExpirationDateUpdated++;
+        }
+      };
+
+      if (options.dryRun) {
+        countExpiry();
+        if (needsExpiresAtRemove) result.removed++;
+        if (needsTerminalAt || needsExpiresAtSet) result.updated++;
+        continue;
+      }
+
+      const sliceElapsed = writeUntil != null && Date.now() >= writeUntil;
+      if (pastDeadline(options.deadlineMs) || sliceElapsed) {
+        if (pastDeadline(options.deadlineMs)) result.hitDeadline = true;
+        result.deferred++;
+        continue;
+      }
+
+      countExpiry();
+
+      await this.runService.updateRetentionMetadata({
+        LaboratoryId: run.LaboratoryId,
+        RunId: run.RunId,
+        set: {
+          ...(needsTerminalAt ? { TerminalAt: terminalAtIso } : {}),
+          ...(needsExpiresAtSet && desiredExpiresAt != null ? { ExpiresAt: desiredExpiresAt } : {}),
+          ModifiedAt: now.toISOString(),
+          ModifiedBy: options.modifiedBy,
+        },
+        remove: needsExpiresAtRemove ? ['ExpiresAt'] : [],
+      });
+
+      if (needsTerminalAt) run.TerminalAt = terminalAtIso;
+      if (needsExpiresAtSet && desiredExpiresAt != null) run.ExpiresAt = desiredExpiresAt;
+      if (needsExpiresAtRemove) delete run.ExpiresAt;
+
+      if (laboratory.S3Bucket && (run.InputFileKeys || []).length > 0) {
+        try {
+          await this.taggingService.updateRunUsageExpiresAt(
+            laboratory,
+            laboratory.S3Bucket,
+            run.RunId,
+            run.InputFileKeys || [],
+            needsExpiresAtRemove ? undefined : desiredExpiresAt,
+          );
+        } catch (err) {
+          console.warn(`Failed to propagate ExpiresAt to tagging for RunId=${run.RunId} (continuing):`, err);
+        }
+      }
+
+      if (needsExpiresAtRemove) result.removed++;
+      if (needsTerminalAt || needsExpiresAtSet) result.updated++;
+    }
+
+    return result;
+  }
+
+  private logRetentionReconcile(laboratoryId: string, wrote: ApplyRunRetentionResult): void {
+    if (!wrote.updated && !wrote.removed && !wrote.deferred) return;
+    console.log(
+      `Lab ${laboratoryId} retention reconcile: updated=${wrote.updated} removed=${wrote.removed} deferred=${wrote.deferred}`,
+    );
   }
 
   private async loadFileRowIndex(laboratory: Laboratory): Promise<FileRowIndex> {
@@ -169,36 +431,66 @@ export class LaboratoryDataRetentionService {
   }
 
   /**
-   * Input files are shared between runs and tracked per-file, so they are deleted only when their
-   * FILE# row shows no remaining usages, carries a workflow tag (proving it was once used, which
-   * distinguishes an expired file from a never-used orphan) and is not marked Permanent.
+   * Input files are shared between runs and tracked per-file. A file is deleted only when no
+   * surviving run lists it in `InputFileKeys`, it has no usage whose run row still exists, it is
+   * not marked Permanent, and a workflow tag or a usage records that it belonged to a run.
+   * A UUID folder is not evidence: upload transaction ids are UUIDs too.
+   *
+   * shortcut: a file whose usages were already cleared and that never received a workflow tag is
+   * indistinguishable from a never-used upload and is kept.
    */
   private async sweepInputFiles(
     laboratory: Laboratory,
     options: RetentionSweepOptions,
     fileRows: FileRowIndex,
     stats: RetentionSweepStats,
+    runs: LaboratoryRun[] | undefined,
   ): Promise<void> {
     const permanentTagId = permanentTagIdForLaboratory(laboratory.LaboratoryId);
     const workflowTagIds = await this.loadWorkflowTagIds(laboratory.LaboratoryId);
+    // `undefined` runs means the load failed: treat every usage as live so we cannot delete a
+    // file that a surviving run still needs.
+    const liveRunIds = runs ? new Set(runs.map((run) => run.RunId).filter((id): id is string => !!id)) : null;
+    const liveInputKeys = new Set<string>();
+    for (const run of runs || []) {
+      for (const key of run.InputFileKeys || []) liveInputKeys.add(key);
+    }
     let loggedDeleteCap = false;
 
     for (const row of fileRows.rows) {
-      const tagIds = new Set<string>(row.TagIds || []);
-      const hasUsages = !!row.LaboratoryRunUsages && Object.keys(row.LaboratoryRunUsages).length > 0;
-      const hasWorkflowTag = [...tagIds].some((id) => workflowTagIds.has(id));
+      if (pastDeadline(options.deadlineMs)) {
+        stats.stoppedForDeadline = true;
+        break;
+      }
 
-      if (!hasWorkflowTag) continue;
-      if (hasUsages) continue;
+      const tagIds = new Set<string>(row.TagIds || []);
+      const usageIds = Object.keys(row.LaboratoryRunUsages || {});
+      const liveUsages = liveRunIds == null ? usageIds.length : usageIds.filter((id) => liveRunIds.has(id)).length;
+      const hasWorkflowTag = [...tagIds].some((id) => workflowTagIds.has(id));
+      const key = row.ObjectKey;
+      const bucket = row.S3Bucket || laboratory.S3Bucket;
+
+      if (key && liveInputKeys.has(key)) continue;
+      if (liveUsages > 0) {
+        if (!options.dryRun && liveRunIds && bucket && key) {
+          await this.dropStaleUsages(laboratory, bucket, key, usageIds.filter((id) => !liveRunIds.has(id)));
+        }
+        continue;
+      }
+
+      const belongedToExpiredRun = hasWorkflowTag || (liveRunIds != null && usageIds.length > 0);
+      if (!belongedToExpiredRun) continue;
+
       if (tagIds.has(permanentTagId)) {
         stats.permanentProtected++;
+        if (!options.dryRun && liveRunIds && bucket && key) {
+          await this.dropStaleUsages(laboratory, bucket, key, usageIds);
+        }
         continue;
       }
 
       stats.eligible++;
 
-      const bucket = row.S3Bucket || laboratory.S3Bucket!;
-      const key = row.ObjectKey;
       if (!bucket || !key) continue;
 
       if (options.dryRun) {
@@ -230,6 +522,7 @@ export class LaboratoryDataRetentionService {
       }
 
       try {
+        if (await this.inputBecameLive(laboratory.LaboratoryId, row.Ref, liveInputKeys)) continue;
         await this.s3Service.deleteObject({ Bucket: bucket, Key: key });
         await this.taggingService.deleteFileRowAndAssociations(laboratory.LaboratoryId, row.Ref);
         stats.deleted++;
@@ -254,14 +547,35 @@ export class LaboratoryDataRetentionService {
     return workflowTagIds;
   }
 
-  /**
-   * Collects every S3 location a surviving run still points at. Uses the paginated run query:
-   * `queryByLaboratoryId` returns only the first 1MB page, and a run missing from a truncated page
-   * would read as "expired", authorising deletion of a live run's data.
-   */
-  private async loadLiveRunReferences(laboratoryId: string): Promise<LiveRunReferences> {
-    const runs = await this.runService.listAllRunsForLaboratory(laboratoryId);
+  /** A run launched after the list was loaded records its usage before we delete. */
+  private async inputBecameLive(laboratoryId: string, ref: string, liveInputKeys: Set<string>): Promise<boolean> {
+    const fresh = await this.taggingService.getFileRow(laboratoryId, ref);
+    if (!fresh) return true;
+    if (fresh.ObjectKey && liveInputKeys.has(fresh.ObjectKey)) return true;
+    for (const runId of Object.keys(fresh.LaboratoryRunUsages || {})) {
+      if (await this.runService.runRowExists(laboratoryId, runId)) return true;
+    }
+    return false;
+  }
 
+  /** Removes usages whose runs are gone from a file this sweep is keeping. */
+  private async dropStaleUsages(laboratory: Laboratory, bucket: string, key: string, staleRunIds: string[]): Promise<void> {
+    if (!staleRunIds.length) return;
+    const runIdToInputKeys: Record<string, string[]> = {};
+    for (const runId of staleRunIds) runIdToInputKeys[runId] = [key];
+    try {
+      await this.taggingService.removeLaboratoryRunUsageForRunIds(laboratory, bucket, runIdToInputKeys);
+    } catch (err) {
+      console.warn(`  Could not drop stale usages for s3://${bucket}/${key} (continuing):`, err);
+    }
+  }
+
+  /**
+   * Collects every S3 location a surviving run still points at. Callers must pass the full run
+   * list: a run missing from a truncated page would read as "expired", authorising deletion of a
+   * live run's data.
+   */
+  private liveRunReferencesFrom(runs: LaboratoryRun[]): LiveRunReferences {
     const runIds = new Set<string>();
     const outputPrefixes: string[] = [];
     const sampleSheetKeys = new Set<string>();
@@ -309,7 +623,7 @@ export class LaboratoryDataRetentionService {
     const bucket = laboratory.S3Bucket!;
     if (options.maxOrphanFoldersPerLab === 0) return;
 
-    const cutoff = new Date(Date.now() - ORPHAN_SCAN_MIN_AGE_DAYS * 24 * 60 * 60 * 1000);
+    const cutoff = orphanQuietCutoff();
     const knownRunIds = new Set(
       (await this.taggingService.listExpiredRunOutputsForLab(laboratory.LaboratoryId)).map((r) => r.RunId),
     );
@@ -317,6 +631,10 @@ export class LaboratoryDataRetentionService {
     const runFolders = await this.discoverRunFolders(bucket, laboratoryPrefix(laboratory));
 
     for (const runFolder of runFolders) {
+      if (pastDeadline(options.deadlineMs)) {
+        stats.stoppedForDeadline = true;
+        break;
+      }
       const runId = lastPathSegment(runFolder);
       if (live.runIds.has(runId) || knownRunIds.has(runId)) continue;
       if (stats.orphanFoldersScanned >= options.maxOrphanFoldersPerLab) break;
@@ -407,6 +725,10 @@ export class LaboratoryDataRetentionService {
     let remaining = Math.max(0, options.maxDeletesPerLab - stats.deleted);
 
     for (const row of pending) {
+      if (pastDeadline(options.deadlineMs)) {
+        stats.stoppedForDeadline = true;
+        break;
+      }
       const bucket = row.S3Bucket || laboratory.S3Bucket!;
 
       // Re-validate at delete time, not just at write time. The writer's fence does not protect

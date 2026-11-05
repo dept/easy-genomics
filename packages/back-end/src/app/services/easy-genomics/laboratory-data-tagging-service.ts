@@ -28,6 +28,7 @@ import {
 } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { v5 as uuidv5 } from 'uuid';
 import { DynamoDBService } from '../dynamodb-service';
+import { liveRunIdsForLaboratory, usagesStillLive } from './live-run-ids';
 import { LaboratoryS3AccessService } from '@BE/services/easy-genomics/laboratory-s3-access-service';
 import { assertLaboratoryHasS3BucketAccess as assertLabS3Access } from '@BE/utils/laboratory-s3-access-utils';
 
@@ -693,9 +694,9 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       const fileRow = await this.getFileRow(laboratoryId, ref);
       if (!fileRow) continue;
       const nextIds = (fileRow.TagIds || []).filter((id) => id !== tagId);
+      // Stale usages stay on the row until the sweep deletes the object. Dropping the row here
+      // would leave the S3 object with nothing pointing at it.
       const hasUsages = !!fileRow.LaboratoryRunUsages && Object.keys(fileRow.LaboratoryRunUsages).length > 0;
-      // Preserve the FILE# row whenever per-run usage history is recorded against it; otherwise
-      // deleting it would lose the analysis history surfaced in the sequence collections UI.
       if (nextIds.length === 0 && !hasUsages) {
         await this.deleteItem({
           TableName: TABLE_NAME,
@@ -763,6 +764,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
 
   public async listFileTags(laboratoryId: string, bucket: string, keys: string[]): Promise<FileTagAssignment[]> {
     const out: FileTagAssignment[] = [];
+    const liveRunIds = await liveRunIdsForLaboratory(laboratoryId);
     const { batchTagIds, workflowTagIds, permanentTagIds } = await this.getKindIndexedTagIds(laboratoryId);
     const batchTagIdsMutable = new Set(batchTagIds);
     const workflowTagIdsMutable = new Set(workflowTagIds);
@@ -827,7 +829,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
             standard.push(id);
           }
         }
-        const usagesMap = usagesBySk.get(sk);
+        const usagesMap = usagesStillLive(usagesBySk.get(sk), liveRunIds);
         const usageList = usagesMap
           ? Object.values(usagesMap).sort((a, b) => (b.RunCreatedAt || '').localeCompare(a.RunCreatedAt || ''))
           : undefined;
@@ -1086,10 +1088,10 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
   }
 
   /**
-   * Removes the given `RunId` entries from each file's `LaboratoryRunUsages` map. Used by
-   * maintenance flows (seed reset, run deletion) that need to undo run history without
-   * touching unrelated tags. If a FILE# row ends up with no tags **and** no usages after the
-   * removal, the row itself is deleted to keep the table clean.
+   * Removes the given `RunId` entries from each file's `LaboratoryRunUsages` map. The seed-reset
+   * script still calls this when it deletes seed runs. The run-table stream does not: it leaves
+   * usages in place so the sweep can recognise an expired input. If a FILE# row ends up with no
+   * tags and no usages after the removal, the row itself is deleted.
    *
    * `runIdToInputKeys` is the run's recorded input keys (or any superset) so we know which
    * `FILE#` rows could possibly carry an entry for the given `RunId`; the per-file update
@@ -1099,7 +1101,6 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     laboratory: Laboratory,
     bucket: string,
     runIdToInputKeys: Record<string, string[]>,
-    options: { preserveEmptyFileRow?: boolean } = {},
   ): Promise<void> {
     const laboratoryId = laboratory.LaboratoryId;
     await this.assertLaboratoryHasS3BucketAccess(laboratory, bucket);
@@ -1135,12 +1136,6 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
         // Re-read the row to decide whether it can be deleted entirely. The row may have other
         // tags, batch assignments, or remaining run usages — only delete when both TagIds and
         // LaboratoryRunUsages are empty.
-        //
-        // The DynamoDB-stream subscriber sets `preserveEmptyFileRow: true` so the row remains
-        // discoverable by the scheduled S3 cleanup job; otherwise we would lose the
-        // `S3Bucket`+`ObjectKey` pair needed to issue the `s3:DeleteObject`. Seed/maintenance
-        // callers leave the option unset and get the original cleanup behavior.
-        if (options.preserveEmptyFileRow) continue;
         const after = await this.getFileRow(laboratoryId, ref);
         if (!after) continue;
         const hasTags = (after.TagIds || []).length > 0;
@@ -1396,6 +1391,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       }
 
       const now = new Date().toISOString();
+      // Stale usages stay on the row until the sweep deletes the object.
       const hasUsages = !!existing?.LaboratoryRunUsages && Object.keys(existing.LaboratoryRunUsages).length > 0;
       if (tagIds.size === 0) {
         if (existing && !hasUsages) {
@@ -1492,6 +1488,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       }
 
       const now = new Date().toISOString();
+      // Stale usages stay on the row until the sweep deletes the object.
       const hasUsages = !!existing?.LaboratoryRunUsages && Object.keys(existing.LaboratoryRunUsages).length > 0;
       if (tagIds.size === 0) {
         if (existing && !hasUsages) {
@@ -1729,7 +1726,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     return this.tagRowToModel(unmarshall(res.Item) as Record<string, unknown>);
   }
 
-  private async getFileRow(
+  public async getFileRow(
     laboratoryId: string,
     ref: string,
   ): Promise<{
