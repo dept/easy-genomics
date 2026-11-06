@@ -15,6 +15,7 @@ import {
 } from '@BE/utils/laboratory-run-ttl-utils';
 import {
   isBelowRunFolderRoot,
+  isRunFolderFastqKey,
   isRunFolderName,
   isSampleSheetKey,
   isWithinRunFolder,
@@ -143,6 +144,7 @@ type LiveRunReferences = {
   runIds: Set<string>;
   outputPrefixes: string[];
   sampleSheetKeys: Set<string>;
+  inputKeys: Set<string>;
 };
 
 /** FILE#-row state for a lab, loaded once and shared by all three phases. */
@@ -431,13 +433,13 @@ export class LaboratoryDataRetentionService {
   }
 
   /**
-   * Input files are shared between runs and tracked per-file. A file is deleted only when no
-   * surviving run lists it in `InputFileKeys`, it has no usage whose run row still exists, it is
-   * not marked Permanent, and a workflow tag or a usage records that it belonged to a run.
-   * A UUID folder is not evidence: upload transaction ids are UUIDs too.
+   * Input files are shared between runs and tracked per-file. A file is deleted when no
+   * surviving run lists it in `InputFileKeys`, it has no usage whose run row still exists, and
+   * it is not marked Permanent. A workflow tag or a stale usage is enough. So is a row with no
+   * tags of any kind and no usages: nothing claims it.
    *
-   * shortcut: a file whose usages were already cleared and that never received a workflow tag is
-   * indistinguishable from a never-used upload and is kept.
+   * A file with any non-permanent tag and no usage is kept. An object with no FILE# row is not
+   * visible here; the orphan pass records those FASTQs once the folder is 30 days old.
    */
   private async sweepInputFiles(
     laboratory: Laboratory,
@@ -478,8 +480,10 @@ export class LaboratoryDataRetentionService {
         continue;
       }
 
+      const hasAnyTag = tagIds.size > 0;
       const belongedToExpiredRun = hasWorkflowTag || (liveRunIds != null && usageIds.length > 0);
-      if (!belongedToExpiredRun) continue;
+      const untaggedAndUnowned = liveRunIds != null && !hasAnyTag && usageIds.length === 0;
+      if (!belongedToExpiredRun && !untaggedAndUnowned) continue;
 
       if (tagIds.has(permanentTagId)) {
         stats.permanentProtected++;
@@ -579,9 +583,11 @@ export class LaboratoryDataRetentionService {
     const runIds = new Set<string>();
     const outputPrefixes: string[] = [];
     const sampleSheetKeys = new Set<string>();
+    const inputKeys = new Set<string>();
 
     for (const run of runs) {
       if (run.RunId) runIds.add(run.RunId);
+      for (const key of run.InputFileKeys || []) inputKeys.add(key);
 
       const output = parseS3ObjectUri(run.OutputS3Url);
       if (output) outputPrefixes.push(normalizeS3Prefix(output.prefix));
@@ -598,7 +604,7 @@ export class LaboratoryDataRetentionService {
       if (sampleSheet) sampleSheetKeys.add(sampleSheet.prefix);
     }
 
-    return { runIds, outputPrefixes, sampleSheetKeys };
+    return { runIds, outputPrefixes, sampleSheetKeys, inputKeys };
   }
 
   /**
@@ -666,12 +672,22 @@ export class LaboratoryDataRetentionService {
               isSampleSheetKey(key, runFolder) && !fileRows.trackedKeys.has(key) && !live.sampleSheetKeys.has(key),
           );
 
-        const hasWork = !!outputPrefix || sampleSheetKeys.length > 0;
+        const untaggedInputKeys = objects
+          .map((o) => o.Key)
+          .filter(
+            (key) =>
+              isRunFolderFastqKey(key, laboratory, runId) &&
+              !fileRows.trackedKeys.has(key) &&
+              !fileRows.permanentKeys.has(key) &&
+              !live.inputKeys.has(key),
+          );
+
+        const hasWork = !!outputPrefix || sampleSheetKeys.length > 0 || untaggedInputKeys.length > 0;
 
         if (options.dryRun) {
           if (hasWork) {
             console.log(
-              `  [dry-run] Would record orphaned RunId=${runId}: results=${outputPrefix ? resultsObjects.length : 0} sampleSheets=${sampleSheetKeys.length}`,
+              `  [dry-run] Would record orphaned RunId=${runId}: results=${outputPrefix ? resultsObjects.length : 0} sampleSheets=${sampleSheetKeys.length} fastqs=${untaggedInputKeys.length}`,
             );
             stats.orphanFoldersRecorded++;
           }
@@ -686,6 +702,7 @@ export class LaboratoryDataRetentionService {
           S3Bucket: bucket,
           ...(outputPrefix ? { OutputPrefix: outputPrefix } : {}),
           ...(sampleSheetKeys.length ? { SampleSheetKeys: sampleSheetKeys } : {}),
+          ...(untaggedInputKeys.length ? { UntaggedInputKeys: untaggedInputKeys } : {}),
           RecordedAt: now,
           ...(hasWork ? {} : { CompletedAt: now }),
         });
@@ -743,6 +760,11 @@ export class LaboratoryDataRetentionService {
             throw new Error(`Sample sheet '${sheetKey}' is outside run ${row.RunId}'s folder`);
           }
         }
+        for (const inputKey of row.UntaggedInputKeys || []) {
+          if (!isRunFolderFastqKey(inputKey, laboratory, row.RunId)) {
+            throw new Error(`Untagged input '${inputKey}' is not a FASTQ in run ${row.RunId}'s folder`);
+          }
+        }
       } catch (guardErr) {
         console.warn(
           `  Skip output cleanup for RunId=${row.RunId} (lab=${laboratory.LaboratoryId}): guard failed:`,
@@ -772,11 +794,12 @@ export class LaboratoryDataRetentionService {
           (key) => !live.sampleSheetKeys.has(key) && !this.isPrefixStillInUse(key, live.outputPrefixes),
         );
         stats.outputPrefixesSkippedInUse += (row.SampleSheetKeys || []).length - sheetKeys.length;
+        const untaggedInputKeys = (row.UntaggedInputKeys || []).filter((key) => !live.inputKeys.has(key));
 
         // Files under results/ are taggable through the File Manager API, so the Permanent tag has
         // to be honoured here too — otherwise prefix deletion silently overrides the protection
         // the FILE#-row sweep enforces.
-        const candidates = [...listed, ...sheetKeys];
+        const candidates = [...listed, ...sheetKeys, ...untaggedInputKeys];
         const keys = candidates.filter((key) => !fileRows.permanentKeys.has(key));
         stats.outputObjectsProtected += candidates.length - keys.length;
 

@@ -380,6 +380,21 @@ describe('process-expired-laboratory-data.lambda eligibility', () => {
     expect(next).toEqual([...first.slice(1), first[0]]);
   });
 
+  it('deletes a file row that has no tags and no run usage', async () => {
+    mockListFileRows.mockResolvedValueOnce([
+      {
+        Ref: 'r1',
+        S3Bucket: 'my-bucket',
+        ObjectKey: 'org-1/lab-1/a.fq.gz',
+        TagIds: [],
+        LaboratoryRunUsages: undefined,
+      },
+    ]);
+    await handler(event, ctx, jest.fn());
+    expect(mockDeleteObject).toHaveBeenCalledWith({ Bucket: 'my-bucket', Key: 'org-1/lab-1/a.fq.gz' });
+    expect(mockDeleteRow).toHaveBeenCalledWith('lab-1', 'r1');
+  });
+
   it('skips never-used orphans (no workflow tag, no usages)', async () => {
     mockListFileRows.mockResolvedValueOnce([
       {
@@ -813,11 +828,12 @@ describe('process-expired-laboratory-data.lambda orphaned run folder reconciliat
       S3Bucket: 'my-bucket',
       OutputPrefix: `${runFolder}results/`,
       SampleSheetKeys: [`${runFolder}samplesheet-old-run.csv`],
+      UntaggedInputKeys: [`${runFolder}reads_R1.fq.gz`],
       RecordedAt: expect.any(String),
     });
   });
 
-  it('never schedules input files for deletion, only results and sample sheets', async () => {
+  it('records an old FASTQ at the run folder root when no file row claims it', async () => {
     mockBucket({
       prefixes: { [labPrefix]: [platformPrefix], [platformPrefix]: [runFolder] },
       objects: {
@@ -832,6 +848,7 @@ describe('process-expired-laboratory-data.lambda orphaned run folder reconciliat
 
     const recorded = mockRecordExpiredRunOutput.mock.calls[0][1];
     expect(recorded.OutputPrefix).toBe(`${runFolder}results/`);
+    expect(recorded.UntaggedInputKeys).toEqual([`${runFolder}reads_R1.fq.gz`]);
     expect(recorded.SampleSheetKeys).toBeUndefined();
   });
 
@@ -919,7 +936,7 @@ describe('process-expired-laboratory-data.lambda orphaned run folder reconciliat
   it('records an immediately-completed row for folders with nothing deletable, to avoid rescanning', async () => {
     mockBucket({
       prefixes: { [labPrefix]: [platformPrefix], [platformPrefix]: [runFolder] },
-      objects: { [runFolder]: [{ Key: `${runFolder}reads_R1.fq.gz`, LastModified: OLD }] },
+      objects: { [runFolder]: [{ Key: `${runFolder}notes.txt`, LastModified: OLD }] },
     });
 
     await handler(event, ctx, jest.fn());
@@ -927,6 +944,7 @@ describe('process-expired-laboratory-data.lambda orphaned run folder reconciliat
     const recorded = mockRecordExpiredRunOutput.mock.calls[0][1];
     expect(recorded.OutputPrefix).toBeUndefined();
     expect(recorded.SampleSheetKeys).toBeUndefined();
+    expect(recorded.UntaggedInputKeys).toBeUndefined();
     expect(recorded.CompletedAt).toEqual(expect.any(String));
   });
 

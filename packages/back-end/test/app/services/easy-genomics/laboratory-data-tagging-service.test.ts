@@ -1442,6 +1442,7 @@ describe('LaboratoryDataTaggingService expired run output markers', () => {
         S3Bucket: 'my-bucket',
         OutputPrefix: undefined,
         SampleSheetKeys: ['good.csv'],
+        UntaggedInputKeys: undefined,
         RecordedAt: '',
         CompletedAt: undefined,
       });
