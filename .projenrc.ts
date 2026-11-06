@@ -810,18 +810,19 @@ root.addFields({
       'fast-xml-parser': '>=5.10.1 <6.0.0',
 
       // --- PR3: HIGH severity ---
-      // 9 advisories: ReDoS via repeated wildcards and nested extglobs
-      // Capped at <10: minimatch 10.x is ESM-only and breaks eslint-plugin-import@2.x CJS default import.
-      // eslint-plugin-import declares ^3.1.2 (CJS-compatible); scoped override keeps it on safe 3.x.
-      minimatch: '>=9.0.7 <10.0.0',
+      // 9 advisories: ReDoS via repeated wildcards and nested extglobs; CVE-2026-118764: DoS via globparts
+      // amplification, fixed only in 11.x. Consumers that call minimatch as a default function
+      // (eslint-plugin-import, eslint@8, test-exclude) are kept on 3.x by the scoped overrides below.
+      minimatch: '>=11.0.1 <12.0.0',
       'eslint-plugin-import>minimatch': '>=3.1.2 <4.0.0',
       // eslint@8 uses the same old CJS default-function pattern and declares ^3.1.2.
       // The global >=9 override would break eslint's eslint-helpers.js without this scoped pin.
       'eslint>minimatch': '>=3.1.2 <4.0.0',
       // test-exclude@6 (jest coverage) uses the old default-function API and declares ^3.0.4.
       'test-exclude>minimatch': '>=3.1.2 <4.0.0',
-      // 6 advisories: ASN.1 recursion, signature forgery, BigInt DoS, basicConstraints bypass
-      'node-forge': '>=1.4.0',
+      // 6 advisories: ASN.1 recursion, signature forgery, BigInt DoS, basicConstraints bypass;
+      // CVE-2026-118775/7/8/80/82, CVE-2026-119186/88/90: X.509 chain, PKCS#12 MAC, AES-GCM tag and TLS record bypasses
+      'node-forge': '>=1.4.3 <2.0.0',
       // CVE-2024-37890 + 2 others: memory exhaustion DoS from tiny fragments
       ws: '>=8.21.0',
       // CVE-2024-55565 + 3 others: ReDoS via extglob quantifiers + POSIX method injection
@@ -858,6 +859,8 @@ root.addFields({
       // CVE-2024-55951 + 3 others: ReDoS in zero-step sequence + brace expansion
       // Capped at <3: 5.x exports a named { expand }, which breaks eslint's minimatch@3 (`expand is not a function`)
       'brace-expansion': '>=2.1.7 <3.0.0',
+      // minimatch 11 is the reverse: it imports the named { expand } and needs 5.x
+      'minimatch@11>brace-expansion': '>=5.0.12 <6.0.0',
       // CVE-2024-47764: DoS in BigInt.mod via crafted input
       'bn.js': '>=5.2.3',
       // CVE-2025-27105: stack overflow via deeply nested input
@@ -918,6 +921,8 @@ root.addFields({
       // GHSA-g2v6-rqmx-r4w6: @vue/server-renderer XSS via missing CR in attribute-name blacklist; this pulls the matching server-renderer.
       // Capped at <3.6 to stay within Vue 3.5
       vue: '>=3.5.42 <3.6.0',
+      // CVE-2026-85730, GHSA-r4xh-jqrq-34v2: DoS and quadratic-time parse on malformed TOML (nx pins 1.6.1)
+      'smol-toml': '>=1.9.1 <2.0.0',
     },
   },
 });
