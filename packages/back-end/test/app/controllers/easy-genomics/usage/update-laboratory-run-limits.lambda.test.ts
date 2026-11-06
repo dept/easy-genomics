@@ -1,5 +1,5 @@
 import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
-import { handler } from '../../../../../src/app/controllers/easy-genomics/laboratory/update-laboratory-run-limits.lambda';
+import { handler } from '../../../../../src/app/controllers/easy-genomics/usage/update-laboratory-run-limits.lambda';
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../../src/app/utils/auth-utils');

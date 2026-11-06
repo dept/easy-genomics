@@ -219,7 +219,7 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
     request: UpdateLaboratorySchema,
     response: 'Laboratory',
   },
-  'PUT /easy-genomics/laboratory/update-laboratory-run-limits/{id}': {
+  'PUT /easy-genomics/usage/update-laboratory-run-limits/{id}': {
     request: UpdateLaboratoryRunLimitsSchema,
     response: 'Laboratory',
   },
