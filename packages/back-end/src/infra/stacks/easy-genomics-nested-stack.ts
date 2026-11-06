@@ -223,6 +223,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
       ...this.props,
       iamPolicyStatements: this.iam.policyStatements, // Pass declared Easy Genomics IAM policies for attaching to respective Lambda function
       lambdaFunctionsDir: 'src/app/controllers/easy-genomics',
+      excludeDirs: ['usage'], // Built by UsageNestedStack
       lambdaFunctionsNamespace: `${this.props.constructNamespace}`,
       lambdaFunctionsResources: {
         // Used for setting specific resources for a given Lambda function (e.g. environment settings, trigger events)

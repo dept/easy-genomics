@@ -47,6 +47,12 @@ export interface AwsHealthOmicsNestedStackProps extends CommonApiNestedStackProp
 export interface NFTowerNestedStackProps extends CommonApiNestedStackProps {
 }
 
+// Defines the Usage specific props
+// (tables are injected by the parent `EasyGenomicsApiStack`, as for EasyGenomicsNestedStackProps)
+export interface UsageNestedStackProps extends CommonApiNestedStackProps {
+    dynamoDBTables: Map<string, Table>,
+}
+
 // Defines the Data Provisioning specific props
 export interface DataProvisioningNestedStackProps extends BackEndStackProps, NestedStackProps {
     userPool: UserPool,

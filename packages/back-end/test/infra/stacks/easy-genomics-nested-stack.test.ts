@@ -112,6 +112,16 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     expect(lambdaProps.environment.ENV_NAME).toBe('sandbox');
   });
 
+  it('leaves the usage controllers to the usage nested stack', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const lambdaProps = (LambdaConstruct as unknown as jest.Mock).mock.calls[0][2];
+    expect(lambdaProps.excludeDirs).toEqual(['usage']);
+  });
+
   it('passes the org-email-assets CloudFront domain to lambda common environment', () => {
     // Common, not per-lambda: default-email-branding.ts is reached from four different senders
     // (notification-service, user-invite-service, process-custom-email-sender and

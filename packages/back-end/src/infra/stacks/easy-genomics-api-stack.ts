@@ -6,12 +6,14 @@ import { Construct } from 'constructs';
 import { DataProvisioningNestedStack } from './data-provisioning-nested-stack';
 import { EasyGenomicsNestedStack } from './easy-genomics-nested-stack';
 import { LogRetentionNestedStack } from './log-retention-nested-stack';
+import { UsageNestedStack } from './usage-nested-stack';
 import { baseLSIAttributes, DynamoConstruct } from '../constructs/dynamodb-construct';
 import { SpecRestApiConstruct } from '../constructs/spec-rest-api-construct';
 import {
   DataProvisioningNestedStackProps,
   EasyGenomicsApiStackProps,
   EasyGenomicsNestedStackProps,
+  UsageNestedStackProps,
 } from '../types/back-end-stack';
 
 /**
@@ -59,6 +61,7 @@ export class EasyGenomicsApiStack extends Stack {
   readonly dynamoDB: DynamoConstruct;
   readonly dynamoDBTables: Map<string, Table> = new Map();
   readonly easyGenomicsNestedStack: EasyGenomicsNestedStack;
+  readonly usageNestedStack: UsageNestedStack;
 
   constructor(scope: Construct, id: string, props: EasyGenomicsApiStackProps) {
     // NOTE: Do not pass `env` to super here. `BackEndStack` uses the CDK
@@ -89,12 +92,28 @@ export class EasyGenomicsApiStack extends Stack {
       easyGenomicsNestedStackProps,
     );
 
+    // Usage limits and run costs get their own template so EasyGenomicsNestedStack
+    // stops growing; their routes are still served by the API below.
+    const usageNestedStackProps: UsageNestedStackProps = {
+      ...this.props,
+      constructNamespace: `${this.props.namePrefix}-usage`,
+      dynamoDBTables: this.dynamoDBTables,
+    };
+    this.usageNestedStack = new UsageNestedStack(
+      this,
+      `${this.props.envName}-usage-nested-stack`,
+      usageNestedStackProps,
+    );
+
     // Custom::LogRetention for every easy-genomics Lambda lives here (its own
     // template) so the route-heavy EasyGenomicsNestedStack stays under the
     // CloudFormation 500-resource limit. functionName is deterministic, so no
     // cross-stack reference to the Lambda functions is required.
     new LogRetentionNestedStack(this, `${this.props.envName}-easy-genomics-log-retention-nested-stack`, {
-      logGroupNames: this.easyGenomicsNestedStack.lambda.logGroupNames,
+      logGroupNames: [
+        ...this.easyGenomicsNestedStack.lambda.logGroupNames,
+        ...this.usageNestedStack.lambda.logGroupNames,
+      ],
     });
 
     // Dedicated API Gateway for the Easy Genomics domain, deployed directly from
@@ -106,7 +125,10 @@ export class EasyGenomicsApiStack extends Stack {
     this.apiGateway = new SpecRestApiConstruct(this, `${this.props.namePrefix}-easy-genomics-apigw`, {
       restApiName: easyGenomicsApiName(this.props.namePrefix),
       description: 'Easy Genomics API Gateway',
-      lambdaFunctions: this.easyGenomicsNestedStack.lambda.lambdaFunctions,
+      lambdaFunctions: new Map([
+        ...this.easyGenomicsNestedStack.lambda.lambdaFunctions,
+        ...this.usageNestedStack.lambda.lambdaFunctions,
+      ]),
       userPool: this.props.userPool,
       includePathPrefixes: ['/easy-genomics'],
     });
