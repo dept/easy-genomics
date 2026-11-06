@@ -184,6 +184,12 @@ export type ExpiredRunOutput = {
    * legitimately hold more than one (e.g. a sheet regenerated under a new run name).
    */
   SampleSheetKeys?: string[];
+  /**
+   * FASTQ keys at the run folder root that had no tagging row. The input sweep never sees
+   * them. Recorded here so the same output delete path removes them once the folder is old
+   * and no surviving run lists the key.
+   */
+  UntaggedInputKeys?: string[];
   RecordedAt: string;
   /** Set once the sweep has removed everything this row points at; such rows are not re-swept. */
   CompletedAt?: string;
@@ -1269,6 +1275,9 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
           OutputPrefix: typeof row.OutputPrefix === 'string' ? row.OutputPrefix : undefined,
           SampleSheetKeys: Array.isArray(row.SampleSheetKeys)
             ? row.SampleSheetKeys.filter((k): k is string => typeof k === 'string' && k.length > 0)
+            : undefined,
+          UntaggedInputKeys: Array.isArray(row.UntaggedInputKeys)
+            ? row.UntaggedInputKeys.filter((k): k is string => typeof k === 'string' && k.length > 0)
             : undefined,
           RecordedAt: typeof row.RecordedAt === 'string' ? row.RecordedAt : '',
           CompletedAt: typeof row.CompletedAt === 'string' ? row.CompletedAt : undefined,
