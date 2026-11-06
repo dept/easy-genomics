@@ -79,7 +79,7 @@ class LabsModule extends HttpFactory {
    * @param runLimits
    */
   async updateRunLimits(labId: string, runLimits: UpdateLaboratoryRunLimits): Promise<Laboratory> {
-    const res = await this.call<Laboratory>('PUT', `/laboratory/update-laboratory-run-limits/${labId}`, runLimits);
+    const res = await this.call<Laboratory>('PUT', `/usage/update-laboratory-run-limits/${labId}`, runLimits);
 
     if (!res) {
       throw new Error('Failed to update Laboratory run limits');
