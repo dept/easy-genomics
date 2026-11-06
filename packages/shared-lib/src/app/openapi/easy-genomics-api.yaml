@@ -2818,22 +2818,6 @@ components:
             type: string
       required:
         - buckets
-    UpdateLaboratoryRunLimitsRequest:
-      type: object
-      properties:
-        CostWarnAboveUsd:
-          type: number
-          exclusiveMinimum: 0
-        CostBlockAboveUsd:
-          type: number
-          exclusiveMinimum: 0
-        SamplesWarnAbove:
-          type: integer
-          exclusiveMinimum: 0
-        SamplesBlockAbove:
-          type: integer
-          exclusiveMinimum: 0
-      additionalProperties: false
     UpdateLaboratoryRequest:
       type: object
       properties:
@@ -3645,6 +3629,22 @@ components:
         - TransactionId
         - Platform
         - UploadedFilePairs
+      additionalProperties: false
+    UpdateLaboratoryRunLimitsRequest:
+      type: object
+      properties:
+        CostWarnAboveUsd:
+          type: number
+          exclusiveMinimum: 0
+        CostBlockAboveUsd:
+          type: number
+          exclusiveMinimum: 0
+        SamplesWarnAbove:
+          type: integer
+          exclusiveMinimum: 0
+        SamplesBlockAbove:
+          type: integer
+          exclusiveMinimum: 0
       additionalProperties: false
     ConfirmUserForgotPasswordRequestRequest:
       type: object
@@ -10082,39 +10082,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /easy-genomics/laboratory/update-laboratory-run-limits/{id}:
-    put:
-      operationId: updateLaboratoryRunLimits
-      summary: Update Laboratory Run Limits
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateLaboratoryRunLimitsRequest'
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Laboratory'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
   /easy-genomics/laboratory/update-laboratory/{id}:
     put:
       operationId: updateLaboratory
@@ -10984,6 +10951,39 @@ paths:
           content:
             application/json:
               schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/usage/update-laboratory-run-limits/{id}:
+    put:
+      operationId: updateLaboratoryRunLimits
+      summary: Update Laboratory Run Limits
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLaboratoryRunLimitsRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Laboratory'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

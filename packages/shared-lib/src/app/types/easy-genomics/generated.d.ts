@@ -270,10 +270,6 @@ export interface paths {
     /** List Granted Buckets */
     get: operations["listGrantedBuckets"];
   };
-  "/easy-genomics/laboratory/update-laboratory-run-limits/{id}": {
-    /** Update Laboratory Run Limits */
-    put: operations["updateLaboratoryRunLimits"];
-  };
   "/easy-genomics/laboratory/update-laboratory/{id}": {
     /** Update Laboratory */
     put: operations["updateLaboratory"];
@@ -401,6 +397,10 @@ export interface paths {
   "/easy-genomics/upload/create-file-upload-sample-sheet": {
     /** Create File Upload Sample Sheet */
     post: operations["createFileUploadSampleSheet"];
+  };
+  "/easy-genomics/usage/update-laboratory-run-limits/{id}": {
+    /** Update Laboratory Run Limits */
+    put: operations["updateLaboratoryRunLimits"];
   };
   "/easy-genomics/user/confirm-user-forgot-password-request": {
     /** Confirm User Forgot Password Request */
@@ -1728,12 +1728,6 @@ export interface components {
       /** @description Granted buckets this lab may read outside its own folder, except organization folders. A missing list means none. */
       wholeBuckets?: string[];
     };
-    UpdateLaboratoryRunLimitsRequest: {
-      CostWarnAboveUsd?: number;
-      CostBlockAboveUsd?: number;
-      SamplesWarnAbove?: number;
-      SamplesBlockAbove?: number;
-    };
     UpdateLaboratoryRequest: {
       Name: string;
       Description?: string;
@@ -2057,6 +2051,12 @@ export interface components {
             Region: string;
           } | null, null]>;
         })[];
+    };
+    UpdateLaboratoryRunLimitsRequest: {
+      CostWarnAboveUsd?: number;
+      CostBlockAboveUsd?: number;
+      SamplesWarnAbove?: number;
+      SamplesBlockAbove?: number;
     };
     ConfirmUserForgotPasswordRequestRequest: {
       Token: string;
@@ -5563,32 +5563,6 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
-  /** Update Laboratory Run Limits */
-  updateLaboratoryRunLimits: {
-    parameters: {
-      path: {
-        id: string;
-      };
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["UpdateLaboratoryRunLimitsRequest"];
-      };
-    };
-    responses: {
-      /** @description Success */
-      200: {
-        content: {
-          "application/json": components["schemas"]["Laboratory"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      500: components["responses"]["InternalError"];
-    };
-  };
   /** Update Laboratory */
   updateLaboratory: {
     parameters: {
@@ -6266,6 +6240,32 @@ export interface operations {
       200: {
         content: {
           "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Update Laboratory Run Limits */
+  updateLaboratoryRunLimits: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateLaboratoryRunLimitsRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["Laboratory"];
         };
       };
       400: components["responses"]["BadRequest"];
