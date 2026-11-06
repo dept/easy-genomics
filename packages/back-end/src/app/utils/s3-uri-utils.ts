@@ -11,6 +11,9 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 /** Matches `buildSampleSheetFileName` output: `samplesheet.csv` or `samplesheet-{run name}.csv`. */
 const SAMPLE_SHEET_PATTERN = /^samplesheet[^/]*\.csv$/i;
 
+/** Run inputs the orphan pass may delete when no file row and no surviving run claims them. */
+const FASTQ_NAME = /^(?:.+\.)?(?:fastq|fq)(?:\.gz)?$/i;
+
 /**
  * Parses an `s3://bucket[/key]` URI by string split. The key may be empty, for callers that accept
  * a bucket-rooted location.
@@ -138,6 +141,18 @@ export function lastPathSegment(prefix: string): string {
 
 export function isRunFolderName(name: string): boolean {
   return UUID_PATTERN.test(name);
+}
+
+/** True for a FASTQ sitting directly at the run folder root, not under `results/`. */
+export function isRunFolderFastqKey(
+  key: string,
+  laboratory: { OrganizationId: string; LaboratoryId: string },
+  runId: string,
+): boolean {
+  if (!isWithinRunFolder(key, laboratory, runId)) return false;
+  const marker = `/${runId}/`;
+  const relative = key.slice(key.indexOf(marker) + marker.length);
+  return !relative.includes('/') && FASTQ_NAME.test(relative);
 }
 
 /** True for a generated sample sheet sitting directly at the run folder root (not in a subfolder). */
