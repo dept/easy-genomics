@@ -49,7 +49,7 @@ async function signInAsOrgAdmin(browser: Browser, baseURL: string): Promise<stri
 
 async function setRunLimits(page: Page, limits: LaboratoryRunLimits): Promise<void> {
   const response = await page.request.put(
-    `${envConfig.easyGenomicsApiUrl}/easy-genomics/laboratory/update-laboratory-run-limits/${laboratoryId}`,
+    `${envConfig.easyGenomicsApiUrl}/easy-genomics/usage/update-laboratory-run-limits/${laboratoryId}`,
     { headers: { Authorization: `Bearer ${orgAdminIdToken}` }, data: limits },
   );
   expect(response.ok(), `update-laboratory-run-limits returned ${response.status()}`).toBeTruthy();
