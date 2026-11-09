@@ -11,7 +11,9 @@
     <dt class="w-48 shrink-0 text-black">Samples</dt>
     <dd class="text-muted min-w-0 flex-1 break-words text-left">
       <span v-if="review.samplesRow.countText">{{ review.samplesRow.countText }}</span>
-      <span class="text-muted text-sm">{{ review.samplesRow.limitText }}</span>
+      <span class="text-muted text-sm" :class="{ 'ml-2': review.samplesRow.countText }">
+        {{ review.samplesRow.limitText }}
+      </span>
     </dd>
   </div>
   <div v-if="review.notEnoughHistoryText" class="text-md flex border-b px-4 py-4">
