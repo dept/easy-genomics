@@ -632,7 +632,6 @@ export class LaboratoryDataRetentionService {
     if (options.maxOrphanFoldersPerLab === 0) return;
 
     const cutoff = orphanQuietCutoff();
-    const workflowTagIds = await this.loadWorkflowTagIds(laboratory.LaboratoryId);
     const knownRunIds = new Set(
       (await this.taggingService.listExpiredRunOutputsForLab(laboratory.LaboratoryId)).map((r) => r.RunId),
     );
@@ -690,15 +689,11 @@ export class LaboratoryDataRetentionService {
           ...live.inputKeys,
           ...live.sampleSheetKeys,
         ]);
-        // Import folders share the UUID layout and never become a RunId. A results directory, a
-        // sample sheet, or a file row with a workflow tag or a run usage is what marks a run.
-        const hasSampleSheet = objects.some((object) => isSampleSheetKey(object.Key, runFolder));
-        const hasRunFileRow = fileRows.rows.some((row) => {
-          if (!row.ObjectKey?.startsWith(runFolder)) return false;
-          if (Object.keys(row.LaboratoryRunUsages || {}).length > 0) return true;
-          return (row.TagIds || []).some((id) => workflowTagIds.has(id));
-        });
-        const looksLikeRun = resultsObjects.length > 0 || hasSampleSheet || hasRunFileRow;
+        // Import folders share the UUID layout and never become a RunId. A results directory or a
+        // sample sheet is what marks a run. A run usage on one imported file is not: the per-file
+        // sweep already deletes the files that run used.
+        const looksLikeRun =
+          resultsObjects.length > 0 || objects.some((object) => isSampleSheetKey(object.Key, runFolder));
         const folderHasDeletableObject = objects.some(
           (object) => !protectedKeys.has(object.Key) && !this.isPrefixStillInUse(object.Key, live.outputPrefixes),
         );
@@ -847,7 +842,7 @@ export class LaboratoryDataRetentionService {
         stats.outputObjectsProtected += candidates.length - keys.length;
 
         if (!keys.length) {
-          if (!options.dryRun) await this.retireRunOutput(laboratory.LaboratoryId, row, !!runFolder);
+          if (!options.dryRun) await this.retireRunOutput(laboratory.LaboratoryId, row);
           continue;
         }
 
@@ -877,7 +872,7 @@ export class LaboratoryDataRetentionService {
         // resumes. Permanent-protected keys are intentionally retained and do not block this.
         if (removed === keys.length) {
           if (row.OutputPrefix) stats.outputPrefixesDeleted++;
-          await this.retireRunOutput(laboratory.LaboratoryId, row, !!runFolder);
+          await this.retireRunOutput(laboratory.LaboratoryId, row);
         }
       } catch (err) {
         console.warn(`  Error deleting outputs for RunId=${row.RunId} (lab=${laboratory.LaboratoryId}):`, err);
@@ -893,7 +888,7 @@ export class LaboratoryDataRetentionService {
   /**
    * The run folder to list. A recorded `RunFolderPrefix` is used only when it is exactly
    * `{org}/{lab}/{platform}/{runId}/`; the guard rejects anything else before this runs.
-   * An older marker with no `RunFolderPrefix` derives the folder from `OutputPrefix` alone.
+   * An older marker derives the same shape from `OutputPrefix` or a sample sheet key.
    */
   private resolveRunFolder(row: ExpiredRunOutput, laboratory: Laboratory): string | undefined {
     if (row.RunFolderPrefix) {
@@ -901,8 +896,13 @@ export class LaboratoryDataRetentionService {
         ? normalizeS3Prefix(row.RunFolderPrefix)
         : undefined;
     }
-    if (!row.OutputPrefix) return undefined;
-    return runFolderPrefix(row.OutputPrefix, laboratory, row.RunId);
+    const fromOutput = row.OutputPrefix ? runFolderPrefix(row.OutputPrefix, laboratory, row.RunId) : undefined;
+    if (fromOutput) return fromOutput;
+    for (const sheetKey of row.SampleSheetKeys || []) {
+      const folder = runFolderPrefix(sheetKey, laboratory, row.RunId);
+      if (folder) return folder;
+    }
+    return undefined;
   }
 
   private isExactRunFolder(prefix: string, laboratory: Laboratory, runId: string): boolean {
@@ -910,11 +910,12 @@ export class LaboratoryDataRetentionService {
     return !!folder && normalizeS3Prefix(prefix) === folder;
   }
 
-  private async retireRunOutput(laboratoryId: string, row: ExpiredRunOutput, folderCleaned: boolean): Promise<void> {
+  /** Called only after every deletable key is gone. A marker with no run folder is finished too. */
+  private async retireRunOutput(laboratoryId: string, row: ExpiredRunOutput): Promise<void> {
     if (!row.CompletedAt) {
       await this.taggingService.markExpiredRunOutputCompleted(laboratoryId, row.RunId);
     }
-    if (folderCleaned && !row.FolderCleanedAt) {
+    if (!row.FolderCleanedAt) {
       await this.taggingService.markRunFolderCleaned(laboratoryId, row.RunId);
     }
   }

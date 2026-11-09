@@ -848,6 +848,60 @@ describe('process-expired-laboratory-data.lambda expired run outputs', () => {
     expect(mockMarkExpiredRunOutputCompleted).not.toHaveBeenCalled();
     expect(mockMarkRunFolderCleaned).toHaveBeenCalledWith('lab-1', 'run-1');
   });
+
+  it('deletes leftover FASTQs from a historic marker that only recorded a sample sheet', async () => {
+    const folder = `${runFolder}/`;
+    const fastq = `${folder}reads.fastq.gz`;
+    mockListExpiredRunOutputs.mockResolvedValueOnce([
+      {
+        RunId: 'run-1',
+        S3Bucket: 'my-bucket',
+        SampleSheetKeys: [sampleSheetKey],
+        RecordedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    mockListAllObjectKeysUnderPrefix.mockResolvedValueOnce([sampleSheetKey, fastq]);
+
+    await handler(event, ctx, jest.fn());
+
+    expect(mockListAllObjectKeysUnderPrefix).toHaveBeenCalledWith('my-bucket', folder);
+    const deleted = mockDeleteObjects.mock.calls[0][0].Delete.Objects.map((o: { Key: string }) => o.Key);
+    expect(deleted).toEqual([sampleSheetKey, fastq]);
+    expect(mockMarkRunFolderCleaned).toHaveBeenCalledWith('lab-1', 'run-1');
+  });
+
+  it('finishes a non-run marker on the first pass so the next sweep skips it', async () => {
+    const fastq = `${runFolder}/loose.fastq.gz`;
+    const row = {
+      RunId: 'run-1',
+      S3Bucket: 'my-bucket',
+      UntaggedInputKeys: [fastq],
+      RecordedAt: '2026-01-01T00:00:00.000Z',
+    };
+    mockListExpiredRunOutputs.mockResolvedValueOnce([row]);
+
+    await handler(event, ctx, jest.fn());
+
+    const deleted = mockDeleteObjects.mock.calls[0][0].Delete.Objects.map((o: { Key: string }) => o.Key);
+    expect(deleted).toEqual([fastq]);
+    expect(mockListAllObjectKeysUnderPrefix).not.toHaveBeenCalled();
+    expect(mockMarkExpiredRunOutputCompleted).toHaveBeenCalledWith('lab-1', 'run-1');
+    expect(mockMarkRunFolderCleaned).toHaveBeenCalledWith('lab-1', 'run-1');
+
+    mockDeleteObjects.mockClear();
+    mockListAllObjectKeysUnderPrefix.mockClear();
+    mockMarkExpiredRunOutputCompleted.mockClear();
+    mockMarkRunFolderCleaned.mockClear();
+    mockListExpiredRunOutputs.mockResolvedValueOnce([
+      { ...row, CompletedAt: '2026-02-01T00:00:00.000Z', FolderCleanedAt: '2026-02-01T00:00:00.000Z' },
+    ]);
+
+    await handler(event, ctx, jest.fn());
+
+    expect(mockDeleteObjects).not.toHaveBeenCalled();
+    expect(mockListAllObjectKeysUnderPrefix).not.toHaveBeenCalled();
+    expect(mockMarkRunFolderCleaned).not.toHaveBeenCalled();
+  });
 });
 
 describe('process-expired-laboratory-data.lambda orphaned run folder reconciliation', () => {
@@ -1053,6 +1107,31 @@ describe('process-expired-laboratory-data.lambda orphaned run folder reconciliat
     expect(recorded.RunFolderPrefix).toBeUndefined();
     expect(recorded.UntaggedInputKeys).toBeUndefined();
     expect(recorded.OutputPrefix).toBeUndefined();
+    expect(recorded.CompletedAt).toEqual(expect.any(String));
+    expect(recorded.FolderCleanedAt).toEqual(expect.any(String));
+  });
+
+  it('does not treat an import folder as a run because one file has a run usage', async () => {
+    const used = `${runFolder}used.fastq.gz`;
+    const other = `${runFolder}other.fastq.gz`;
+    mockListFileRows.mockResolvedValue([
+      { Ref: 'r-used', ObjectKey: used, TagIds: ['collection-tag'], LaboratoryRunUsages: { 'gone-run': {} } },
+      { Ref: 'r-other', ObjectKey: other, TagIds: ['collection-tag'] },
+    ]);
+    mockBucket({
+      prefixes: { [labPrefix]: [platformPrefix], [platformPrefix]: [runFolder] },
+      objects: {
+        [runFolder]: [
+          { Key: used, LastModified: OLD },
+          { Key: other, LastModified: OLD },
+        ],
+      },
+    });
+
+    await handler(event, ctx, jest.fn());
+
+    const recorded = mockRecordExpiredRunOutput.mock.calls[0][1];
+    expect(recorded.RunFolderPrefix).toBeUndefined();
     expect(recorded.CompletedAt).toEqual(expect.any(String));
     expect(recorded.FolderCleanedAt).toEqual(expect.any(String));
   });

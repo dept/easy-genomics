@@ -198,7 +198,7 @@ export type ExpiredRunOutput = {
   RecordedAt: string;
   /** Set once the recorded outputs and sample sheets are gone. */
   CompletedAt?: string;
-  /** Set once `RunFolderPrefix` has been listed and every deletable object under it is gone. */
+  /** Set once this marker has nothing left to delete, including when it never had a run folder. */
   FolderCleanedAt?: string;
 };
 
