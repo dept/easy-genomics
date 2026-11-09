@@ -14,6 +14,7 @@ const mockListTags: jest.Mock = jest.fn();
 const mockListS3AccessByLaboratoryId: jest.Mock = jest.fn();
 const mockListExpiredRunOutputs: jest.Mock = jest.fn();
 const mockMarkExpiredRunOutputCompleted: jest.Mock = jest.fn();
+const mockMarkRunFolderCleaned: jest.Mock = jest.fn();
 const mockRecordExpiredRunOutput: jest.Mock = jest.fn();
 const mockListAllRunsForLaboratory: jest.Mock = jest.fn();
 const mockRunRowExists: jest.Mock = jest.fn();
@@ -64,6 +65,7 @@ jest.mock('../../../../../src/app/services/easy-genomics/laboratory-data-tagging
       listExpiredRunOutputsForLab: mockListExpiredRunOutputs,
       updateRunUsageExpiresAt: mockUpdateRunUsageExpiresAt,
       markExpiredRunOutputCompleted: mockMarkExpiredRunOutputCompleted,
+      markRunFolderCleaned: mockMarkRunFolderCleaned,
       recordExpiredRunOutput: mockRecordExpiredRunOutput,
       assertLaboratoryHasS3BucketAccess: (laboratory: unknown, bucket: string) =>
         proto.assertLaboratoryHasS3BucketAccess(laboratory as never, bucket),
@@ -116,6 +118,7 @@ function resetMocks(): void {
   mockListTags.mockReset().mockResolvedValue({ Tags: [] });
   mockListExpiredRunOutputs.mockReset().mockResolvedValue([]);
   mockMarkExpiredRunOutputCompleted.mockReset().mockResolvedValue(undefined);
+  mockMarkRunFolderCleaned.mockReset().mockResolvedValue(undefined);
   mockRecordExpiredRunOutput.mockReset().mockResolvedValue(undefined);
   mockListAllRunsForLaboratory.mockReset().mockResolvedValue([]);
   mockRunRowExists.mockReset().mockResolvedValue(false);
@@ -563,6 +566,7 @@ describe('process-expired-laboratory-data.lambda expired run outputs', () => {
       outputPrefix,
       `${outputPrefix}multiqc.html`,
       `${outputPrefix}nested/x.bam`,
+      sampleSheetKey,
     ]);
 
     await handler(event, ctx, jest.fn());
@@ -632,6 +636,7 @@ describe('process-expired-laboratory-data.lambda expired run outputs', () => {
 
     expect(mockDeleteObjects).not.toHaveBeenCalled();
     expect(mockMarkExpiredRunOutputCompleted).not.toHaveBeenCalled();
+    expect(mockMarkRunFolderCleaned).not.toHaveBeenCalled();
   });
 
   it('does nothing at all while OUTPUT_DELETION_ENABLED is off', async () => {
@@ -655,6 +660,7 @@ describe('process-expired-laboratory-data.lambda expired run outputs', () => {
     const deleted = mockDeleteObjects.mock.calls[0][0].Delete.Objects.map((o: { Key: string }) => o.Key);
     expect(deleted).toEqual([`${outputPrefix}a.bam`]);
     expect(mockMarkExpiredRunOutputCompleted).not.toHaveBeenCalled();
+    expect(mockMarkRunFolderCleaned).not.toHaveBeenCalled();
   });
 
   it('keeps the marker row when S3 reports a per-key delete failure', async () => {
@@ -669,6 +675,7 @@ describe('process-expired-laboratory-data.lambda expired run outputs', () => {
     await handler(event, ctx, jest.fn());
 
     expect(mockMarkExpiredRunOutputCompleted).not.toHaveBeenCalled();
+    expect(mockMarkRunFolderCleaned).not.toHaveBeenCalled();
   });
 
   it('splits a listing larger than the S3 1000-key limit into multiple delete requests', async () => {
@@ -752,13 +759,148 @@ describe('process-expired-laboratory-data.lambda expired run outputs', () => {
     expect(mockMarkExpiredRunOutputCompleted).toHaveBeenCalledWith('lab-1', 'run-1');
   });
 
-  it('does not re-sweep a marker that has already been completed', async () => {
-    mockListExpiredRunOutputs.mockResolvedValue([{ ...marker, CompletedAt: '2026-02-01T00:00:00.000Z' }]);
+  it('does not re-sweep a marker whose run folder was already cleaned', async () => {
+    mockListExpiredRunOutputs.mockResolvedValue([
+      { ...marker, CompletedAt: '2026-02-01T00:00:00.000Z', FolderCleanedAt: '2026-02-01T00:00:00.000Z' },
+    ]);
+
+    await handler(event, ctx, jest.fn());
+
+    expect(mockListAllObjectKeysUnderPrefix).not.toHaveBeenCalled();
+    expect(mockDeleteObjects).not.toHaveBeenCalled();
+    expect(mockMarkExpiredRunOutputCompleted).not.toHaveBeenCalled();
+    expect(mockMarkRunFolderCleaned).not.toHaveBeenCalled();
+  });
+
+  it('keeps a live run input, its sample sheet, and its output, and deletes the other file', async () => {
+    const folder = `${runFolder}/`;
+    const liveInput = `${folder}live.fastq.gz`;
+    const liveSheet = `${folder}samplesheet.csv`;
+    const liveOut = `${folder}results/retry/out.bam`;
+    const drop = `${folder}old.fastq.gz`;
+    mockListAllRunsForLaboratory.mockResolvedValue([
+      {
+        RunId: 'run-2',
+        InputFileKeys: [liveInput],
+        SampleSheetS3Url: `s3://my-bucket/${liveSheet}`,
+        OutputS3Url: `s3://my-bucket/${folder}results/retry`,
+      },
+    ]);
+    mockListExpiredRunOutputs.mockResolvedValueOnce([
+      {
+        RunId: 'run-1',
+        S3Bucket: 'my-bucket',
+        RunFolderPrefix: folder,
+        RecordedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    mockListAllObjectKeysUnderPrefix.mockResolvedValueOnce([liveInput, liveSheet, liveOut, drop]);
+
+    await handler(event, ctx, jest.fn());
+
+    const deleted = mockDeleteObjects.mock.calls[0][0].Delete.Objects.map((o: { Key: string }) => o.Key);
+    expect(deleted).toEqual([drop]);
+    expect(mockListAllObjectKeysUnderPrefix).toHaveBeenCalledWith('my-bucket', folder);
+  });
+
+  it('skips a RunFolderPrefix wider than the run folder instead of listing OutputPrefix', async () => {
+    mockListExpiredRunOutputs.mockResolvedValueOnce([{ ...marker, RunFolderPrefix: 'org-1/lab-1/' }]);
+
+    await handler(event, ctx, jest.fn());
+
+    expect(mockListAllObjectKeysUnderPrefix).not.toHaveBeenCalled();
+    expect(mockDeleteObjects).not.toHaveBeenCalled();
+    expect(mockMarkRunFolderCleaned).not.toHaveBeenCalled();
+  });
+
+  it('deletes the whole run folder except a FASTQ marked Permanent', async () => {
+    const permanentTagId = permanentTagIdForLaboratory(lab.LaboratoryId);
+    const kept = `${runFolder}/reads_R1.fastq.gz`;
+    const dropped = `${runFolder}/reads_R2.fastq.gz`;
+    mockListFileRows.mockResolvedValue([{ Ref: 'r-keep', ObjectKey: kept, TagIds: [permanentTagId] }]);
+    mockListExpiredRunOutputs.mockResolvedValueOnce([
+      { ...marker, SampleSheetKeys: undefined, RunFolderPrefix: `${runFolder}/` },
+    ]);
+    mockListAllObjectKeysUnderPrefix.mockResolvedValueOnce([kept, dropped, `${runFolder}/results/out.bam`]);
+
+    await handler(event, ctx, jest.fn());
+
+    const deleted = mockDeleteObjects.mock.calls[0][0].Delete.Objects.map((o: { Key: string }) => o.Key);
+    expect(deleted).toEqual([dropped, `${runFolder}/results/out.bam`]);
+    expect(mockMarkExpiredRunOutputCompleted).toHaveBeenCalledWith('lab-1', 'run-1');
+    expect(mockMarkRunFolderCleaned).toHaveBeenCalledWith('lab-1', 'run-1');
+  });
+
+  it('deletes leftover FASTQs from a run whose marker was already completed', async () => {
+    const permanentTagId = permanentTagIdForLaboratory(lab.LaboratoryId);
+    const kept = `${runFolder}/keep.fastq.gz`;
+    const dropped = `${runFolder}/drop.fq.gz`;
+    mockListFileRows.mockResolvedValue([{ Ref: 'r-keep', ObjectKey: kept, TagIds: [permanentTagId] }]);
+    mockListExpiredRunOutputs.mockResolvedValueOnce([
+      { ...marker, SampleSheetKeys: undefined, CompletedAt: '2026-02-01T00:00:00.000Z' },
+    ]);
+    mockListAllObjectKeysUnderPrefix.mockResolvedValueOnce([kept, dropped]);
+
+    await handler(event, ctx, jest.fn());
+
+    const deleted = mockDeleteObjects.mock.calls[0][0].Delete.Objects.map((o: { Key: string }) => o.Key);
+    expect(deleted).toEqual([dropped]);
+    expect(mockMarkExpiredRunOutputCompleted).not.toHaveBeenCalled();
+    expect(mockMarkRunFolderCleaned).toHaveBeenCalledWith('lab-1', 'run-1');
+  });
+
+  it('deletes leftover FASTQs from a historic marker that only recorded a sample sheet', async () => {
+    const folder = `${runFolder}/`;
+    const fastq = `${folder}reads.fastq.gz`;
+    mockListExpiredRunOutputs.mockResolvedValueOnce([
+      {
+        RunId: 'run-1',
+        S3Bucket: 'my-bucket',
+        SampleSheetKeys: [sampleSheetKey],
+        RecordedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    mockListAllObjectKeysUnderPrefix.mockResolvedValueOnce([sampleSheetKey, fastq]);
+
+    await handler(event, ctx, jest.fn());
+
+    expect(mockListAllObjectKeysUnderPrefix).toHaveBeenCalledWith('my-bucket', folder);
+    const deleted = mockDeleteObjects.mock.calls[0][0].Delete.Objects.map((o: { Key: string }) => o.Key);
+    expect(deleted).toEqual([sampleSheetKey, fastq]);
+    expect(mockMarkRunFolderCleaned).toHaveBeenCalledWith('lab-1', 'run-1');
+  });
+
+  it('finishes a non-run marker on the first pass so the next sweep skips it', async () => {
+    const fastq = `${runFolder}/loose.fastq.gz`;
+    const row = {
+      RunId: 'run-1',
+      S3Bucket: 'my-bucket',
+      UntaggedInputKeys: [fastq],
+      RecordedAt: '2026-01-01T00:00:00.000Z',
+    };
+    mockListExpiredRunOutputs.mockResolvedValueOnce([row]);
+
+    await handler(event, ctx, jest.fn());
+
+    const deleted = mockDeleteObjects.mock.calls[0][0].Delete.Objects.map((o: { Key: string }) => o.Key);
+    expect(deleted).toEqual([fastq]);
+    expect(mockListAllObjectKeysUnderPrefix).not.toHaveBeenCalled();
+    expect(mockMarkExpiredRunOutputCompleted).toHaveBeenCalledWith('lab-1', 'run-1');
+    expect(mockMarkRunFolderCleaned).toHaveBeenCalledWith('lab-1', 'run-1');
+
+    mockDeleteObjects.mockClear();
+    mockListAllObjectKeysUnderPrefix.mockClear();
+    mockMarkExpiredRunOutputCompleted.mockClear();
+    mockMarkRunFolderCleaned.mockClear();
+    mockListExpiredRunOutputs.mockResolvedValueOnce([
+      { ...row, CompletedAt: '2026-02-01T00:00:00.000Z', FolderCleanedAt: '2026-02-01T00:00:00.000Z' },
+    ]);
 
     await handler(event, ctx, jest.fn());
 
     expect(mockDeleteObjects).not.toHaveBeenCalled();
-    expect(mockMarkExpiredRunOutputCompleted).not.toHaveBeenCalled();
+    expect(mockListAllObjectKeysUnderPrefix).not.toHaveBeenCalled();
+    expect(mockMarkRunFolderCleaned).not.toHaveBeenCalled();
   });
 });
 
@@ -826,6 +968,7 @@ describe('process-expired-laboratory-data.lambda orphaned run folder reconciliat
     expect(mockRecordExpiredRunOutput).toHaveBeenCalledWith('lab-1', {
       RunId: EXPIRED_RUN_ID,
       S3Bucket: 'my-bucket',
+      RunFolderPrefix: runFolder,
       OutputPrefix: `${runFolder}results/`,
       SampleSheetKeys: [`${runFolder}samplesheet-old-run.csv`],
       UntaggedInputKeys: [`${runFolder}reads_R1.fq.gz`],
@@ -933,7 +1076,7 @@ describe('process-expired-laboratory-data.lambda orphaned run folder reconciliat
     expect(mockRecordExpiredRunOutput).not.toHaveBeenCalled();
   });
 
-  it('records an immediately-completed row for folders with nothing deletable, to avoid rescanning', async () => {
+  it('records an immediately-completed row for a folder that was never a run', async () => {
     mockBucket({
       prefixes: { [labPrefix]: [platformPrefix], [platformPrefix]: [runFolder] },
       objects: { [runFolder]: [{ Key: `${runFolder}notes.txt`, LastModified: OLD }] },
@@ -942,10 +1085,55 @@ describe('process-expired-laboratory-data.lambda orphaned run folder reconciliat
     await handler(event, ctx, jest.fn());
 
     const recorded = mockRecordExpiredRunOutput.mock.calls[0][1];
-    expect(recorded.OutputPrefix).toBeUndefined();
-    expect(recorded.SampleSheetKeys).toBeUndefined();
-    expect(recorded.UntaggedInputKeys).toBeUndefined();
+    expect(recorded.RunFolderPrefix).toBeUndefined();
     expect(recorded.CompletedAt).toEqual(expect.any(String));
+    expect(recorded.FolderCleanedAt).toEqual(expect.any(String));
+  });
+
+  it('does not record an import folder of tagged files as a run folder', async () => {
+    const fastq = `${runFolder}library.fastq.gz`;
+    mockListTags.mockResolvedValue({
+      Tags: [{ TagId: 'collection-tag', Name: 'Batch', Kind: 'batch', FileCount: 1 }],
+    });
+    mockListFileRows.mockResolvedValue([{ Ref: 'r1', ObjectKey: fastq, TagIds: ['collection-tag'] }]);
+    mockBucket({
+      prefixes: { [labPrefix]: [platformPrefix], [platformPrefix]: [runFolder] },
+      objects: { [runFolder]: [{ Key: fastq, LastModified: OLD }] },
+    });
+
+    await handler(event, ctx, jest.fn());
+
+    const recorded = mockRecordExpiredRunOutput.mock.calls[0][1];
+    expect(recorded.RunFolderPrefix).toBeUndefined();
+    expect(recorded.UntaggedInputKeys).toBeUndefined();
+    expect(recorded.OutputPrefix).toBeUndefined();
+    expect(recorded.CompletedAt).toEqual(expect.any(String));
+    expect(recorded.FolderCleanedAt).toEqual(expect.any(String));
+  });
+
+  it('does not treat an import folder as a run because one file has a run usage', async () => {
+    const used = `${runFolder}used.fastq.gz`;
+    const other = `${runFolder}other.fastq.gz`;
+    mockListFileRows.mockResolvedValue([
+      { Ref: 'r-used', ObjectKey: used, TagIds: ['collection-tag'], LaboratoryRunUsages: { 'gone-run': {} } },
+      { Ref: 'r-other', ObjectKey: other, TagIds: ['collection-tag'] },
+    ]);
+    mockBucket({
+      prefixes: { [labPrefix]: [platformPrefix], [platformPrefix]: [runFolder] },
+      objects: {
+        [runFolder]: [
+          { Key: used, LastModified: OLD },
+          { Key: other, LastModified: OLD },
+        ],
+      },
+    });
+
+    await handler(event, ctx, jest.fn());
+
+    const recorded = mockRecordExpiredRunOutput.mock.calls[0][1];
+    expect(recorded.RunFolderPrefix).toBeUndefined();
+    expect(recorded.CompletedAt).toEqual(expect.any(String));
+    expect(recorded.FolderCleanedAt).toEqual(expect.any(String));
   });
 
   it('leaves the results prefix alone when an object under it is a tracked file row', async () => {

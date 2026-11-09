@@ -183,6 +183,7 @@ describe('process-laboratory-run-stream.lambda', () => {
         S3Bucket: 'my-bucket',
         OutputPrefix: `${runFolder}/results/`,
         SampleSheetKeys: [`${runFolder}/samplesheet.csv`],
+        RunFolderPrefix: `${runFolder}/`,
         RecordedAt: expect.any(String),
       });
     });
@@ -263,6 +264,27 @@ describe('process-laboratory-run-stream.lambda', () => {
       await handler(event, ctx, jest.fn());
 
       expect(mockRecordExpiredRunOutput).not.toHaveBeenCalled();
+    });
+
+    it('records the run folder from InputS3Url when the run has no output or sample sheet', async () => {
+      const event = buildEvent([
+        {
+          eventName: 'REMOVE',
+          oldImage: {
+            LaboratoryId: 'lab-1',
+            RunId: 'run-7',
+            InputFileKeys: [],
+            InputS3Url: `s3://my-bucket/${runFolder}`,
+          },
+        },
+      ]);
+
+      await handler(event, ctx, jest.fn());
+
+      expect(mockRecordExpiredRunOutput).toHaveBeenCalledWith(
+        'lab-1',
+        expect.objectContaining({ RunFolderPrefix: `${runFolder}/` }),
+      );
     });
 
     it('records a custom outdir that is a subdirectory of the run folder', async () => {

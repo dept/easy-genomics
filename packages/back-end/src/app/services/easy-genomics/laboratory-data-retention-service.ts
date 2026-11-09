@@ -1,6 +1,7 @@
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import {
+  ExpiredRunOutput,
   LaboratoryDataTaggingService,
   permanentTagIdForLaboratory,
 } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
@@ -23,6 +24,7 @@ import {
   lastPathSegment,
   normalizeS3Prefix,
   parseS3ObjectUri,
+  runFolderPrefix,
 } from '@BE/utils/s3-uri-utils';
 
 /** S3 `DeleteObjects` accepts at most 1000 keys per request. */
@@ -682,7 +684,21 @@ export class LaboratoryDataRetentionService {
               !live.inputKeys.has(key),
           );
 
-        const hasWork = !!outputPrefix || sampleSheetKeys.length > 0 || untaggedInputKeys.length > 0;
+        const protectedKeys = new Set<string>([
+          ...fileRows.permanentKeys,
+          ...live.inputKeys,
+          ...live.sampleSheetKeys,
+        ]);
+        // Import folders share the UUID layout and never become a RunId. A results directory or a
+        // sample sheet is what marks a run. A run usage on one imported file is not: the per-file
+        // sweep already deletes the files that run used.
+        const looksLikeRun =
+          resultsObjects.length > 0 || objects.some((object) => isSampleSheetKey(object.Key, runFolder));
+        const folderHasDeletableObject = objects.some(
+          (object) => !protectedKeys.has(object.Key) && !this.isPrefixStillInUse(object.Key, live.outputPrefixes),
+        );
+        const hasPerFileWork = !!outputPrefix || sampleSheetKeys.length > 0 || untaggedInputKeys.length > 0;
+        const hasWork = looksLikeRun ? folderHasDeletableObject : hasPerFileWork;
 
         if (options.dryRun) {
           if (hasWork) {
@@ -700,11 +716,12 @@ export class LaboratoryDataRetentionService {
         await this.taggingService.recordExpiredRunOutput(laboratory.LaboratoryId, {
           RunId: runId,
           S3Bucket: bucket,
+          ...(looksLikeRun ? { RunFolderPrefix: runFolder } : {}),
           ...(outputPrefix ? { OutputPrefix: outputPrefix } : {}),
           ...(sampleSheetKeys.length ? { SampleSheetKeys: sampleSheetKeys } : {}),
           ...(untaggedInputKeys.length ? { UntaggedInputKeys: untaggedInputKeys } : {}),
           RecordedAt: now,
-          ...(hasWork ? {} : { CompletedAt: now }),
+          ...(hasWork ? {} : { CompletedAt: now, FolderCleanedAt: now }),
         });
         if (hasWork) stats.orphanFoldersRecorded++;
       } catch (err) {
@@ -721,11 +738,11 @@ export class LaboratoryDataRetentionService {
   }
 
   /**
-   * Deletes the outputs and sample sheets recorded as RUNOUTPUT# rows. Everything under the
-   * recorded prefix goes, including the `results/` placeholder object when one exists.
+   * Deletes every object under a run folder except Permanent objects and objects a surviving run
+   * still lists. A marker stays pending until `FolderCleanedAt` is set.
    *
-   * A marker is only stamped complete once everything it points at is gone, so a sweep that stops
-   * early on the delete budget resumes cleanly next time.
+   * The stamp is written only once everything deletable is gone, so a sweep that stops on the
+   * delete budget resumes next time. A remaining Permanent object does not block the stamp.
    */
   private async sweepRunOutputs(
     laboratory: Laboratory,
@@ -735,7 +752,7 @@ export class LaboratoryDataRetentionService {
     stats: RetentionSweepStats,
   ): Promise<void> {
     const pending = (await this.taggingService.listExpiredRunOutputsForLab(laboratory.LaboratoryId)).filter(
-      (row) => !row.CompletedAt,
+      (row) => !row.CompletedAt || !row.FolderCleanedAt,
     );
     if (!pending.length) return;
 
@@ -752,6 +769,11 @@ export class LaboratoryDataRetentionService {
       // the deleter from a malformed or hand-edited row, and this is the step that is irreversible.
       try {
         await this.taggingService.assertLaboratoryHasS3BucketAccess(laboratory, bucket);
+        if (row.RunFolderPrefix && !this.isExactRunFolder(row.RunFolderPrefix, laboratory, row.RunId)) {
+          throw new Error(
+            `RunFolderPrefix '${row.RunFolderPrefix}' is not {org}/{lab}/{platform}/${row.RunId}/`,
+          );
+        }
         if (row.OutputPrefix && !isBelowRunFolderRoot(row.OutputPrefix, laboratory, row.RunId)) {
           throw new Error(`OutputPrefix '${row.OutputPrefix}' is not a subdirectory of run ${row.RunId}'s folder`);
         }
@@ -787,32 +809,46 @@ export class LaboratoryDataRetentionService {
       }
 
       try {
-        const listed = row.OutputPrefix
-          ? await this.s3Service.listAllObjectKeysUnderPrefix(bucket, row.OutputPrefix)
-          : [];
-        const sheetKeys = (row.SampleSheetKeys || []).filter(
-          (key) => !live.sampleSheetKeys.has(key) && !this.isPrefixStillInUse(key, live.outputPrefixes),
-        );
-        stats.outputPrefixesSkippedInUse += (row.SampleSheetKeys || []).length - sheetKeys.length;
-        const untaggedInputKeys = (row.UntaggedInputKeys || []).filter((key) => !live.inputKeys.has(key));
+        const runFolder = this.resolveRunFolder(row, laboratory);
+        const listed = runFolder
+          ? await this.s3Service.listAllObjectKeysUnderPrefix(bucket, runFolder)
+          : row.OutputPrefix
+            ? await this.s3Service.listAllObjectKeysUnderPrefix(bucket, row.OutputPrefix)
+            : [];
+        // A folder listing already contains the sample sheet and the FASTQs. The stored key lists
+        // are only for a marker that never resolved to a run folder.
+        const sheetKeys =
+          runFolder || row.CompletedAt
+            ? []
+            : (row.SampleSheetKeys || []).filter(
+                (key) => !live.sampleSheetKeys.has(key) && !this.isPrefixStillInUse(key, live.outputPrefixes),
+              );
+        if (!runFolder && !row.CompletedAt) {
+          stats.outputPrefixesSkippedInUse += (row.SampleSheetKeys || []).length - sheetKeys.length;
+        }
+        const untaggedInputKeys =
+          runFolder || row.CompletedAt
+            ? []
+            : (row.UntaggedInputKeys || []).filter((key) => !live.inputKeys.has(key));
 
-        // Files under results/ are taggable through the File Manager API, so the Permanent tag has
-        // to be honoured here too — otherwise prefix deletion silently overrides the protection
-        // the FILE#-row sweep enforces.
-        const candidates = [...listed, ...sheetKeys, ...untaggedInputKeys];
+        const candidates = [...new Set([...listed, ...sheetKeys, ...untaggedInputKeys])].filter(
+          (key) =>
+            !live.inputKeys.has(key) &&
+            !live.sampleSheetKeys.has(key) &&
+            !this.isPrefixStillInUse(key, live.outputPrefixes),
+        );
+        // Permanent covers a FASTQ the user chose to keep, and any other object carrying the tag.
         const keys = candidates.filter((key) => !fileRows.permanentKeys.has(key));
         stats.outputObjectsProtected += candidates.length - keys.length;
 
         if (!keys.length) {
-          if (!options.dryRun) {
-            await this.taggingService.markExpiredRunOutputCompleted(laboratory.LaboratoryId, row.RunId);
-          }
+          if (!options.dryRun) await this.retireRunOutput(laboratory.LaboratoryId, row);
           continue;
         }
 
         if (options.dryRun) {
           console.log(
-            `  [dry-run] Would delete ${keys.length} object(s) for RunId=${row.RunId} under s3://${bucket}/${row.OutputPrefix ?? ''} (lab=${laboratory.LaboratoryId})`,
+            `  [dry-run] Would delete ${keys.length} object(s) for RunId=${row.RunId} under s3://${bucket}/${runFolder ?? row.OutputPrefix ?? ''} (lab=${laboratory.LaboratoryId})`,
           );
           continue;
         }
@@ -836,7 +872,7 @@ export class LaboratoryDataRetentionService {
         // resumes. Permanent-protected keys are intentionally retained and do not block this.
         if (removed === keys.length) {
           if (row.OutputPrefix) stats.outputPrefixesDeleted++;
-          await this.taggingService.markExpiredRunOutputCompleted(laboratory.LaboratoryId, row.RunId);
+          await this.retireRunOutput(laboratory.LaboratoryId, row);
         }
       } catch (err) {
         console.warn(`  Error deleting outputs for RunId=${row.RunId} (lab=${laboratory.LaboratoryId}):`, err);
@@ -847,6 +883,41 @@ export class LaboratoryDataRetentionService {
     console.log(
       `Lab ${laboratory.LaboratoryId} output sweep complete: prefixesDeleted=${stats.outputPrefixesDeleted} objectsDeleted=${stats.outputObjectsDeleted} protected=${stats.outputObjectsProtected} sampleSheetsDeleted=${stats.sampleSheetsDeleted} skippedInUse=${stats.outputPrefixesSkippedInUse} errors=${stats.errors}`,
     );
+  }
+
+  /**
+   * The run folder to list. A recorded `RunFolderPrefix` is used only when it is exactly
+   * `{org}/{lab}/{platform}/{runId}/`; the guard rejects anything else before this runs.
+   * An older marker derives the same shape from `OutputPrefix` or a sample sheet key.
+   */
+  private resolveRunFolder(row: ExpiredRunOutput, laboratory: Laboratory): string | undefined {
+    if (row.RunFolderPrefix) {
+      return this.isExactRunFolder(row.RunFolderPrefix, laboratory, row.RunId)
+        ? normalizeS3Prefix(row.RunFolderPrefix)
+        : undefined;
+    }
+    const fromOutput = row.OutputPrefix ? runFolderPrefix(row.OutputPrefix, laboratory, row.RunId) : undefined;
+    if (fromOutput) return fromOutput;
+    for (const sheetKey of row.SampleSheetKeys || []) {
+      const folder = runFolderPrefix(sheetKey, laboratory, row.RunId);
+      if (folder) return folder;
+    }
+    return undefined;
+  }
+
+  private isExactRunFolder(prefix: string, laboratory: Laboratory, runId: string): boolean {
+    const folder = runFolderPrefix(prefix, laboratory, runId);
+    return !!folder && normalizeS3Prefix(prefix) === folder;
+  }
+
+  /** Called only after every deletable key is gone. A marker with no run folder is finished too. */
+  private async retireRunOutput(laboratoryId: string, row: ExpiredRunOutput): Promise<void> {
+    if (!row.CompletedAt) {
+      await this.taggingService.markExpiredRunOutputCompleted(laboratoryId, row.RunId);
+    }
+    if (!row.FolderCleanedAt) {
+      await this.taggingService.markRunFolderCleaned(laboratoryId, row.RunId);
+    }
   }
 
   private isPrefixStillInUse(candidate: string, livePrefixes: string[]): boolean {
