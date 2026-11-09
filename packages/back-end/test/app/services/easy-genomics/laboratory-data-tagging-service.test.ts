@@ -1443,8 +1443,10 @@ describe('LaboratoryDataTaggingService expired run output markers', () => {
         OutputPrefix: undefined,
         SampleSheetKeys: ['good.csv'],
         UntaggedInputKeys: undefined,
+        RunFolderPrefix: undefined,
         RecordedAt: '',
         CompletedAt: undefined,
+        FolderCleanedAt: undefined,
       });
     });
   });
@@ -1460,6 +1462,18 @@ describe('LaboratoryDataTaggingService expired run output markers', () => {
       expect(input.UpdateExpression).toBe('SET #completedAt = :completedAt');
       expect(unmarshall(input.Key)).toEqual({ LaboratoryId: 'lab-1', Sk: `RUNOUTPUT#${runId}` });
       expect(unmarshall(input.ExpressionAttributeValues)[':completedAt']).toEqual(expect.any(String));
+    });
+  });
+
+  describe('markRunFolderCleaned', () => {
+    it('stamps FolderCleanedAt without clearing CompletedAt', async () => {
+      await svc.markRunFolderCleaned('lab-1', runId);
+
+      expect(mockUpdateItem).toHaveBeenCalledTimes(1);
+      const input = mockUpdateItem.mock.calls[0][0];
+      expect(input.UpdateExpression).toBe('SET #folderCleanedAt = :folderCleanedAt');
+      expect(unmarshall(input.Key)).toEqual({ LaboratoryId: 'lab-1', Sk: `RUNOUTPUT#${runId}` });
+      expect(unmarshall(input.ExpressionAttributeValues)[':folderCleanedAt']).toEqual(expect.any(String));
     });
   });
 });
