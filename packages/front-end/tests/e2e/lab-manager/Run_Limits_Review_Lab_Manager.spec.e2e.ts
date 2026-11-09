@@ -128,7 +128,7 @@ test.describe.serial('Run limits on the review step', () => {
     await expect(page.getByText("This run can't be launched")).toBeVisible();
     await expect(
       page.getByText(
-        'It has 2 samples, and this lab allows 1 per run. Split the samples into smaller runs, or ask an organization admin to raise the limit.',
+        'It has 2 samples, and this lab allows 1 per run. Split the samples into smaller runs, or ask an organization admin to change the limit.',
       ),
     ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Launch Workflow Run' })).toBeDisabled();

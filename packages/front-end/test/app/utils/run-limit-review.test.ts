@@ -16,7 +16,7 @@ import {
 } from '../../../src/app/utils/run-limit-review';
 
 const BLOCK_TITLE = "This run can't be launched";
-const BLOCK_ADVICE = 'Split the samples into smaller runs, or ask an organization admin to raise the limit.';
+const BLOCK_ADVICE = 'Split the samples into smaller runs, or ask an organization admin to change the limit.';
 const WARN_ADVICE = 'Check the samples and parameters before you launch.';
 
 function estimate(overrides: Partial<EstimateRunCostResponse> = {}): EstimateRunCostResponse {
