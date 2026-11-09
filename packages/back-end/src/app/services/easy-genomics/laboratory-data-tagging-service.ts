@@ -191,18 +191,14 @@ export type ExpiredRunOutput = {
    */
   UntaggedInputKeys?: string[];
   /**
-   * The run folder itself (`{org}/{lab}/.../{runId}/`). The sweep deletes every object under it
-   * except ones marked Permanent. Distinct from `OutputPrefix`, which must stay a subdirectory
-   * so a hand-edited results prefix cannot be widened to the laboratory root.
+   * The run folder itself, exactly `{org}/{lab}/{platform}/{runId}/`. The sweep deletes every
+   * object under it except ones marked Permanent and ones a surviving run still lists.
    */
   RunFolderPrefix?: string;
   RecordedAt: string;
-  /** Set once the sweep has removed everything this row points at. */
+  /** Set once the recorded outputs and sample sheets are gone. */
   CompletedAt?: string;
-  /**
-   * Set once the run folder itself has been listed and every non-Permanent object removed.
-   * Markers completed before this field existed are listed again so leftover FASTQs go too.
-   */
+  /** Set once `RunFolderPrefix` has been listed and every deletable object under it is gone. */
   FolderCleanedAt?: string;
 };
 
@@ -1315,10 +1311,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     });
   }
 
-  /**
-   * Stamps a marker whose run folder has been listed and every non-Permanent object removed.
-   * Separate from `CompletedAt` so markers finished before folder deletion existed are revisited once.
-   */
+  /** Stamps a marker whose run folder has been listed and every deletable object under it is gone. */
   public async markRunFolderCleaned(laboratoryId: string, runId: string): Promise<void> {
     await this.updateItem({
       TableName: TABLE_NAME,

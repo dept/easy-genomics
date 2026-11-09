@@ -92,11 +92,19 @@ describe('isWithinRunFolder', () => {
 });
 
 describe('runFolderPrefix', () => {
-  it('returns the run folder from a key or a prefix, with or without a trailing slash', () => {
-    expect(runFolderPrefix(`${runFolder}results/`, RUN_ID)).toBe(runFolder);
-    expect(runFolderPrefix(`${runFolder}reads_R1.fastq.gz`, RUN_ID)).toBe(runFolder);
-    expect(runFolderPrefix(runFolder.slice(0, -1), RUN_ID)).toBe(runFolder);
-    expect(runFolderPrefix('org-1/lab-1/other/', RUN_ID)).toBeUndefined();
+  it('returns {org}/{lab}/{platform}/{runId}/ from a key or a prefix', () => {
+    expect(runFolderPrefix(`${runFolder}results/`, laboratory, RUN_ID)).toBe(runFolder);
+    expect(runFolderPrefix(`${runFolder}reads_R1.fastq.gz`, laboratory, RUN_ID)).toBe(runFolder);
+    expect(runFolderPrefix(runFolder.slice(0, -1), laboratory, RUN_ID)).toBe(runFolder);
+    expect(runFolderPrefix('org-1/lab-1/other/', laboratory, RUN_ID)).toBeUndefined();
+  });
+
+  it('does not cut at the laboratory id when the run id equals it', () => {
+    const lab = { OrganizationId: 'org-1', LaboratoryId: 'lab-1' };
+    expect(runFolderPrefix('org-1/lab-1/', lab, 'lab-1')).toBeUndefined();
+    expect(runFolderPrefix('org-1/lab-1/aws-healthomics/lab-1/results/', lab, 'lab-1')).toBe(
+      'org-1/lab-1/aws-healthomics/lab-1/',
+    );
   });
 });
 

@@ -11,7 +11,7 @@ import {
   isWithinRunFolder,
   normalizeS3Prefix,
   parseS3ObjectUri,
-  runFolderPrefix,
+  runFolderPrefixFrom,
 } from '@BE/utils/s3-uri-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -152,12 +152,11 @@ async function recordRunOutputsForCleanup(
   }
 
   const parsedInput = parseS3ObjectUri(run.InputS3Url);
-  const folderCandidate =
-    (outputPrefix && runFolderPrefix(outputPrefix, runId)) ||
-    (sampleSheetKey && runFolderPrefix(sampleSheetKey, runId)) ||
-    (parsedInput?.bucket === bucket ? runFolderPrefix(parsedInput.prefix, runId) : undefined);
-  const folder =
-    folderCandidate && isWithinRunFolder(folderCandidate, laboratory, runId) ? folderCandidate : undefined;
+  const folder = runFolderPrefixFrom(
+    [outputPrefix, sampleSheetKey, parsedInput?.bucket === bucket ? parsedInput.prefix : undefined],
+    laboratory,
+    runId,
+  );
 
   if (!outputPrefix && !sampleSheetKey && !folder) return;
 
