@@ -1,6 +1,7 @@
 import { UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import {
   isBelowRunFolderRoot,
+  runFolderPrefix,
   isInsideLaboratoryReadablePrefix,
   isRunFolderName,
   isSampleSheetKey,
@@ -87,6 +88,15 @@ describe('isWithinRunFolder', () => {
     expect(isWithinRunFolder(`org-2/lab-9/aws-healthomics/${RUN_ID}/x`, laboratory, RUN_ID)).toBe(false);
     expect(isWithinRunFolder('org-1/lab-1/aws-healthomics/other-run/x', laboratory, RUN_ID)).toBe(false);
     expect(isWithinRunFolder(`${runFolder}x`, laboratory, '')).toBe(false);
+  });
+});
+
+describe('runFolderPrefix', () => {
+  it('returns the run folder from a key or a prefix, with or without a trailing slash', () => {
+    expect(runFolderPrefix(`${runFolder}results/`, RUN_ID)).toBe(runFolder);
+    expect(runFolderPrefix(`${runFolder}reads_R1.fastq.gz`, RUN_ID)).toBe(runFolder);
+    expect(runFolderPrefix(runFolder.slice(0, -1), RUN_ID)).toBe(runFolder);
+    expect(runFolderPrefix('org-1/lab-1/other/', RUN_ID)).toBeUndefined();
   });
 });
 

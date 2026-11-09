@@ -183,6 +183,7 @@ describe('process-laboratory-run-stream.lambda', () => {
         S3Bucket: 'my-bucket',
         OutputPrefix: `${runFolder}/results/`,
         SampleSheetKeys: [`${runFolder}/samplesheet.csv`],
+        RunFolderPrefix: `${runFolder}/`,
         RecordedAt: expect.any(String),
       });
     });

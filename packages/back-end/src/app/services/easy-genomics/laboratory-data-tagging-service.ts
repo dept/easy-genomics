@@ -190,9 +190,20 @@ export type ExpiredRunOutput = {
    * and no surviving run lists the key.
    */
   UntaggedInputKeys?: string[];
+  /**
+   * The run folder itself (`{org}/{lab}/.../{runId}/`). The sweep deletes every object under it
+   * except ones marked Permanent. Distinct from `OutputPrefix`, which must stay a subdirectory
+   * so a hand-edited results prefix cannot be widened to the laboratory root.
+   */
+  RunFolderPrefix?: string;
   RecordedAt: string;
-  /** Set once the sweep has removed everything this row points at; such rows are not re-swept. */
+  /** Set once the sweep has removed everything this row points at. */
   CompletedAt?: string;
+  /**
+   * Set once the run folder itself has been listed and every non-Permanent object removed.
+   * Markers completed before this field existed are listed again so leftover FASTQs go too.
+   */
+  FolderCleanedAt?: string;
 };
 
 export function skSample(setId: string): string {
@@ -1279,8 +1290,10 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
           UntaggedInputKeys: Array.isArray(row.UntaggedInputKeys)
             ? row.UntaggedInputKeys.filter((k): k is string => typeof k === 'string' && k.length > 0)
             : undefined,
+          RunFolderPrefix: typeof row.RunFolderPrefix === 'string' ? row.RunFolderPrefix : undefined,
           RecordedAt: typeof row.RecordedAt === 'string' ? row.RecordedAt : '',
           CompletedAt: typeof row.CompletedAt === 'string' ? row.CompletedAt : undefined,
+          FolderCleanedAt: typeof row.FolderCleanedAt === 'string' ? row.FolderCleanedAt : undefined,
         });
       }
       startKey = response.LastEvaluatedKey as Record<string, unknown> | undefined;
@@ -1299,6 +1312,20 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       UpdateExpression: 'SET #completedAt = :completedAt',
       ExpressionAttributeNames: { '#completedAt': 'CompletedAt' },
       ExpressionAttributeValues: marshall({ ':completedAt': new Date().toISOString() }),
+    });
+  }
+
+  /**
+   * Stamps a marker whose run folder has been listed and every non-Permanent object removed.
+   * Separate from `CompletedAt` so markers finished before folder deletion existed are revisited once.
+   */
+  public async markRunFolderCleaned(laboratoryId: string, runId: string): Promise<void> {
+    await this.updateItem({
+      TableName: TABLE_NAME,
+      Key: marshall({ LaboratoryId: laboratoryId, Sk: skRunOutput(runId) }),
+      UpdateExpression: 'SET #folderCleanedAt = :folderCleanedAt',
+      ExpressionAttributeNames: { '#folderCleanedAt': 'FolderCleanedAt' },
+      ExpressionAttributeValues: marshall({ ':folderCleanedAt': new Date().toISOString() }),
     });
   }
 

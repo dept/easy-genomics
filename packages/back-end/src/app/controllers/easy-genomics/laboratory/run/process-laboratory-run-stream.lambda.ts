@@ -6,7 +6,13 @@ import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-geno
 import { DynamoDBRecord, DynamoDBStreamEvent, Handler } from 'aws-lambda';
 import { LaboratoryDataTaggingService } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { isBelowRunFolderRoot, isWithinRunFolder, normalizeS3Prefix, parseS3ObjectUri } from '@BE/utils/s3-uri-utils';
+import {
+  isBelowRunFolderRoot,
+  isWithinRunFolder,
+  normalizeS3Prefix,
+  parseS3ObjectUri,
+  runFolderPrefix,
+} from '@BE/utils/s3-uri-utils';
 
 const laboratoryService = new LaboratoryService();
 const laboratoryDataTaggingService = new LaboratoryDataTaggingService();
@@ -108,15 +114,10 @@ async function processRecord(record: DynamoDBRecord): Promise<void> {
 }
 
 /**
- * Hands the run's output directory and generated sample sheet to the scheduled sweep. Unlike
- * input files — which are shared between runs and tracked per-file in the tagging table — these
- * live inside the run's own `{org}/{lab}/{platform}/{runId}/` folder and are owned solely by it,
- * so they can be removed wholesale once the run expires.
- *
- * Locations are validated against the run's own folder before being recorded; a custom `outdir`
- * pointing elsewhere is skipped rather than scheduled for deletion. `outdir` is a user-editable
- * workflow parameter, so it must also point strictly *below* the run folder root: the root is
- * where the run's input files live, and prefix deletion is recursive.
+ * Hands the run folder to the scheduled sweep. The sweep deletes every object under
+ * `{org}/{lab}/{platform}/{runId}/` except ones marked Permanent. `OutputPrefix` is still only
+ * a subdirectory: `outdir` is a user-editable workflow parameter, and storing the run folder
+ * root (or anything outside it) as that prefix would let a bad value widen the delete.
  */
 async function recordRunOutputsForCleanup(
   laboratory: Laboratory,
@@ -150,13 +151,22 @@ async function recordRunOutputsForCleanup(
     }
   }
 
-  if (!outputPrefix && !sampleSheetKey) return;
+  const parsedInput = parseS3ObjectUri(run.InputS3Url);
+  const folderCandidate =
+    (outputPrefix && runFolderPrefix(outputPrefix, runId)) ||
+    (sampleSheetKey && runFolderPrefix(sampleSheetKey, runId)) ||
+    (parsedInput?.bucket === bucket ? runFolderPrefix(parsedInput.prefix, runId) : undefined);
+  const folder =
+    folderCandidate && isWithinRunFolder(folderCandidate, laboratory, runId) ? folderCandidate : undefined;
+
+  if (!outputPrefix && !sampleSheetKey && !folder) return;
 
   await laboratoryDataTaggingService.recordExpiredRunOutput(laboratory.LaboratoryId, {
     RunId: runId,
     S3Bucket: bucket,
     ...(outputPrefix ? { OutputPrefix: outputPrefix } : {}),
     ...(sampleSheetKey ? { SampleSheetKeys: [sampleSheetKey] } : {}),
+    ...(folder ? { RunFolderPrefix: folder } : {}),
     RecordedAt: new Date().toISOString(),
   });
 }

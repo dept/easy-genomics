@@ -143,6 +143,19 @@ export function isRunFolderName(name: string): boolean {
   return UUID_PATTERN.test(name);
 }
 
+/**
+ * The run's own folder, including the trailing slash: everything up to and including `/{runId}/`.
+ * Accepts a key or a prefix, with or without a trailing slash.
+ */
+export function runFolderPrefix(keyOrPrefix: string, runId: string): string | undefined {
+  if (!runId || !keyOrPrefix) return undefined;
+  const normalized = keyOrPrefix.endsWith('/') ? keyOrPrefix : `${keyOrPrefix}/`;
+  const marker = `/${runId}/`;
+  const at = normalized.indexOf(marker);
+  if (at < 0) return undefined;
+  return normalized.slice(0, at + marker.length);
+}
+
 /** True for a FASTQ sitting directly at the run folder root, not under `results/`. */
 export function isRunFolderFastqKey(
   key: string,
@@ -156,8 +169,8 @@ export function isRunFolderFastqKey(
 }
 
 /** True for a generated sample sheet sitting directly at the run folder root (not in a subfolder). */
-export function isSampleSheetKey(key: string, runFolderPrefix: string): boolean {
-  if (!key.startsWith(runFolderPrefix)) return false;
-  const relative = key.slice(runFolderPrefix.length);
+export function isSampleSheetKey(key: string, folder: string): boolean {
+  if (!key.startsWith(folder)) return false;
+  const relative = key.slice(folder.length);
   return !relative.includes('/') && SAMPLE_SHEET_PATTERN.test(relative);
 }
