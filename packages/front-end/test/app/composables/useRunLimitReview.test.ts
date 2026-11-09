@@ -15,13 +15,14 @@ const LAB_ID = 'lab-1';
 
 const mockEstimateRunCost = jest.fn();
 const mockToastError = jest.fn();
+const mockLoadLab = jest.fn();
 let labs: Record<string, { RunLimits?: Record<string, number> }> = {};
 
 // useRunLimitReview relies on Nuxt auto-imports (no explicit import).
 (global as any).ref = ref;
 (global as any).computed = computed;
 (global as any).useNuxtApp = () => ({ $api: { labs: { estimateRunCost: mockEstimateRunCost } } });
-(global as any).useLabsStore = () => ({ labs });
+(global as any).useLabsStore = () => ({ labs, loadLab: mockLoadLab });
 (global as any).useToastStore = () => ({ error: mockToastError });
 
 const availableEstimate: EstimateRunCostResponse = {
@@ -120,7 +121,7 @@ describe('useRunLimitReview', () => {
     await loadEstimate();
     const serverMessage = new RunSampleLimitExceededError(2, 1).message;
 
-    const handled = handleLaunchError(requestError(serverMessage));
+    const handled = await handleLaunchError(requestError(serverMessage));
 
     expect(handled).toBe(true);
     expect(mockToastError).toHaveBeenCalledTimes(1);
@@ -129,16 +130,28 @@ describe('useRunLimitReview', () => {
     expect(review.value.launchDisabled).toBe(true);
   });
 
+  // The Samples row reads the lab's limits from the store, which predate the change that caused the block.
+  it('reloads the lab after a launch-time limit block so the Samples row shows the current limit', async () => {
+    mockEstimateRunCost.mockResolvedValue(availableEstimate);
+    const { loadEstimate, handleLaunchError } = useRunLimitReview(LAB_ID, () => request);
+    await loadEstimate();
+
+    await handleLaunchError(requestError(new RunSampleLimitExceededError(2, 1).message));
+
+    expect(mockLoadLab).toHaveBeenCalledWith(LAB_ID);
+  });
+
   it('leaves other launch errors to the caller', async () => {
     mockEstimateRunCost.mockResolvedValue(availableEstimate);
     const { review, loadEstimate, handleLaunchError } = useRunLimitReview(LAB_ID, () => request);
     await loadEstimate();
     const before = review.value;
 
-    const handled = handleLaunchError(requestError('x'));
+    const handled = await handleLaunchError(requestError('x'));
 
     expect(handled).toBe(false);
     expect(mockToastError).not.toHaveBeenCalled();
+    expect(mockLoadLab).not.toHaveBeenCalled();
     expect(review.value).toEqual(before);
   });
 

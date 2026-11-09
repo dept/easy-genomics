@@ -100,7 +100,7 @@
         externalRunId = res.workflowId;
       } catch (error) {
         console.error('Error submitting run to Seqera:', error);
-        if (!handleLaunchError(error)) {
+        if (!(await handleLaunchError(error))) {
           useToastStore().error('Failed to submit run to Seqera. Please try again.');
         }
         emit('submit-launch-request-error');

@@ -79,7 +79,7 @@
         externalRunId = startOmicsRes.id;
       } catch (error) {
         console.error('Error submitting run to AWS HealthOmics:', error);
-        if (!handleLaunchError(error)) {
+        if (!(await handleLaunchError(error))) {
           useToastStore().error('Failed to submit run to AWS HealthOmics. Please try again.');
         }
         emit('submit-launch-request-error');

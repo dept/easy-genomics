@@ -48,13 +48,15 @@ export function useRunLimitReview(labId: string, buildRequest: () => EstimateRun
   }
 
   /** True when `error` was a limit block. The block is then shown and toasted, and the caller must not toast again. */
-  function handleLaunchError(error: unknown): boolean {
+  async function handleLaunchError(error: unknown): Promise<boolean> {
     const limitMessage = runLimitErrorMessage(error);
     if (!limitMessage) {
       return false;
     }
     serverBlockMessage.value = limitMessage;
     useToastStore().error(limitMessage);
+    // The lab's limits changed since this page loaded them, so the Samples row would show the old amount.
+    await labsStore.loadLab(labId);
     return true;
   }
 
