@@ -14,9 +14,11 @@ jest.mock('../../../../../src/app/services/omics-lab-factory', () => ({
 }));
 jest.mock('../../../../../src/app/utils/auth-utils');
 const mockAssertLaunchWithinLimits = jest.fn();
+const mockLogWarnedLaunch = jest.fn();
 jest.mock('../../../../../src/app/services/easy-genomics/run-limit-check-service', () => ({
   RunLimitCheckService: jest.fn().mockImplementation(() => ({
     assertLaunchWithinLimits: (...args: unknown[]) => mockAssertLaunchWithinLimits(...args),
+    logWarnedLaunch: (...args: unknown[]) => mockLogWarnedLaunch(...args),
   })),
 }));
 jest.mock('../../../../../src/app/utils/laboratory-workflow-access-utils', () => ({
@@ -131,6 +133,7 @@ describe('create-run-execution.lambda', () => {
     mockValidateLabManager.mockReturnValue(false);
     mockValidateLabTechnician.mockReturnValue(false);
     mockAssertLaunchWithinLimits.mockReset().mockResolvedValue(undefined);
+    mockLogWarnedLaunch.mockReset();
   });
 
   it('starts a run with expected tags including user info', async () => {
@@ -287,6 +290,41 @@ describe('create-run-execution.lambda', () => {
     const startRunInput = (mockOmicsService.prototype.startRun as jest.Mock).mock.calls[0][0];
     expect(startRunInput.networkingMode).toBe('VPC');
     expect(startRunInput.configurationName).toBe('wslh-prod-vpc');
+  });
+
+  it('logs a warned launch with the run HealthOmics started, from the verdict it was checked with', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+    });
+    const verdict = { outcome: 'warn', hits: [], costEstimate: 'available' };
+    mockAssertLaunchWithinLimits.mockResolvedValue(verdict);
+    (mockOmicsService.prototype.startRun as jest.Mock).mockResolvedValue({ id: 'run-123' });
+
+    await handler(createEvent(baseRequest), createContext(), () => {});
+
+    expect(mockLogWarnedLaunch).toHaveBeenCalledWith(
+      expect.objectContaining({ LaboratoryId: LAB_ID }),
+      expect.objectContaining({ platform: 'AWS HealthOmics' }),
+      undefined,
+      verdict,
+      'run-123',
+    );
+  });
+
+  it('logs nothing when HealthOmics does not start the run', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+    });
+    mockAssertLaunchWithinLimits.mockResolvedValue({ outcome: 'warn', hits: [], costEstimate: 'available' });
+    (mockOmicsService.prototype.startRun as jest.Mock).mockRejectedValue(new Error('ValidationException'));
+
+    await handler(createEvent(baseRequest), createContext(), () => {});
+
+    expect(mockLogWarnedLaunch).not.toHaveBeenCalled();
   });
 
   it('omits networkingMode and configurationName when the lab is RESTRICTED/omitted', async () => {

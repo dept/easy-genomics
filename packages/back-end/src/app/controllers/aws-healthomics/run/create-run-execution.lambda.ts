@@ -13,7 +13,7 @@ import { coerceNumericWorkflowParams } from '@easy-genomics/shared-lib/src/app/u
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
-import { RunLimitCheckService } from '@BE/services/easy-genomics/run-limit-check-service';
+import { RunLimitCheckService, RunLimitInput } from '@BE/services/easy-genomics/run-limit-check-service';
 import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import { OmicsService } from '@BE/services/omics-service';
 import {
@@ -144,13 +144,11 @@ export const handler: Handler = async (
     }
 
     // Only available for Org Admins or Laboratory Managers and Technicians
-    if (
-      !(
-        validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
-        validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
-        validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
-      )
-    ) {
+    if (!(
+      validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
+      validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
+      validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
+    )) {
       throw new UnauthorizedAccessError();
     }
 
@@ -163,16 +161,19 @@ export const handler: Handler = async (
 
     const parsedParameters = JSON.parse(request.parameters!.toString());
     // The check hashes the uncoerced parameters, the same object the review step sends.
-    await runLimitCheckService.assertLaunchWithinLimits(
+    const runLimitInput: RunLimitInput = {
+      platform: 'AWS HealthOmics',
+      workflowExternalId: request.workflowId!,
+      workflowVersionName: request.workflowVersionName,
+      sampleSheetS3Url: typeof parsedParameters?.input === 'string' ? parsedParameters.input : undefined,
+      settings: parsedParameters,
+    };
+    const runLimitUserId: string | undefined =
+      event.requestContext.authorizer?.claims?.UserId ?? event.requestContext.authorizer?.claims?.['cognito:username'];
+    const runLimitVerdict = await runLimitCheckService.assertLaunchWithinLimits(
       laboratory,
-      {
-        platform: 'AWS HealthOmics',
-        workflowExternalId: request.workflowId!,
-        workflowVersionName: request.workflowVersionName,
-        sampleSheetS3Url: typeof parsedParameters?.input === 'string' ? parsedParameters.input : undefined,
-        settings: parsedParameters,
-      },
-      event.requestContext.authorizer?.claims?.UserId ?? event.requestContext.authorizer?.claims?.['cognito:username'],
+      runLimitInput,
+      runLimitUserId,
     );
 
     // User metadata is optional: IAM access control is enforced via LaboratoryId/OrganizationId tagging.
@@ -239,6 +240,8 @@ export const handler: Handler = async (
         Platform: 'AWS HealthOmics',
       },
     });
+
+    runLimitCheckService.logWarnedLaunch(laboratory, runLimitInput, runLimitUserId, runLimitVerdict, response.id);
 
     return buildResponse(200, JSON.stringify(response), event);
   } catch (err: any) {

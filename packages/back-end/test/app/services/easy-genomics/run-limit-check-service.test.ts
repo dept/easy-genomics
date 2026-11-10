@@ -308,4 +308,40 @@ describe('RunLimitCheckService', () => {
       expect(warnSpy).not.toHaveBeenCalled();
     });
   });
+
+  describe('logWarnedLaunch', () => {
+    const warnVerdict = {
+      outcome: 'warn' as const,
+      hits: [{ limit: 'cost' as const, level: 'warn' as const, amount: 150, runValue: 182.5 }],
+      costEstimate: 'available' as const,
+      sampleCount: 100,
+    };
+
+    it('logs the warned launch with the started run id', () => {
+      service.logWarnedLaunch(laboratory, input, 'user-1', warnVerdict, 'run-123');
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(loggedLines()[0]).toEqual({
+        event: 'RUN_LIMIT_WARNED',
+        organizationId: 'org-1',
+        laboratoryId: 'lab-1',
+        platform: 'AWS HealthOmics',
+        workflowExternalId: 'wf-123',
+        workflowVersionName: 'v1',
+        externalRunId: 'run-123',
+        userId: 'user-1',
+        hits: warnVerdict.hits,
+        sampleCount: 100,
+      });
+    });
+
+    it.each([undefined, { outcome: 'pass' as const, hits: [], costEstimate: 'notChecked' as const }])(
+      'logs nothing for a launch that was not warned (%p)',
+      (verdict) => {
+        service.logWarnedLaunch(laboratory, input, 'user-1', verdict, 'run-123');
+
+        expect(warnSpy).not.toHaveBeenCalled();
+      },
+    );
+  });
 });

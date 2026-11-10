@@ -137,6 +137,34 @@ export class RunLimitCheckService {
     throw new RunCostLimitExceededError(costBlock.runValue, costBlock.amount);
   }
 
+  /**
+   * Logs a launch that went ahead over a warn amount, once the platform has started the run. It is logged here, from
+   * the verdict the launch was checked with, because a later request about the run can't be trusted to describe it.
+   */
+  public logWarnedLaunch(
+    laboratory: Laboratory,
+    input: RunLimitInput,
+    userId: string | undefined,
+    verdict: RunLimitVerdict | undefined,
+    externalRunId: string | undefined,
+  ): void {
+    if (verdict?.outcome !== 'warn') return;
+    console.warn(
+      JSON.stringify({
+        event: 'RUN_LIMIT_WARNED',
+        organizationId: laboratory.OrganizationId,
+        laboratoryId: laboratory.LaboratoryId,
+        platform: input.platform,
+        workflowExternalId: input.workflowExternalId,
+        workflowVersionName: input.workflowVersionName,
+        externalRunId,
+        userId,
+        hits: verdict.hits,
+        sampleCount: verdict.sampleCount,
+      }),
+    );
+  }
+
   private async checkRun(laboratory: Laboratory, input: RunLimitInput): Promise<CheckedRun | undefined> {
     const limits = laboratory.RunLimits;
     if (!limits || !hasAnyRunLimit(limits)) return undefined;

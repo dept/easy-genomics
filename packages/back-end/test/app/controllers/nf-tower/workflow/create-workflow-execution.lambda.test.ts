@@ -24,9 +24,11 @@ jest.mock('../../../../../src/app/utils/rest-api-utils', () => ({
 }));
 jest.mock('../../../../../src/app/utils/auth-utils');
 const mockAssertLaunchWithinLimits = jest.fn();
+const mockLogWarnedLaunch = jest.fn();
 jest.mock('../../../../../src/app/services/easy-genomics/run-limit-check-service', () => ({
   RunLimitCheckService: jest.fn().mockImplementation(() => ({
     assertLaunchWithinLimits: (...args: unknown[]) => mockAssertLaunchWithinLimits(...args),
+    logWarnedLaunch: (...args: unknown[]) => mockLogWarnedLaunch(...args),
   })),
 }));
 
@@ -72,6 +74,7 @@ describe('create-workflow-execution.lambda', () => {
     mockGetParameter.mockResolvedValue({ Parameter: { Value: 'token' } });
     (httpRequest as jest.Mock).mockResolvedValue({ workflowId: 'seqera-run-1' });
     mockAssertLaunchWithinLimits.mockReset().mockResolvedValue(undefined);
+    mockLogWarnedLaunch.mockReset();
   });
 
   afterEach(() => {
@@ -92,6 +95,30 @@ describe('create-workflow-execution.lambda', () => {
       'user-1',
     );
     expect(mockAssertLaunchWithinLimits.mock.calls[0][1]).not.toHaveProperty('workflowVersionName');
+  });
+
+  it('logs a warned launch with the run Seqera started, from the verdict it was checked with', async () => {
+    const verdict = { outcome: 'warn', hits: [], costEstimate: 'available' };
+    mockAssertLaunchWithinLimits.mockResolvedValue(verdict);
+
+    await handler(createEvent({ launch: { paramsText } }), context, () => {});
+
+    expect(mockLogWarnedLaunch).toHaveBeenCalledWith(
+      laboratory,
+      expect.objectContaining({ platform: 'Seqera Cloud', workflowExternalId: 'pipe-1' }),
+      'user-1',
+      verdict,
+      'seqera-run-1',
+    );
+  });
+
+  it('logs nothing when Seqera does not start the run', async () => {
+    mockAssertLaunchWithinLimits.mockResolvedValue({ outcome: 'warn', hits: [], costEstimate: 'available' });
+    (httpRequest as jest.Mock).mockRejectedValue(new Error('Seqera unavailable'));
+
+    await handler(createEvent({ launch: { paramsText } }), context, () => {});
+
+    expect(mockLogWarnedLaunch).not.toHaveBeenCalled();
   });
 
   it('refuses a run over the cost block amount before reading the token or calling Seqera', async () => {
