@@ -2710,6 +2710,56 @@ components:
             - high
             - low
             - median
+        limitVerdict:
+          type: object
+          properties:
+            outcome:
+              enum:
+                - block
+                - pass
+                - warn
+              type: string
+            hits:
+              type: array
+              items:
+                type: object
+                properties:
+                  limit:
+                    enum:
+                      - cost
+                      - samples
+                    type: string
+                  level:
+                    enum:
+                      - block
+                      - warn
+                    type: string
+                  amount:
+                    type: number
+                  runValue:
+                    type: number
+                required:
+                  - amount
+                  - level
+                  - limit
+                  - runValue
+            costEstimate:
+              description: '`notChecked` means the lab has no cost amount, so the estimate was not computed.'
+              enum:
+                - available
+                - notChecked
+                - notEnoughHistory
+              type: string
+            sampleCount:
+              description: >-
+                The server-counted samples. Absent only when a lab with cost amounts alone launched without a sample
+                sheet.
+              type: number
+          required:
+            - costEstimate
+            - hits
+            - outcome
+          description: Present only when the lab has at least one run limit amount set.
       required:
         - comparableRunCount
         - confidence

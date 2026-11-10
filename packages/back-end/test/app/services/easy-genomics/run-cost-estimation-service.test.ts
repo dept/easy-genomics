@@ -65,7 +65,7 @@ describe('RunCostEstimationService', () => {
 
     expect(mockQueryByWorkflowExternalId).toHaveBeenCalledWith(
       'wf-1',
-      expect.objectContaining({ limit: 200, sinceTerminalAt: expect.any(String) }),
+      expect.objectContaining({ limit: 200, sinceTerminalAt: expect.any(String), laboratoryId: lab.LaboratoryId }),
     );
   });
 
@@ -81,6 +81,31 @@ describe('RunCostEstimationService', () => {
 
     expect(result.estimateAvailable).toBe(false);
     expect(result.confidence).toBe('NONE');
+  });
+
+  it('rethrows a failed history query when asked to', async () => {
+    const historyError = new Error('AccessDeniedException');
+    mockQueryByWorkflowExternalId.mockRejectedValue(historyError);
+
+    await expect(
+      svc.estimate(
+        lab,
+        { platform: 'Seqera Cloud', workflowExternalId: 'wf-1', sampleCount: 2, inputBytesTotal: 1000 },
+        { throwOnHistoryError: true },
+      ),
+    ).rejects.toBe(historyError);
+  });
+
+  it('treats too little history as no estimate, not a failure, when asked to rethrow', async () => {
+    mockQueryByWorkflowExternalId.mockResolvedValue([mk({})]);
+
+    const result = await svc.estimate(
+      lab,
+      { platform: 'Seqera Cloud', workflowExternalId: 'wf-1', sampleCount: 2, inputBytesTotal: 1000 },
+      { throwOnHistoryError: true },
+    );
+
+    expect(result.estimateAvailable).toBe(false);
   });
 
   it('filters candidates to lab/platform/success with ActualComputeCostUsd', async () => {

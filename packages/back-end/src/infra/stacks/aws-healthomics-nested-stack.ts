@@ -852,8 +852,19 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: [
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
         ],
-        actions: ['dynamodb:PutItem'],
+        // Query: the launch limit check reads the workflow's run history for the cost estimate.
+        actions: ['dynamodb:PutItem', 'dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      // The launch limit check reads the lab's sample sheet and sizes its data files, like the review-step estimate.
+      new PolicyStatement({
+        resources: [
+          `arn:aws:s3:::${this.props.env.account!}-${this.props.namePrefix}-lab-bucket`,
+          `arn:aws:s3:::${this.props.env.account!}-${this.props.namePrefix}-lab-bucket/*`,
+        ],
+        actions: ['s3:GetObject', 's3:HeadObject', 's3:ListBucket'],
         effect: Effect.ALLOW,
       }),
       workflowAccessQuery(),
