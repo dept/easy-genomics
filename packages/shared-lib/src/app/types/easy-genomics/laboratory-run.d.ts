@@ -183,6 +183,12 @@ export interface LaboratoryRun extends BaseAttributes {
    */
   NotifiedAt?: string;
 
+  /**
+   * ISO timestamp set exactly once, in the same transaction that adds the run's captured cost
+   * to the daily usage totals, so a retried capture or a rerun back-fill can't count it twice.
+   */
+  RunCostCountedAt?: string;
+
   /** Pre-run input features for historical cost similarity matching. */
   RunInputProfile?: {
     SampleCount: number;
