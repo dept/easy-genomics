@@ -104,6 +104,9 @@ export class EasyGenomicsApiStack extends Stack {
       `${this.props.envName}-usage-nested-stack`,
       usageNestedStackProps,
     );
+    // process-update-laboratory-run publishes to the usage stack's run-cost capture queue by name,
+    // so that queue must exist before the main nested stack updates.
+    this.easyGenomicsNestedStack.node.addDependency(this.usageNestedStack);
 
     // Custom::LogRetention for every easy-genomics Lambda lives here (its own
     // template) so the route-heavy EasyGenomicsNestedStack stays under the

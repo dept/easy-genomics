@@ -256,6 +256,30 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     );
   });
 
+  it('lets the status update publish to the run-cost capture queue in the usage stack', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const lambdaConstructMock = LambdaConstruct as unknown as jest.Mock;
+    const lambdaProps = lambdaConstructMock.mock.calls[0][2];
+    const updateConfig =
+      lambdaProps.lambdaFunctionsResources['/easy-genomics/laboratory/run/process-update-laboratory-run'];
+    expect(updateConfig.environment.SQS_RUN_COST_CAPTURE_QUEUE_URL).toBe(
+      'https://sqs.us-west-2.amazonaws.com/123456789012/easy-genomics-run-cost-capture-queue.fifo',
+    );
+
+    const iamInstance = (IamConstruct as unknown as jest.Mock).mock.results[0].value;
+    const statements = iamInstance
+      .getPolicyStatements('/easy-genomics/laboratory/run/process-update-laboratory-run')
+      .map((statement: any) => statement.toStatementJson());
+    expect(statements).toContainEqual({
+      Effect: 'Allow',
+      Action: 'sqs:SendMessage',
+      Resource: 'arn:aws:sqs:us-west-2:123456789012:easy-genomics-run-cost-capture-queue.fifo',
+    });
+  });
+
   it('adds IAM policy statements for run-export routes', async () => {
     const app = new App();
     const parentStack = new Stack(app, 'parent-stack');
