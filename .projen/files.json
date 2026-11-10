@@ -7,6 +7,7 @@
     ".github/workflows/cicd-release-quality-uat.yml",
     ".github/workflows/cicd-release-quality.yml",
     ".github/workflows/cicd-release-sandbox.yml",
+    ".github/workflows/healthomics-rates-refresh.yml",
     ".github/workflows/pull-request-lint.yml",
     ".gitignore",
     ".husky/commit-msg",

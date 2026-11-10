@@ -9,6 +9,7 @@
 /.github/workflows/cicd-release-quality-uat.yml linguist-generated
 /.github/workflows/cicd-release-quality.yml linguist-generated
 /.github/workflows/cicd-release-sandbox.yml linguist-generated
+/.github/workflows/healthomics-rates-refresh.yml linguist-generated
 /.github/workflows/pull-request-lint.yml linguist-generated
 /.gitignore linguist-generated
 /.husky/commit-msg linguist-generated
