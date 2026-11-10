@@ -16,6 +16,8 @@ export type RunLimitReviewInput = {
   /** A limit error's text, from the estimate call or a launch. */
   serverBlockMessage: string | null;
   runLimits?: LaboratoryRunLimits;
+  /** The lab is being reloaded, so `runLimits` may be an out-of-date copy. */
+  runLimitsLoading?: boolean;
 };
 
 export type RunLimitMessage = { tone: 'warn' | 'block'; role: 'status' | 'alert'; title: string; body: string };
@@ -135,9 +137,10 @@ function deriveMessage(input: RunLimitReviewInput, labHasLimits: boolean): RunLi
 
 function deriveSamplesRow(input: RunLimitReviewInput): RunLimitReview['samplesRow'] {
   const samplesHit = input.verdict?.hits.find((hit) => hit.limit === 'samples');
+  // The verdict's amount is the one the message names, so it wins over the lab copy loaded with the page.
   const blockAbove =
-    input.runLimits?.SamplesBlockAbove ?? (samplesHit?.level === 'block' ? samplesHit.amount : undefined);
-  const warnAbove = input.runLimits?.SamplesWarnAbove ?? (samplesHit?.level === 'warn' ? samplesHit.amount : undefined);
+    (samplesHit?.level === 'block' ? samplesHit.amount : undefined) ?? input.runLimits?.SamplesBlockAbove;
+  const warnAbove = (samplesHit?.level === 'warn' ? samplesHit.amount : undefined) ?? input.runLimits?.SamplesWarnAbove;
 
   let limitText: string;
   if (blockAbove !== undefined) {
@@ -160,7 +163,9 @@ function deriveNotEnoughHistoryText(input: RunLimitReviewInput): string | null {
   if (pastRuns === 0) {
     return 'No past runs of this workflow in this lab';
   }
-  return pastRuns === 1 ? '1 past run of this workflow in this lab' : `${pastRuns} past runs of this workflow in this lab`;
+  return pastRuns === 1
+    ? '1 past run of this workflow in this lab'
+    : `${pastRuns} past runs of this workflow in this lab`;
 }
 
 /** Everything the review step shows about run limits, decided from the server's verdict and any limit error. */
@@ -171,7 +176,7 @@ export function deriveRunLimitReview(input: RunLimitReviewInput): RunLimitReview
     samplesRow: deriveSamplesRow(input),
     notEnoughHistoryText: deriveNotEnoughHistoryText(input),
     message,
-    launchDisabled: (input.loading && labHasLimits) || message?.tone === 'block',
+    launchDisabled: Boolean(input.runLimitsLoading) || (input.loading && labHasLimits) || message?.tone === 'block',
     launchAnyway: !input.serverBlockMessage && input.verdict?.outcome === 'warn',
   };
 }

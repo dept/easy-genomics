@@ -15,6 +15,8 @@ export function useRunLimitReview(labId: string, buildRequest: () => EstimateRun
   const costEstimate = ref<EstimateRunCostResponse | null>(null);
   // Starts true so a lab with limits has launch disabled before the estimate request begins.
   const costEstimateLoading = ref(true);
+  // The lab copy loaded with the wizard can be older than the limits the server checks against.
+  const runLimitsLoading = ref(true);
   const estimateFailed = ref(false);
   const serverBlockMessage = ref<string | null>(null);
 
@@ -26,10 +28,24 @@ export function useRunLimitReview(labId: string, buildRequest: () => EstimateRun
       estimateFailed: estimateFailed.value,
       serverBlockMessage: serverBlockMessage.value,
       runLimits: labsStore.labs[labId]?.RunLimits,
+      runLimitsLoading: runLimitsLoading.value,
     }),
   );
 
+  async function reloadRunLimits(): Promise<void> {
+    runLimitsLoading.value = true;
+    try {
+      await labsStore.loadLab(labId);
+    } finally {
+      runLimitsLoading.value = false;
+    }
+  }
+
   async function loadEstimate(): Promise<void> {
+    await Promise.all([reloadRunLimits(), fetchEstimate()]);
+  }
+
+  async function fetchEstimate(): Promise<void> {
     costEstimateLoading.value = true;
     try {
       costEstimate.value = await $api.labs.estimateRunCost(labId, buildRequest());

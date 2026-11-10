@@ -86,11 +86,13 @@ describe('useRunLimitReview', () => {
     expect(mockToastError).not.toHaveBeenCalled();
   });
 
-  it("keeps today's behaviour for a lab without limits while loading", () => {
+  it("doesn't wait for the estimate in a lab without limits once the lab has reloaded", async () => {
+    mockLoadLab.mockResolvedValue(undefined);
     mockEstimateRunCost.mockReturnValue(new Promise(() => {}));
     const { review, loadEstimate } = useRunLimitReview(LAB_ID, () => request);
 
     void loadEstimate();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(review.value.launchDisabled).toBe(false);
   });
@@ -135,6 +137,7 @@ describe('useRunLimitReview', () => {
     mockEstimateRunCost.mockResolvedValue(availableEstimate);
     const { loadEstimate, handleLaunchError } = useRunLimitReview(LAB_ID, () => request);
     await loadEstimate();
+    mockLoadLab.mockClear();
 
     await handleLaunchError(requestError(new RunSampleLimitExceededError(2, 1).message));
 
@@ -145,6 +148,7 @@ describe('useRunLimitReview', () => {
     mockEstimateRunCost.mockResolvedValue(availableEstimate);
     const { review, loadEstimate, handleLaunchError } = useRunLimitReview(LAB_ID, () => request);
     await loadEstimate();
+    mockLoadLab.mockClear();
     const before = review.value;
 
     const handled = await handleLaunchError(requestError('x'));
@@ -162,5 +166,33 @@ describe('useRunLimitReview', () => {
     await loadEstimate();
 
     expect(mockEstimateRunCost).toHaveBeenCalledWith(LAB_ID, request);
+  });
+
+  // The lab copy loaded with the wizard can predate a limit change, and it decides whether launch waits for the verdict.
+  it('reloads the lab when the review step loads, with launch disabled until it is back', async () => {
+    let finishLabReload: () => void = () => {};
+    mockLoadLab.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishLabReload = () => {
+            labs[LAB_ID].RunLimits = { SamplesBlockAbove: 10 };
+            resolve();
+          };
+        }),
+    );
+    mockEstimateRunCost.mockResolvedValue(availableEstimate);
+    const { review, loadEstimate } = useRunLimitReview(LAB_ID, () => request);
+
+    const loading = loadEstimate();
+    await Promise.resolve();
+
+    expect(mockLoadLab).toHaveBeenCalledWith(LAB_ID);
+    expect(review.value.launchDisabled).toBe(true);
+
+    finishLabReload();
+    await loading;
+
+    expect(review.value.launchDisabled).toBe(false);
+    expect(review.value.samplesRow?.limitText).toBe('Limit: 10 per run');
   });
 });

@@ -306,6 +306,27 @@ describe('deriveRunLimitReview', () => {
     expect(review.samplesRow).toEqual({ countText: '96', limitText: 'Warning above 300 per run' });
   });
 
+  // The message names the verdict's amount, so the row must not show an older one from the lab loaded with the page.
+  it("shows the verdict's sample amount over an out-of-date lab copy", () => {
+    const review = deriveRunLimitReview(
+      input({
+        verdict: verdict({
+          outcome: 'block',
+          hits: [{ limit: 'samples', level: 'block', amount: 10, runValue: 96 }],
+          sampleCount: 96,
+        }),
+        runLimits: { SamplesBlockAbove: 500 },
+      }),
+    );
+
+    expect(review.samplesRow).toEqual({ countText: '96', limitText: 'Limit: 10 per run' });
+  });
+
+  it('disables launch while the lab reloads, even when the old copy has no limits', () => {
+    expect(deriveRunLimitReview(input({ runLimitsLoading: true })).launchDisabled).toBe(true);
+    expect(deriveRunLimitReview(input({ runLimitsLoading: false })).launchDisabled).toBe(false);
+  });
+
   it('leaves the sample count blank while the verdict loads', () => {
     const review = deriveRunLimitReview(
       input({ estimate: null, loading: true, runLimits: { SamplesBlockAbove: 500 } }),
