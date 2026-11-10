@@ -143,7 +143,7 @@ export const handler: Handler = async (
       throw new SeqeraApiError(error.message);
     });
 
-    runLimitCheckService.logWarnedLaunch(
+    await runLimitCheckService.logWarnedLaunch(
       laboratory,
       runLimitInput,
       runLimitUserId,

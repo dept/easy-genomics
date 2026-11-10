@@ -102,6 +102,8 @@ describe('AwsHealthOmicsNestedStack cross-account shared workflow IAM access', (
   it.each([
     ['dynamodb:Query', `arn:aws:dynamodb:${region}:${account}:table/test-laboratory-run-table/index/*`],
     ['s3:GetObject', `arn:aws:s3:::${account}-test-lab-bucket/*`],
+    // It also counts warned and blocked launches in the daily usage totals.
+    ['dynamodb:UpdateItem', `arn:aws:dynamodb:${region}:${account}:table/test-usage-daily-total-table`],
   ])('grants create-run-execution %s on %s for the launch limit check', (action, resource) => {
     const stack = createStack();
     const grantedResources = stack.iam
