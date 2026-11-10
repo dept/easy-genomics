@@ -216,27 +216,20 @@ describe('RunLimitCheckService', () => {
       },
     );
 
-    it('estimates a whole run for a cost-only lab with no sample sheet', async () => {
-      mockReadSampleSheet.mockResolvedValue({ outcome: 'notRead', reason: 'noSampleSheet' });
+    // An unscaled estimate would price any size of run at the lab's usual run size, so leaving the sheet out of the
+    // request must not be a way past a cost limit.
+    it.each(['noSampleSheet', 'unreadable', 'notInLaboratoryBucket'])(
+      'blocks a cost-only lab when the samples were not counted (%s)',
+      async (reason) => {
+        mockReadSampleSheet.mockResolvedValue({ outcome: 'notRead', reason });
 
-      const verdict = await service.checkRunLimits(withLimits({ CostWarnAboveUsd: 150 }), input);
+        const rejection = service.checkRunLimits(withLimits({ CostWarnAboveUsd: 150 }), input);
 
-      expect(mockEstimate).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ sampleCount: 0, inputBytesTotal: 0 }),
-        { throwOnHistoryError: true },
-      );
-      expect(verdict).not.toHaveProperty('sampleCount');
-    });
-
-    it('blocks a cost-only lab whose sheet is outside the lab bucket', async () => {
-      mockReadSampleSheet.mockResolvedValue({ outcome: 'notRead', reason: 'notInLaboratoryBucket' });
-
-      const rejection = service.checkRunLimits(withLimits({ CostWarnAboveUsd: 150 }), input);
-
-      await expect(rejection).rejects.toBeInstanceOf(RunSamplesNotCountedError);
-      await expect(rejection).rejects.toThrow(/cost limit/);
-    });
+        await expect(rejection).rejects.toBeInstanceOf(RunSamplesNotCountedError);
+        await expect(rejection).rejects.toThrow(/cost limit/);
+        expect(mockEstimate).not.toHaveBeenCalled();
+      },
+    );
 
     it('reports a failed estimate as a cost estimate failure', async () => {
       mockEstimate.mockRejectedValue(new Error('AccessDeniedException'));

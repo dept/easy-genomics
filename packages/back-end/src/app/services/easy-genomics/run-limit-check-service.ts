@@ -120,7 +120,15 @@ export class RunLimitCheckService {
     if (checked?.verdict.outcome !== 'block') return checked?.verdict;
 
     const { verdict, costEstimateUsd } = checked;
-    this.logBlockedLaunch(laboratory, input, userId, 'limitExceeded', verdict.hits, verdict.sampleCount, costEstimateUsd);
+    this.logBlockedLaunch(
+      laboratory,
+      input,
+      userId,
+      'limitExceeded',
+      verdict.hits,
+      verdict.sampleCount,
+      costEstimateUsd,
+    );
 
     const blockHits = verdict.hits.filter((hit) => hit.level === 'block');
     const sampleBlock = blockHits.find((hit) => hit.limit === 'samples');
@@ -144,8 +152,9 @@ export class RunLimitCheckService {
       dataFileKeys = sampleSheet.dataFileKeys;
     } else if (hasSampleLimit) {
       throw new RunSamplesNotCountedError();
-    } else if (sampleSheet.reason !== 'noSampleSheet') {
-      // An unscaled whole-run estimate would price a 1,000-sample run at its 96-sample cost.
+    } else {
+      // A cost limit needs the sample count too: an unscaled whole-run estimate would price a 1,000-sample run at its
+      // 96-sample cost. That includes a run with no sample sheet, or leaving the sheet out would skip the limit.
       throw new RunSamplesNotCountedError(SAMPLES_NOT_COUNTED_FOR_COST_LIMIT);
     }
 
@@ -153,7 +162,7 @@ export class RunLimitCheckService {
       return { verdict: evaluateRunLimits(limits, sampleCount, undefined, 'notChecked') };
     }
 
-    const costEstimateUsd = await this.estimateCostUsd(laboratory, input, sampleCount ?? 0, dataFileKeys);
+    const costEstimateUsd = await this.estimateCostUsd(laboratory, input, sampleCount!, dataFileKeys);
     const costEstimate = costEstimateUsd === undefined ? 'notEnoughHistory' : 'available';
     return { verdict: evaluateRunLimits(limits, sampleCount, costEstimateUsd, costEstimate), costEstimateUsd };
   }
