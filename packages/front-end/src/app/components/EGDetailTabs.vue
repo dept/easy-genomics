@@ -22,24 +22,34 @@
     'update:modelValue': [index: number];
   }>();
 
+  // The sliding marker is Nuxt UI's pill highlight. Hide it; the active tab's bottom border is the indicator.
   const EGTabsStyles = {
     base: 'focus-visible:outline-none',
     list: {
-      base: '!flex rounded-none mb-6 mt-0',
-      padding: 'p-0',
-      height: 'h-14',
+      base: '!flex gap-6 rounded-none mb-6 mt-0',
+      background: '!bg-transparent',
+      rounded: '!rounded-none',
+      shadow: '!shadow-none',
+      padding: '!p-0',
+      height: '!h-auto',
       marker: {
-        background: '',
-        shadow: '',
+        wrapper: '!hidden',
+        base: '!hidden',
+        background: '!bg-transparent',
+        rounded: '!rounded-none',
+        shadow: '!shadow-none',
       },
       tab: {
-        base: 'font-serif w-auto mr-3 rounded-xl border border-solid focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2',
-        background: '',
-        active: 'text-white bg-primary border-primary',
-        inactive: 'font-serif text-text-body border-background-dark-grey',
-        height: '',
-        padding: 'px-5 py-2',
+        base: '!w-auto border-b-2 border-solid -mb-px font-serif focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2',
+        background: '!bg-transparent',
+        active: '!text-primary !border-primary',
+        inactive: '!text-muted !border-transparent',
+        height: '!h-auto',
+        padding: '!px-0 !pt-1 !pb-2',
         size: 'text-sm',
+        font: 'font-medium',
+        rounded: '!rounded-none',
+        shadow: '!shadow-none',
       },
     },
   };
@@ -62,9 +72,9 @@
     @update:model-value="emit('update:modelValue', $event)"
   >
     <template #default="{ item, selected }">
-      <span>
+      <span class="whitespace-nowrap">
         {{ item.label }}
-        <span v-if="item.count != null" class="ml-1 tabular-nums">{{ item.count.toLocaleString() }}</span>
+        <span v-if="item.count != null" class="ml-1.5 tabular-nums">{{ item.count.toLocaleString() }}</span>
       </span>
       <span v-if="selected" class="sr-only">, current tab</span>
     </template>
