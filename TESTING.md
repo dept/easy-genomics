@@ -483,3 +483,34 @@ Not yet verified by hand. No E2E test was added.
 - [ ] **Files on** — open the Files tab. Select an unlinked file, choose **Keep permanently**. The row shows the lock and **Never**.
 - [ ] **Files off** — choose **Remove permanent**. The lock goes away and the expiry is no longer **Never**.
 - [ ] **Shared file** — a file that belongs to two samples stays protected after only one of those samples is unmarked.
+
+---
+
+## Run limits — review step shows the server's limit block at launch (EGV-382)
+
+The review step shows a lab's run limits from the verdict the estimate call returns: a warning with "Launch anyway", a
+block with launch disabled, a Samples row, and "Not enough runs to estimate". The server checks the limits again at
+launch, so a run the review step allowed can still be refused when the lab's limits or run history changed in between.
+That refusal (EG-339 or EG-340) must replace the review step's state with the server's block message instead of the
+generic "Failed to submit" toast. Unit tests in the front-end cover every state and the limit-error detection. The E2E
+spec `Run_Limits_Review_Lab_Manager.spec.e2e.ts` covers the sample block and "Launch anyway" on HealthOmics. This path
+needs two users at once, so it is manual.
+
+### Automated checks
+
+| Check                   | Result         |
+| ----------------------- | -------------- |
+| `pnpm lint` (front-end) | Passes         |
+| `pnpm test` (front-end) | 446 tests pass |
+
+### Manual steps
+
+Environment: Date:
+
+- [ ] **Pass first** — as a lab technician, open the review step on a 2-sample HealthOmics run in a lab with no limits.
+      No limit row or message shows, and the button reads "Launch Workflow Run".
+- [ ] **Set a block in another tab** — as an organization admin, set `SamplesBlockAbove: 1` on the same lab.
+- [ ] **Launch** — back on the review step, click **Launch Workflow Run**.
+- [ ] **Server block shown** — the red "This run can't be launched" message shows the server's EG-340 text, launch is
+      disabled, the label is not "Launch anyway", and exactly one toast shows the same text.
+- [ ] **Seqera** — repeat on a Seqera pipeline review step. The result is the same.
