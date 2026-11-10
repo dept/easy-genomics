@@ -11,6 +11,7 @@ import S3AccessModule from '@FE/repository/modules/s3-access';
 import SeqeraPipelinesModule from '@FE/repository/modules/seqera-pipelines';
 import SeqeraRunsModules from '@FE/repository/modules/seqera-runs';
 import UploadsModule from '@FE/repository/modules/uploads';
+import UsageModule from '@FE/repository/modules/usage';
 import UsersModule from '@FE/repository/modules/users';
 import WorkflowAccessModule from '@FE/repository/modules/workflow-access';
 import WorkflowKeyOutputsModule from '@FE/repository/modules/workflow-key-outputs';
@@ -28,6 +29,7 @@ interface IApiInstance {
   omicsWorkflows: OmicsWorkflowsModule;
   omicsRuns: OmicsRunsModule;
   uploads: UploadsModule;
+  usage: UsageModule;
   users: UsersModule;
   workflowAccess: WorkflowAccessModule;
   s3Access: S3AccessModule;
@@ -55,6 +57,7 @@ const createApiInstance = (apiFetcher: any): IApiInstance => ({
   omicsWorkflows: new OmicsWorkflowsModule(apiFetcher),
   omicsRuns: new OmicsRunsModule(apiFetcher),
   uploads: new UploadsModule(apiFetcher),
+  usage: new UsageModule(apiFetcher),
   users: new UsersModule(apiFetcher),
   workflowAccess: new WorkflowAccessModule(apiFetcher),
   s3Access: new S3AccessModule(apiFetcher),
