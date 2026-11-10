@@ -1694,6 +1694,26 @@ export interface components {
         low: number;
         median: number;
       };
+      /** @description Present only when the lab has at least one run limit amount set. */
+      limitVerdict?: {
+        /** @enum {string} */
+        outcome: "block" | "pass" | "warn";
+        hits: ({
+            /** @enum {string} */
+            limit: "cost" | "samples";
+            /** @enum {string} */
+            level: "block" | "warn";
+            amount: number;
+            runValue: number;
+          })[];
+        /**
+         * @description `notChecked` means the lab has no cost amount, so the estimate was not computed.
+         * @enum {string}
+         */
+        costEstimate: "available" | "notChecked" | "notEnoughHistory";
+        /** @description The server-counted samples. Absent only when a lab with cost amounts alone launched without a sample sheet. */
+        sampleCount?: number;
+      };
     };
     RequestRunExportJobStatusRequest: {
       LaboratoryId: string;

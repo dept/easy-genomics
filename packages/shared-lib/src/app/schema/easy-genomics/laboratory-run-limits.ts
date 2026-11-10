@@ -55,7 +55,10 @@ export const RunLimitVerdictSchema = z
   .object({
     outcome: z.enum(['pass', 'warn', 'block']),
     hits: z.array(RunLimitHitSchema),
-    costEstimate: z.enum(['available', 'notEnoughHistory']),
+    /** `notChecked` means the lab has no cost amount, so the estimate was not computed. */
+    costEstimate: z.enum(['available', 'notEnoughHistory', 'notChecked']),
+    /** The server-counted samples. Absent only when a lab with cost amounts alone launched without a sample sheet. */
+    sampleCount: z.number().int().nonnegative().optional(),
   })
   .strict();
 export type RunLimitVerdict = z.infer<typeof RunLimitVerdictSchema>;

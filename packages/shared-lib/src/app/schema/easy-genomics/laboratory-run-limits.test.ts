@@ -1,4 +1,5 @@
 import { LaboratorySchema } from './laboratory';
+import { EstimateRunCostResponseSchema } from './laboratory-run-cost';
 import { LaboratoryRunLimitsSchema, RunLimitHitSchema, RunLimitVerdictSchema } from './laboratory-run-limits';
 import {
   RunCostEstimateFailedError,
@@ -78,6 +79,53 @@ describe('RunLimitVerdictSchema', () => {
     expect(RunLimitVerdictSchema.safeParse({ outcome: 'stop', hits: [], costEstimate: 'available' }).success).toBe(
       false,
     );
+  });
+
+  it('accepts a verdict whose cost estimate was not checked', () => {
+    expect(RunLimitVerdictSchema.safeParse({ outcome: 'pass', hits: [], costEstimate: 'notChecked' }).success).toBe(
+      true,
+    );
+  });
+
+  it.each([96, 0])('accepts a counted sample count of %p', (sampleCount) => {
+    const verdict = { outcome: 'pass', hits: [], costEstimate: 'notChecked', sampleCount };
+    expect(RunLimitVerdictSchema.safeParse(verdict).success).toBe(true);
+  });
+
+  it.each([-1, 2.5, '96'])('rejects a sample count of %p', (sampleCount) => {
+    const verdict = { outcome: 'pass', hits: [], costEstimate: 'notChecked', sampleCount };
+    expect(RunLimitVerdictSchema.safeParse(verdict).success).toBe(false);
+  });
+});
+
+describe('EstimateRunCostResponseSchema limitVerdict', () => {
+  const unavailableEstimate = {
+    estimateAvailable: false,
+    confidence: 'NONE',
+    comparableRunCount: 0,
+    currency: 'USD',
+    label: 'Estimate unavailable',
+    disclaimer: 'Estimates are approximate.',
+    exclusions: [],
+  };
+
+  it('accepts an estimate without a limit verdict', () => {
+    expect(EstimateRunCostResponseSchema.safeParse(unavailableEstimate).success).toBe(true);
+  });
+
+  it('accepts an estimate with a limit verdict', () => {
+    const limitVerdict = {
+      outcome: 'block',
+      hits: [{ limit: 'samples', level: 'block', amount: 500, runValue: 1000 }],
+      costEstimate: 'notChecked',
+    };
+    expect(EstimateRunCostResponseSchema.safeParse({ ...unavailableEstimate, limitVerdict }).success).toBe(true);
+  });
+
+  it('rejects a malformed limit verdict', () => {
+    expect(
+      EstimateRunCostResponseSchema.safeParse({ ...unavailableEstimate, limitVerdict: { outcome: 'maybe' } }).success,
+    ).toBe(false);
   });
 });
 
