@@ -257,7 +257,7 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
    */
   public queryByWorkflowExternalId = async (
     workflowExternalId: string,
-    options?: { sinceTerminalAt?: string; limit?: number },
+    options?: { sinceTerminalAt?: string; limit?: number; laboratoryId?: string },
   ): Promise<LaboratoryRun[]> => {
     const logRequestMessage = `Query LaboratoryRuns by WorkflowExternalId=${workflowExternalId} request`;
     console.info(logRequestMessage);
@@ -274,6 +274,12 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
       expressionAttributeValues[':since'] = { S: options.sinceTerminalAt };
       keyCondition += ' AND #TerminalAt >= :since';
     }
+    // Filtering in the query, not after it, makes `limit` count only this lab's runs. Otherwise other labs' runs of a
+    // shared workflow fill the limit and push this lab's history out.
+    if (options?.laboratoryId) {
+      expressionAttributeNames['#LaboratoryId'] = 'LaboratoryId';
+      expressionAttributeValues[':laboratoryId'] = { S: options.laboratoryId };
+    }
 
     const results: LaboratoryRun[] = [];
     let lastKey: Record<string, any> | undefined;
@@ -282,6 +288,7 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
         TableName: this.LABORATORY_RUN_TABLE_NAME,
         IndexName: 'WorkflowExternalId_Index',
         KeyConditionExpression: keyCondition,
+        ...(options?.laboratoryId ? { FilterExpression: '#LaboratoryId = :laboratoryId' } : {}),
         ExpressionAttributeNames: expressionAttributeNames,
         ExpressionAttributeValues: expressionAttributeValues,
         ScanIndexForward: false,

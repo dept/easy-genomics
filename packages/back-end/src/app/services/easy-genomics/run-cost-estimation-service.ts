@@ -70,6 +70,7 @@ export class RunCostEstimationService {
       historical = await this.laboratoryRunService.queryByWorkflowExternalId(request.workflowExternalId, {
         sinceTerminalAt: since,
         limit: HISTORY_QUERY_LIMIT,
+        laboratoryId: laboratory.LaboratoryId,
       });
     } catch (err) {
       if (options?.throwOnHistoryError) throw err;

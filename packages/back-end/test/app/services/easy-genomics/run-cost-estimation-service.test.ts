@@ -65,7 +65,7 @@ describe('RunCostEstimationService', () => {
 
     expect(mockQueryByWorkflowExternalId).toHaveBeenCalledWith(
       'wf-1',
-      expect.objectContaining({ limit: 200, sinceTerminalAt: expect.any(String) }),
+      expect.objectContaining({ limit: 200, sinceTerminalAt: expect.any(String), laboratoryId: lab.LaboratoryId }),
     );
   });
 
