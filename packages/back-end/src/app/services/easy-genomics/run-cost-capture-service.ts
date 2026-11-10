@@ -50,7 +50,7 @@ async function captureHealthOmicsCost(laboratoryRun: LaboratoryRun): Promise<Run
     omicsService.getRun({ id: laboratoryRun.ExternalRunId }),
   ]);
 
-  const ActualComputeCostUsd = calculateHealthOmicsComputeCostUsd(tasks, region);
+  const ActualComputeCostUsd = calculateHealthOmicsComputeCostUsd(tasks, region, laboratoryRun.RunId);
   const ActualStorageCostUsd = calculateHealthOmicsStorageCostUsd(
     {
       storageType: run.storageType,
@@ -59,6 +59,7 @@ async function captureHealthOmicsCost(laboratoryRun: LaboratoryRun): Promise<Run
       stopTime: run.stopTime,
     },
     region,
+    laboratoryRun.RunId,
   );
 
   return {
