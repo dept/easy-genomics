@@ -53,4 +53,8 @@ describe('LaboratoryRunSchema analysis fields', () => {
   it('rejects an unknown MicroreactStatus', () => {
     expect(LaboratoryRunSchema.safeParse({ ...base, MicroreactStatus: 'Sent' }).success).toBe(false);
   });
+
+  it('accepts the count-once marker a run gets when its cost is added to the daily totals', () => {
+    expect(LaboratoryRunSchema.safeParse({ ...base, RunCostCountedAt: '2026-11-10T00:00:00.000Z' }).success).toBe(true);
+  });
 });

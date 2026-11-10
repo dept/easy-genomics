@@ -204,6 +204,12 @@ export const LaboratoryRunSchema = z
      * published for this run. Prevents a duplicate status-check message from double-emailing.
      */
     NotifiedAt: z.string().optional(),
+    /**
+     * ISO timestamp set exactly once, in the same transaction that adds the run's captured cost
+     * to the daily usage totals (`attribute_not_exists(RunCostCountedAt)`), so a retried capture
+     * or a rerun back-fill can't count the run twice.
+     */
+    RunCostCountedAt: z.string().optional(),
     ...laboratoryRunCostFields,
     /**
      * Approximate task completion percentage derived from HealthOmics ListRunTasks
