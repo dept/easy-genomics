@@ -46,6 +46,8 @@
   const savedMicroreactTreeIds = ref<string[]>([]);
   /** True when DynamoDB already has Microreact settings, so Save can clear them. */
   const hadSavedMicroreact = ref(false);
+  /** False until the first lab, run, and definition load finishes. */
+  const pageReady = ref(false);
 
   const detailTabs: { key: DetailTabKey; label: string }[] = [
     { key: 'output-files', label: 'Output files' },
@@ -91,53 +93,57 @@
   onBeforeMount(async () => {
     uiStore.setSidebarVisible(true);
 
-    // Always reload: the lab list does not carry HasMicroreactAccessToken.
-    uiStore.setRequestPending('loadLabData');
     try {
-      await labsStore.loadLab(labId);
-    } finally {
-      uiStore.setRequestComplete('loadLabData');
-    }
-
-    if (!omicsWorkflowsStore.workflows[workflowId]) {
+      // Always reload: the lab list does not carry HasMicroreactAccessToken.
+      uiStore.setRequestPending('loadLabData');
       try {
-        await omicsWorkflowsStore.loadWorkflowsForLab(labId);
-      } catch (error) {
-        console.error('Failed to load workflow details for key-output delivery page', error);
+        await labsStore.loadLab(labId);
+      } finally {
+        uiStore.setRequestComplete('loadLabData');
       }
-    }
 
-    uiStore.setRequestPending('loadLabRuns');
-    try {
-      await runStore.loadLabRunsForLab(labId);
+      if (!omicsWorkflowsStore.workflows[workflowId]) {
+        try {
+          await omicsWorkflowsStore.loadWorkflowsForLab(labId);
+        } catch (error) {
+          console.error('Failed to load workflow details for key-output delivery page', error);
+        }
+      }
+
+      uiStore.setRequestPending('loadLabRuns');
+      try {
+        await runStore.loadLabRunsForLab(labId);
+      } finally {
+        uiStore.setRequestComplete('loadLabRuns');
+      }
+
+      const definition = await keyOutputsStore.load(labId, workflowId);
+      if (!definition) return;
+      const nextEnabled = definition.Delivery?.Enabled ?? false;
+      const nextDestinationUri = definition.Delivery?.DestinationUri ?? '';
+      enabled.value = nextEnabled;
+      destinationUri.value = nextDestinationUri;
+      savedEnabled.value = nextEnabled;
+      savedDestinationUri.value = nextDestinationUri;
+      keyOutputs.value = definition.KeyOutputs;
+      keyOutputCount.value = definition.KeyOutputs.length;
+      const savedMicroreact = definition.Delivery?.Microreact;
+      const rawMetadataId = savedMicroreact?.MetadataKeyOutputId ?? '';
+      const rawTreeIds = savedMicroreact?.TreeKeyOutputIds ?? [];
+      const rawEnabled = Boolean(savedMicroreact?.Enabled);
+      microreactEnabled.value = rawEnabled;
+      microreactMetadataId.value = rawMetadataId;
+      microreactTreeIds.value = [...rawTreeIds];
+      savedMicroreactEnabled.value = rawEnabled;
+      savedMicroreactMetadataId.value = rawMetadataId;
+      savedMicroreactTreeIds.value = [...rawTreeIds];
+      hadSavedMicroreact.value = Boolean(rawEnabled || rawMetadataId || rawTreeIds.length);
+      dropMicroreactIdsMissingFrom(definition.KeyOutputs);
+      workflowName.value = definition.WorkflowName || workflowName.value;
+      definitionLoaded.value = true;
     } finally {
-      uiStore.setRequestComplete('loadLabRuns');
+      pageReady.value = true;
     }
-
-    const definition = await keyOutputsStore.load(labId, workflowId);
-    if (!definition) return;
-    const nextEnabled = definition.Delivery?.Enabled ?? false;
-    const nextDestinationUri = definition.Delivery?.DestinationUri ?? '';
-    enabled.value = nextEnabled;
-    destinationUri.value = nextDestinationUri;
-    savedEnabled.value = nextEnabled;
-    savedDestinationUri.value = nextDestinationUri;
-    keyOutputs.value = definition.KeyOutputs;
-    keyOutputCount.value = definition.KeyOutputs.length;
-    const savedMicroreact = definition.Delivery?.Microreact;
-    const rawMetadataId = savedMicroreact?.MetadataKeyOutputId ?? '';
-    const rawTreeIds = savedMicroreact?.TreeKeyOutputIds ?? [];
-    const rawEnabled = Boolean(savedMicroreact?.Enabled);
-    microreactEnabled.value = rawEnabled;
-    microreactMetadataId.value = rawMetadataId;
-    microreactTreeIds.value = [...rawTreeIds];
-    savedMicroreactEnabled.value = rawEnabled;
-    savedMicroreactMetadataId.value = rawMetadataId;
-    savedMicroreactTreeIds.value = [...rawTreeIds];
-    hadSavedMicroreact.value = Boolean(rawEnabled || rawMetadataId || rawTreeIds.length);
-    dropMicroreactIdsMissingFrom(definition.KeyOutputs);
-    workflowName.value = definition.WorkflowName || workflowName.value;
-    definitionLoaded.value = true;
   });
 
   onBeforeUnmount(() => {
@@ -149,7 +155,8 @@
   const workflow = computed(() => omicsWorkflowsStore.workflows[workflowId]);
   const workflowTitle = computed(() => workflowName.value || workflow.value?.name || 'Workflow');
   const workflowSourceLabel = computed(() => (workflow.value?.source === 'SHARED' ? 'Shared' : 'Private'));
-  const isLoading = computed(() => uiStore.anyRequestPending(['loadLabData', 'loadWorkflowKeyOutputs', 'loadLabRuns']));
+  // loadWorkflowKeyOutputs is set again by the output-files editor; following it unmounts that editor and restarts the fetch.
+  const isLoading = computed(() => !pageReady.value);
   const isSaving = computed(() => uiStore.isRequestPending('saveWorkflowKeyOutputDelivery'));
   const hasNoOutputFiles = computed(() => keyOutputCount.value === 0);
 
