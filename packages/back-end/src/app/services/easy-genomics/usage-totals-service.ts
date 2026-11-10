@@ -7,6 +7,15 @@ import { DynamoDBService } from '../dynamodb-service';
 
 export type AddRunCostResult = 'counted' | 'already-counted' | 'not-countable';
 
+export type LaunchCount = {
+  OrganizationId: string;
+  LaboratoryId: string;
+  Platform: RunType;
+  WorkflowExternalId: string;
+  Day: string; // YYYY-MM-DD, UTC
+  Kind: 'warned' | 'blocked';
+};
+
 /** Lab and workflow IDs never contain `#`, so the day prefix sorts and ranges cleanly. */
 export function usageTotalKey(
   day: string,
@@ -52,6 +61,46 @@ export class UsageTotalsService extends DynamoDBService {
       }
       throw err;
     }
+  };
+
+  /** Counts every launch attempt, so there's no condition; the other counters start at zero on a new day's row. */
+  public addLaunchCount = async (launch: LaunchCount): Promise<void> => {
+    const counted = launch.Kind === 'warned' ? '#WarnedRuns' : '#BlockedLaunches';
+    const other = launch.Kind === 'warned' ? '#BlockedLaunches' : '#WarnedRuns';
+    await this.updateItem({
+      TableName: this.USAGE_DAILY_TOTAL_TABLE_NAME,
+      Key: {
+        OrganizationId: { S: launch.OrganizationId },
+        DayLabWorkflow: {
+          S: usageTotalKey(launch.Day, launch.LaboratoryId, launch.Platform, launch.WorkflowExternalId),
+        },
+      },
+      UpdateExpression:
+        `ADD ${counted} :one, ${other} :zero, #ComputeCostUsd :zero, #StorageCostUsd :zero, #FinishedRuns :zero ` +
+        'SET #Day = :day, #LaboratoryId = :laboratoryId, #Platform = :platform, ' +
+        '#WorkflowExternalId = :workflowExternalId, #ModifiedAt = :now',
+      ExpressionAttributeNames: {
+        '#WarnedRuns': 'WarnedRuns',
+        '#BlockedLaunches': 'BlockedLaunches',
+        '#ComputeCostUsd': 'ComputeCostUsd',
+        '#StorageCostUsd': 'StorageCostUsd',
+        '#FinishedRuns': 'FinishedRuns',
+        '#Day': 'Day',
+        '#LaboratoryId': 'LaboratoryId',
+        '#Platform': 'Platform',
+        '#WorkflowExternalId': 'WorkflowExternalId',
+        '#ModifiedAt': 'ModifiedAt',
+      },
+      ExpressionAttributeValues: marshall({
+        ':one': 1,
+        ':zero': 0,
+        ':day': launch.Day,
+        ':laboratoryId': launch.LaboratoryId,
+        ':platform': launch.Platform,
+        ':workflowExternalId': launch.WorkflowExternalId,
+        ':now': new Date().toISOString(),
+      }),
+    });
   };
 
   public queryRange = async (organizationId: string, startDay: string, endDay: string): Promise<UsageDailyTotal[]> => {
