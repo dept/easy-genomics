@@ -33,13 +33,11 @@ export const handler: Handler = async (
     // Authorization: check lab exists and user has access
     const laboratory = await laboratoryService.queryByLaboratoryId(laboratoryId);
     if (!laboratory) throw new LaboratoryNotFoundError();
-    if (
-      !(
-        validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
-        validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
-        validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
-      )
-    ) {
+    if (!(
+      validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
+      validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
+      validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
+    )) {
       throw new UnauthorizedAccessError();
     }
 
@@ -82,7 +80,7 @@ export const handler: Handler = async (
       }
     }
 
-    // Publish SNS event for each run to process
+    // Send a status-check message for each run to the laboratory-run update queue
     const publishPromises = runsToProcess.map((run) => {
       const record: SnsProcessingEvent = {
         Operation: 'UPDATE',

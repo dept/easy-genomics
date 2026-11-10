@@ -833,95 +833,91 @@ describe('process-update-laboratory-run.lambda', () => {
     });
   });
 
-  it('attaches RunCostOutcome when transitioning to a terminal status', async () => {
-    mockQueryByRunId.mockResolvedValue({
+  describe('run-cost capture enqueue', () => {
+    const costQueueUrl = 'https://sqs.region.amazonaws.com/acct/run-cost-capture-queue.fifo';
+    const runningRun = {
       RunId: 'run-1',
       LaboratoryId: 'lab-1',
       OrganizationId: 'org-1',
       ExternalRunId: 'ext-1',
       Status: 'RUNNING',
       Platform: 'AWS HealthOmics',
+    };
+    const costMessages = () => mockPublish.mock.calls.filter(([input]) => input.QueueUrl === costQueueUrl);
+
+    beforeEach(() => {
+      process.env.SQS_RUN_COST_CAPTURE_QUEUE_URL = costQueueUrl;
+      mockUpdateRun.mockImplementation(async (r) => r);
     });
-    mockGetRun.mockResolvedValue({
-      status: 'SUCCEEDED',
-      startTime: new Date('2026-01-01T00:00:00Z'),
-      stopTime: new Date('2026-01-01T01:00:00Z'),
-    } as any);
-    (captureRunCostOutcome as jest.Mock).mockResolvedValue({
-      ActualComputeCostUsd: 4.2,
-      CostSource: 'HEALTHOMICS_TASKS',
-      CostCapturedAt: '2026-01-01T02:00:00Z',
+
+    afterEach(() => {
+      delete process.env.SQS_RUN_COST_CAPTURE_QUEUE_URL;
     });
-    mockUpdateRun.mockImplementation(async (r) => r);
 
-    await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
+    it('sends one capture message when a run reaches a terminal status, without capturing inline', async () => {
+      mockQueryByRunId.mockResolvedValue(runningRun);
+      mockGetRun.mockResolvedValue({ status: 'COMPLETED' } as any);
 
-    expect(captureRunCostOutcome).toHaveBeenCalled();
-    // Status is written first; cost is a follow-up update when capture succeeds.
-    expect(mockUpdateRun).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        Status: 'SUCCEEDED',
-      }),
-      terminalProgressRemoval,
-    );
-    expect(mockUpdateRun).toHaveBeenCalledWith(
-      expect.objectContaining({
-        RunCostOutcome: expect.objectContaining({ ActualComputeCostUsd: 4.2 }),
-      }),
-    );
-  });
+      await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
 
-  it('swallows cost-capture failures on terminal transition', async () => {
-    mockQueryByRunId.mockResolvedValue({
-      RunId: 'run-1',
-      LaboratoryId: 'lab-1',
-      OrganizationId: 'org-1',
-      ExternalRunId: 'ext-1',
-      Status: 'RUNNING',
-      Platform: 'AWS HealthOmics',
+      expect(costMessages()).toEqual([
+        [
+          {
+            QueueUrl: costQueueUrl,
+            MessageBody: JSON.stringify({ LaboratoryId: 'lab-1', RunId: 'run-1' }),
+            MessageGroupId: 'run-cost-lab-1',
+            MessageDeduplicationId: 'run-cost-run-1',
+          },
+        ],
+      ]);
+      expect(captureRunCostOutcome).not.toHaveBeenCalled();
+      expect(mockUpdateRun).not.toHaveBeenCalledWith(expect.objectContaining({ RunCostOutcome: expect.anything() }));
     });
-    mockGetRun.mockResolvedValue({ status: 'SUCCEEDED' } as any);
-    (captureRunCostOutcome as jest.Mock).mockRejectedValue(new Error('capture failed'));
-    mockUpdateRun.mockImplementation(async (r) => r);
 
-    await expect(processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any)).resolves.toBe(true);
-    expect(mockUpdateRun).toHaveBeenCalledWith(
-      expect.objectContaining({
-        Status: 'SUCCEEDED',
-      }),
-      terminalProgressRemoval,
-    );
-    expect(mockUpdateRun).not.toHaveBeenCalledWith(expect.objectContaining({ RunCostOutcome: expect.anything() }));
-  });
+    it('enqueues once for an already-terminal run that is missing its cost', async () => {
+      mockQueryByRunId.mockResolvedValue({
+        ...runningRun,
+        Status: 'COMPLETED',
+        TerminalAt: '2026-01-01T00:00:00Z',
+        RunDurationSeconds: 100,
+        NotifiedAt: '2026-01-01T00:00:00Z',
+      });
 
-  it('backfills RunCostOutcome for already-terminal runs missing cost', async () => {
-    mockQueryByRunId.mockResolvedValue({
-      RunId: 'run-1',
-      LaboratoryId: 'lab-1',
-      OrganizationId: 'org-1',
-      ExternalRunId: 'ext-1',
-      Status: 'SUCCEEDED',
-      Platform: 'AWS HealthOmics',
-      TerminalAt: '2026-01-01T00:00:00Z',
-      RunDurationSeconds: 100,
+      await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
+
+      expect(costMessages()).toHaveLength(1);
+      expect(captureRunCostOutcome).not.toHaveBeenCalled();
     });
-    (captureRunCostOutcome as jest.Mock).mockResolvedValue({
-      ActualComputeCostUsd: 9,
-      CostSource: 'HEALTHOMICS_TASKS',
-      CostCapturedAt: '2026-01-02T00:00:00Z',
+
+    it('enqueues nothing for a run that already has a captured cost', async () => {
+      mockQueryByRunId.mockResolvedValue({
+        ...runningRun,
+        RunCostOutcome: { ActualComputeCostUsd: 1, CostSource: 'HEALTHOMICS_TASKS', CostCapturedAt: '2026-01-01' },
+      });
+      mockGetRun.mockResolvedValue({ status: 'COMPLETED' } as any);
+
+      await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
+
+      expect(costMessages()).toHaveLength(0);
     });
-    mockUpdateRun.mockImplementation(async (r) => r);
 
-    await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
+    it('logs a failed send with the RunId and still updates the status and notifies', async () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockQueryByRunId.mockResolvedValue(runningRun);
+      mockGetRun.mockResolvedValue({ status: 'COMPLETED' } as any);
+      const sendError = new Error('SQS unavailable');
+      mockPublish.mockRejectedValue(sendError);
 
-    expect(captureRunCostOutcome).toHaveBeenCalled();
-    // Terminal metadata update first, then cost-only update.
-    expect(mockUpdateRun).toHaveBeenCalledWith(
-      expect.objectContaining({
-        RunCostOutcome: expect.objectContaining({ ActualComputeCostUsd: 9 }),
-      }),
-    );
+      await expect(processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any)).resolves.toBe(true);
+
+      expect(mockUpdateRun).toHaveBeenCalledWith(
+        expect.objectContaining({ Status: 'COMPLETED' }),
+        terminalProgressRemoval,
+      );
+      expect(mockMarkTerminalNotified).toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('RunId=run-1'), sendError);
+      warn.mockRestore();
+    });
   });
 
   it('getSeqeraCloudStatus returns progress for non-terminal runs', async () => {
