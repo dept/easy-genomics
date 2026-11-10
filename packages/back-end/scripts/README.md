@@ -89,6 +89,18 @@ pnpm run backfill-run-cost-outcomes
 pnpm run backfill-run-cost-outcomes:dry-run
 ```
 
+## `backfill-usage-daily-totals.ts`
+
+**Purpose:** Adds runs whose cost was captured before the daily usage totals existed to the `usage-daily-total-table`,
+once each. Run it after `backfill-run-cost-outcomes`. Rerunning is safe: each run carries a `RunCostCountedAt` marker
+written in the same transaction as its add, so an already-counted run changes nothing. The dry run reads only the run
+table and prints what it would add. Not registered in `DEPLOY_MIGRATIONS`.
+
+```bash
+pnpm run backfill-usage-daily-totals
+pnpm run backfill-usage-daily-totals:dry-run
+```
+
 ## `backfill-billed-costs.ts`
 
 **Purpose:** One-time batched Cost Explorer sync for runs with `RunId` tags (prefer the daily `process-sync-run-costs`

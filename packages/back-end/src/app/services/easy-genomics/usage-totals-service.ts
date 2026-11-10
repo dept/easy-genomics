@@ -139,7 +139,7 @@ export class UsageTotalsService extends DynamoDBService {
   }
 }
 
-function findMissingCountField(run: LaboratoryRun): string | undefined {
+export function findMissingCountField(run: LaboratoryRun): string | undefined {
   if (!run.TerminalAt) return 'TerminalAt';
   if (typeof run.RunCostOutcome?.ActualComputeCostUsd !== 'number') return 'RunCostOutcome.ActualComputeCostUsd';
   if (!run.WorkflowExternalId) return 'WorkflowExternalId';
