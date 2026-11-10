@@ -55,6 +55,23 @@ describe('UsageNestedStack', () => {
     ]);
   });
 
+  it('lets the run costs report read the totals and the organization labs, and nothing else', () => {
+    const stack = createStack();
+
+    const statements = stack.iam
+      .getPolicyStatements('/easy-genomics/usage/list-run-costs')
+      .map((statement) => statement.toStatementJson());
+
+    expect(statements).toEqual([
+      {
+        Effect: 'Allow',
+        Action: 'dynamodb:Query',
+        Resource: `arn:aws:dynamodb:${region}:${account}:table/test-usage-daily-total-table`,
+      },
+      { Effect: 'Allow', Action: 'dynamodb:Query', Resource: laboratoryTableArn },
+    ]);
+  });
+
   it('builds only the usage controllers, with their IAM policies attached', () => {
     const stack = createStack();
 

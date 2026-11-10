@@ -223,6 +223,14 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
     request: UpdateLaboratoryRunLimitsSchema,
     response: 'Laboratory',
   },
+  'GET /easy-genomics/usage/list-run-costs': {
+    response: 'RunCostsReport',
+    query: [
+      { name: 'organizationId', required: true, description: 'Organization UUID' },
+      { name: 'period', required: true, description: 'month, 30d, 60d or 90d; rolling periods end today (UTC)' },
+      { name: 'month', required: false, description: 'YYYY-MM; required when period is month' },
+    ],
+  },
   'DELETE /easy-genomics/laboratory/delete-laboratory/{id}': {},
   'GET /easy-genomics/laboratory/list-laboratories': {
     response: 'Laboratory',
