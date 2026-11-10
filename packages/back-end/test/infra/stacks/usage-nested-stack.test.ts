@@ -102,7 +102,7 @@ describe('UsageNestedStack', () => {
       expect(SqsEventSource).toHaveBeenCalledWith(stack.runCostCaptureQueue, { batchSize: 1 });
     });
 
-    it('grants the consumer only what capture needs', () => {
+    it('grants the consumer only what capture and the totals add need', () => {
       const stack = createStack();
 
       const statements = stack.iam.getPolicyStatements(consumer).map((statement) => statement.toStatementJson());
@@ -110,6 +110,11 @@ describe('UsageNestedStack', () => {
       expect(statements).toEqual([
         { Effect: 'Allow', Action: 'dynamodb:Query', Resource: [runTableArn, `${runTableArn}/index/*`] },
         { Effect: 'Allow', Action: 'dynamodb:UpdateItem', Resource: runTableArn },
+        {
+          Effect: 'Allow',
+          Action: 'dynamodb:UpdateItem',
+          Resource: `arn:aws:dynamodb:${region}:${account}:table/test-usage-daily-total-table`,
+        },
         {
           Effect: 'Allow',
           Action: 'dynamodb:Query',
