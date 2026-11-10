@@ -116,6 +116,7 @@ describe('RunLimitCheckService', () => {
   const mockSumObjectBytes = sumObjectBytes as jest.Mock;
   let service: RunLimitCheckService;
   let warnSpy: jest.SpyInstance;
+  const loggedLines = () => warnSpy.mock.calls.map(([line]) => JSON.parse(line as string));
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -249,8 +250,6 @@ describe('RunLimitCheckService', () => {
   });
 
   describe('assertLaunchWithinLimits', () => {
-    const loggedLines = () => warnSpy.mock.calls.map(([line]) => JSON.parse(line as string));
-
     it('throws the sample error and logs both hits when both limits block', async () => {
       mockReadSampleSheet.mockResolvedValue({ outcome: 'read', sampleCount: 1000, dataFileKeys: [] });
       mockEstimate.mockResolvedValue(availableEstimate(416.67));
