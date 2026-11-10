@@ -506,6 +506,8 @@ backEndApp.addScripts({
   ['backfill-workflow-run-history-and-usages']: 'tsx scripts/backfill-workflow-run-history-and-usages.ts',
   ['backfill-workflow-run-history-and-usages:dry-run']:
     'tsx scripts/backfill-workflow-run-history-and-usages.ts --dry-run',
+  ['backfill-usage-daily-totals']: 'tsx scripts/backfill-usage-daily-totals.ts',
+  ['backfill-usage-daily-totals:dry-run']: 'tsx scripts/backfill-usage-daily-totals.ts --dry-run',
   ['seed-workflow-tagging-test-runs']: 'tsx scripts/seed-workflow-tagging-test-runs.ts',
   ['seed-workflow-tagging-test-runs:dry-run']: 'tsx scripts/seed-workflow-tagging-test-runs.ts --dry-run',
   ['seed-dev-environment']: 'tsx scripts/seed-dev-environment.ts',
