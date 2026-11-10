@@ -3686,6 +3686,159 @@ components:
         - Platform
         - UploadedFilePairs
       additionalProperties: false
+    RunCostsLabRow:
+      allOf:
+        - type: object
+          properties:
+            EstimatedCostUsd:
+              type: number
+            FinishedRuns:
+              type: number
+            WarnedRuns:
+              type: number
+            BlockedLaunches:
+              type: number
+          required:
+            - BlockedLaunches
+            - EstimatedCostUsd
+            - FinishedRuns
+            - WarnedRuns
+        - type: object
+          properties:
+            LaboratoryId:
+              type: string
+            LaboratoryName:
+              type: string
+            PreviousEstimatedCostUsd:
+              type: number
+            ChangePercent:
+              type:
+                - 'null'
+                - number
+            SharePercent:
+              type: number
+            Workflows:
+              type: array
+              items:
+                $ref: '#/components/schemas/RunCostsWorkflowRow'
+          required:
+            - ChangePercent
+            - LaboratoryId
+            - LaboratoryName
+            - PreviousEstimatedCostUsd
+            - SharePercent
+            - Workflows
+    RunCostsWorkflowRow:
+      description: '`ChangePercent` is null when the previous period''s figure is 0.'
+      allOf:
+        - type: object
+          properties:
+            EstimatedCostUsd:
+              type: number
+            FinishedRuns:
+              type: number
+            WarnedRuns:
+              type: number
+            BlockedLaunches:
+              type: number
+          required:
+            - BlockedLaunches
+            - EstimatedCostUsd
+            - FinishedRuns
+            - WarnedRuns
+        - type: object
+          properties:
+            Platform:
+              $ref: '#/components/schemas/RunType'
+            WorkflowExternalId:
+              type: string
+            WorkflowName:
+              type: string
+            PreviousEstimatedCostUsd:
+              type: number
+            ChangePercent:
+              type:
+                - 'null'
+                - number
+            SharePercent:
+              type: number
+          required:
+            - ChangePercent
+            - Platform
+            - PreviousEstimatedCostUsd
+            - SharePercent
+            - WorkflowExternalId
+            - WorkflowName
+    RunType:
+      enum:
+        - AWS HealthOmics
+        - Seqera Cloud
+      type: string
+    RunCostsReport:
+      type: object
+      properties:
+        Period:
+          type: object
+          properties:
+            Start:
+              type: string
+            End:
+              type: string
+          required:
+            - End
+            - Start
+        PreviousPeriod:
+          type: object
+          properties:
+            Start:
+              type: string
+            End:
+              type: string
+          required:
+            - End
+            - Start
+        Totals:
+          type: object
+          properties:
+            EstimatedCostUsd:
+              type: number
+            FinishedRuns:
+              type: number
+            WarnedRuns:
+              type: number
+            BlockedLaunches:
+              type: number
+          required:
+            - BlockedLaunches
+            - EstimatedCostUsd
+            - FinishedRuns
+            - WarnedRuns
+        PreviousTotals:
+          type: object
+          properties:
+            EstimatedCostUsd:
+              type: number
+            FinishedRuns:
+              type: number
+            WarnedRuns:
+              type: number
+            BlockedLaunches:
+              type: number
+          required:
+            - BlockedLaunches
+            - EstimatedCostUsd
+            - FinishedRuns
+            - WarnedRuns
+        Labs:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunCostsLabRow'
+      required:
+        - Labs
+        - Period
+        - PreviousPeriod
+        - PreviousTotals
+        - Totals
     UpdateLaboratoryRunLimitsRequest:
       type: object
       properties:
@@ -11007,6 +11160,46 @@ paths:
           content:
             application/json:
               schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/usage/list-run-costs:
+    get:
+      operationId: listRunCosts
+      summary: List Run Costs
+      parameters:
+        - name: organizationId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Organization UUID
+        - name: period
+          in: query
+          required: true
+          schema:
+            type: string
+          description: month, 30d, 60d or 90d; rolling periods end today (UTC)
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: string
+          description: YYYY-MM; required when period is month
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunCostsReport'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

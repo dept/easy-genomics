@@ -398,6 +398,10 @@ export interface paths {
     /** Create File Upload Sample Sheet */
     post: operations["createFileUploadSampleSheet"];
   };
+  "/easy-genomics/usage/list-run-costs": {
+    /** List Run Costs */
+    get: operations["listRunCosts"];
+  };
   "/easy-genomics/usage/update-laboratory-run-limits/{id}": {
     /** Update Laboratory Run Limits */
     put: operations["updateLaboratoryRunLimits"];
@@ -2077,6 +2081,58 @@ export interface components {
             Region: string;
           } | null, null]>;
         })[];
+    };
+    RunCostsLabRow: {
+      EstimatedCostUsd: number;
+      FinishedRuns: number;
+      WarnedRuns: number;
+      BlockedLaunches: number;
+    } & ({
+      LaboratoryId: string;
+      LaboratoryName: string;
+      PreviousEstimatedCostUsd: number;
+      ChangePercent: null | number;
+      SharePercent: number;
+      Workflows: components["schemas"]["RunCostsWorkflowRow"][];
+    });
+    /** @description `ChangePercent` is null when the previous period's figure is 0. */
+    RunCostsWorkflowRow: {
+      EstimatedCostUsd: number;
+      FinishedRuns: number;
+      WarnedRuns: number;
+      BlockedLaunches: number;
+    } & ({
+      Platform: components["schemas"]["RunType"];
+      WorkflowExternalId: string;
+      WorkflowName: string;
+      PreviousEstimatedCostUsd: number;
+      ChangePercent: null | number;
+      SharePercent: number;
+    });
+    /** @enum {string} */
+    RunType: "AWS HealthOmics" | "Seqera Cloud";
+    RunCostsReport: {
+      Period: {
+        Start: string;
+        End: string;
+      };
+      PreviousPeriod: {
+        Start: string;
+        End: string;
+      };
+      Totals: {
+        EstimatedCostUsd: number;
+        FinishedRuns: number;
+        WarnedRuns: number;
+        BlockedLaunches: number;
+      };
+      PreviousTotals: {
+        EstimatedCostUsd: number;
+        FinishedRuns: number;
+        WarnedRuns: number;
+        BlockedLaunches: number;
+      };
+      Labs: components["schemas"]["RunCostsLabRow"][];
     };
     UpdateLaboratoryRunLimitsRequest: {
       CostWarnAboveUsd?: number;
@@ -6266,6 +6322,32 @@ export interface operations {
       200: {
         content: {
           "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** List Run Costs */
+  listRunCosts: {
+    parameters: {
+      query: {
+        /** @description Organization UUID */
+        organizationId: string;
+        /** @description month, 30d, 60d or 90d; rolling periods end today (UTC) */
+        period: string;
+        /** @description YYYY-MM; required when period is month */
+        month?: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["RunCostsReport"];
         };
       };
       400: components["responses"]["BadRequest"];
