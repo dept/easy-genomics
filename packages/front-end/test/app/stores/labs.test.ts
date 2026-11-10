@@ -74,7 +74,7 @@ describe('updateRunLimits', () => {
   });
 
   it('falls back to a generic message', async () => {
-    updateRunLimits.mockRejectedValue(new Error(''));
+    updateRunLimits.mockRejectedValue({ status: 500 });
     await useLabsStore().updateRunLimits('lab-1', {});
     expect(toastError).toHaveBeenCalledWith('Failed to save usage limits. Please try again.');
   });
