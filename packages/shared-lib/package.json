@@ -6,6 +6,7 @@
     "default": "pnpm exec projen default",
     "eslint": "pnpm exec projen eslint",
     "generate:api-types": "pnpm exec projen generate:api-types",
+    "generate:healthomics-rates": "pnpm exec projen generate:healthomics-rates",
     "generate:openapi": "pnpm exec projen generate:openapi",
     "lint:openapi": "pnpm exec projen lint:openapi",
     "package": "pnpm exec projen package",

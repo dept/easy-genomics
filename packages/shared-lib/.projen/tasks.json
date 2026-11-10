@@ -58,6 +58,14 @@
         }
       ]
     },
+    "generate:healthomics-rates": {
+      "name": "generate:healthomics-rates",
+      "steps": [
+        {
+          "exec": "tsx src/app/utils/generate-healthomics-rates.ts"
+        }
+      ]
+    },
     "generate:openapi": {
       "name": "generate:openapi",
       "steps": [
