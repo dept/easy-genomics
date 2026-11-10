@@ -846,8 +846,8 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
         ],
-        // PutItem: persist the lazily-provisioned HealthOmics run cache id on the Laboratory.
-        actions: ['dynamodb:Query', 'dynamodb:PutItem'],
+        // UpdateItem: persist the lazily-provisioned HealthOmics run cache id on the Laboratory.
+        actions: ['dynamodb:Query', 'dynamodb:UpdateItem'],
       }),
       new PolicyStatement({
         resources: [

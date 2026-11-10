@@ -536,7 +536,7 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     );
   });
 
-  it('grants edit-s3-access-batch Query, PutItem and Scan on laboratory-table', () => {
+  it('grants edit-s3-access-batch Query, UpdateItem and Scan on laboratory-table', () => {
     const app = new App();
     const parentStack = new Stack(app, 'parent-stack');
     new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
@@ -548,11 +548,27 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     expect(policies).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          actions: expect.arrayContaining(['dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:Scan']),
+          actions: expect.arrayContaining(['dynamodb:Query', 'dynamodb:UpdateItem', 'dynamodb:Scan']),
           resources: expect.arrayContaining([expect.stringContaining('laboratory-table')]),
         }),
       ]),
     );
+  });
+
+  // LaboratoryService.update writes attributes in place so it never rewrites RunLimits.
+  it('grants update-laboratory UpdateItem, not PutItem, on laboratory-table', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+    const policies = iamInstance.policyStatements.get('/easy-genomics/laboratory/update-laboratory');
+    const laboratoryTableStatement = policies.find((policy: { resources: string[] }) =>
+      policy.resources.some((resource) => resource.endsWith('-laboratory-table')),
+    );
+
+    expect(laboratoryTableStatement.actions).toEqual(['dynamodb:Query', 'dynamodb:UpdateItem']);
   });
 
   it('grants edit-s3-access-batch Query on laboratory-s3-access-table, which non-admin saves read', () => {

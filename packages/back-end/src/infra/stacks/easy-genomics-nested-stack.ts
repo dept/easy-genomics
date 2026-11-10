@@ -905,7 +905,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
         ],
-        actions: ['dynamodb:Query', 'dynamodb:PutItem'],
+        actions: ['dynamodb:Query', 'dynamodb:UpdateItem'],
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
@@ -2315,13 +2315,13 @@ export class EasyGenomicsNestedStack extends NestedStack {
     // /easy-genomics/organization/s3-access/edit-s3-access-batch
     this.iam.addPolicyStatements('/easy-genomics/organization/s3-access/edit-s3-access-batch', [
       new PolicyStatement({
-        // Query labs in the org; PutItem clears Laboratory.S3Bucket when its grant is revoked.
+        // Query labs in the org; UpdateItem clears Laboratory.S3Bucket when its grant is revoked.
         // Scan finds every lab's default bucket before a whole-bucket grant.
         resources: [
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
         ],
-        actions: ['dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:Scan'],
+        actions: ['dynamodb:Query', 'dynamodb:UpdateItem', 'dynamodb:Scan'],
       }),
       new PolicyStatement({
         // Query reads a lab's stored grants, which non-system-admin saves compare against before writing.
