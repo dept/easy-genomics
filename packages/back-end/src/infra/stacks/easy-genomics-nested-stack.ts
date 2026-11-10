@@ -13,6 +13,7 @@ import { OrgEmailAssetsBucketConstruct } from '../constructs/org-email-assets-bu
 import { SesConstruct } from '../constructs/ses-construct';
 import { QueueDetails, Queues, SqsConstruct } from '../constructs/sqs-construct';
 import { EasyGenomicsNestedStackProps } from '../types/back-end-stack';
+import { runCostCaptureQueueArn, runCostCaptureQueueUrl } from '../utils/run-cost-capture-queue';
 
 /**
  * Easy Genomics nested stack: lambdas, SQS, SES, IAM.
@@ -380,6 +381,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
               this.sqs.sqsQueues.get('laboratory-run-notification-queue')?.queueUrl || '',
             SQS_KEY_OUTPUT_DELIVERY_QUEUE_URL: this.sqs.sqsQueues.get('key-output-delivery-queue')?.queueUrl || '',
             HEALTHOMICS_RATES_REFRESH_ENABLED: String(this.props.healthomicsRatesRefresh?.enabled !== false),
+            // Created by the usage nested stack, which this stack is deployed after.
+            SQS_RUN_COST_CAPTURE_QUEUE_URL: runCostCaptureQueueUrl(this.runCostCaptureQueueLocation()),
           },
         },
         // Async classifier consumer for FAILED runs. Idempotent (skips runs that already
@@ -625,6 +628,12 @@ export class EasyGenomicsNestedStack extends NestedStack {
   ];
 
   // Easy Genomics specific IAM policies
+  private runCostCaptureQueueLocation = () => ({
+    namePrefix: this.props.namePrefix,
+    region: this.props.env.region!,
+    account: this.props.env.account!,
+  });
+
   private setupIamPolicies = () => {
     // /easy-genomics/organization/create-organization
     this.iam.addPolicyStatements('/easy-genomics/organization/create-organization', [
@@ -1684,6 +1693,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
       new PolicyStatement({
         resources: [`${this.sqs.sqsQueues.get('key-output-delivery-queue')?.queueArn || ''}`],
+        actions: ['sqs:SendMessage'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [runCostCaptureQueueArn(this.runCostCaptureQueueLocation())],
         actions: ['sqs:SendMessage'],
         effect: Effect.ALLOW,
       }),
