@@ -1681,6 +1681,18 @@ components:
         - Active
         - Inactive
       type: string
+    LaboratoryRunLimits:
+      description: Per-run limits set by an organization admin. A missing amount means that check is off.
+      type: object
+      properties:
+        CostWarnAboveUsd:
+          type: number
+        CostBlockAboveUsd:
+          type: number
+        SamplesWarnAbove:
+          type: number
+        SamplesBlockAbove:
+          type: number
     Laboratory:
       type: object
       properties:
@@ -1808,6 +1820,9 @@ components:
             first HealthOmics run and reused for all subsequent runs, so a failed run can be retried and
             resume from its last completed task instead of recomputing everything. Managed internally.
           type: string
+        RunLimits:
+          description: Saved only through update-laboratory-run-limits. Missing means the lab has no limits.
+          $ref: '#/components/schemas/LaboratoryRunLimits'
         CreatedAt:
           type: string
         CreatedBy:
@@ -1842,14 +1857,6 @@ components:
         NextFlowTowerEnabled:
           type: boolean
         NextFlowTowerApiBaseUrl:
-          type: string
-        CreatedAt:
-          type: string
-        CreatedBy:
-          type: string
-        ModifiedAt:
-          type: string
-        ModifiedBy:
           type: string
         S3Bucket:
           type: string
@@ -1906,6 +1913,26 @@ components:
         HasMicroreactAccessToken:
           type: boolean
         HealthOmicsRunCacheId:
+          type: string
+        RunLimits:
+          type: object
+          properties:
+            CostWarnAboveUsd:
+              type: number
+            CostBlockAboveUsd:
+              type: number
+            SamplesWarnAbove:
+              type: number
+            SamplesBlockAbove:
+              type: number
+          description: Saved only through update-laboratory-run-limits, never through Create / Update.
+        CreatedAt:
+          type: string
+        CreatedBy:
+          type: string
+        ModifiedAt:
+          type: string
+        ModifiedBy:
           type: string
       required:
         - LaboratoryId
@@ -2005,6 +2032,14 @@ components:
           type: string
         WorkflowName:
           type: string
+        CreatedAt:
+          type: string
+        CreatedBy:
+          type: string
+        ModifiedAt:
+          type: string
+        ModifiedBy:
+          type: string
         PlatformApiBaseUrl:
           type: string
         WorkflowVersionName:
@@ -2037,14 +2072,6 @@ components:
           anyOf:
             - type: object
             - type: string
-        CreatedAt:
-          type: string
-        CreatedBy:
-          type: string
-        ModifiedAt:
-          type: string
-        ModifiedBy:
-          type: string
         TerminalAt:
           description: |-
             ISO timestamp indicating when the run first reached a terminal state.
@@ -2363,6 +2390,14 @@ components:
           type: string
         WorkflowName:
           type: string
+        CreatedAt:
+          type: string
+        CreatedBy:
+          type: string
+        ModifiedAt:
+          type: string
+        ModifiedBy:
+          type: string
         PlatformApiBaseUrl:
           type: string
         WorkflowVersionName:
@@ -2385,14 +2420,6 @@ components:
           anyOf:
             - type: object
             - type: string
-        CreatedAt:
-          type: string
-        CreatedBy:
-          type: string
-        ModifiedAt:
-          type: string
-        ModifiedBy:
-          type: string
         TerminalAt:
           type: string
         ExpiresAt:
@@ -3602,6 +3629,22 @@ components:
         - TransactionId
         - Platform
         - UploadedFilePairs
+      additionalProperties: false
+    UpdateLaboratoryRunLimitsRequest:
+      type: object
+      properties:
+        CostWarnAboveUsd:
+          type: number
+          exclusiveMinimum: 0
+        CostBlockAboveUsd:
+          type: number
+          exclusiveMinimum: 0
+        SamplesWarnAbove:
+          type: integer
+          exclusiveMinimum: 0
+        SamplesBlockAbove:
+          type: integer
+          exclusiveMinimum: 0
       additionalProperties: false
     ConfirmUserForgotPasswordRequestRequest:
       type: object
@@ -10908,6 +10951,39 @@ paths:
           content:
             application/json:
               schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/usage/update-laboratory-run-limits/{id}:
+    put:
+      operationId: updateLaboratoryRunLimits
+      summary: Update Laboratory Run Limits
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLaboratoryRunLimitsRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Laboratory'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

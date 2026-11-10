@@ -398,6 +398,10 @@ export interface paths {
     /** Create File Upload Sample Sheet */
     post: operations["createFileUploadSampleSheet"];
   };
+  "/easy-genomics/usage/update-laboratory-run-limits/{id}": {
+    /** Update Laboratory Run Limits */
+    put: operations["updateLaboratoryRunLimits"];
+  };
   "/easy-genomics/user/confirm-user-forgot-password-request": {
     /** Confirm User Forgot Password Request */
     post: operations["confirmUserForgotPasswordRequest"];
@@ -1152,6 +1156,13 @@ export interface components {
     };
     /** @enum {string} */
     Status: "Active" | "Inactive";
+    /** @description Per-run limits set by an organization admin. A missing amount means that check is off. */
+    LaboratoryRunLimits: {
+      CostWarnAboveUsd?: number;
+      CostBlockAboveUsd?: number;
+      SamplesWarnAbove?: number;
+      SamplesBlockAbove?: number;
+    };
     Laboratory: {
       OrganizationId: string;
       LaboratoryId: string;
@@ -1249,6 +1260,8 @@ export interface components {
        * resume from its last completed task instead of recomputing everything. Managed internally.
        */
       HealthOmicsRunCacheId?: string;
+      /** @description Saved only through update-laboratory-run-limits. Missing means the lab has no limits. */
+      RunLimits?: components["schemas"]["LaboratoryRunLimits"];
       CreatedAt?: string;
       CreatedBy?: string;
       ModifiedAt?: string;
@@ -1264,10 +1277,6 @@ export interface components {
       AwsHealthOmicsEnabled?: boolean;
       NextFlowTowerEnabled?: boolean;
       NextFlowTowerApiBaseUrl?: string;
-      CreatedAt?: string;
-      CreatedBy?: string;
-      ModifiedAt?: string;
-      ModifiedBy?: string;
       S3Bucket?: string;
       NextFlowTowerWorkspaceId?: string;
       /** @enum {string} */
@@ -1294,6 +1303,17 @@ export interface components {
       HasSeqeraLlmApiKey?: boolean;
       HasMicroreactAccessToken?: boolean;
       HealthOmicsRunCacheId?: string;
+      /** @description Saved only through update-laboratory-run-limits, never through Create / Update. */
+      RunLimits?: {
+        CostWarnAboveUsd?: number;
+        CostBlockAboveUsd?: number;
+        SamplesWarnAbove?: number;
+        SamplesBlockAbove?: number;
+      };
+      CreatedAt?: string;
+      CreatedBy?: string;
+      ModifiedAt?: string;
+      ModifiedBy?: string;
     };
     RequestLaboratoryRequest: {
       /** Format: uuid */
@@ -1337,6 +1357,10 @@ export interface components {
       /** @description Optional user-authored note for this run; set at creation time. */
       Description?: string;
       WorkflowName?: string;
+      CreatedAt?: string;
+      CreatedBy?: string;
+      ModifiedAt?: string;
+      ModifiedBy?: string;
       PlatformApiBaseUrl?: string;
       WorkflowVersionName?: string;
       /**
@@ -1358,10 +1382,6 @@ export interface components {
       OutputS3Url?: string;
       SampleSheetS3Url?: string;
       Settings?: Record<string, never> | string;
-      CreatedAt?: string;
-      CreatedBy?: string;
-      ModifiedAt?: string;
-      ModifiedBy?: string;
       /**
        * @description ISO timestamp indicating when the run first reached a terminal state.
        * Used as the anchor for retention/TTL recomputation.
@@ -1547,6 +1567,10 @@ export interface components {
       /** @description Optional user-authored note for this run; set at creation time. */
       Description?: string;
       WorkflowName?: string;
+      CreatedAt?: string;
+      CreatedBy?: string;
+      ModifiedAt?: string;
+      ModifiedBy?: string;
       PlatformApiBaseUrl?: string;
       WorkflowVersionName?: string;
       WorkflowExternalId?: string;
@@ -1556,10 +1580,6 @@ export interface components {
       OutputS3Url?: string;
       SampleSheetS3Url?: string;
       Settings?: Record<string, never> | string;
-      CreatedAt?: string;
-      CreatedBy?: string;
-      ModifiedAt?: string;
-      ModifiedBy?: string;
       TerminalAt?: string;
       ExpiresAt?: number;
       RunDurationSeconds?: number;
@@ -2031,6 +2051,12 @@ export interface components {
             Region: string;
           } | null, null]>;
         })[];
+    };
+    UpdateLaboratoryRunLimitsRequest: {
+      CostWarnAboveUsd?: number;
+      CostBlockAboveUsd?: number;
+      SamplesWarnAbove?: number;
+      SamplesBlockAbove?: number;
     };
     ConfirmUserForgotPasswordRequestRequest: {
       Token: string;
@@ -6214,6 +6240,32 @@ export interface operations {
       200: {
         content: {
           "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Update Laboratory Run Limits */
+  updateLaboratoryRunLimits: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateLaboratoryRunLimitsRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["Laboratory"];
         };
       };
       400: components["responses"]["BadRequest"];

@@ -24,6 +24,7 @@
  *   HasGitHubAccessToken?: <boolean>,
  *   EnableNewWorkflowsByDefault?: <boolean>,
  *   EnableNewBucketsByDefault?: <boolean>,
+ *   RunLimits?: <LaboratoryRunLimits>,
  *   CreatedAt?: <string>,
  *   CreatedBy?: <string>,
  *   ModifiedAt?: <string>,
@@ -31,6 +32,16 @@
  * }
  */
 import { BaseAttributes, Status } from '../base-entity';
+
+/**
+ * Per-run limits set by an organization admin. A missing amount means that check is off.
+ */
+export interface LaboratoryRunLimits {
+  CostWarnAboveUsd?: number;
+  CostBlockAboveUsd?: number;
+  SamplesWarnAbove?: number;
+  SamplesBlockAbove?: number;
+}
 
 export interface Laboratory extends BaseAttributes {
   OrganizationId: string; // DynamoDB Partition Key (String)
@@ -136,4 +147,7 @@ export interface Laboratory extends BaseAttributes {
    * resume from its last completed task instead of recomputing everything. Managed internally.
    */
   HealthOmicsRunCacheId?: string;
+
+  /** Saved only through update-laboratory-run-limits. Missing means the lab has no limits. */
+  RunLimits?: LaboratoryRunLimits;
 }
