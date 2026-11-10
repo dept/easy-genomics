@@ -2235,6 +2235,12 @@ components:
             (`attribute_not_exists(NotifiedAt)`), the first time a terminal-state notification is
             published for this run. Prevents a duplicate status-check message from double-emailing.
           type: string
+        RunCostCountedAt:
+          description: |-
+            ISO timestamp set exactly once, in the same transaction that adds the run's captured cost
+            to the daily usage totals (`attribute_not_exists(RunCostCountedAt)`), so a retried capture
+            or a rerun back-fill can't count the run twice.
+          type: string
         ProgressPercent:
           description: |-
             Approximate task completion percentage derived from HealthOmics ListRunTasks
