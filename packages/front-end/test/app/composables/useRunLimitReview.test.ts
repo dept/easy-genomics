@@ -7,6 +7,7 @@ import {
   RunSampleLimitExceededError,
   RunSamplesNotCountedError,
 } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+// eslint-disable-next-line import/no-extraneous-dependencies -- vue ships with nuxt; the composable uses the auto-imported ref and computed
 import { computed, ref } from 'vue';
 
 import { useRunLimitReview } from '../../../src/app/composables/useRunLimitReview';
@@ -91,7 +92,7 @@ describe('useRunLimitReview', () => {
     mockEstimateRunCost.mockReturnValue(new Promise(() => {}));
     const { review, loadEstimate } = useRunLimitReview(LAB_ID, () => request);
 
-    void loadEstimate();
+    loadEstimate().catch(() => undefined);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(review.value.launchDisabled).toBe(false);
