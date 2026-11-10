@@ -1,6 +1,7 @@
 import type { RunCostsReport } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/usage-totals';
 import {
   formatChange,
+  formatShare,
   formatUsd,
   periodLabel,
   recentMonths,
@@ -58,6 +59,14 @@ describe('formatChange', () => {
 
   it('shows a dash when there is nothing to compare with', () => {
     expect(formatChange(null)).toBe('—');
+  });
+});
+
+describe('formatShare', () => {
+  it('shows one decimal so small shares do not read as zero', () => {
+    expect(formatShare(2.9634)).toBe('3.0%');
+    expect(formatShare(0.04)).toBe('0.0%');
+    expect(formatShare(100)).toBe('100.0%');
   });
 });
 

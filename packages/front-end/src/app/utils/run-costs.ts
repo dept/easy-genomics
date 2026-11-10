@@ -55,6 +55,10 @@ export function formatChange(percent: number | null): string {
   return '0%';
 }
 
+export function formatShare(percent: number): string {
+  return `${percent.toFixed(1)}%`;
+}
+
 /** The organization-wide change, computed the same way the back-end computes each row's. */
 export function totalsChangePercent(report: RunCostsReport): number | null {
   const previous = report.PreviousTotals.EstimatedCostUsd;
