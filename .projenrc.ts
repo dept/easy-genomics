@@ -15,6 +15,7 @@ import { ApacheLicense } from './projenrc/apache-license';
 import { setupProjectFolders } from './projenrc/easy-genomics-project-setup';
 import { GithubActionsApiDiffCheck } from './projenrc/github-actions-api-diff-check';
 import { GithubActionsCICDRelease } from './projenrc/github-actions-cicd-release';
+import { GithubActionsHealthOmicsRatesRefresh } from './projenrc/github-actions-healthomics-rates-refresh';
 import { GithubDependabot } from './projenrc/github-dependabot';
 import { Husky } from './projenrc/husky';
 import { Nx } from './projenrc/nx';
@@ -731,6 +732,7 @@ new GithubActionsCICDRelease(root, {
   manualDispatchOnly: true,
 });
 new GithubActionsApiDiffCheck(root, { pnpmVersion });
+new GithubActionsHealthOmicsRatesRefresh(root, { pnpmVersion });
 new GithubDependabot(root, { targetBranch: 'development' });
 new ApacheLicense(root, licenseOptions);
 new ApacheLicense(backEndApp, licenseOptions);
