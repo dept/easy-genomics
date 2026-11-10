@@ -146,6 +146,65 @@ describe('LaboratoryRunService.markTerminalNotified', () => {
   });
 });
 
+describe('LaboratoryRunService.recordRunCostOutcome', () => {
+  const outcome = {
+    ActualComputeCostUsd: 12.5,
+    CostSource: 'HEALTHOMICS_TASKS' as const,
+    CostCapturedAt: '2026-11-10T00:00:00.000Z',
+  };
+  const input = { LaboratoryId: 'lab-1', RunId: 'run-1', RunCostOutcome: outcome, ModifiedBy: 'Cost Capture' };
+
+  it('sets only the outcome and modification attributes, conditional on no captured cost', async () => {
+    const svc = new LaboratoryRunService();
+    const updateItem = jest
+      .spyOn(svc as unknown as { updateItem: jest.Mock }, 'updateItem')
+      .mockResolvedValue({ $metadata: { httpStatusCode: 200 } });
+
+    await expect(svc.recordRunCostOutcome(input)).resolves.toBe(true);
+
+    const request = updateItem.mock.calls[0][0];
+    expect(request).toMatchObject({
+      TableName: 'unit-test-laboratory-run-table',
+      Key: { LaboratoryId: { S: 'lab-1' }, RunId: { S: 'run-1' } },
+      UpdateExpression: 'SET #RunCostOutcome = :o, #ModifiedAt = :ma, #ModifiedBy = :mb',
+      ConditionExpression: 'attribute_not_exists(#RunCostOutcome.#CostCapturedAt)',
+      ExpressionAttributeNames: {
+        '#RunCostOutcome': 'RunCostOutcome',
+        '#CostCapturedAt': 'CostCapturedAt',
+        '#ModifiedAt': 'ModifiedAt',
+        '#ModifiedBy': 'ModifiedBy',
+      },
+    });
+    expect(request.ExpressionAttributeValues[':o']).toEqual(marshall({ o: outcome }).o);
+    expect(request.ExpressionAttributeValues[':mb']).toEqual({ S: 'Cost Capture' });
+    updateItem.mockRestore();
+  });
+
+  it('returns false when the run already has a captured cost', async () => {
+    const svc = new LaboratoryRunService();
+    const conditionalError = new Error('ConditionalCheckFailedException');
+    conditionalError.name = 'ConditionalCheckFailedException';
+    const updateItem = jest
+      .spyOn(svc as unknown as { updateItem: jest.Mock }, 'updateItem')
+      .mockRejectedValue(conditionalError);
+
+    await expect(svc.recordRunCostOutcome(input)).resolves.toBe(false);
+    updateItem.mockRestore();
+  });
+
+  it('rethrows any other error', async () => {
+    const svc = new LaboratoryRunService();
+    const transientError = new Error('ProvisionedThroughputExceededException');
+    transientError.name = 'ProvisionedThroughputExceededException';
+    const updateItem = jest
+      .spyOn(svc as unknown as { updateItem: jest.Mock }, 'updateItem')
+      .mockRejectedValue(transientError);
+
+    await expect(svc.recordRunCostOutcome(input)).rejects.toBe(transientError);
+    updateItem.mockRestore();
+  });
+});
+
 describe('LaboratoryRunService.queryActiveForPolling', () => {
   it('queries the PollStatus_Index and returns every active run across pages', async () => {
     const svc = new LaboratoryRunService();
