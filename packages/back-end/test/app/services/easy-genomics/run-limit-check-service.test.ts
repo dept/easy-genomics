@@ -15,6 +15,13 @@ jest.mock('../../../../src/app/services/easy-genomics/run-cost-estimation-servic
   })),
 }));
 
+const mockAddLaunchCount = jest.fn();
+jest.mock('../../../../src/app/services/easy-genomics/usage-totals-service', () => ({
+  UsageTotalsService: jest.fn().mockImplementation(() => ({
+    addLaunchCount: (...args: unknown[]) => mockAddLaunchCount(...args),
+  })),
+}));
+
 import { readSampleSheet, sumObjectBytes } from '../../../../src/app/services/easy-genomics/run-input-profile-service';
 import {
   evaluateRunLimits,
@@ -116,6 +123,7 @@ describe('RunLimitCheckService', () => {
   const mockSumObjectBytes = sumObjectBytes as jest.Mock;
   let service: RunLimitCheckService;
   let warnSpy: jest.SpyInstance;
+  let errorSpy: jest.SpyInstance;
   const loggedLines = () => warnSpy.mock.calls.map(([line]) => JSON.parse(line as string));
 
   beforeEach(() => {
@@ -123,13 +131,37 @@ describe('RunLimitCheckService', () => {
     mockReadSampleSheet.mockResolvedValue({ outcome: 'read', sampleCount: 96, dataFileKeys: ['a.fq.gz'] });
     mockSumObjectBytes.mockResolvedValue(5000);
     mockEstimate.mockReset().mockResolvedValue(availableEstimate(120));
+    mockAddLaunchCount.mockReset().mockResolvedValue(undefined);
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     service = new RunLimitCheckService();
   });
 
   afterEach(() => {
     warnSpy.mockRestore();
+    errorSpy.mockRestore();
   });
+
+  const today = () => new Date().toISOString().slice(0, 10);
+  const launchCount = (Kind: 'warned' | 'blocked') => ({
+    OrganizationId: 'org-1',
+    LaboratoryId: 'lab-1',
+    Platform: 'AWS HealthOmics',
+    WorkflowExternalId: 'wf-123',
+    Day: today(),
+    Kind,
+  });
+
+  /** A count write that settles a macrotask later, so a caller that doesn't await it settles first. */
+  const slowCountWrite = (outcome: 'resolve' | 'reject') => {
+    const state = { settled: false };
+    mockAddLaunchCount.mockImplementation(async () => {
+      await new Promise((resolve) => setImmediate(resolve));
+      state.settled = true;
+      if (outcome === 'reject') throw new Error('ProvisionedThroughputExceededException');
+    });
+    return state;
+  };
 
   describe('checkRunLimits', () => {
     it('does no reads for a lab with no limits', async () => {
@@ -298,6 +330,58 @@ describe('RunLimitCheckService', () => {
       expect(loggedLines()[0]).toMatchObject({ reason: 'samplesNotCounted', hits: [] });
     });
 
+    describe('counting the blocked launch', () => {
+      const sampleBlockedLab = withLimits({ SamplesBlockAbove: 50 });
+
+      it('adds one blocked launch and has finished the write before it throws the limit error', async () => {
+        const countWrite = slowCountWrite('resolve');
+
+        const error = await service.assertLaunchWithinLimits(sampleBlockedLab, input, 'user-1').catch((err) => {
+          expect(countWrite.settled).toBe(true);
+          return err;
+        });
+
+        expect(error).toBeInstanceOf(RunSampleLimitExceededError);
+        expect(mockAddLaunchCount).toHaveBeenCalledTimes(1);
+        expect(mockAddLaunchCount).toHaveBeenCalledWith(launchCount('blocked'));
+      });
+
+      it('counts a launch blocked because its samples could not be counted, before rethrowing', async () => {
+        mockReadSampleSheet.mockResolvedValue({ outcome: 'notRead', reason: 'unreadable' });
+        const countWrite = slowCountWrite('resolve');
+
+        const error = await service.assertLaunchWithinLimits(sampleBlockedLab, input, 'user-1').catch((err) => {
+          expect(countWrite.settled).toBe(true);
+          return err;
+        });
+
+        expect(error).toBeInstanceOf(RunSamplesNotCountedError);
+        expect(mockAddLaunchCount).toHaveBeenCalledWith(launchCount('blocked'));
+      });
+
+      it('still throws the limit error, not the write error, when the count fails, and logs the failure', async () => {
+        const countWrite = slowCountWrite('reject');
+
+        const error = await service.assertLaunchWithinLimits(sampleBlockedLab, input, 'user-1').catch((err) => err);
+
+        expect(countWrite.settled).toBe(true);
+        expect(error).toBeInstanceOf(RunSampleLimitExceededError);
+        expect(errorSpy).toHaveBeenCalledWith(
+          expect.stringMatching(/RUN_LIMIT_BLOCKED.*LaboratoryId=lab-1/),
+          expect.objectContaining({ message: 'ProvisionedThroughputExceededException' }),
+        );
+      });
+
+      it('does not count a launch that passed or was only warned', async () => {
+        mockEstimate.mockResolvedValue(availableEstimate(182.5));
+
+        await service.assertLaunchWithinLimits(withLimits({ CostWarnAboveUsd: 150 }), input, 'user-1');
+        await service.assertLaunchWithinLimits(laboratory, input, 'user-1');
+
+        expect(mockAddLaunchCount).not.toHaveBeenCalled();
+      });
+    });
+
     it('returns a warn verdict without logging', async () => {
       mockEstimate.mockResolvedValue(availableEstimate(182.5));
 
@@ -316,8 +400,8 @@ describe('RunLimitCheckService', () => {
       sampleCount: 100,
     };
 
-    it('logs the warned launch with the started run id', () => {
-      service.logWarnedLaunch(laboratory, input, 'user-1', warnVerdict, 'run-123');
+    it('logs the warned launch with the started run id', async () => {
+      await service.logWarnedLaunch(laboratory, input, 'user-1', warnVerdict, 'run-123');
 
       expect(warnSpy).toHaveBeenCalledTimes(1);
       expect(loggedLines()[0]).toEqual({
@@ -335,12 +419,37 @@ describe('RunLimitCheckService', () => {
     });
 
     it.each([undefined, { outcome: 'pass' as const, hits: [], costEstimate: 'notChecked' as const }])(
-      'logs nothing for a launch that was not warned (%p)',
-      (verdict) => {
-        service.logWarnedLaunch(laboratory, input, 'user-1', verdict, 'run-123');
+      'logs and counts nothing for a launch that was not warned (%p)',
+      async (verdict) => {
+        await service.logWarnedLaunch(laboratory, input, 'user-1', verdict, 'run-123');
 
         expect(warnSpy).not.toHaveBeenCalled();
+        expect(mockAddLaunchCount).not.toHaveBeenCalled();
       },
     );
+
+    it('adds one warned launch and has finished the write when it resolves', async () => {
+      const countWrite = slowCountWrite('resolve');
+
+      await service.logWarnedLaunch(laboratory, input, 'user-1', warnVerdict, 'run-123');
+
+      expect(countWrite.settled).toBe(true);
+      expect(mockAddLaunchCount).toHaveBeenCalledTimes(1);
+      expect(mockAddLaunchCount).toHaveBeenCalledWith(launchCount('warned'));
+    });
+
+    it('logs a failed count without throwing, so the started launch still returns', async () => {
+      const countWrite = slowCountWrite('reject');
+
+      await expect(
+        service.logWarnedLaunch(laboratory, input, 'user-1', warnVerdict, 'run-123'),
+      ).resolves.toBeUndefined();
+
+      expect(countWrite.settled).toBe(true);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/RUN_LIMIT_WARNED.*LaboratoryId=lab-1/),
+        expect.objectContaining({ message: 'ProvisionedThroughputExceededException' }),
+      );
+    });
   });
 });

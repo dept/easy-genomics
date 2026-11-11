@@ -100,6 +100,21 @@ export class UsageNestedStack extends NestedStack {
       }),
     ]);
 
+    // /easy-genomics/usage/list-run-costs
+    // Lab names come from the base-table query by OrganizationId, so no index is needed.
+    this.iam.addPolicyStatements('/easy-genomics/usage/list-run-costs', [
+      new PolicyStatement({
+        resources: [usageDailyTotalTableArn],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [laboratoryTableArn],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
     // /easy-genomics/usage/process-capture-run-cost
     this.iam.addPolicyStatements('/easy-genomics/usage/process-capture-run-cost', [
       new PolicyStatement({

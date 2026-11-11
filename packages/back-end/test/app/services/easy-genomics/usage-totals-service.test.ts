@@ -51,11 +51,14 @@ describe('UsageTotalsService', () => {
   let service: UsageTotalsService;
   let transactWriteItems: jest.Mock;
   let queryItems: jest.Mock;
+  let updateItem: jest.Mock;
 
   beforeEach(() => {
     service = new UsageTotalsService();
     transactWriteItems = jest.fn().mockResolvedValue({ $metadata: { httpStatusCode: 200 } });
     queryItems = jest.fn();
+    updateItem = jest.fn();
+    (service as unknown as { updateItem: jest.Mock }).updateItem = updateItem;
     (service as unknown as { transactWriteItems: jest.Mock }).transactWriteItems = transactWriteItems;
     (service as unknown as { queryItems: jest.Mock }).queryItems = queryItems;
     jest.spyOn(console, 'info').mockImplementation(() => {});
@@ -167,6 +170,68 @@ describe('UsageTotalsService', () => {
       transactWriteItems.mockRejectedValue(throttled);
 
       await expect(service.addRunCost(runFixture())).rejects.toBe(throttled);
+    });
+  });
+
+  describe('addLaunchCount', () => {
+    const launch = {
+      OrganizationId: ORGANIZATION_ID,
+      LaboratoryId: LABORATORY_ID,
+      Platform: 'Seqera Cloud' as const,
+      WorkflowExternalId: 'pipeline-42',
+      Day: '2026-11-10',
+    };
+
+    it.each([
+      ['warned', '#WarnedRuns', '#BlockedLaunches'],
+      ['blocked', '#BlockedLaunches', '#WarnedRuns'],
+    ] as const)('adds one %s launch to the day with a single unconditional update', async (kind, counted, other) => {
+      updateItem.mockResolvedValue({});
+
+      await service.addLaunchCount({ ...launch, Kind: kind });
+
+      expect(updateItem).toHaveBeenCalledTimes(1);
+      const update = updateItem.mock.calls[0][0];
+      expect(update).toMatchObject({
+        TableName: 'unit-test-usage-daily-total-table',
+        Key: {
+          OrganizationId: { S: ORGANIZATION_ID },
+          DayLabWorkflow: { S: '2026-11-10#lab-1#Seqera Cloud#pipeline-42' },
+        },
+        UpdateExpression:
+          `ADD ${counted} :one, ${other} :zero, #ComputeCostUsd :zero, #StorageCostUsd :zero, #FinishedRuns :zero ` +
+          'SET #Day = :day, #LaboratoryId = :laboratoryId, #Platform = :platform, ' +
+          '#WorkflowExternalId = :workflowExternalId, #ModifiedAt = :now',
+      });
+      expect(update.ConditionExpression).toBeUndefined();
+      expect(update.ExpressionAttributeNames).toEqual({
+        '#WarnedRuns': 'WarnedRuns',
+        '#BlockedLaunches': 'BlockedLaunches',
+        '#ComputeCostUsd': 'ComputeCostUsd',
+        '#StorageCostUsd': 'StorageCostUsd',
+        '#FinishedRuns': 'FinishedRuns',
+        '#Day': 'Day',
+        '#LaboratoryId': 'LaboratoryId',
+        '#Platform': 'Platform',
+        '#WorkflowExternalId': 'WorkflowExternalId',
+        '#ModifiedAt': 'ModifiedAt',
+      });
+      expect(unmarshall(update.ExpressionAttributeValues)).toEqual({
+        ':one': 1,
+        ':zero': 0,
+        ':day': '2026-11-10',
+        ':laboratoryId': LABORATORY_ID,
+        ':platform': 'Seqera Cloud',
+        ':workflowExternalId': 'pipeline-42',
+        ':now': expect.any(String),
+      });
+    });
+
+    it('rethrows a failed write, so the caller decides what a lost count means', async () => {
+      const throttled = new Error('Throttled');
+      updateItem.mockRejectedValue(throttled);
+
+      await expect(service.addLaunchCount({ ...launch, Kind: 'blocked' })).rejects.toBe(throttled);
     });
   });
 
