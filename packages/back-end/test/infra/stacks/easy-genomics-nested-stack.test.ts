@@ -256,6 +256,23 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     );
   });
 
+  it('lets the run status update read the stored HealthOmics rates', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamInstance = (IamConstruct as unknown as jest.Mock).mock.results[0].value;
+    const statements = iamInstance
+      .getPolicyStatements('/easy-genomics/laboratory/run/process-update-laboratory-run')
+      .map((statement: any) => statement.toStatementJson());
+
+    expect(statements).toContainEqual({
+      Effect: 'Allow',
+      Action: 'ssm:GetParameter',
+      Resource: 'arn:aws:ssm:us-west-2:123456789012:parameter/easy-genomics/healthomics-rates/current',
+    });
+  });
+
   it('adds IAM policy statements for run-export routes', async () => {
     const app = new App();
     const parentStack = new Stack(app, 'parent-stack');

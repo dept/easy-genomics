@@ -1593,6 +1593,14 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: ['ssm:GetParameter'],
         effect: Effect.ALLOW,
       }),
+      // Run cost capture prices HealthOmics runs with the rates process-refresh-healthomics-rates stores.
+      new PolicyStatement({
+        resources: [
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/${this.props.namePrefix}/healthomics-rates/current`,
+        ],
+        actions: ['ssm:GetParameter'],
+        effect: Effect.ALLOW,
+      }),
       new PolicyStatement({
         resources: [`${this.sqs.sqsQueues.get('laboratory-run-update-queue')?.queueArn || ''}`],
         actions: ['sqs:SendMessage'],

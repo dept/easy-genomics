@@ -5,11 +5,15 @@ import { ParameterNotFound } from '@aws-sdk/client-ssm';
 import { LaboratoryAccessTokenUnavailableError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 
+jest.mock('../../../../src/app/services/aws-healthomics/healthomics-rates-service');
 jest.mock('../../../../src/app/services/easy-genomics/laboratory-service');
 jest.mock('../../../../src/app/services/omics-lab-factory');
 jest.mock('../../../../src/app/services/ssm-service');
 jest.mock('../../../../src/app/utils/rest-api-utils');
 
+import { HealthOmicsRegionRates } from '@easy-genomics/shared-lib/src/app/utils/healthomics-price-list';
+import { HEALTHOMICS_RATES_BY_REGION } from '@easy-genomics/shared-lib/src/app/utils/healthomics-rates.generated';
+import { HealthOmicsRatesService } from '../../../../src/app/services/aws-healthomics/healthomics-rates-service';
 import { LaboratoryService } from '../../../../src/app/services/easy-genomics/laboratory-service';
 import { captureRunCostOutcome } from '../../../../src/app/services/easy-genomics/run-cost-capture-service';
 import { createOmicsServiceForLab } from '../../../../src/app/services/omics-lab-factory';
@@ -38,9 +42,22 @@ function mockOmicsServiceForLab(options?: { storageCapacity?: number; instanceTy
   });
 }
 
+const HEALTHOMICS_RUN = {
+  Platform: 'AWS HealthOmics',
+  RunId: 'run-1',
+  ExternalRunId: 'omics-1',
+  LaboratoryId: 'lab-1',
+  OrganizationId: 'org-1',
+  UserId: 'user-1',
+} as LaboratoryRun;
+
 describe('captureRunCostOutcome', () => {
+  let getRates: jest.Mock;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    getRates = jest.fn().mockResolvedValue(HEALTHOMICS_RATES_BY_REGION['us-east-1']);
+    (HealthOmicsRatesService as jest.MockedClass<typeof HealthOmicsRatesService>).prototype.getRates = getRates;
     (getNextFlowApiQueryParameters as jest.Mock).mockReturnValue('workspaceId=ws-1');
   });
 
@@ -90,6 +107,34 @@ describe('captureRunCostOutcome', () => {
     expect(result?.ActualComputeCostUsd).toBeGreaterThan(0);
     expect(result?.ActualStorageCostUsd).toBeGreaterThan(0);
     expect(result?.CostCapturedAt).toBeTruthy();
+  });
+
+  it("prices compute and storage with the deployment's refreshed rates", async () => {
+    const refreshed: HealthOmicsRegionRates = {
+      ...HEALTHOMICS_RATES_BY_REGION['us-east-1'],
+      instanceHourlyUsd: { 'omics.c.large': 10 },
+      runStorageGbHourUsd: { STATIC: 0.01, DYNAMIC: 0.02 },
+    };
+    getRates.mockResolvedValue(refreshed);
+    mockOmicsServiceForLab({ storageCapacity: 1200 });
+
+    const result = await captureRunCostOutcome(HEALTHOMICS_RUN);
+
+    expect(getRates).toHaveBeenCalledWith('us-east-1');
+    expect(result?.ActualComputeCostUsd).toBeCloseTo(10, 4);
+    expect(result?.ActualStorageCostUsd).toBeCloseTo(1200 * 0.01, 4);
+  });
+
+  it('still captures a cost when the rates lookup falls back to the generated table', async () => {
+    getRates.mockResolvedValue(HEALTHOMICS_RATES_BY_REGION['us-east-1']);
+    mockOmicsServiceForLab({ storageCapacity: 1200 });
+
+    const result = await captureRunCostOutcome(HEALTHOMICS_RUN);
+
+    expect(result?.ActualComputeCostUsd).toBeCloseTo(
+      HEALTHOMICS_RATES_BY_REGION['us-east-1'].instanceHourlyUsd['omics.c.large'],
+      4,
+    );
   });
 
   it('returns undefined for HealthOmics when ExternalRunId is missing', async () => {

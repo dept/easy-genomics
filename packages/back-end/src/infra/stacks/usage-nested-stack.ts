@@ -1,4 +1,6 @@
 import { NestedStack } from 'aws-cdk-lib';
+import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
+import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
 import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 import { IamConstruct, IamConstructProps } from '../constructs/iam-construct';
@@ -29,7 +31,20 @@ export class UsageNestedStack extends NestedStack {
       iamPolicyStatements: this.iam.policyStatements,
       lambdaFunctionsDir: 'src/app/controllers/easy-genomics/usage',
       lambdaFunctionsNamespace: `${this.props.constructNamespace}`,
-      lambdaFunctionsResources: {},
+      lambdaFunctionsResources: {
+        '/easy-genomics/usage/process-refresh-healthomics-rates': {
+          callbacks: [
+            (lambdaFunction) => {
+              new Rule(this, `${this.props.namePrefix}-healthomics-rates-refresh-schedule`, {
+                ruleName: `${this.props.namePrefix}-healthomics-rates-refresh-schedule`,
+                schedule: Schedule.expression('cron(0 6 ? * MON *)'),
+                description: "Weekly refresh of this region's HealthOmics rates from AWS's public price list.",
+                targets: [new LambdaFunction(lambdaFunction)],
+              });
+            },
+          ],
+        },
+      },
       environment: {
         ACCOUNT_ID: this.props.env.account!,
         REGION: this.props.env.region!,
@@ -41,6 +56,7 @@ export class UsageNestedStack extends NestedStack {
   }
 
   private setupIamPolicies = () => {
+    const healthOmicsRatesParameterArn = `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/${this.props.namePrefix}/healthomics-rates/current`;
     const laboratoryTableArn = `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`;
 
     // /easy-genomics/usage/update-laboratory-run-limits
@@ -53,6 +69,15 @@ export class UsageNestedStack extends NestedStack {
       new PolicyStatement({
         resources: [laboratoryTableArn],
         actions: ['dynamodb:UpdateItem'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/usage/process-refresh-healthomics-rates
+    this.iam.addPolicyStatements('/easy-genomics/usage/process-refresh-healthomics-rates', [
+      new PolicyStatement({
+        resources: [healthOmicsRatesParameterArn],
+        actions: ['ssm:GetParameter', 'ssm:PutParameter'],
         effect: Effect.ALLOW,
       }),
     ]);
