@@ -172,10 +172,13 @@ async function enqueueRunCostCapture(run: LaboratoryRun): Promise<void> {
   }
   try {
     const message: RunCostCaptureMessage = { LaboratoryId: run.LaboratoryId, RunId: run.RunId };
+    // One group per run: a FIFO group holds every later message behind one that is being retried, so a per-lab group
+    // let a run whose cost can never be read (deleted on the platform, revoked token) hold up capture for its whole lab.
+    // Captures need no ordering; the totals are added atomically.
     await sqsService.sendMessage({
       QueueUrl: queueUrl,
       MessageBody: JSON.stringify(message),
-      MessageGroupId: `run-cost-${run.LaboratoryId}`,
+      MessageGroupId: `run-cost-${run.RunId}`,
       MessageDeduplicationId: `run-cost-${run.RunId}`,
     });
   } catch (err) {

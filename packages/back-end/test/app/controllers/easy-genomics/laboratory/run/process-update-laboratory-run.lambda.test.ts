@@ -865,7 +865,7 @@ describe('process-update-laboratory-run.lambda', () => {
           {
             QueueUrl: costQueueUrl,
             MessageBody: JSON.stringify({ LaboratoryId: 'lab-1', RunId: 'run-1' }),
-            MessageGroupId: 'run-cost-lab-1',
+            MessageGroupId: 'run-cost-run-1',
             MessageDeduplicationId: 'run-cost-run-1',
           },
         ],
