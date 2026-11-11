@@ -84,7 +84,7 @@
 <template>
   <div :aria-busy="isLoading || isSaving" class="flex flex-col gap-6">
     <div>
-      <EGText :id="props.headingId" tag="h2" class="mb-2">Usage limits</EGText>
+      <EGText :id="props.headingId" tag="h3" class="mb-2">Usage limits</EGText>
       <p class="text-muted max-w-3xl text-sm">
         Set how much a single run can cost, and how many samples it can include, for each lab. If a run goes over,
         technicians are warned or stopped on the review step before it starts. Only organization admins can change
