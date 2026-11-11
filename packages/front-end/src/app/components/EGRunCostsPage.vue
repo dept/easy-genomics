@@ -110,7 +110,7 @@
           v-for="mode in PERIOD_MODES"
           :key="mode.value"
           size="xs"
-          :variant="periodMode === mode.value ? 'soft' : 'ghost'"
+          :variant="periodMode === mode.value ? 'solid' : 'ghost'"
           :aria-pressed="periodMode === mode.value"
           @click="periodMode = mode.value"
         >
