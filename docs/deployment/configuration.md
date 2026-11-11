@@ -56,6 +56,20 @@ easy-genomics:
 - Each configuration is validated at run-time, if a configuration is incomplete or invalid it will be ignored as part of
   the build and deployment.
 
+## Optional: HealthOmics rate refresh
+
+Run costs for AWS HealthOmics runs are priced at AWS list prices for the deployment's region. A scheduled Lambda
+downloads those rates from AWS's public price list and stores them in the SSM parameter
+`/<name-prefix>/healthomics-rates/current`. When that parameter is missing or unusable, costs are priced with the rates
+baked into the release.
+
+| Setting                              | Default               | Meaning                                                     |
+| ------------------------------------ | --------------------- | ----------------------------------------------------------- |
+| `healthomics-rates-refresh.enabled`  | `true`                | `false` deploys no refresh Lambda or schedule               |
+| `healthomics-rates-refresh.schedule` | `cron(0 6 ? * MON *)` | Any EventBridge `cron(...)` or `rate(...)` expression (UTC) |
+
+CI deployments set the same values with `HEALTHOMICS_RATES_REFRESH_ENABLED` and `HEALTHOMICS_RATES_REFRESH_SCHEDULE`.
+
 ## Optional: GitHub PAT Secret for nf-core Workflow Schemas
 
 Easy Genomics can enrich the workflow parameter form with richer type information, default values, dropdown options, and

@@ -18,7 +18,7 @@ describe('UsageNestedStack', () => {
   const ratesParameterArn = `arn:aws:ssm:${region}:${account}:parameter/test/healthomics-rates/current`;
   const refreshEndpoint = '/easy-genomics/usage/process-refresh-healthomics-rates';
 
-  const createStack = () => {
+  const createStack = (healthomicsRatesRefresh?: { enabled?: boolean; schedule?: string }) => {
     const app = new App();
     const parent = new Stack(app, 'parent-stack', { env: { account, region } });
     return new UsageNestedStack(parent, 'usage-nested-stack', {
@@ -33,6 +33,7 @@ describe('UsageNestedStack', () => {
       sysAdminPassword: 'test',
       seqeraApiBaseUrl: 'https://seqera.example.com',
       dynamoDBTables: new Map(),
+      healthomicsRatesRefresh,
     } as any);
   };
 
@@ -79,22 +80,42 @@ describe('UsageNestedStack', () => {
     ]);
   });
 
-  it('runs the rates refresh weekly', () => {
-    const stack = createStack();
+  const synthesizeRefreshRule = (stack: UsageNestedStack) => {
     const lambdaProps = (LambdaConstruct as unknown as jest.Mock).mock.calls[0][2];
     const refreshFunction = new Function(stack, 'refresh-fn', {
       runtime: Runtime.NODEJS_24_X,
       handler: 'index.handler',
       code: Code.fromInline('exports.handler = async () => {};'),
     });
-
     lambdaProps.lambdaFunctionsResources[refreshEndpoint].callbacks.forEach((callback: (fn: Function) => void) =>
       callback(refreshFunction),
     );
+    return Template.fromStack(stack);
+  };
 
-    Template.fromStack(stack).hasResourceProperties('AWS::Events::Rule', {
+  it('runs the rates refresh on Mondays at 06:00 UTC by default', () => {
+    synthesizeRefreshRule(createStack()).hasResourceProperties('AWS::Events::Rule', {
       Name: 'test-healthomics-rates-refresh-schedule',
       ScheduleExpression: 'cron(0 6 ? * MON *)',
     });
+  });
+
+  it('runs the rates refresh on the configured schedule', () => {
+    synthesizeRefreshRule(createStack({ schedule: 'rate(1 day)' })).hasResourceProperties('AWS::Events::Rule', {
+      ScheduleExpression: 'rate(1 day)',
+    });
+  });
+
+  it('builds no rates refresh function, rule or IAM when the refresh is disabled', () => {
+    const stack = createStack({ enabled: false });
+
+    const lambdaProps = (LambdaConstruct as unknown as jest.Mock).mock.calls[0][2];
+    expect(lambdaProps.lambdaFunctionsResources[refreshEndpoint]).toEqual({ skip: true });
+    expect(stack.iam.policyStatements.has(refreshEndpoint)).toBe(false);
+    Template.fromStack(stack).resourceCountIs('AWS::Events::Rule', 0);
+  });
+
+  it('fails synth on a schedule that is not a cron() or rate() expression, naming the setting', () => {
+    expect(() => createStack({ schedule: 'weekly' })).toThrow('healthomics-rates-refresh.schedule');
   });
 });

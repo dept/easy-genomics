@@ -88,6 +88,14 @@ export interface ConfigurationSettings {
   ['cost-explorer']?: {
     ['enabled']?: boolean; // Defaults to false when unset
   };
+  /**
+   * Optional: weekly refresh of this region's HealthOmics rates from AWS's public
+   * price list. On by default; `enabled: false` deploys no refresh Lambda or schedule.
+   */
+  ['healthomics-rates-refresh']?: {
+    ['enabled']?: boolean; // Defaults to true when unset
+    ['schedule']?: string; // EventBridge cron() or rate(); defaults to 'cron(0 6 ? * MON *)'
+  };
 }
 
 export interface Configuration {

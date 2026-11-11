@@ -83,3 +83,12 @@ easy-genomics:
         ## enabled: true and redeploy back-end + rebuild front-end.
         cost-explorer:
             enabled: false # true after Launch Cost Explorer + cost allocation tags
+
+        ## Optional: weekly refresh of this region's HealthOmics rates. ON by default.
+        ##
+        ## A scheduled Lambda downloads the region's rates from AWS's public price
+        ## list and stores them in SSM; run costs are priced with them, falling back
+        ## to the rates baked into the release. Omit this block to keep the defaults.
+        #healthomics-rates-refresh:
+        #    enabled: true # false deploys no refresh Lambda or schedule
+        #    schedule: 'cron(0 6 ? * MON *)' # any EventBridge cron() or rate() expression

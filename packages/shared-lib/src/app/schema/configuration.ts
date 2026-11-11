@@ -79,5 +79,19 @@ export const ConfigurationSettingsSchema = z
       })
       .nullable()
       .optional(),
+
+    // Optional: weekly refresh of this region's HealthOmics rates from AWS's public price list.
+    //
+    // On by default. Run costs are priced with the refreshed rates, falling back to the
+    // rates baked into the release when none are stored. `enabled: false` deploys no
+    // refresh Lambda or schedule.
+    ['healthomics-rates-refresh']: z
+      .object({
+        ['enabled']: z.boolean().nullable().optional(), // Defaults to true when unset
+        ['schedule']: z.string().nullable().optional(), // EventBridge cron() or rate(); defaults to 'cron(0 6 ? * MON *)'
+      })
+      .strict()
+      .nullable()
+      .optional(),
   })
   .strict();
