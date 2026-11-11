@@ -220,6 +220,15 @@ export interface LaboratoryRun extends BaseAttributes {
   };
 
   /**
+   * ISO timestamp set when cost capture gave up on its last attempt. The status check stops
+   * re-sending a run that carries it; a later successful capture removes it.
+   */
+  RunCostCaptureFailedAt?: string;
+
+  /** Why the last cost capture attempt failed, at most 500 characters. */
+  RunCostCaptureError?: string;
+
+  /**
    * Approximate task completion percentage derived from HealthOmics ListRunTasks
    * (completed / total known tasks). Denominator grows as the workflow DAG expands.
    */

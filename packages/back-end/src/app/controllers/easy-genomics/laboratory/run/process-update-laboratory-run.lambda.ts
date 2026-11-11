@@ -353,7 +353,10 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
     // so that branch never runs again and the run would otherwise never get notified. The
     // poller's routine re-enqueue of this already-terminal-but-unnotified run lands here
     // instead, giving notification another chance.
-    const missingCost = existingRun.RunCostOutcome?.CostCapturedAt == null;
+    // A run whose cost capture gave up is not re-sent: it would fail the same way and land in the
+    // capture dead-letter queue again.
+    const missingCost =
+      existingRun.RunCostOutcome?.CostCapturedAt == null && existingRun.RunCostCaptureFailedAt == null;
     if (
       isAlreadyTerminal &&
       (missingTerminalAt || missingExpiresAt || missingDuration || missingCost || missingNotification)
