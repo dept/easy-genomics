@@ -26,7 +26,7 @@ export class UsageNestedStack extends NestedStack {
     super(scope, id);
     this.props = props;
 
-    // A capture that keeps failing must not sit on the lab's FIFO group and block later runs.
+    // A capture that keeps failing moves here after three attempts instead of being retried forever.
     const runCostCaptureDlq = new Queue(this, `${this.props.namePrefix}-run-cost-capture-dlq`, {
       queueName: `${this.props.namePrefix}-run-cost-capture-dlq.fifo`,
       fifo: true,
