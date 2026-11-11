@@ -1496,6 +1496,12 @@ export interface components {
        */
       NotifiedAt?: string;
       /**
+       * @description ISO timestamp set exactly once, in the same transaction that adds the run's captured cost
+       * to the daily usage totals (`attribute_not_exists(RunCostCountedAt)`), so a retried capture
+       * or a rerun back-fill can't count the run twice.
+       */
+      RunCostCountedAt?: string;
+      /**
        * @description Approximate task completion percentage derived from HealthOmics ListRunTasks
        * (or Seqera progress when populated). Denominator grows as the workflow DAG
        * expands, so prefer showing TasksCompleted/TasksTotal alongside this value.

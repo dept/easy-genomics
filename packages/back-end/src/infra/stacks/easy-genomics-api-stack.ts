@@ -512,5 +512,20 @@ export class EasyGenomicsApiStack extends Stack {
       lsi: baseLSIAttributes,
     });
     this.dynamoDBTables.set(workflowKeyOutputsTableName, workflowKeyOutputsTable);
+
+    // Daily cost and run counts per organization, keyed `YYYY-MM-DD#<LaboratoryId>#<Platform>#<WorkflowExternalId>`
+    // so one Query reads a date range. Kept apart from runs so run retention never shrinks a period.
+    const usageDailyTotalTableName = `${this.props.namePrefix}-usage-daily-total-table`;
+    const usageDailyTotalTable = this.dynamoDB.createTable(usageDailyTotalTableName, {
+      partitionKey: {
+        name: 'OrganizationId',
+        type: AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'DayLabWorkflow',
+        type: AttributeType.STRING,
+      },
+    });
+    this.dynamoDBTables.set(usageDailyTotalTableName, usageDailyTotalTable);
   };
 }

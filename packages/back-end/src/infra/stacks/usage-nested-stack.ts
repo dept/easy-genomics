@@ -84,6 +84,7 @@ export class UsageNestedStack extends NestedStack {
   private setupIamPolicies = () => {
     const laboratoryTableArn = `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`;
     const laboratoryRunTableArn = `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`;
+    const usageDailyTotalTableArn = `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-usage-daily-total-table`;
 
     // /easy-genomics/usage/update-laboratory-run-limits
     this.iam.addPolicyStatements('/easy-genomics/usage/update-laboratory-run-limits', [
@@ -108,6 +109,12 @@ export class UsageNestedStack extends NestedStack {
       }),
       new PolicyStatement({
         resources: [laboratoryRunTableArn],
+        actions: ['dynamodb:UpdateItem'],
+        effect: Effect.ALLOW,
+      }),
+      // The count-once transaction needs only the per-item action on each table it touches.
+      new PolicyStatement({
+        resources: [usageDailyTotalTableArn],
         actions: ['dynamodb:UpdateItem'],
         effect: Effect.ALLOW,
       }),
