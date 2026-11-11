@@ -82,6 +82,18 @@ describe('HealthOmicsRatesService', () => {
       expect(warn.mock.calls[0][0]).toEqual(expect.stringContaining(PARAMETER_NAME));
     });
 
+    it('ignores stored rates when the refresh is turned off, so a newer release table wins', async () => {
+      process.env.HEALTHOMICS_RATES_REFRESH_ENABLED = 'false';
+      try {
+        storedParameter(STORED);
+
+        await expect(service.getRates(REGION)).resolves.toEqual(BAKED);
+        expect(ssmService.getParameter).not.toHaveBeenCalled();
+      } finally {
+        delete process.env.HEALTHOMICS_RATES_REFRESH_ENABLED;
+      }
+    });
+
     it('returns the baked rates and says so once when the stored JSON is invalid', async () => {
       storedParameter({ publicationDate: '2026-12-01T00:00:00Z' });
 

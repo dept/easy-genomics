@@ -90,5 +90,5 @@ easy-genomics:
         ## list and stores them in SSM; run costs are priced with them, falling back
         ## to the rates baked into the release. Omit this block to keep the defaults.
         #healthomics-rates-refresh:
-        #    enabled: true # false deploys no refresh Lambda or schedule
+        #    enabled: true # false: no refresh Lambda or schedule; costs use the release's baked rates
         #    schedule: 'cron(0 6 ? * MON *)' # any EventBridge cron() or rate() expression

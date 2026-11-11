@@ -204,6 +204,26 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     expect(triggerConfig.environment.SQS_LABORATORY_RUN_NOTIFICATION_QUEUE_URL).toBe('https://sqs/run-notify');
   });
 
+  it.each([
+    [undefined, 'true'],
+    [{ enabled: true }, 'true'],
+    [{ enabled: false }, 'false'],
+  ])('tells cost capture whether the rate refresh is on (%j)', (healthomicsRatesRefresh, expected) => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', {
+      ...createProps(),
+      healthomicsRatesRefresh,
+    });
+
+    const lambdaConstructMock = LambdaConstruct as unknown as jest.Mock;
+    const lambdaProps = lambdaConstructMock.mock.calls[lambdaConstructMock.mock.calls.length - 1][2];
+    const captureConfig =
+      lambdaProps.lambdaFunctionsResources['/easy-genomics/laboratory/run/process-update-laboratory-run'];
+
+    expect(captureConfig.environment.HEALTHOMICS_RATES_REFRESH_ENABLED).toBe(expected);
+  });
+
   it('wires the run-export queue into the request and process lambdas', () => {
     const app = new App();
     const parentStack = new Stack(app, 'parent-stack');

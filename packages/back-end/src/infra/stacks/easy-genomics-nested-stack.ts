@@ -353,6 +353,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
             SQS_LABORATORY_RUN_NOTIFICATION_QUEUE_URL:
               this.sqs.sqsQueues.get('laboratory-run-notification-queue')?.queueUrl || '',
             SQS_KEY_OUTPUT_DELIVERY_QUEUE_URL: this.sqs.sqsQueues.get('key-output-delivery-queue')?.queueUrl || '',
+            HEALTHOMICS_RATES_REFRESH_ENABLED: String(this.props.healthomicsRatesRefresh?.enabled !== false),
           },
         },
         // Async classifier consumer for FAILED runs. Idempotent (skips runs that already

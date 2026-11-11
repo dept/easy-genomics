@@ -81,6 +81,11 @@ export class HealthOmicsRatesService {
    * Never throws.
    */
   public getRates = async (region: string): Promise<HealthOmicsRegionRates | undefined> => {
+    // With the refresh off, a parameter left from an earlier refresh would never be updated again and
+    // would outrank the newer table each release bakes in.
+    if (process.env.HEALTHOMICS_RATES_REFRESH_ENABLED === 'false') {
+      return HEALTHOMICS_RATES_BY_REGION[region];
+    }
     if (this.cached?.region === region && Date.now() < this.cached.expiresAt) {
       return this.cached.rates;
     }

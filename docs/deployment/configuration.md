@@ -63,10 +63,10 @@ downloads those rates from AWS's public price list and stores them in the SSM pa
 `/<name-prefix>/healthomics-rates/current`. When that parameter is missing or unusable, costs are priced with the rates
 baked into the release.
 
-| Setting                              | Default               | Meaning                                                     |
-| ------------------------------------ | --------------------- | ----------------------------------------------------------- |
-| `healthomics-rates-refresh.enabled`  | `true`                | `false` deploys no refresh Lambda or schedule               |
-| `healthomics-rates-refresh.schedule` | `cron(0 6 ? * MON *)` | Any EventBridge `cron(...)` or `rate(...)` expression (UTC) |
+| Setting                              | Default               | Meaning                                                                                                                                   |
+| ------------------------------------ | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `healthomics-rates-refresh.enabled`  | `true`                | `false` deploys no refresh Lambda or schedule, and run costs use the rates baked into the release, even if an earlier refresh stored some |
+| `healthomics-rates-refresh.schedule` | `cron(0 6 ? * MON *)` | Any EventBridge `cron(...)` or `rate(...)` expression (UTC)                                                                               |
 
 CI deployments set the same values with `HEALTHOMICS_RATES_REFRESH_ENABLED` and `HEALTHOMICS_RATES_REFRESH_SCHEDULE`.
 
