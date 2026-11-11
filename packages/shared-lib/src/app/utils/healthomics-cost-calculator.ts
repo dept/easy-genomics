@@ -8,8 +8,9 @@
  *   cancellation or failure" (https://aws.amazon.com/healthomics/pricing/).
  *   A task with no start or stop time never ran and costs nothing.
  *
- * Rates come from `healthomics-rates.generated.ts`, regenerated from AWS's public
- * price list by `pnpm run generate:healthomics-rates`. A region missing from it
+ * Callers may pass a region's rates directly (the deployment's refreshed rates).
+ * Otherwise rates come from `healthomics-rates.generated.ts`, regenerated from AWS's
+ * public price list by `pnpm run generate:healthomics-rates`. A region missing from it
  * falls back to us-east-1 rates, and an instance type missing from it adds $0;
  * both are logged. Enterprise discounts are not reflected.
  */
@@ -67,8 +68,9 @@ export function calculateHealthOmicsComputeCostUsd(
   tasks: OmicsRunTaskLike[],
   region: string = DEFAULT_REGION,
   runId?: string,
+  regionRates?: HealthOmicsRegionRates,
 ): number {
-  const rates = resolveRegionRates(region, runId);
+  const rates = regionRates ?? resolveRegionRates(region, runId);
   const unpricedTaskCounts = new Map<string, number>();
   let total = 0;
   for (const task of tasks) {
@@ -101,6 +103,7 @@ export function calculateHealthOmicsStorageCostUsd(
   run: OmicsRunStorageLike,
   region: string = DEFAULT_REGION,
   runId?: string,
+  regionRates?: HealthOmicsRegionRates,
 ): number | undefined {
   const capacity = run.storageCapacity;
   if (capacity == null || capacity <= 0) return undefined;
@@ -111,7 +114,7 @@ export function calculateHealthOmicsStorageCostUsd(
   const hours = (stopMs - startMs) / (1000 * 3600);
   if (hours <= 0) return undefined;
 
-  const rates = resolveRegionRates(region, runId).runStorageGbHourUsd;
+  const rates = (regionRates ?? resolveRegionRates(region, runId)).runStorageGbHourUsd;
   const storageType = (run.storageType || 'DYNAMIC').toUpperCase();
 
   let cost: number;

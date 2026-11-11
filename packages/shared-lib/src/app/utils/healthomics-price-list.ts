@@ -1,16 +1,21 @@
 /**
  * Reads HealthOmics private-workflow rates out of one region's file in AWS's
  * public price list (`.../offers/v1.0/aws/AmazonOmics/current/<region>/index.json`).
- * Used only by `generate-healthomics-rates.ts`; the deployed app reads the
- * generated table and never fetches prices.
+ * Used by `generate-healthomics-rates.ts` to bake the fallback table, and by the
+ * back-end's weekly refresh to keep a deployment's own region current.
  */
+import { z } from 'zod';
 
-export type HealthOmicsRegionRates = {
-  publicationDate: string;
-  sourceUrl: string;
-  instanceHourlyUsd: Record<string, number>;
-  runStorageGbHourUsd: { STATIC: number; DYNAMIC: number };
-};
+const NonNegativeUsd = z.number().finite().nonnegative();
+
+export const HealthOmicsRegionRatesSchema = z.object({
+  publicationDate: z.string().min(1),
+  sourceUrl: z.string().min(1),
+  instanceHourlyUsd: z.record(z.string(), NonNegativeUsd),
+  runStorageGbHourUsd: z.object({ STATIC: NonNegativeUsd, DYNAMIC: NonNegativeUsd }),
+});
+
+export type HealthOmicsRegionRates = z.infer<typeof HealthOmicsRegionRatesSchema>;
 
 // Usage types are prefixed with a region code, e.g. `USW2-`.
 const INSTANCE_USAGE_TYPE = /^[A-Z0-9]+-WorkflowType:Private-(omics\.[\w.]+)-hours$/;
