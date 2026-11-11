@@ -901,6 +901,24 @@ describe('process-update-laboratory-run.lambda', () => {
       expect(costMessages()).toHaveLength(0);
     });
 
+    it('does not send an already-terminal run whose cost capture gave up', async () => {
+      mockQueryByRunId.mockResolvedValue({
+        ...runningRun,
+        Status: 'COMPLETED',
+        TerminalAt: '2026-01-01T00:00:00Z',
+        RunDurationSeconds: 100,
+        NotifiedAt: '2026-01-01T00:00:00Z',
+        RunCostCaptureFailedAt: '2026-01-02T00:00:00Z',
+        RunCostCaptureError: 'run not found on the platform',
+      });
+      mockGetRun.mockResolvedValue({ status: 'COMPLETED' } as any);
+
+      await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
+
+      expect(costMessages()).toHaveLength(0);
+      expect(mockUpdateRun).not.toHaveBeenCalled();
+    });
+
     it('logs a failed send with the RunId and still updates the status and notifies', async () => {
       const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
       mockQueryByRunId.mockResolvedValue(runningRun);

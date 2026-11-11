@@ -50,6 +50,8 @@ export const AnalysisHistoryEntrySchema = z.object({
 
 export type AnalysisHistoryEntry = z.infer<typeof AnalysisHistoryEntrySchema>;
 
+export const RUN_COST_CAPTURE_ERROR_MAX_LENGTH = 500;
+
 const laboratoryRunCostFields = {
   /** Pre-run input features for historical cost similarity matching. */
   RunInputProfile: RunInputProfileSchema.optional(),
@@ -59,6 +61,13 @@ const laboratoryRunCostFields = {
   RunCostOutcome: RunCostOutcomeSchema.optional(),
   /** AWS Cost Explorer billed cost synced ~24–48h after completion. */
   BilledCost: BilledCostSchema.optional(),
+  /**
+   * ISO timestamp set when cost capture gave up on its last attempt. The status check stops
+   * re-sending a run that carries it; a later successful capture removes it.
+   */
+  RunCostCaptureFailedAt: z.string().optional(),
+  /** Why the last cost capture attempt failed. */
+  RunCostCaptureError: z.string().max(RUN_COST_CAPTURE_ERROR_MAX_LENGTH).optional(),
 };
 
 const microreactExportFields = {

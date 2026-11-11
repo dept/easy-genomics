@@ -3,6 +3,7 @@ import { Match, Template } from 'aws-cdk-lib/assertions';
 import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import { LambdaConstruct } from '../../../src/infra/constructs/lambda-construct';
 import { UsageNestedStack } from '../../../src/infra/stacks/usage-nested-stack';
+import { RUN_COST_CAPTURE_MAX_RECEIVE_COUNT } from '../../../src/infra/utils/run-cost-capture-queue';
 
 jest.mock('aws-cdk-lib/aws-lambda-event-sources', () => ({
   SqsEventSource: jest.fn().mockImplementation(() => ({})),
@@ -87,7 +88,7 @@ describe('UsageNestedStack', () => {
         QueueName: 'test-run-cost-capture-queue.fifo',
         FifoQueue: true,
         VisibilityTimeout: 900,
-        RedrivePolicy: Match.objectLike({ maxReceiveCount: 3 }),
+        RedrivePolicy: Match.objectLike({ maxReceiveCount: RUN_COST_CAPTURE_MAX_RECEIVE_COUNT }),
       });
     });
 
