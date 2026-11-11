@@ -1,5 +1,6 @@
 import { App, Stack } from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
+import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import { IamConstruct } from '../../../src/infra/constructs/iam-construct';
 import { LambdaConstruct } from '../../../src/infra/constructs/lambda-construct';
 import { SesConstruct } from '../../../src/infra/constructs/ses-construct';
@@ -189,6 +190,30 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     expect(notificationQueueConfig.fifo).toBe(true);
     expect(notificationQueueConfig.deadLetterQueue).toBeDefined();
     expect(notificationQueueConfig.deadLetterQueue.maxReceiveCount).toBe(3);
+  });
+
+  it('gives the run status update queue a FIFO dead-letter queue and reports batch item failures', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    const nestedStack = new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const sqsProps = (SqsConstruct as unknown as jest.Mock).mock.calls[0][2];
+    const updateQueueConfig = sqsProps.queues['laboratory-run-update-queue'];
+    expect(updateQueueConfig.deadLetterQueue.maxReceiveCount).toBe(3);
+    expect(updateQueueConfig.deadLetterQueue.queue).toBe(nestedStack.laboratoryRunUpdateDlq);
+    Template.fromStack(nestedStack).hasResourceProperties('AWS::SQS::Queue', {
+      QueueName: 'easy-genomics-laboratory-run-update-dlq.fifo',
+      FifoQueue: true,
+      MessageRetentionPeriod: 14 * 24 * 60 * 60,
+    });
+
+    const updateQueue = (SqsConstruct as unknown as jest.Mock).mock.results[0].value.sqsQueues.get(
+      'laboratory-run-update-queue',
+    );
+    const updateQueueEventSources = (SqsEventSource as unknown as jest.Mock).mock.calls.filter(
+      ([queue]) => queue === updateQueue,
+    );
+    expect(updateQueueEventSources).toEqual([[updateQueue, { batchSize: 5, reportBatchItemFailures: true }]]);
   });
 
   it('wires the new notification queue URL into the existing process-update-laboratory-run lambda', () => {
