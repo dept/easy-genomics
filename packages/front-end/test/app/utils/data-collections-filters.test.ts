@@ -7,6 +7,8 @@ import {
   filterSamplesBySearch,
   formatRetentionExpiryLabel,
   isExpiringSoon,
+  sampleMatchesTagIds,
+  sidebarTagsForSamples,
   soonestExpiresAtForUsages,
 } from '../../../src/app/utils/data-collections-filters';
 
@@ -197,5 +199,38 @@ describe('filterSamplesBySearch', () => {
 
   it('returns empty when nothing matches', () => {
     expect(filterSamplesBySearch(samples, tags, 'no-match-here')).toEqual([]);
+  });
+});
+
+describe('sidebarTagsForSamples', () => {
+  const standardTag = tag('tag-1', 'Cohort');
+  const permanent = tag('perm-1', 'Permanent', 'permanent');
+  const batch = tag('batch-1', 'Run-1', 'batch');
+
+  it('hides Permanent until a sample in the list is permanent', () => {
+    expect(sidebarTagsForSamples([standardTag, permanent, batch], [sample('s1', 'Alpha')])).toEqual([standardTag]);
+  });
+
+  it('appends Permanent when a sample is permanent', () => {
+    const kept = { ...sample('s1', 'Alpha'), IsPermanent: true };
+    expect(sidebarTagsForSamples([standardTag, permanent, batch], [kept, sample('s2', 'Beta')])).toEqual([
+      standardTag,
+      permanent,
+    ]);
+  });
+});
+
+describe('sampleMatchesTagIds', () => {
+  const kept = { ...sample('s1', 'Alpha'), IsPermanent: true };
+  const plain = sample('s2', 'Beta');
+
+  it('matches a permanent sample by IsPermanent, not by its standard tag ids', () => {
+    expect(sampleMatchesTagIds(kept, [], ['perm-1'], 'perm-1')).toBe(true);
+    expect(sampleMatchesTagIds(plain, [], ['perm-1'], 'perm-1')).toBe(false);
+  });
+
+  it('still matches a standard tag on its own or together with Permanent', () => {
+    expect(sampleMatchesTagIds(plain, ['tag-1'], ['tag-1', 'perm-1'], 'perm-1')).toBe(true);
+    expect(sampleMatchesTagIds(kept, [], ['tag-1', 'perm-1'], 'perm-1')).toBe(true);
   });
 });
