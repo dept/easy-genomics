@@ -9,7 +9,11 @@
   import EGSampleTagSidebar from '@FE/components/EGSampleTagSidebar.vue';
   import { useToastStore, useUiStore } from '@FE/stores';
   import { SAMPLE_LAYOUT_LABELS } from '@FE/utils/data-collections-selection';
-  import { filterSamplesBySearch, formatRetentionExpiryLabel } from '@FE/utils/data-collections-filters';
+  import {
+    filterSamplesBySearch,
+    formatRetentionExpiryLabel,
+    sampleMatchesTagIds,
+  } from '@FE/utils/data-collections-filters';
   import { exceedsTagNameMaxLength } from '@FE/utils/data-collections-name-validation';
 
   const props = withDefaults(
@@ -111,8 +115,9 @@
     if (props.tagsFilterUntagged) {
       list = list.filter((s) => !standardTagIdsForSet(s.SampleId).length);
     } else if (props.tagsFilterTagIds.length > 0) {
-      const selected = new Set(props.tagsFilterTagIds);
-      list = list.filter((s) => standardTagIdsForSet(s.SampleId).some((tid) => selected.has(tid)));
+      list = list.filter((s) =>
+        sampleMatchesTagIds(s, standardTagIdsForSet(s.SampleId), props.tagsFilterTagIds, permanentTag.value?.TagId),
+      );
     }
     return list;
   });

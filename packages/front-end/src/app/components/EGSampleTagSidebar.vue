@@ -5,7 +5,7 @@
   import EGDialog from '@FE/components/EGDialog.vue';
   import { useToastStore, useUiStore } from '@FE/stores';
   import { ButtonVariantEnum } from '@FE/types/buttons';
-  import { filterSamplesBySearch } from '@FE/utils/data-collections-filters';
+  import { filterSamplesBySearch, sidebarTagsForSamples } from '@FE/utils/data-collections-filters';
   import { exceedsTagNameMaxLength } from '@FE/utils/data-collections-name-validation';
 
   const props = defineProps<{
@@ -42,6 +42,19 @@
   const standardTags = computed(() => props.tags.filter((t) => (t.Kind ?? 'standard') === 'standard'));
 
   const setsMatchingSearch = computed(() => filterSamplesBySearch(props.samples, props.tags, props.search));
+
+  const sidebarTags = computed(() => sidebarTagsForSamples(props.tags, setsMatchingSearch.value));
+
+  const permanentSampleCount = computed(() => setsMatchingSearch.value.filter((s) => s.IsPermanent).length);
+
+  watch(permanentSampleCount, (count) => {
+    const permanentTagId = props.tags.find((t) => t.Kind === 'permanent')?.TagId;
+    if (!permanentTagId || count > 0 || !props.tagsFilterTagIds.includes(permanentTagId)) return;
+    emit(
+      'update:tagsFilterTagIds',
+      props.tagsFilterTagIds.filter((id) => id !== permanentTagId),
+    );
+  });
 
   function standardTagIdsForSet(setId: string): string[] {
     const tagIdSet = new Set(standardTags.value.map((t) => t.TagId));
@@ -223,7 +236,7 @@
           </UBadge>
         </button>
         <div
-          v-for="t in standardTags"
+          v-for="t in sidebarTags"
           :key="t.TagId"
           class="hover:bg-primary-muted group flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
           :class="{ 'bg-primary-muted font-medium': isStandardTagFilterActive(t.TagId) }"
@@ -231,9 +244,13 @@
         >
           <span class="flex min-w-0 items-center gap-2">
             <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: t.ColorHex }" />
-            <span class="flex min-w-0 items-center gap-0.5">
+            <span class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
               <span class="truncate">{{ t.Name }}</span>
+              <span v-if="t.Kind === 'permanent'" class="text-muted shrink-0 text-[10px] font-normal">
+                Protect from expiry
+              </span>
               <button
+                v-else
                 type="button"
                 class="text-muted hover:text-alert-danger-dark focus-visible:outline-primary shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-white/80 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 group-hover:opacity-100"
                 :aria-label="`Delete tag ${t.Name}`"
@@ -247,7 +264,7 @@
             size="xs"
             class="bg-primary-muted text-primary-dark shrink-0 rounded-xl border-0 font-serif tabular-nums ring-0"
           >
-            {{ standardTagIdToChipCount[t.TagId] ?? 0 }}
+            {{ t.Kind === 'permanent' ? permanentSampleCount : (standardTagIdToChipCount[t.TagId] ?? 0) }}
           </UBadge>
         </div>
 
