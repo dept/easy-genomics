@@ -163,12 +163,6 @@ importers:
       '@aws-crypto/client-node':
         specifier: ^4.2.0
         version: 4.2.4
-      '@aws-crypto/decrypt-node':
-        specifier: ^4.2.0
-        version: 4.2.0
-      '@aws-crypto/encrypt-node':
-        specifier: ^4.2.0
-        version: 4.2.4
       '@aws-sdk/client-bedrock-runtime':
         specifier: 3.782.0
         version: 3.782.0
@@ -463,7 +457,7 @@ importers:
         version: 3.4.19(tsx@4.23.15)(yaml@2.9.1)
       unplugin-vue-components:
         specifier: ^0.28.0
-        version: 0.28.0(@babel/parser@7.29.13)(@nuxt/kit@3.21.11(magicast@0.5.5))(rollup@4.62.2)(vue@3.5.44(typescript@5.9.3))
+        version: 0.28.0(@babel/parser@7.29.14)(@nuxt/kit@3.21.11(magicast@0.5.5))(rollup@4.62.2)(vue@3.5.44(typescript@5.9.3))
       uuid:
         specifier: '>=11.1.1 <12.0.0'
         version: 11.1.1
@@ -759,17 +753,11 @@ packages:
     resolution: {integrity: sha512-nLbCWqQNgUiwwtFsen1AdzAtvuLRsQS8rYgMuxCrdKf9kOssamGLuPwyTY9wyYblNr9+1XM8v6zoDTPPSIeANg==}
     engines: {node: '>=16.0.0'}
 
-  '@aws-crypto/decrypt-node@4.2.0':
-    resolution: {integrity: sha512-fdi88gr0FtP/2vmweiWrDMsumx+r70oCglWJRjJpg5VvbmEFsHD2WxDiGRrrCnrBiUoIoXFs7uATRq00E2vvKw==}
-
   '@aws-crypto/decrypt-node@4.2.4':
     resolution: {integrity: sha512-gu5EFL/3sRg7af+v2u3WMKQ/lYUkAGYqpq6xeM9VhSLZXU1qanDRwZGvP6KWmcqpSt6tYWPwPwuxNnalaKZjTA==}
 
   '@aws-crypto/encrypt-node@4.2.4':
     resolution: {integrity: sha512-Yb2Y1qaE0nY9O3NvSgzkekCJX46aAz+bYzO4P8x7xQYuB36DUHXKe4iix3w5MfZU4rwLjBCIQYNvjTHtPrfLWA==}
-
-  '@aws-crypto/hkdf-node@4.0.0':
-    resolution: {integrity: sha512-FytH3TF9c0OP+vnicc4YJoxoFoLajdRzzuRchDHmh4yXk32lj/HzgXGPfj+kSyy0chkh4XVONh2/zMRmqsA/hQ==}
 
   '@aws-crypto/hkdf-node@4.2.4':
     resolution: {integrity: sha512-ZxLFLKey0Zj1gWapH0+XMbYfn7og3U/Julb5bsJvMZ4JXexoUAvlu+IkkT8BU8Zw175GmqObKg5I+pP9LESJ/g==}
@@ -783,14 +771,8 @@ packages:
   '@aws-crypto/kms-keyring@4.2.4':
     resolution: {integrity: sha512-JGR38rBepH+eeUcdx021ZBQHGhBrZvPWJLX+OgLh43IQyqepT5cUPWlJNxBCR1YvVL7/rn0iOVutnvKrV8XKGQ==}
 
-  '@aws-crypto/material-management-node@4.2.0':
-    resolution: {integrity: sha512-7AaQM7ovVKAURG7xpRK+mXkd/f8WKx3PPWlLrU93Uwg2rHZkL9jOKvYrkc8sfYSLxMzQ4jFYx/h6c9FSCUv7bw==}
-
   '@aws-crypto/material-management-node@4.2.4':
     resolution: {integrity: sha512-XtktACylZRE21bcAi59M/wZTjlZxeQdj5CrFfOCmxiewle3L5gePAXUTjXQ4sr3JByjhQrUSNdVJQjE8rxSCVg==}
-
-  '@aws-crypto/material-management@4.2.0':
-    resolution: {integrity: sha512-6TB629HsI/Wlo3LvT854TZS3naIQ63QEmzmhBdezbA05IqPBqamK8Y/UwPBhI47rdk6vm8oOKjC4AntqYdcZ+A==}
 
   '@aws-crypto/material-management@4.2.4':
     resolution: {integrity: sha512-wCot8jAhy0tTW+9yMXDCIGG8qMEBVnu1r/YaqxNMe4AoaK2F2fRX4/8SiGg/SukaG+UOyC0mrEdZwqJZSIgZVw==}
@@ -803,9 +785,6 @@ packages:
 
   '@aws-crypto/raw-rsa-keyring-node@4.2.4':
     resolution: {integrity: sha512-0UJ3mAmn2bXBJufJPJq123aQ85quvF+fJ8x2MLrL0pqXKX2tEyYQUkW4vw0b5crHHXuUqDuUFBvIVvRGmtGkQA==}
-
-  '@aws-crypto/serialize@4.2.0':
-    resolution: {integrity: sha512-FSCxVux4KAV0NV6AOA6ZmBARlxeiavQr2O9ILr6nGzw9DSYvGyy9zYwri1gBsGOGUbJ3mWPFtmb0zonFAwGYuA==}
 
   '@aws-crypto/serialize@4.2.4':
     resolution: {integrity: sha512-y8EU4ahcR3Plhpycgd4GH754SKOEb88A18AUS3i0erIgx2fnL0xXITNUgG791INv1ge41L6l3O9fzMX25kL2Vg==}
@@ -1345,11 +1324,6 @@ packages:
 
   '@babel/parser@7.29.12':
     resolution: {integrity: sha512-WJ7JBp/Q4+z/ImydtI7jS6NVco5++632ExBemSX+Ysb+G1lCwQ5BVo3SY+jGGOcZXI4ZccbZSUSJLNBW6eEpJg==}
-    engines: {node: '>=6.0.0'}
-    hasBin: true
-
-  '@babel/parser@7.29.13':
-    resolution: {integrity: sha512-fJM50YYjlTiBhgdkGmC1tBpv+FMAyo4annf2X6Aks+0yRlaiVkYW/3f07xAfVVkYIoZ9fFZp+mEThUFnuybhkQ==}
     engines: {node: '>=6.0.0'}
     hasBin: true
 
@@ -4502,9 +4476,6 @@ packages:
   '@types/cors@2.8.19':
     resolution: {integrity: sha512-mFNylyeyqN93lfe/9CSxOGREz8cpzAhH+E93xJ4xWQf62V8sQ/24reV2nyzUWM6H6Xji+GGHpkbLe7pVoUEskg==}
 
-  '@types/duplexify@3.6.4':
-    resolution: {integrity: sha512-2eahVPsd+dy3CL6FugAzJcxoraWhUghZGEQJns1kTKfCXWKJ5iG/VkaB05wRVrDKHfOFKqb0X0kXh91eE99RZg==}
-
   '@types/duplexify@3.6.5':
     resolution: {integrity: sha512-fB56ACzlW91UdZ5F3VXplVMDngO8QaX5Y2mjvADtN01TT2TMy4WjF0Lg+tFDvt4uMBeTe4SgaD+qCrA7dL5/tA==}
 
@@ -5606,9 +5577,6 @@ packages:
 
   bl@4.1.0:
     resolution: {integrity: sha512-1W07cM9gS6DcLperZfFSj+bWLtaPGSOHWhPiGzXmvVJbRLdG82sH/Kn8EtW1VqWVA54AKf2h5k5BbnIbwF3h6w==}
-
-  bn.js@5.2.4:
-    resolution: {integrity: sha512-QL7sb18rJ1PbdsKsqPA0guxL563vIMwRHgzNrW/uzQuRGN1Cjqd/wonUBAVqHox9KwzHA6vCbM0lXx3k4iQMow==}
 
   bn.js@5.2.5:
     resolution: {integrity: sha512-Vq886eXykuP5E6HcKSSStP3bJgrE6In5WKxVUvJ8XGpWWYs2xZHWqUwzCtGgEtBcxyd57KBFDPFoUfNzdaHCNg==}
@@ -12552,15 +12520,6 @@ snapshots:
       '@aws-sdk/types': 3.975.0
       tslib: 2.8.1
 
-  '@aws-crypto/decrypt-node@4.2.0':
-    dependencies:
-      '@aws-crypto/material-management-node': 4.2.0
-      '@aws-crypto/serialize': 4.2.0
-      '@types/duplexify': 3.6.4
-      duplexify: 4.1.3
-      readable-stream: 3.6.2
-      tslib: 2.8.1
-
   '@aws-crypto/decrypt-node@4.2.4':
     dependencies:
       '@aws-crypto/material-management-node': 4.2.4
@@ -12577,10 +12536,6 @@ snapshots:
       '@types/duplexify': 3.6.5
       duplexify: 4.1.3
       readable-stream: 3.6.2
-      tslib: 2.8.1
-
-  '@aws-crypto/hkdf-node@4.0.0':
-    dependencies:
       tslib: 2.8.1
 
   '@aws-crypto/hkdf-node@4.2.4':
@@ -12608,26 +12563,12 @@ snapshots:
       '@aws-crypto/material-management': 4.2.4
       tslib: 2.9.1
 
-  '@aws-crypto/material-management-node@4.2.0':
-    dependencies:
-      '@aws-crypto/hkdf-node': 4.0.0
-      '@aws-crypto/material-management': 4.2.0
-      '@aws-crypto/serialize': 4.2.4
-      tslib: 2.8.1
-
   '@aws-crypto/material-management-node@4.2.4':
     dependencies:
       '@aws-crypto/hkdf-node': 4.2.4
       '@aws-crypto/material-management': 4.2.4
       '@aws-crypto/serialize': 4.2.4
       tslib: 2.9.1
-
-  '@aws-crypto/material-management@4.2.0':
-    dependencies:
-      asn1.js: 5.4.1
-      bn.js: 5.2.4
-      tslib: 2.8.1
-      uuid: 11.1.1
 
   '@aws-crypto/material-management@4.2.4':
     dependencies:
@@ -12654,14 +12595,6 @@ snapshots:
       '@aws-crypto/material-management-node': 4.2.4
       '@aws-crypto/raw-keyring': 4.2.4
       tslib: 2.9.1
-
-  '@aws-crypto/serialize@4.2.0':
-    dependencies:
-      '@aws-crypto/material-management': 4.2.0
-      asn1.js: 5.4.1
-      bn.js: 5.2.4
-      tslib: 2.8.1
-      uuid: 11.1.1
 
   '@aws-crypto/serialize@4.2.4':
     dependencies:
@@ -13941,11 +13874,6 @@ snapshots:
   '@babel/parser@7.29.12':
     dependencies:
       '@babel/types': 7.29.11
-
-  '@babel/parser@7.29.13':
-    dependencies:
-      '@babel/types': 7.29.14
-    optional: true
 
   '@babel/parser@7.29.14':
     dependencies:
@@ -18235,10 +18163,6 @@ snapshots:
     dependencies:
       '@types/node': 24.13.1
 
-  '@types/duplexify@3.6.4':
-    dependencies:
-      '@types/node': 20.17.30
-
   '@types/duplexify@3.6.5':
     dependencies:
       '@types/node': 20.17.30
@@ -19690,8 +19614,6 @@ snapshots:
       buffer: 5.7.1
       inherits: 2.0.4
       readable-stream: 3.6.2
-
-  bn.js@5.2.4: {}
 
   bn.js@5.2.5: {}
 
@@ -27283,7 +27205,7 @@ snapshots:
       pathe: 2.0.3
       picomatch: 4.0.7
 
-  unplugin-vue-components@0.28.0(@babel/parser@7.29.13)(@nuxt/kit@3.21.11(magicast@0.5.5))(rollup@4.62.2)(vue@3.5.44(typescript@5.9.3)):
+  unplugin-vue-components@0.28.0(@babel/parser@7.29.14)(@nuxt/kit@3.21.11(magicast@0.5.5))(rollup@4.62.2)(vue@3.5.44(typescript@5.9.3)):
     dependencies:
       '@antfu/utils': 0.7.10
       '@rollup/pluginutils': 5.1.4(rollup@4.62.2)
@@ -27297,7 +27219,7 @@ snapshots:
       unplugin: 2.3.0
       vue: 3.5.44(typescript@5.9.3)
     optionalDependencies:
-      '@babel/parser': 7.29.13
+      '@babel/parser': 7.29.14
       '@nuxt/kit': 3.21.11(magicast@0.5.5)
     transitivePeerDependencies:
       - rollup
