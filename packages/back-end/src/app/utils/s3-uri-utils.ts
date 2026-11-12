@@ -11,6 +11,9 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 /** Matches `buildSampleSheetFileName` output: `samplesheet.csv` or `samplesheet-{run name}.csv`. */
 const SAMPLE_SHEET_PATTERN = /^samplesheet[^/]*\.csv$/i;
 
+/** Run inputs the orphan pass may delete when no file row and no surviving run claims them. */
+const FASTQ_NAME = /^(?:.+\.)?(?:fastq|fq)(?:\.gz)?$/i;
+
 /**
  * Parses an `s3://bucket[/key]` URI by string split. The key may be empty, for callers that accept
  * a bucket-rooted location.
@@ -125,10 +128,11 @@ export function isBelowRunFolderRoot(
   laboratory: { OrganizationId: string; LaboratoryId: string },
   runId: string,
 ): boolean {
-  if (!isWithinRunFolder(prefix, laboratory, runId)) return false;
-  const marker = `/${runId}/`;
-  const tail = prefix.slice(prefix.indexOf(marker) + marker.length);
-  return tail.replace(/\/+$/, '').length > 0;
+  const folder = runFolderPrefix(prefix, laboratory, runId);
+  if (!folder) return false;
+  const normalized = normalizeS3Prefix(prefix);
+  if (!normalized.startsWith(folder)) return false;
+  return normalized.slice(folder.length).replace(/\/+$/, '').length > 0;
 }
 
 export function lastPathSegment(prefix: string): string {
@@ -140,9 +144,54 @@ export function isRunFolderName(name: string): boolean {
   return UUID_PATTERN.test(name);
 }
 
+/**
+ * `{org}/{lab}/{platform}/{runId}/` for a key or prefix inside that folder.
+ * The run id has to be the segment after the platform. Matching the first `/{runId}/` would
+ * return `{org}/{lab}/` when a run id equals the laboratory id.
+ */
+export function runFolderPrefix(
+  keyOrPrefix: string,
+  laboratory: { OrganizationId: string; LaboratoryId: string },
+  runId: string,
+): string | undefined {
+  if (!runId || !laboratory.OrganizationId || !laboratory.LaboratoryId || !keyOrPrefix) return undefined;
+  const lab = laboratoryPrefix(laboratory);
+  const normalized = keyOrPrefix.endsWith('/') ? keyOrPrefix : `${keyOrPrefix}/`;
+  if (!normalized.startsWith(lab)) return undefined;
+  const segments = normalized.slice(lab.length).split('/');
+  if (!segments[0] || segments[1] !== runId) return undefined;
+  return `${lab}${segments[0]}/${runId}/`;
+}
+
+/** First candidate that sits inside `{org}/{lab}/{platform}/{runId}/`. */
+export function runFolderPrefixFrom(
+  candidates: Array<string | undefined>,
+  laboratory: { OrganizationId: string; LaboratoryId: string },
+  runId: string,
+): string | undefined {
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const folder = runFolderPrefix(candidate, laboratory, runId);
+    if (folder) return folder;
+  }
+  return undefined;
+}
+
+/** True for a FASTQ sitting directly at the run folder root, not under `results/`. */
+export function isRunFolderFastqKey(
+  key: string,
+  laboratory: { OrganizationId: string; LaboratoryId: string },
+  runId: string,
+): boolean {
+  const folder = runFolderPrefix(key, laboratory, runId);
+  if (!folder || !key.startsWith(folder)) return false;
+  const relative = key.slice(folder.length);
+  return !relative.includes('/') && FASTQ_NAME.test(relative);
+}
+
 /** True for a generated sample sheet sitting directly at the run folder root (not in a subfolder). */
-export function isSampleSheetKey(key: string, runFolderPrefix: string): boolean {
-  if (!key.startsWith(runFolderPrefix)) return false;
-  const relative = key.slice(runFolderPrefix.length);
+export function isSampleSheetKey(key: string, folder: string): boolean {
+  if (!key.startsWith(folder)) return false;
+  const relative = key.slice(folder.length);
   return !relative.includes('/') && SAMPLE_SHEET_PATTERN.test(relative);
 }
