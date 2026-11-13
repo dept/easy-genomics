@@ -50,6 +50,9 @@ export interface BackEndStackProps extends BaseStackProps {
   // AWS Cost Explorer billed per-run cost sync. When true, CDK deploys the
   // daily process-sync-run-costs Lambda + CE IAM. Defaults to false / undefined (off).
   costExplorerEnabled?: boolean;
+  // Weekly HealthOmics rate refresh. Unset fields take the usage stack's defaults
+  // (enabled, Mondays 06:00 UTC).
+  healthomicsRatesRefresh?: { enabled?: boolean; schedule?: string };
 }
 
 // Defines Test User Accounts to provision for DevEnv deployments

@@ -1,4 +1,5 @@
-import { parseHealthOmicsPriceList } from './healthomics-price-list';
+import { HealthOmicsRegionRatesSchema, parseHealthOmicsPriceList } from './healthomics-price-list';
+import { HEALTHOMICS_RATES_BY_REGION } from './healthomics-rates.generated';
 
 const SOURCE_URL = 'https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonOmics/current/us-west-2/index.json';
 
@@ -60,5 +61,24 @@ describe('parseHealthOmicsPriceList', () => {
 
   it('refuses something that is not a price list', () => {
     expect(() => parseHealthOmicsPriceList({ hello: 'world' }, SOURCE_URL)).toThrow(SOURCE_URL);
+  });
+});
+
+describe('HealthOmicsRegionRatesSchema', () => {
+  const usWest2 = HEALTHOMICS_RATES_BY_REGION['us-west-2'];
+
+  it.each(Object.keys(HEALTHOMICS_RATES_BY_REGION))('accepts the generated rates for %s', (region) => {
+    expect(HealthOmicsRegionRatesSchema.safeParse(HEALTHOMICS_RATES_BY_REGION[region]).success).toBe(true);
+  });
+
+  it('rejects rates with no instance prices field', () => {
+    const withoutInstances: Partial<typeof usWest2> = { ...usWest2 };
+    delete withoutInstances.instanceHourlyUsd;
+    expect(HealthOmicsRegionRatesSchema.safeParse(withoutInstances).success).toBe(false);
+  });
+
+  it('rejects a negative price', () => {
+    const negative = { ...usWest2, instanceHourlyUsd: { ...usWest2.instanceHourlyUsd, 'omics.c.large': -1 } };
+    expect(HealthOmicsRegionRatesSchema.safeParse(negative).success).toBe(false);
   });
 });
