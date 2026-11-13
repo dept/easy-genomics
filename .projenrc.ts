@@ -392,8 +392,6 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
   },
   deps: [
     '@aws-crypto/client-node',
-    '@aws-crypto/decrypt-node',
-    '@aws-crypto/encrypt-node',
     '@aws-sdk/client-bedrock-runtime@3.782.0',
     '@aws-sdk/client-cloudformation@^3.786.0',
     '@aws-sdk/client-cloudwatch-logs@3.782.0',
