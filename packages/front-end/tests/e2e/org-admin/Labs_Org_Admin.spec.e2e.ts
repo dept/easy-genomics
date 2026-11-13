@@ -165,7 +165,7 @@ test('03 - Create a Laboratory Successfully', async ({ page, baseURL }) => {
   await page.getByPlaceholder('Enter lab name (required and').fill('Playwright test lab');
   await page.getByPlaceholder('Describe your lab and what').click();
   await page.getByPlaceholder('Describe your lab and what').fill('Playwright test lab description');
-  await page.getByLabel('Default S3 bucket directory').click();
+  await page.getByLabel('Default S3 bucket').click();
   await page.getByText(envConfig.testS3Url).click();
   // Seqera is soft-deprecated for new labs: the "Enable Seqera Integration" toggle is not
   // offered here, so nothing to check/fill.
