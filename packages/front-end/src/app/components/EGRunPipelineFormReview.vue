@@ -3,7 +3,6 @@
   import EGAccordion from '@FE/components/EGAccordion.vue';
   import { ButtonSizeEnum } from '@FE/types/buttons';
   import { Pipeline as SeqeraPipeline } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
-  import type { EstimateRunCostResponse } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
 
   const props = defineProps<{
     schema: object;
@@ -22,8 +21,6 @@
   const labName = labsStore.labs[props.labId]?.Name ?? '';
   const labNextFlowTowerApiBaseUrl = labsStore.labs[props.labId]?.NextFlowTowerApiBaseUrl ?? '';
   const isLaunchingRun = ref(false);
-  const costEstimate = ref<EstimateRunCostResponse | null>(null);
-  const costEstimateLoading = ref(false);
   const emit = defineEmits(['submit-launch-request', 'submit-launch-request-error', 'has-launched', 'previous-tab']);
 
   const remountAccordionKey = ref(0);
@@ -47,23 +44,18 @@
 
   const schemaDefinitions = schema.$defs || schema.definitions;
 
-  onMounted(async () => {
-    costEstimateLoading.value = true;
-    try {
-      costEstimate.value = await $api.labs.estimateRunCost(props.labId, {
-        platform: 'Seqera Cloud',
-        workflowExternalId: props.pipelineId,
-        inputFileKeys: wipSeqeraRun.value?.inputFileKeys,
-        sampleSheetS3Url: (props.params as any)?.input,
-        settings: paramsFiltered,
-      });
-    } catch (error) {
-      console.warn('Pre-run cost estimate unavailable:', error);
-      costEstimate.value = null;
-    } finally {
-      costEstimateLoading.value = false;
-    }
-  });
+  const { costEstimate, costEstimateLoading, review, loadEstimate, handleLaunchError } = useRunLimitReview(
+    props.labId,
+    () => ({
+      platform: 'Seqera Cloud',
+      workflowExternalId: props.pipelineId,
+      inputFileKeys: wipSeqeraRun.value?.inputFileKeys,
+      sampleSheetS3Url: (props.params as any)?.input,
+      settings: paramsFiltered,
+    }),
+  );
+
+  onMounted(loadEstimate);
 
   async function launchRun() {
     emit('submit-launch-request');
@@ -108,7 +100,9 @@
         externalRunId = res.workflowId;
       } catch (error) {
         console.error('Error submitting run to Seqera:', error);
-        useToastStore().error('Failed to submit run to Seqera. Please try again.');
+        if (!(await handleLaunchError(error))) {
+          useToastStore().error('Failed to submit run to Seqera. Please try again.');
+        }
         emit('submit-launch-request-error');
         return;
       }
@@ -208,9 +202,11 @@
             {{ wipSeqeraRun.description }}
           </dd>
         </div>
+        <EGRunLimitRows :review="review" />
         <EGRunCostRow :estimate="costEstimate" :loading="costEstimateLoading" class="border-b" />
       </dl>
     </section>
+    <EGRunLimitMessage :message="review.message" class="mt-4" />
   </EGCard>
   <EGCard>
     <div class="mb-4 flex items-center justify-between">
@@ -243,7 +239,13 @@
 
   <div class="mt-6 flex justify-between">
     <EGButton :size="ButtonSizeEnum.enum.sm" variant="secondary" label="Previous step" @click="emit('previous-tab')" />
-    <EGButton :loading="isLaunchingRun" :size="ButtonSizeEnum.enum.sm" @click="launchRun" label="Launch Pipeline Run" />
+    <EGButton
+      :loading="isLaunchingRun"
+      :disabled="review.launchDisabled"
+      :size="ButtonSizeEnum.enum.sm"
+      @click="launchRun"
+      :label="review.launchAnyway ? 'Launch anyway' : 'Launch Pipeline Run'"
+    />
   </div>
 </template>
 

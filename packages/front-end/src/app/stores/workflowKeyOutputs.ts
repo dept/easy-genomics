@@ -3,6 +3,7 @@ import type {
   PreviewWorkflowKeyOutput,
   RunWorkflowKeyOutputsResponse,
   WorkflowKeyOutput,
+  WorkflowKeyOutputMicroreactDelivery,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
 import { defineStore } from 'pinia';
 
@@ -65,6 +66,29 @@ const useWorkflowKeyOutputsStore = defineStore('workflowKeyOutputsStore', {
       }
     },
 
+    /**
+     * Prefetch definitions for the workflows table Integrations column.
+     * Skips ids already cached; failures are logged only so one miss does not toast-spam the lab view.
+     */
+    async loadMany(laboratoryId: string, workflowIds: string[]): Promise<void> {
+      const { $api } = useNuxtApp();
+      const missing = [...new Set(workflowIds.filter(Boolean))].filter(
+        (workflowId) => !this.definitionsByWorkflow[cacheKey(laboratoryId, workflowId)],
+      );
+      if (missing.length === 0) return;
+
+      await Promise.all(
+        missing.map(async (workflowId) => {
+          try {
+            const definition = await $api.workflowKeyOutputs.list(laboratoryId, workflowId);
+            this.definitionsByWorkflow[cacheKey(laboratoryId, workflowId)] = definition;
+          } catch (error) {
+            console.error(`Unable to load key outputs for workflow ${workflowId}`, error);
+          }
+        }),
+      );
+    },
+
     async loadRunMatches(laboratoryId: string, runId: string): Promise<RunWorkflowKeyOutputsResponse | null> {
       const { $api } = useNuxtApp();
       useUiStore().setRequestPending('loadRunWorkflowKeyOutputs');
@@ -123,7 +147,7 @@ const useWorkflowKeyOutputsStore = defineStore('workflowKeyOutputsStore', {
     async saveDelivery(
       laboratoryId: string,
       workflowId: string,
-      delivery: { Enabled: boolean; DestinationUri?: string },
+      delivery: { Enabled: boolean; DestinationUri?: string; Microreact?: WorkflowKeyOutputMicroreactDelivery },
     ): Promise<boolean> {
       const { $api } = useNuxtApp();
       useUiStore().setRequestPending('saveWorkflowKeyOutputDelivery');
@@ -133,6 +157,7 @@ const useWorkflowKeyOutputsStore = defineStore('workflowKeyOutputsStore', {
           WorkflowId: workflowId,
           Enabled: delivery.Enabled,
           DestinationUri: delivery.DestinationUri,
+          Microreact: delivery.Microreact,
         });
         this.definitionsByWorkflow[cacheKey(laboratoryId, workflowId)] = {
           LaboratoryId: saved.LaboratoryId,
@@ -151,6 +176,24 @@ const useWorkflowKeyOutputsStore = defineStore('workflowKeyOutputsStore', {
         return false;
       } finally {
         useUiStore().setRequestComplete('saveWorkflowKeyOutputDelivery');
+      }
+    },
+
+    /** Queues a new Microreact project for a completed run. The run record carries the result. */
+    async requestMicroreactExport(laboratoryId: string, runId: string): Promise<boolean> {
+      const { $api } = useNuxtApp();
+      useUiStore().setRequestPending('requestMicroreactExport');
+      try {
+        await $api.workflowKeyOutputs.requestMicroreactExport({
+          LaboratoryId: laboratoryId,
+          RunId: runId,
+        });
+        return true;
+      } catch (error) {
+        toastFailure(error, 'Unable to send this run to Microreact.');
+        return false;
+      } finally {
+        useUiStore().setRequestComplete('requestMicroreactExport');
       }
     },
 

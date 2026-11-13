@@ -710,26 +710,24 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       // Stale usages stay on the row until the sweep deletes the object. Dropping the row here
       // would leave the S3 object with nothing pointing at it.
       const hasUsages = !!fileRow.LaboratoryRunUsages && Object.keys(fileRow.LaboratoryRunUsages).length > 0;
-      if (nextIds.length === 0 && !hasUsages) {
+      const hasSampleLinks = (fileRow.SampleIds || []).some((id) => id.length > 0);
+      const fileKey = marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) });
+      // A sample's permanent protection lives on SampleIds. UpdateItem only writes TagIds so a
+      // tag delete cannot drop that link, and the row stays while a sample still points at it.
+      if (nextIds.length === 0 && !hasUsages && !hasSampleLinks) {
         await this.deleteItem({
           TableName: TABLE_NAME,
-          Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
+          Key: fileKey,
         });
       } else {
-        await this.putItem({
+        await this.updateItem({
           TableName: TABLE_NAME,
-          Item: marshall(
-            {
-              LaboratoryId: laboratoryId,
-              Sk: skFile(ref),
-              S3Bucket: fileRow.S3Bucket,
-              ObjectKey: fileRow.ObjectKey,
-              TagIds: nextIds,
-              ...(hasUsages ? { LaboratoryRunUsages: fileRow.LaboratoryRunUsages } : {}),
-              ModifiedAt: new Date().toISOString(),
-            },
-            { removeUndefinedValues: true },
-          ),
+          Key: fileKey,
+          UpdateExpression: 'SET TagIds = :tids, ModifiedAt = :ma',
+          ExpressionAttributeValues: marshall({
+            ':tids': nextIds,
+            ':ma': new Date().toISOString(),
+          }),
         });
       }
     }
@@ -1177,6 +1175,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       S3Bucket: string;
       ObjectKey: string;
       TagIds: string[];
+      SampleIds?: string[];
       LaboratoryRunUsages?: Record<string, LaboratoryRunUsageSummary>;
     }>
   > {
@@ -1185,6 +1184,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       S3Bucket: string;
       ObjectKey: string;
       TagIds: string[];
+      SampleIds?: string[];
       LaboratoryRunUsages?: Record<string, LaboratoryRunUsageSummary>;
     }> = [];
 
@@ -1210,6 +1210,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
           S3Bucket: row.S3Bucket as string,
           ObjectKey: row.ObjectKey as string,
           TagIds: (row.TagIds as string[]) || [],
+          SampleIds: (row.SampleIds as string[]) || undefined,
           LaboratoryRunUsages: (row.LaboratoryRunUsages as Record<string, LaboratoryRunUsageSummary>) || undefined,
         });
       }
@@ -1353,6 +1354,36 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     return { Files: files, NextCursor: nextCursor };
   }
 
+  /** Samples whose row carries the system Permanent tag. One query; the retention sweep reads this. */
+  public async listPermanentSampleIds(laboratoryId: string): Promise<Set<string>> {
+    const permanentTagId = deterministicPermanentTagId(laboratoryId);
+    const ids = new Set<string>();
+    let startKey: Record<string, unknown> | undefined;
+    do {
+      const response: QueryCommandOutput = await this.queryItems({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: '#pk = :pk AND begins_with(#sk, :prefix)',
+        ExpressionAttributeNames: { '#pk': 'LaboratoryId', '#sk': 'Sk' },
+        ExpressionAttributeValues: {
+          ':pk': { S: laboratoryId },
+          ':prefix': { S: 'SAMPLE#' },
+        },
+        ...(startKey ? { ExclusiveStartKey: startKey as never } : {}),
+      });
+      for (const item of response.Items || []) {
+        const row = unmarshall(item) as Record<string, unknown>;
+        const tagIds = (row.TagIds as string[]) || [];
+        if (!tagIds.includes(permanentTagId)) continue;
+        const sampleId =
+          (typeof row.SampleId === 'string' && row.SampleId) ||
+          (typeof row.Sk === 'string' ? row.Sk.replace(/^SAMPLE#/, '') : '');
+        if (sampleId) ids.add(sampleId);
+      }
+      startKey = response.LastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (startKey);
+    return ids;
+  }
+
   public async applyTagsToFiles(
     laboratory: Laboratory,
     userId: string,
@@ -1420,34 +1451,9 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       }
 
       const now = new Date().toISOString();
-      // Stale usages stay on the row until the sweep deletes the object.
-      const hasUsages = !!existing?.LaboratoryRunUsages && Object.keys(existing.LaboratoryRunUsages).length > 0;
-      if (tagIds.size === 0) {
-        if (existing && !hasUsages) {
-          await this.deleteItem({
-            TableName: TABLE_NAME,
-            Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
-          });
-        } else if (existing && hasUsages) {
-          // Preserve run history even when all tags are removed from this file.
-          await this.putItem({
-            TableName: TABLE_NAME,
-            Item: marshall(
-              {
-                LaboratoryId: laboratoryId,
-                Sk: skFile(ref),
-                S3Bucket: bucket,
-                ObjectKey: key,
-                TagIds: [],
-                LaboratoryRunUsages: existing.LaboratoryRunUsages,
-                ModifiedAt: now,
-                ModifiedBy: userId,
-              },
-              { removeUndefinedValues: true },
-            ),
-          });
-        }
-      } else {
+      const fileKey = marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) });
+      if (!existing) {
+        if (tagIds.size === 0) continue;
         await this.putItem({
           TableName: TABLE_NAME,
           Item: marshall(
@@ -1457,14 +1463,34 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
               S3Bucket: bucket,
               ObjectKey: key,
               TagIds: [...tagIds],
-              ...(hasUsages ? { LaboratoryRunUsages: existing!.LaboratoryRunUsages } : {}),
               ModifiedAt: now,
               ModifiedBy: userId,
             },
             { removeUndefinedValues: true },
           ),
         });
+        continue;
       }
+      const hasUsages = !!existing.LaboratoryRunUsages && Object.keys(existing.LaboratoryRunUsages).length > 0;
+      const hasSampleLinks = (existing.SampleIds || []).some((id) => id.length > 0);
+      // UpdateItem writes TagIds only, so SampleIds and run usages on the existing row stay.
+      if (tagIds.size === 0 && !hasUsages && !hasSampleLinks) {
+        await this.deleteItem({
+          TableName: TABLE_NAME,
+          Key: fileKey,
+        });
+        continue;
+      }
+      await this.updateItem({
+        TableName: TABLE_NAME,
+        Key: fileKey,
+        UpdateExpression: 'SET TagIds = :tids, ModifiedAt = :ma, ModifiedBy = :mb',
+        ExpressionAttributeValues: marshall({
+          ':tids': [...tagIds],
+          ':ma': now,
+          ':mb': userId,
+        }),
+      });
     }
   }
 
@@ -1519,31 +1545,10 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       const now = new Date().toISOString();
       // Stale usages stay on the row until the sweep deletes the object.
       const hasUsages = !!existing?.LaboratoryRunUsages && Object.keys(existing.LaboratoryRunUsages).length > 0;
-      if (tagIds.size === 0) {
-        if (existing && !hasUsages) {
-          await this.deleteItem({
-            TableName: TABLE_NAME,
-            Key: marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) }),
-          });
-        } else if (existing && hasUsages) {
-          await this.putItem({
-            TableName: TABLE_NAME,
-            Item: marshall(
-              {
-                LaboratoryId: laboratoryId,
-                Sk: skFile(ref),
-                S3Bucket: bucket,
-                ObjectKey: key,
-                TagIds: [],
-                LaboratoryRunUsages: existing.LaboratoryRunUsages,
-                ModifiedAt: now,
-                ModifiedBy: userId,
-              },
-              { removeUndefinedValues: true },
-            ),
-          });
-        }
-      } else {
+      const hasSampleLinks = (existing?.SampleIds || []).some((id) => id.length > 0);
+      const fileKey = marshall({ LaboratoryId: laboratoryId, Sk: skFile(ref) });
+      if (!existing) {
+        if (tagIds.size === 0) continue;
         await this.putItem({
           TableName: TABLE_NAME,
           Item: marshall(
@@ -1553,14 +1558,32 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
               S3Bucket: bucket,
               ObjectKey: key,
               TagIds: [...tagIds],
-              ...(hasUsages ? { LaboratoryRunUsages: existing!.LaboratoryRunUsages } : {}),
               ModifiedAt: now,
               ModifiedBy: userId,
             },
             { removeUndefinedValues: true },
           ),
         });
+        continue;
       }
+      // UpdateItem writes TagIds only, so SampleIds and run usages on the existing row stay.
+      if (tagIds.size === 0 && !hasUsages && !hasSampleLinks) {
+        await this.deleteItem({
+          TableName: TABLE_NAME,
+          Key: fileKey,
+        });
+        continue;
+      }
+      await this.updateItem({
+        TableName: TABLE_NAME,
+        Key: fileKey,
+        UpdateExpression: 'SET TagIds = :tids, ModifiedAt = :ma, ModifiedBy = :mb',
+        ExpressionAttributeValues: marshall({
+          ':tids': [...tagIds],
+          ':ma': now,
+          ':mb': userId,
+        }),
+      });
     }
   }
 
@@ -1883,18 +1906,20 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     const add = addTagIds || [];
     const remove = removeTagIds || [];
 
+    const permanentAdd = new Set<string>();
+    const permanentRemove = new Set<string>();
     for (const tagId of add) {
       const t = await this.getTagRow(laboratoryId, tagId);
       if (!t) throw new Error(`Unknown tag: ${tagId}`);
       if (t.Kind === 'workflow') throw new Error('Workflow tags are auto-managed');
       if (t.Kind === 'batch') throw new Error('Batch tags are not supported on samples');
-      if (t.Kind === 'permanent') throw new Error('Permanent tags are system-managed');
+      if (t.Kind === 'permanent') permanentAdd.add(tagId);
     }
     for (const tagId of remove) {
       const t = await this.getTagRow(laboratoryId, tagId);
       if (!t) throw new Error(`Unknown tag: ${tagId}`);
       if (t.Kind === 'workflow') throw new Error('Workflow tags are auto-managed');
-      if (t.Kind === 'permanent') throw new Error('Permanent tags are system-managed');
+      if (t.Kind === 'permanent') permanentRemove.add(tagId);
     }
 
     for (const setId of sequenceSetIds) {
@@ -1909,7 +1934,7 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       const tagIds = new Set<string>((row.TagIds as string[]) || []);
 
       for (const rid of remove) {
-        if (tagIds.delete(rid)) {
+        if (tagIds.delete(rid) && !permanentRemove.has(rid)) {
           await this.deleteSequenceSetMapIfExists(laboratoryId, rid, setId);
           await this.adjustTagFileCount(laboratoryId, rid, -1);
         }
@@ -1918,8 +1943,11 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       for (const aid of add) {
         if (!tagIds.has(aid)) {
           tagIds.add(aid);
-          await this.putSequenceSetMapRow(laboratoryId, aid, setId);
-          await this.adjustTagFileCount(laboratoryId, aid, 1);
+          // Permanent stays on the sample row. File rows keep their own tag and SampleIds.
+          if (!permanentAdd.has(aid)) {
+            await this.putSequenceSetMapRow(laboratoryId, aid, setId);
+            await this.adjustTagFileCount(laboratoryId, aid, 1);
+          }
         }
       }
 

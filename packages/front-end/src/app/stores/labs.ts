@@ -1,5 +1,7 @@
+import type { UpdateLaboratoryRunLimits } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { defineStore } from 'pinia';
+import { extractApiErrorMessage } from '@FE/utils/api-utils';
 
 interface LabsStoreState {
   // indexed by labId
@@ -66,6 +68,21 @@ const useLabsStore = defineStore('labsStore', {
         if (!(await shouldSuppressLabLoadErrorToast())) {
           useToastStore().error('Failed to load labs. Please refresh.');
         }
+      }
+    },
+
+    /** Stores the lab the server returns; a failed save leaves the stored lab untouched. */
+    async updateRunLimits(labId: string, runLimits: UpdateLaboratoryRunLimits): Promise<boolean> {
+      const { $api } = useNuxtApp();
+
+      try {
+        const lab = await $api.labs.updateRunLimits(labId, runLimits);
+        this.labs[lab.LaboratoryId] = lab;
+        return true;
+      } catch (error) {
+        console.error('Failed to save lab run limits:', error);
+        useToastStore().error(extractApiErrorMessage(error) ?? 'Failed to save usage limits. Please try again.');
+        return false;
       }
     },
   },

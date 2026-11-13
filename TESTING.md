@@ -149,6 +149,36 @@ Run against a deployed environment with a completed HealthOmics run that has out
 - [ ] **E2E** — add a lab-manager Playwright spec: declare key outputs from a completed HealthOmics run, download from
       the panel, save a delivery destination.
 
+### Microreact export
+
+Sends declared key outputs to microreact.org as a private project (auto on run completion when enabled, or manual from
+the run Overview). Unit tests cover token missing/rejected, file-size and tree-count limits, role scrubbing, and
+enqueue. Not yet executed against a real Microreact account. Playwright E2E is outstanding.
+
+#### Manual steps
+
+Needs a lab with a Microreact API access token and a completed HealthOmics run that has a CSV/TSV metadata key output
+(and optionally Newick trees). Not yet executed.
+
+- [ ] **Token save** — org admin saves a Microreact token under Lab Settings → Connections; Token saved appears; Replace
+      token updates it; Remove token clears it after save.
+- [ ] **Integrations both targets** — enable Copy to S3 and Microreact with metadata (+ optional trees); save; both stay
+      on after reload.
+- [ ] **Integrations Microreact only** — enable Microreact alone; save; S3 stays off.
+- [ ] **Missing token warning** — with Microreact on and no lab token, Integrations shows the lab-settings warning.
+- [ ] **Auto-send** — with Microreact Enabled, a new completed HealthOmics run shows Sent to → Microreact with Open
+      project / Send again after delivery finishes.
+- [ ] **Manual send** — with metadata chosen but Enabled off, Overview shows Send to Microreact; it queues, polls, then
+      shows Sent with the project URL.
+- [ ] **Send again** — after a successful send, Send again creates another project (new URL).
+- [ ] **Rejected / missing token at send** — remove the token, then send; run records Failed with a clear message.
+- [ ] **No matching metadata file** — pattern matches nothing on the run; export fails with that message.
+- [ ] **Oversize files** — a matching file over 10 MB (or files totaling over 25 MB) fails without calling Microreact.
+- [ ] **Re-save key outputs keeps roles** — after Microreact roles are set, re-save the same output files; Metadata /
+      Trees and Enabled stay intact.
+- [ ] **E2E outstanding** — lab-manager Playwright: save token → configure Microreact delivery → completed run shows
+      Sent to Microreact (or mock the Microreact API in a future harness).
+
 ---
 
 ## Create HealthOmics workflow — preselected parameter file
@@ -406,3 +436,81 @@ change (`dynamodb:Scan`) is covered by the infra test, not by this run.
       from `update-laboratory`, which only allows organization admins. Existing behaviour, ticketed separately.
 - [x] **Clean up** — the grant is unticked and saved, and the test files are deleted from the drop bucket. The `S1`
       sample stays, since samples can't be deleted.
+
+---
+
+## Admin S3 and Workflow access — system admins can save the default toggles (EGV-347)
+
+On **Admin view → S3 access**, a system admin's save of **Enable new buckets by default** returned 403 "Unauthorized
+access", because the toggle saves through `update-laboratory`, which accepted only the lab's organization admin. The
+page's bucket grants save through `edit-s3-access-batch`, which already accepted system admins. **Workflow access**
+saves **Enable new workflows by default** through the same endpoint. `update-laboratory` now accepts a system admin or
+the organization admin of the lab's stored organization. Unit tests cover the system-admin path, the 403 for everyone
+else, and the check running against the stored `OrganizationId`.
+
+### Automated checks
+
+| Check                  | Result          |
+| ---------------------- | --------------- |
+| `pnpm lint` (back-end) | Passes          |
+| `pnpm test` (back-end) | 1378 tests pass |
+
+### Manual steps
+
+Run on 28 Oct 2026 by hand, against `development`'s local back-end and then the branch's (`dev-demo` stack). Signed in
+as the system-admin test user, in Influenza Genomics.
+
+- [x] **Reproduce on `development`** — S3 access, flip **Enable new buckets by default**, **Save all changes**. Returns
+      403 "Unauthorized access" and the toggle reverts on reload.
+- [x] **S3 default on the branch** — the same save succeeds, and the toggle keeps its new value after a reload.
+- [x] **Workflow default on the branch** — Workflow access, flip **Enable new workflows by default**, save, then flip it
+      back and save. No 403, and the toggle keeps its value after a reload.
+- [ ] **Quality** — on a lab with a whole-bucket grant, turn **Enable new buckets by default** off and on, saving each
+      time. The grant survives both saves.
+
+---
+
+## Keep permanently on samples and files (EGV-387)
+
+Permanent protection on a sample stays on the sample row. The retention sweep treats a file as permanent when that file's `SampleIds` includes a permanent sample, so tagging, deleting a tag, or setting a batch must not drop those links. The Files tab lock and expiry come from the data-collections store.
+
+Not yet verified by hand. No E2E test was added.
+
+### Manual steps
+
+- [ ] **Sample on** — open Data Collections, Samples tab. Mark a sample **Keep permanently**. The sample shows the lock, and its expiry reads **Never**.
+- [ ] **Sample off** — choose **Remove permanent**. The lock goes away and the expiry is no longer **Never**.
+- [ ] **Files on** — open the Files tab. Select an unlinked file, choose **Keep permanently**. The row shows the lock and **Never**.
+- [ ] **Files off** — choose **Remove permanent**. The lock goes away and the expiry is no longer **Never**.
+- [ ] **Shared file** — a file that belongs to two samples stays protected after only one of those samples is unmarked.
+
+---
+
+## Run limits — review step shows the server's limit block at launch (EGV-382)
+
+The review step shows a lab's run limits from the verdict the estimate call returns: a warning with "Launch anyway", a
+block with launch disabled, a Samples row, and "Not enough runs to estimate". The server checks the limits again at
+launch, so a run the review step allowed can still be refused when the lab's limits or run history changed in between.
+That refusal (EG-339 or EG-340) must replace the review step's state with the server's block message instead of the
+generic "Failed to submit" toast. Unit tests in the front-end cover every state and the limit-error detection. The E2E
+spec `Run_Limits_Review_Lab_Manager.spec.e2e.ts` covers the sample block and "Launch anyway" on HealthOmics. This path
+needs two users at once, so it is manual.
+
+### Automated checks
+
+| Check                   | Result         |
+| ----------------------- | -------------- |
+| `pnpm lint` (front-end) | Passes         |
+| `pnpm test` (front-end) | 446 tests pass |
+
+### Manual steps
+
+Environment: Date:
+
+- [ ] **Pass first** — as a lab technician, open the review step on a 2-sample HealthOmics run in a lab with no limits.
+      No limit row or message shows, and the button reads "Launch Workflow Run".
+- [ ] **Set a block in another tab** — as an organization admin, set `SamplesBlockAbove: 1` on the same lab.
+- [ ] **Launch** — back on the review step, click **Launch Workflow Run**.
+- [ ] **Server block shown** — the red "This run can't be launched" message shows the server's EG-340 text, launch is
+      disabled, the label is not "Launch anyway", and exactly one toast shows the same text.
+- [ ] **Seqera** — repeat on a Seqera pipeline review step. The result is the same.

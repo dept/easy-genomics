@@ -196,6 +196,10 @@ export type SampleSheetResponse = {
   SampleSheetInfo: SampleSheetInfo;
 };
 
+// ─── Laboratory: update-laboratory-run-limits ───────────────────────────────
+
+export type UpdateLaboratoryRunLimits = components['schemas']['UpdateLaboratoryRunLimitsRequest'];
+
 // ─── Laboratory run: export result set ───────────────────────────────────────
 // Request/response shapes live on the Zod schemas so the FE can validate without
 // waiting on generated OpenAPI aliases.

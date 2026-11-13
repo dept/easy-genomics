@@ -40,13 +40,11 @@ export const handler: Handler = async (
     const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(laboratoryId);
     if (!laboratory) throw new LaboratoryNotFoundError();
 
-    if (
-      !(
-        validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
-        validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
-        validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
-      )
-    ) {
+    if (!(
+      validateOrganizationAdminAccess(event, laboratory.OrganizationId) ||
+      validateLaboratoryManagerAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId) ||
+      validateLaboratoryTechnicianAccess(event, laboratory.OrganizationId, laboratory.LaboratoryId)
+    )) {
       throw new UnauthorizedAccessError();
     }
 

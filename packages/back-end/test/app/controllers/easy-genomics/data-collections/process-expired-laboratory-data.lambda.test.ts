@@ -4,6 +4,7 @@ import { Context, ScheduledEvent } from 'aws-lambda';
 
 const mockListLabs: jest.Mock = jest.fn();
 const mockListFileRows: jest.Mock = jest.fn();
+const mockListPermanentSampleIds: jest.Mock = jest.fn();
 const mockDeleteRow: jest.Mock = jest.fn();
 const mockDeleteObject: jest.Mock = jest.fn();
 const mockDeleteObjects: jest.Mock = jest.fn();
@@ -58,6 +59,7 @@ jest.mock('../../../../../src/app/services/easy-genomics/laboratory-data-tagging
     ...actual,
     LaboratoryDataTaggingService: jest.fn().mockImplementation(() => ({
       listAllFileRowsForLab: mockListFileRows,
+      listPermanentSampleIds: mockListPermanentSampleIds,
       getFileRow: (...args: unknown[]) => mockGetFileRow(...args),
       deleteFileRowAndAssociations: mockDeleteRow,
       removeLaboratoryRunUsageForRunIds: (...args: unknown[]) => mockRemoveUsages(...args),
@@ -109,6 +111,7 @@ function resetMocks(): void {
 
   mockListLabs.mockReset().mockResolvedValue([lab]);
   mockListFileRows.mockReset().mockResolvedValue([]);
+  mockListPermanentSampleIds.mockReset().mockResolvedValue(new Set());
   mockDeleteRow.mockReset().mockResolvedValue(undefined);
   mockDeleteObject.mockReset().mockResolvedValue({});
   mockDeleteObjects.mockReset().mockResolvedValue({ Errors: [] });
@@ -171,9 +174,7 @@ describe('process-expired-laboratory-data.lambda eligibility', () => {
   });
 
   it('skips files that a surviving run still references', async () => {
-    mockListAllRunsForLaboratory.mockResolvedValue([
-      { RunId: 'run-1', LaboratoryId: 'lab-1', Status: 'RUNNING' },
-    ]);
+    mockListAllRunsForLaboratory.mockResolvedValue([{ RunId: 'run-1', LaboratoryId: 'lab-1', Status: 'RUNNING' }]);
     mockListFileRows.mockResolvedValueOnce([
       {
         Ref: 'r1',
@@ -205,7 +206,13 @@ describe('process-expired-laboratory-data.lambda eligibility', () => {
 
   it('keeps an untagged file while one of its runs is still alive', async () => {
     mockListAllRunsForLaboratory.mockResolvedValue([
-      { RunId: 'run-live', LaboratoryId: 'lab-1', Status: 'COMPLETED', TerminalAt: '2099-01-01T00:00:00.000Z', ExpiresAt: 4_000_000_000 },
+      {
+        RunId: 'run-live',
+        LaboratoryId: 'lab-1',
+        Status: 'COMPLETED',
+        TerminalAt: '2099-01-01T00:00:00.000Z',
+        ExpiresAt: 4_000_000_000,
+      },
     ]);
     mockListFileRows.mockResolvedValueOnce([
       {
@@ -429,6 +436,23 @@ describe('process-expired-laboratory-data.lambda eligibility', () => {
     expect(mockDeleteRow).not.toHaveBeenCalled();
   });
 
+  it('protects a file linked to a permanent sample even when the file itself has no Permanent tag', async () => {
+    mockListPermanentSampleIds.mockResolvedValue(new Set(['sample-1']));
+    mockListFileRows.mockResolvedValueOnce([
+      {
+        Ref: 'r1',
+        S3Bucket: 'my-bucket',
+        ObjectKey: 'org-1/lab-1/shared.fq.gz',
+        TagIds: ['wf-1'],
+        SampleIds: ['sample-1', 'sample-2'],
+        LaboratoryRunUsages: undefined,
+      },
+    ]);
+    await handler(event, ctx, jest.fn());
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockDeleteRow).not.toHaveBeenCalled();
+  });
+
   it('honors DRY_RUN=true by skipping S3 and tagging-row deletion', async () => {
     process.env.DRY_RUN = 'true';
     mockListFileRows.mockResolvedValueOnce([
@@ -584,9 +608,7 @@ describe('process-expired-laboratory-data.lambda expired run outputs', () => {
 
   it('skips a prefix that a surviving run still publishes into', async () => {
     mockListExpiredRunOutputs.mockResolvedValueOnce([marker]);
-    mockListAllRunsForLaboratory.mockResolvedValue([
-      { RunId: 'run-2', OutputS3Url: `s3://my-bucket/${outputPrefix}` },
-    ]);
+    mockListAllRunsForLaboratory.mockResolvedValue([{ RunId: 'run-2', OutputS3Url: `s3://my-bucket/${outputPrefix}` }]);
 
     await handler(event, ctx, jest.fn());
 
@@ -704,6 +726,25 @@ describe('process-expired-laboratory-data.lambda expired run outputs', () => {
     expect(deleted).toEqual([`${outputPrefix}drop-me.bam`]);
     // Everything deletable drained, so the marker retires even though a protected object remains.
     expect(mockMarkExpiredRunOutputCompleted).toHaveBeenCalledWith('lab-1', 'run-1');
+  });
+
+  it('leaves a run output linked to a permanent sample and counts it as protected', async () => {
+    const keptKey = `${outputPrefix}keep-me.bam`;
+    mockListPermanentSampleIds.mockResolvedValue(new Set(['sample-1']));
+    mockListFileRows.mockResolvedValue([{ Ref: 'r-keep', ObjectKey: keptKey, TagIds: [], SampleIds: ['sample-1'] }]);
+    mockListExpiredRunOutputs.mockResolvedValueOnce([{ ...marker, SampleSheetKeys: undefined }]);
+    mockListAllObjectKeysUnderPrefix.mockResolvedValueOnce([keptKey, `${outputPrefix}drop-me.bam`]);
+    const log = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await handler(event, ctx, jest.fn());
+
+    const deleted = mockDeleteObjects.mock.calls[0][0].Delete.Objects.map((o: { Key: string }) => o.Key);
+    expect(deleted).toEqual([`${outputPrefix}drop-me.bam`]);
+    const emf = log.mock.calls
+      .map((call) => call[0])
+      .find((line) => typeof line === 'string' && line.includes('OutputObjectsProtected'));
+    expect(JSON.parse(String(emf)).OutputObjectsProtected).toBe(1);
+    log.mockRestore();
   });
 
   it('removes the FILE# row of a tracked object it deletes, so no row is left dangling', async () => {

@@ -43,6 +43,7 @@ import {
   RequestRunExportPreviewSchema,
 } from '../schema/easy-genomics/laboratory-run/request-run-export-job';
 import { EstimateRunCostRequestSchema } from '../schema/easy-genomics/laboratory-run-cost';
+import { UpdateLaboratoryRunLimitsSchema } from '../schema/easy-genomics/laboratory-run-limits';
 import { BatchUpdateLaboratoryS3AccessRequestSchema } from '../schema/easy-genomics/laboratory-s3-access';
 import {
   AddBulkLaboratoryUsersSchema,
@@ -80,6 +81,7 @@ import {
   EditWorkflowKeyOutputDeliverySchema,
   EditWorkflowKeyOutputsSchema,
   RequestPreviewWorkflowKeyOutputsSchema,
+  RequestRunMicroreactExportSchema,
   RequestRunWorkflowKeyOutputsSchema,
 } from '../schema/easy-genomics/workflow-key-outputs';
 import {
@@ -215,6 +217,10 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
   },
   'PUT /easy-genomics/laboratory/update-laboratory/{id}': {
     request: UpdateLaboratorySchema,
+    response: 'Laboratory',
+  },
+  'PUT /easy-genomics/usage/update-laboratory-run-limits/{id}': {
+    request: UpdateLaboratoryRunLimitsSchema,
     response: 'Laboratory',
   },
   'DELETE /easy-genomics/laboratory/delete-laboratory/{id}': {},
@@ -536,6 +542,10 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
   'POST /easy-genomics/workflow-key-outputs/request-run-workflow-key-outputs': {
     request: RequestRunWorkflowKeyOutputsSchema,
     response: 'RunWorkflowKeyOutputsResponse',
+  },
+  'POST /easy-genomics/workflow-key-outputs/request-run-microreact-export': {
+    request: RequestRunMicroreactExportSchema,
+    response: 'RequestRunMicroreactExportResponse',
   },
 
   // ── aws-healthomics/run/ ─────────────────────────────────────────────────────

@@ -1669,6 +1669,8 @@ components:
           type: string
         SeqeraLlmApiKey:
           type: string
+        MicroreactAccessToken:
+          type: string
       required:
         - OrganizationId
         - Name
@@ -1679,6 +1681,18 @@ components:
         - Active
         - Inactive
       type: string
+    LaboratoryRunLimits:
+      description: Per-run limits set by an organization admin. A missing amount means that check is off.
+      type: object
+      properties:
+        CostWarnAboveUsd:
+          type: number
+        CostBlockAboveUsd:
+          type: number
+        SamplesWarnAbove:
+          type: number
+        SamplesBlockAbove:
+          type: number
     Laboratory:
       type: object
       properties:
@@ -1794,12 +1808,21 @@ components:
           type: boolean
         HasSeqeraLlmApiKey:
           type: boolean
+        HasMicroreactAccessToken:
+          description: |-
+            Microreact API access token used to create projects from key outputs. Projects
+            land in the token owner's Microreact account. Stored in SSM at
+            `/easy-genomics/organization/{OrganizationId}/laboratory/{LaboratoryId}/microreact-access-token`.
+          type: boolean
         HealthOmicsRunCacheId:
           description: |-
             AWS HealthOmics run cache id used for call caching ("resume"). Lazily provisioned on the
             first HealthOmics run and reused for all subsequent runs, so a failed run can be retried and
             resume from its last completed task instead of recomputing everything. Managed internally.
           type: string
+        RunLimits:
+          description: Saved only through update-laboratory-run-limits. Missing means the lab has no limits.
+          $ref: '#/components/schemas/LaboratoryRunLimits'
         CreatedAt:
           type: string
         CreatedBy:
@@ -1834,14 +1857,6 @@ components:
         NextFlowTowerEnabled:
           type: boolean
         NextFlowTowerApiBaseUrl:
-          type: string
-        CreatedAt:
-          type: string
-        CreatedBy:
-          type: string
-        ModifiedAt:
-          type: string
-        ModifiedBy:
           type: string
         S3Bucket:
           type: string
@@ -1895,7 +1910,29 @@ components:
           type: boolean
         HasSeqeraLlmApiKey:
           type: boolean
+        HasMicroreactAccessToken:
+          type: boolean
         HealthOmicsRunCacheId:
+          type: string
+        RunLimits:
+          type: object
+          properties:
+            CostWarnAboveUsd:
+              type: number
+            CostBlockAboveUsd:
+              type: number
+            SamplesWarnAbove:
+              type: number
+            SamplesBlockAbove:
+              type: number
+          description: Saved only through update-laboratory-run-limits, never through Create / Update.
+        CreatedAt:
+          type: string
+        CreatedBy:
+          type: string
+        ModifiedAt:
+          type: string
+        ModifiedBy:
           type: string
       required:
         - LaboratoryId
@@ -1995,6 +2032,14 @@ components:
           type: string
         WorkflowName:
           type: string
+        CreatedAt:
+          type: string
+        CreatedBy:
+          type: string
+        ModifiedAt:
+          type: string
+        ModifiedBy:
+          type: string
         PlatformApiBaseUrl:
           type: string
         WorkflowVersionName:
@@ -2027,14 +2072,6 @@ components:
           anyOf:
             - type: object
             - type: string
-        CreatedAt:
-          type: string
-        CreatedBy:
-          type: string
-        ModifiedAt:
-          type: string
-        ModifiedBy:
-          type: string
         TerminalAt:
           description: |-
             ISO timestamp indicating when the run first reached a terminal state.
@@ -2302,6 +2339,21 @@ components:
             - SyncedAt
             - TotalUsd
           description: AWS Cost Explorer billed cost synced ~24–48h after completion.
+        MicroreactStatus:
+          description: State of the latest Microreact export for this run. Absent means it was never sent.
+          enum:
+            - Failed
+            - Queued
+            - Succeeded
+          type: string
+        MicroreactProjectUrl:
+          description: Project created by the latest successful export. Each export creates a new project.
+          type: string
+        MicroreactErrorMessage:
+          description: Why the latest export failed, specific enough for a lab manager to fix the settings.
+          type: string
+        MicroreactRequestedAt:
+          type: string
       required:
         - LaboratoryId
         - OrganizationId
@@ -2338,6 +2390,14 @@ components:
           type: string
         WorkflowName:
           type: string
+        CreatedAt:
+          type: string
+        CreatedBy:
+          type: string
+        ModifiedAt:
+          type: string
+        ModifiedBy:
+          type: string
         PlatformApiBaseUrl:
           type: string
         WorkflowVersionName:
@@ -2360,14 +2420,6 @@ components:
           anyOf:
             - type: object
             - type: string
-        CreatedAt:
-          type: string
-        CreatedBy:
-          type: string
-        ModifiedAt:
-          type: string
-        ModifiedBy:
-          type: string
         TerminalAt:
           type: string
         ExpiresAt:
@@ -2562,6 +2614,21 @@ components:
             - SyncedAt
             - TotalUsd
           description: AWS Cost Explorer billed cost synced ~24–48h after completion.
+        MicroreactStatus:
+          description: State of the latest Microreact export for this run. Absent means it was never sent.
+          enum:
+            - Failed
+            - Queued
+            - Succeeded
+          type: string
+        MicroreactProjectUrl:
+          description: Project created by the latest successful export. Each export creates a new project.
+          type: string
+        MicroreactErrorMessage:
+          description: Why the latest export failed, specific enough for a lab manager to fix the settings.
+          type: string
+        MicroreactRequestedAt:
+          type: string
       required:
         - LaboratoryId
         - OrganizationId
@@ -2643,6 +2710,56 @@ components:
             - high
             - low
             - median
+        limitVerdict:
+          type: object
+          properties:
+            outcome:
+              enum:
+                - block
+                - pass
+                - warn
+              type: string
+            hits:
+              type: array
+              items:
+                type: object
+                properties:
+                  limit:
+                    enum:
+                      - cost
+                      - samples
+                    type: string
+                  level:
+                    enum:
+                      - block
+                      - warn
+                    type: string
+                  amount:
+                    type: number
+                  runValue:
+                    type: number
+                required:
+                  - amount
+                  - level
+                  - limit
+                  - runValue
+            costEstimate:
+              description: '`notChecked` means the lab has no cost amount, so the estimate was not computed.'
+              enum:
+                - available
+                - notChecked
+                - notEnoughHistory
+              type: string
+            sampleCount:
+              description: >-
+                The server-counted samples. Absent only when a lab with cost amounts alone launched without a sample
+                sheet.
+              type: number
+          required:
+            - costEstimate
+            - hits
+            - outcome
+          description: Present only when the lab has at least one run limit amount set.
       required:
         - comparableRunCount
         - confidence
@@ -2825,6 +2942,8 @@ components:
         HealthOmicsLlmApiKey:
           type: string
         SeqeraLlmApiKey:
+          type: string
+        MicroreactAccessToken:
           type: string
       required:
         - Name
@@ -3561,6 +3680,22 @@ components:
         - Platform
         - UploadedFilePairs
       additionalProperties: false
+    UpdateLaboratoryRunLimitsRequest:
+      type: object
+      properties:
+        CostWarnAboveUsd:
+          type: number
+          exclusiveMinimum: 0
+        CostBlockAboveUsd:
+          type: number
+          exclusiveMinimum: 0
+        SamplesWarnAbove:
+          type: integer
+          exclusiveMinimum: 0
+        SamplesBlockAbove:
+          type: integer
+          exclusiveMinimum: 0
+      additionalProperties: false
     ConfirmUserForgotPasswordRequestRequest:
       type: object
       properties:
@@ -3784,6 +3919,21 @@ components:
         DestinationUri:
           type: string
           maxLength: 1024
+        Microreact:
+          type: object
+          properties:
+            Enabled:
+              type: boolean
+            MetadataKeyOutputId:
+              type: string
+              format: uuid
+            TreeKeyOutputIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+              maxItems: 10
+          additionalProperties: false
       required:
         - LaboratoryId
         - WorkflowId
@@ -3810,14 +3960,39 @@ components:
         - Pattern
     WorkflowKeyOutputDelivery:
       description: |-
-        Where to copy this workflow's key outputs after a run completes successfully.
-        One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+        Where to deliver this workflow's key outputs after a run completes successfully:
+        an external `s3://bucket/prefix` copy, a Microreact project, or both.
       type: object
       properties:
         Enabled:
           type: boolean
         DestinationUri:
           type: string
+        Microreact:
+          description: |-
+            Sends a completed run's key outputs to Microreact as a new private project,
+            using the lab's Microreact access token. `MetadataKeyOutputId` names the
+            CSV/TSV key output whose first column is the sample ID; each tree key output
+            is a Newick file whose leaf labels match that ID.
+          $ref: '#/components/schemas/WorkflowKeyOutputMicroreactDelivery'
+      required:
+        - Enabled
+    WorkflowKeyOutputMicroreactDelivery:
+      description: |-
+        Sends a completed run's key outputs to Microreact as a new private project,
+        using the lab's Microreact access token. `MetadataKeyOutputId` names the
+        CSV/TSV key output whose first column is the sample ID; each tree key output
+        is a Newick file whose leaf labels match that ID.
+      type: object
+      properties:
+        Enabled:
+          type: boolean
+        MetadataKeyOutputId:
+          type: string
+        TreeKeyOutputIds:
+          type: array
+          items:
+            type: string
       required:
         - Enabled
     WorkflowKeyOutputs:
@@ -3840,8 +4015,8 @@ components:
             $ref: '#/components/schemas/WorkflowKeyOutput'
         Delivery:
           description: |-
-            Where to copy this workflow's key outputs after a run completes successfully.
-            One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+            Where to deliver this workflow's key outputs after a run completes successfully:
+            an external `s3://bucket/prefix` copy, a Microreact project, or both.
           $ref: '#/components/schemas/WorkflowKeyOutputDelivery'
         CreatedAt:
           type: string
@@ -3923,8 +4098,8 @@ components:
             $ref: '#/components/schemas/WorkflowKeyOutput'
         Delivery:
           description: |-
-            Where to copy this workflow's key outputs after a run completes successfully.
-            One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+            Where to deliver this workflow's key outputs after a run completes successfully:
+            an external `s3://bucket/prefix` copy, a Microreact project, or both.
           $ref: '#/components/schemas/WorkflowKeyOutputDelivery'
         CreatedAt:
           type: string
@@ -4009,6 +4184,35 @@ components:
             $ref: '#/components/schemas/PreviewWorkflowKeyOutput'
       required:
         - KeyOutputs
+    RequestRunMicroreactExportRequest:
+      type: object
+      properties:
+        LaboratoryId:
+          type: string
+          format: uuid
+        RunId:
+          type: string
+          minLength: 1
+      required:
+        - LaboratoryId
+        - RunId
+      additionalProperties: false
+    MicroreactExportStatus:
+      enum:
+        - Failed
+        - Queued
+        - Succeeded
+      type: string
+    RequestRunMicroreactExportResponse:
+      type: object
+      properties:
+        RunId:
+          type: string
+        MicroreactStatus:
+          $ref: '#/components/schemas/MicroreactExportStatus'
+      required:
+        - MicroreactStatus
+        - RunId
     RequestRunWorkflowKeyOutputsRequest:
       type: object
       properties:
@@ -10807,6 +11011,39 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
+  /easy-genomics/usage/update-laboratory-run-limits/{id}:
+    put:
+      operationId: updateLaboratoryRunLimits
+      summary: Update Laboratory Run Limits
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLaboratoryRunLimitsRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Laboratory'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /easy-genomics/user/confirm-user-forgot-password-request:
     post:
       operationId: confirmUserForgotPasswordRequest
@@ -11178,6 +11415,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PreviewWorkflowKeyOutputsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/workflow-key-outputs/request-run-microreact-export:
+    post:
+      operationId: requestRunMicroreactExport
+      summary: Request Run Microreact Export
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestRunMicroreactExportRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestRunMicroreactExportResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

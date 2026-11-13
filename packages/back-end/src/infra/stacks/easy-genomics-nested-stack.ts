@@ -223,6 +223,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
       ...this.props,
       iamPolicyStatements: this.iam.policyStatements, // Pass declared Easy Genomics IAM policies for attaching to respective Lambda function
       lambdaFunctionsDir: 'src/app/controllers/easy-genomics',
+      excludeDirs: ['usage'], // Built by UsageNestedStack
       lambdaFunctionsNamespace: `${this.props.constructNamespace}`,
       lambdaFunctionsResources: {
         // Used for setting specific resources for a given Lambda function (e.g. environment settings, trigger events)
@@ -449,6 +450,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
           events: [new SqsEventSource(this.sqs.sqsQueues.get('run-export-queue')!, { batchSize: 1 })],
           timeoutSeconds: 900,
           memorySizeMb: 3008,
+        },
+        '/easy-genomics/workflow-key-outputs/request-run-microreact-export': {
+          environment: {
+            SQS_KEY_OUTPUT_DELIVERY_QUEUE_URL: this.sqs.sqsQueues.get('key-output-delivery-queue')?.queueUrl || '',
+          },
         },
         '/easy-genomics/workflow-key-outputs/process-deliver-workflow-key-outputs': {
           events: [new SqsEventSource(this.sqs.sqsQueues.get('key-output-delivery-queue')!, { batchSize: 1 })],
@@ -831,6 +837,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/github-access-token`,
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-healthomics`,
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-seqera`,
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/microreact-access-token`,
         ],
         actions: ['ssm:PutParameter'],
         effect: Effect.ALLOW,
@@ -857,6 +864,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/github-access-token`,
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-healthomics`,
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-seqera`,
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/microreact-access-token`,
         ],
         actions: ['ssm:GetParameter'],
         effect: Effect.ALLOW,
@@ -897,7 +905,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
         ],
-        actions: ['dynamodb:Query', 'dynamodb:PutItem'],
+        actions: ['dynamodb:Query', 'dynamodb:UpdateItem'],
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
@@ -918,6 +926,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/github-access-token`,
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-healthomics`,
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-seqera`,
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/microreact-access-token`,
         ],
         actions: ['ssm:GetParameter', 'ssm:PutParameter'],
         effect: Effect.ALLOW,
@@ -972,6 +981,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/github-access-token`,
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-healthomics`,
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/llm-api-key-seqera`,
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/microreact-access-token`,
         ],
         actions: ['ssm:DeleteParameter'],
         effect: Effect.ALLOW,
@@ -2305,13 +2315,13 @@ export class EasyGenomicsNestedStack extends NestedStack {
     // /easy-genomics/organization/s3-access/edit-s3-access-batch
     this.iam.addPolicyStatements('/easy-genomics/organization/s3-access/edit-s3-access-batch', [
       new PolicyStatement({
-        // Query labs in the org; PutItem clears Laboratory.S3Bucket when its grant is revoked.
+        // Query labs in the org; UpdateItem clears Laboratory.S3Bucket when its grant is revoked.
         // Scan finds every lab's default bucket before a whole-bucket grant.
         resources: [
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
         ],
-        actions: ['dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:Scan'],
+        actions: ['dynamodb:Query', 'dynamodb:UpdateItem', 'dynamodb:Scan'],
       }),
       new PolicyStatement({
         // Query reads a lab's stored grants, which non-system-admin saves compare against before writing.
@@ -2807,17 +2817,47 @@ export class EasyGenomicsNestedStack extends NestedStack {
       laboratoryS3AccessCatalogCheckPolicy,
     ]);
 
-    this.iam.addPolicyStatements('/easy-genomics/workflow-key-outputs/process-deliver-workflow-key-outputs', [
+    // Queues a manual Microreact send for the delivery consumer below.
+    this.iam.addPolicyStatements('/easy-genomics/workflow-key-outputs/request-run-microreact-export', [
+      ...laboratoryReadForWorkflowKeyOutputs,
       new PolicyStatement({
         resources: [
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
         ],
-        actions: ['dynamodb:GetItem'],
+        actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({
         resources: workflowKeyOutputsDynamoResources,
         actions: ['dynamodb:GetItem'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [`${this.sqs.sqsQueues.get('key-output-delivery-queue')?.queueArn || ''}`],
+        actions: ['sqs:SendMessage'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // UpdateItem and the Microreact token record the Microreact export result on the run.
+    this.iam.addPolicyStatements('/easy-genomics/workflow-key-outputs/process-deliver-workflow-key-outputs', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+        ],
+        actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: workflowKeyOutputsDynamoResources,
+        actions: ['dynamodb:GetItem'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/microreact-access-token`,
+        ],
+        actions: ['ssm:GetParameter'],
         effect: Effect.ALLOW,
       }),
       new PolicyStatement({

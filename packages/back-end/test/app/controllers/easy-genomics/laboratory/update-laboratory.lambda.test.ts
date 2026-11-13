@@ -36,7 +36,7 @@ import { migrateS3AccessOnDefaultModeChange } from '../../../../../src/app/servi
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
 import { OmicsService } from '../../../../../src/app/services/omics-service';
 import { SsmService } from '../../../../../src/app/services/ssm-service';
-import { validateOrganizationAdminAccess } from '../../../../../src/app/utils/auth-utils';
+import { validateOrganizationAdminAccess, validateSystemAdminAccess } from '../../../../../src/app/utils/auth-utils';
 import { assertLaboratoryHasS3BucketAccess } from '../../../../../src/app/utils/laboratory-s3-access-utils';
 import { httpRequest } from '../../../../../src/app/utils/rest-api-utils';
 
@@ -115,12 +115,14 @@ describe('update-laboratory.lambda', () => {
     mockValidateOrgAdmin = validateOrganizationAdminAccess as any;
 
     mockValidateOrgAdmin.mockReturnValue(true);
+    (validateSystemAdminAccess as jest.Mock).mockReturnValue(false);
     (httpRequest as jest.Mock).mockResolvedValue({ items: [] });
 
     mockLabService.prototype.queryByLaboratoryId = jest.fn();
     mockLabService.prototype.update = jest.fn();
     mockSsmService.prototype.getParameter = jest.fn();
     mockSsmService.prototype.putParameter = jest.fn();
+    mockSsmService.prototype.deleteParameter = jest.fn();
 
     mockOmicsService = OmicsService as jest.MockedClass<typeof OmicsService>;
     mockOmicsService.prototype.getConfiguration = jest.fn().mockResolvedValue({ status: 'ACTIVE' });
@@ -146,6 +148,60 @@ describe('update-laboratory.lambda', () => {
     expect(mockSsmService.prototype.putParameter).toHaveBeenCalledWith(
       expect.objectContaining({
         Overwrite: true,
+      }),
+    );
+  });
+
+  it('stores a new Microreact access token in SSM', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+    });
+    (mockLabService.prototype.update as jest.Mock).mockResolvedValue({ OrganizationId: ORG_ID, LaboratoryId: LAB_ID });
+    (mockSsmService.prototype.putParameter as jest.Mock).mockResolvedValue({});
+
+    const result = await handler(
+      createEvent(LAB_ID, { ...baseRequest, MicroreactAccessToken: 'mr-token' }),
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockSsmService.prototype.putParameter).toHaveBeenCalledWith({
+      Name: `/easy-genomics/organization/${ORG_ID}/laboratory/${LAB_ID}/microreact-access-token`,
+      Description: `Easy Genomics Laboratory ${LAB_ID} Microreact access token`,
+      Value: 'mr-token',
+      Type: 'SecureString',
+      Overwrite: true,
+    });
+  });
+
+  it('deletes the Microreact access token when an empty string is sent', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+    });
+    (mockLabService.prototype.update as jest.Mock).mockResolvedValue({ OrganizationId: ORG_ID, LaboratoryId: LAB_ID });
+    (mockSsmService.prototype.deleteParameter as jest.Mock).mockResolvedValue({});
+
+    const result = await handler(
+      createEvent(LAB_ID, {
+        ...baseRequest,
+        NextFlowTowerEnabled: false,
+        NextFlowTowerAccessToken: undefined,
+        MicroreactAccessToken: '',
+      }),
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockSsmService.prototype.deleteParameter).toHaveBeenCalledWith({
+      Name: `/easy-genomics/organization/${ORG_ID}/laboratory/${LAB_ID}/microreact-access-token`,
+    });
+    expect(mockSsmService.prototype.putParameter).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        Name: `/easy-genomics/organization/${ORG_ID}/laboratory/${LAB_ID}/microreact-access-token`,
       }),
     );
   });
@@ -256,7 +312,7 @@ describe('update-laboratory.lambda', () => {
     expect(mockLabService.prototype.update).not.toHaveBeenCalled();
   });
 
-  it('returns 403 when caller is not organization admin', async () => {
+  it('returns 403 when caller is neither system admin nor organization admin of the laboratory', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
       OrganizationId: ORG_ID,
       LaboratoryId: LAB_ID,
@@ -266,6 +322,63 @@ describe('update-laboratory.lambda', () => {
     const result = await handler(createEvent(LAB_ID, baseRequest), createContext(), () => {});
 
     expect(result.statusCode).toBe(403);
+    expect(mockLabService.prototype.update).not.toHaveBeenCalled();
+  });
+
+  it('allows a system admin who is not an organization admin, and runs the S3 default migration', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      S3Bucket: 'bucket',
+      EnableNewBucketsByDefault: true,
+    });
+    (mockLabService.prototype.update as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      S3Bucket: 'bucket',
+      EnableNewBucketsByDefault: false,
+    });
+    (validateSystemAdminAccess as jest.Mock).mockReturnValue(true);
+    mockValidateOrgAdmin.mockReturnValue(false);
+
+    const result = await handler(
+      createEvent(LAB_ID, {
+        ...baseRequest,
+        NextFlowTowerEnabled: false,
+        NextFlowTowerApiBaseUrl: undefined,
+        NextFlowTowerWorkspaceId: undefined,
+        NextFlowTowerAccessToken: undefined,
+        EnableNewBucketsByDefault: false,
+      }),
+      createContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockLabService.prototype.update).toHaveBeenCalled();
+    expect(migrateS3AccessOnDefaultModeChange).toHaveBeenCalledWith({
+      organizationId: ORG_ID,
+      laboratoryId: LAB_ID,
+      previousDefaultOn: true,
+      nextDefaultOn: false,
+    });
+  });
+
+  it('checks organization admin access against the stored laboratory OrganizationId', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+    });
+    (mockLabService.prototype.update as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+    });
+    (mockSsmService.prototype.putParameter as jest.Mock).mockResolvedValue({});
+    const event = createEvent(LAB_ID, baseRequest);
+
+    await handler(event, createContext(), () => {});
+
+    expect(mockValidateOrgAdmin).toHaveBeenCalledWith(event, ORG_ID);
   });
 
   it('returns 400 when NF integration validation fails (no baseApiUrl)', async () => {

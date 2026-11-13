@@ -36,6 +36,20 @@ export function getDate(input: string | null | undefined): string | null {
 }
 
 /**
+ * Compact local datetime for run overview copy, e.g. '14 Oct 2026, 2:08 pm'.
+ */
+export function formatCompactDateTime(input: string | null | undefined): string | null {
+  if (!input) {
+    return null;
+  }
+
+  const date = parseAndValidateDate(input);
+  if (!date) return null;
+
+  return format(date, 'd MMM yyyy, h:mm aaa');
+}
+
+/**
  * Return the time in the format hh:mm:ss a GMT+/-offset, e.g. '09:38:13 AM GMT+10'
  * @param input
  */

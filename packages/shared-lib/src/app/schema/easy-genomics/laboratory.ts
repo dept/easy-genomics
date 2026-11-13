@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LaboratoryRunLimitsSchema } from './laboratory-run-limits';
 
 export const LaboratorySchema = z
   .object({
@@ -65,6 +66,8 @@ export const LaboratorySchema = z
      * last completed task. Managed internally; not set via the create/update Laboratory APIs.
      */
     HealthOmicsRunCacheId: z.string().optional(),
+    /** Saved only through update-laboratory-run-limits, never through Create / Update. */
+    RunLimits: LaboratoryRunLimitsSchema.optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
@@ -104,6 +107,7 @@ export const CreateLaboratorySchema = z
     /** Write-only on Create / Update. Persisted to SSM SecureString, never echoed back. */
     HealthOmicsLlmApiKey: z.string().optional(),
     SeqeraLlmApiKey: z.string().optional(),
+    MicroreactAccessToken: z.string().optional(),
   })
   .strict()
   .superRefine((data, ctx) => {
@@ -150,7 +154,10 @@ export const ReadLaboratorySchema = z
     /** Boolean indicators. The actual keys live in SSM and are never returned. */
     HasHealthOmicsLlmApiKey: z.boolean().optional(),
     HasSeqeraLlmApiKey: z.boolean().optional(),
+    HasMicroreactAccessToken: z.boolean().optional(),
     HealthOmicsRunCacheId: z.string().optional(),
+    /** Saved only through update-laboratory-run-limits, never through Create / Update. */
+    RunLimits: LaboratoryRunLimitsSchema.optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
@@ -197,6 +204,7 @@ export const UpdateLaboratorySchema = z
     /** Write-only on Update. Persisted to SSM SecureString. */
     HealthOmicsLlmApiKey: z.string().optional(),
     SeqeraLlmApiKey: z.string().optional(),
+    MicroreactAccessToken: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.AwsHealthOmicsNetworkingMode === 'VPC' && !data.AwsHealthOmicsVpcConfigurationName) {

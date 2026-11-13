@@ -419,6 +419,7 @@ export class LaboratoryDataRetentionService {
   private async loadFileRowIndex(laboratory: Laboratory): Promise<FileRowIndex> {
     const rows = await this.taggingService.listAllFileRowsForLab(laboratory.LaboratoryId);
     const permanentTagId = permanentTagIdForLaboratory(laboratory.LaboratoryId);
+    const permanentSampleIds = await this.taggingService.listPermanentSampleIds(laboratory.LaboratoryId);
 
     const trackedKeys = new Set<string>();
     const permanentKeys = new Set<string>();
@@ -428,7 +429,9 @@ export class LaboratoryDataRetentionService {
       if (!row.ObjectKey) continue;
       trackedKeys.add(row.ObjectKey);
       refByKey.set(row.ObjectKey, row.Ref);
-      if ((row.TagIds || []).includes(permanentTagId)) permanentKeys.add(row.ObjectKey);
+      const taggedPermanent = (row.TagIds || []).includes(permanentTagId);
+      const samplePermanent = (row.SampleIds || []).some((id) => permanentSampleIds.has(id));
+      if (taggedPermanent || samplePermanent) permanentKeys.add(row.ObjectKey);
     }
 
     return { rows, trackedKeys, permanentKeys, refByKey };
@@ -437,10 +440,11 @@ export class LaboratoryDataRetentionService {
   /**
    * Input files are shared between runs and tracked per-file. A file is deleted when no
    * surviving run lists it in `InputFileKeys`, it has no usage whose run row still exists, and
-   * it is not marked Permanent. A workflow tag or a stale usage is enough. So is a row with no
+   * it is not in `permanentKeys`. A workflow tag or a stale usage is enough. So is a row with no
    * tags of any kind and no usages: nothing claims it.
    *
-   * A file with any non-permanent tag and no usage is kept. An object with no FILE# row is not
+   * `permanentKeys` is every file with the Permanent tag or a link to a sample that still has it.
+   * A file with any other tag and no usage is kept. An object with no FILE# row is not
    * visible here; the orphan pass records those FASTQs once the folder is 30 days old.
    */
   private async sweepInputFiles(
@@ -450,7 +454,6 @@ export class LaboratoryDataRetentionService {
     stats: RetentionSweepStats,
     runs: LaboratoryRun[] | undefined,
   ): Promise<void> {
-    const permanentTagId = permanentTagIdForLaboratory(laboratory.LaboratoryId);
     const workflowTagIds = await this.loadWorkflowTagIds(laboratory.LaboratoryId);
     // `undefined` runs means the load failed: treat every usage as live so we cannot delete a
     // file that a surviving run still needs.
@@ -477,7 +480,12 @@ export class LaboratoryDataRetentionService {
       if (key && liveInputKeys.has(key)) continue;
       if (liveUsages > 0) {
         if (!options.dryRun && liveRunIds && bucket && key) {
-          await this.dropStaleUsages(laboratory, bucket, key, usageIds.filter((id) => !liveRunIds.has(id)));
+          await this.dropStaleUsages(
+            laboratory,
+            bucket,
+            key,
+            usageIds.filter((id) => !liveRunIds.has(id)),
+          );
         }
         continue;
       }
@@ -487,7 +495,7 @@ export class LaboratoryDataRetentionService {
       const untaggedAndUnowned = liveRunIds != null && !hasAnyTag && usageIds.length === 0;
       if (!belongedToExpiredRun && !untaggedAndUnowned) continue;
 
-      if (tagIds.has(permanentTagId)) {
+      if (key && fileRows.permanentKeys.has(key)) {
         stats.permanentProtected++;
         if (!options.dryRun && liveRunIds && bucket && key) {
           await this.dropStaleUsages(laboratory, bucket, key, usageIds);
@@ -565,7 +573,12 @@ export class LaboratoryDataRetentionService {
   }
 
   /** Removes usages whose runs are gone from a file this sweep is keeping. */
-  private async dropStaleUsages(laboratory: Laboratory, bucket: string, key: string, staleRunIds: string[]): Promise<void> {
+  private async dropStaleUsages(
+    laboratory: Laboratory,
+    bucket: string,
+    key: string,
+    staleRunIds: string[],
+  ): Promise<void> {
     if (!staleRunIds.length) return;
     const runIdToInputKeys: Record<string, string[]> = {};
     for (const runId of staleRunIds) runIdToInputKeys[runId] = [key];
@@ -684,11 +697,7 @@ export class LaboratoryDataRetentionService {
               !live.inputKeys.has(key),
           );
 
-        const protectedKeys = new Set<string>([
-          ...fileRows.permanentKeys,
-          ...live.inputKeys,
-          ...live.sampleSheetKeys,
-        ]);
+        const protectedKeys = new Set<string>([...fileRows.permanentKeys, ...live.inputKeys, ...live.sampleSheetKeys]);
         // Import folders share the UUID layout and never become a RunId. A results directory or a
         // sample sheet is what marks a run. A run usage on one imported file is not: the per-file
         // sweep already deletes the files that run used.
@@ -770,9 +779,7 @@ export class LaboratoryDataRetentionService {
       try {
         await this.taggingService.assertLaboratoryHasS3BucketAccess(laboratory, bucket);
         if (row.RunFolderPrefix && !this.isExactRunFolder(row.RunFolderPrefix, laboratory, row.RunId)) {
-          throw new Error(
-            `RunFolderPrefix '${row.RunFolderPrefix}' is not {org}/{lab}/{platform}/${row.RunId}/`,
-          );
+          throw new Error(`RunFolderPrefix '${row.RunFolderPrefix}' is not {org}/{lab}/{platform}/${row.RunId}/`);
         }
         if (row.OutputPrefix && !isBelowRunFolderRoot(row.OutputPrefix, laboratory, row.RunId)) {
           throw new Error(`OutputPrefix '${row.OutputPrefix}' is not a subdirectory of run ${row.RunId}'s folder`);
@@ -827,17 +834,16 @@ export class LaboratoryDataRetentionService {
           stats.outputPrefixesSkippedInUse += (row.SampleSheetKeys || []).length - sheetKeys.length;
         }
         const untaggedInputKeys =
-          runFolder || row.CompletedAt
-            ? []
-            : (row.UntaggedInputKeys || []).filter((key) => !live.inputKeys.has(key));
+          runFolder || row.CompletedAt ? [] : (row.UntaggedInputKeys || []).filter((key) => !live.inputKeys.has(key));
 
+        // Files under the run folder are taggable, and a linked permanent sample protects them too.
+        // permanentKeys is the same set the FILE#-row sweep uses.
         const candidates = [...new Set([...listed, ...sheetKeys, ...untaggedInputKeys])].filter(
           (key) =>
             !live.inputKeys.has(key) &&
             !live.sampleSheetKeys.has(key) &&
             !this.isPrefixStillInUse(key, live.outputPrefixes),
         );
-        // Permanent covers a FASTQ the user chose to keep, and any other object carrying the tag.
         const keys = candidates.filter((key) => !fileRows.permanentKeys.has(key));
         stats.outputObjectsProtected += candidates.length - keys.length;
 

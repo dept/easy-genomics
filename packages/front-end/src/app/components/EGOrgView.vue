@@ -46,6 +46,7 @@
 
   const showWorkflowAccessTab = computed(() => props.superuser || props.orgAdmin);
   const showS3AccessTab = computed(() => props.superuser || props.orgAdmin);
+  const showUsageLimitsTab = computed(() => props.superuser || props.orgAdmin);
 
   const tabItems = computed<{ key: string; label: string; icon: string }[]>(() => {
     const items: { key: string; label: string; icon: string }[] = [];
@@ -59,6 +60,9 @@
     if (showS3AccessTab.value) {
       items.push({ key: 's3-access', label: 'S3 access', icon: 'i-heroicons-circle-stack' });
     }
+    if (showUsageLimitsTab.value) {
+      items.push({ key: 'usage-limits', label: 'Usage limits', icon: 'i-heroicons-adjustments-horizontal' });
+    }
     items.push({ key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth' });
     items.push({ key: 'email-branding', label: 'Email Branding', icon: 'i-heroicons-envelope' });
     return items;
@@ -67,6 +71,7 @@
   /** Mount workflow access panel once opened (or via ?tab=) so data loads lazily; stay mounted to keep unsaved edits. */
   const workflowAccessPanelMounted = ref(false);
   const s3AccessPanelMounted = ref(false);
+  const usageLimitsPanelMounted = ref(false);
   const tabIndex = ref(0);
 
   function syncAdminTabsFromQuery() {
@@ -107,6 +112,9 @@
     }
     if (item?.key === 's3-access') {
       s3AccessPanelMounted.value = true;
+    }
+    if (item?.key === 'usage-limits') {
+      usageLimitsPanelMounted.value = true;
     }
   });
 
@@ -524,6 +532,17 @@
     class="outline-none focus:outline-none"
   >
     <EGS3LabAccessPage v-if="s3AccessPanelMounted" :org-id="props.orgId" embedded :heading-id="s3AccessHeadingId" />
+  </div>
+
+  <div
+    v-if="activeTabKey === 'usage-limits' && showUsageLimitsTab"
+    role="tabpanel"
+    id="panel-usage-limits"
+    aria-labelledby="tab-usage-limits"
+    tabindex="0"
+    class="outline-none focus:outline-none"
+  >
+    <EGUsageLimitsPage v-if="usageLimitsPanelMounted" :org-id="props.orgId" />
   </div>
 
   <!-- All users tab -->
