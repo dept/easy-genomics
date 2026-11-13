@@ -163,6 +163,7 @@
       label: 'Data Collections',
       icon: 'i-heroicons-rectangle-stack',
     };
+    const storageTab = { key: 'storage', label: 'Storage', icon: 'i-heroicons-circle-stack' };
     const usersTab = { key: 'users', label: 'Users', icon: 'i-heroicons-users' };
     const detailsTab = { key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth' };
 
@@ -178,6 +179,8 @@
       if (omicsAvailable) items.push(omicsWorkflowsTab);
     }
     items.push(dataCollectionsTab);
+    // Lab managers, org admins, and system admins (superuser lab view from Manage).
+    if (props.superuser || userStore.canEditLabUsers(props.labId)) items.push(storageTab);
     items.push({ ...usersTab, dividerBefore: items.length > 0 });
     if (!userStore.isSuperuser && userStore.canEditLabDetails()) items.push(detailsTab);
 
@@ -206,6 +209,9 @@
     if (activeTabKey.value === 'details') {
       return 'Lab settings';
     }
+    if (activeTabKey.value === 'storage') {
+      return 'Storage';
+    }
     return labName.value;
   });
 
@@ -221,6 +227,7 @@
       runs: 'View your pipeline runs',
       seqeraPipelines: 'View your Seqera pipelines',
       omicsWorkflows: 'View your HealthOmics workflows',
+      storage: "Everything Easy Genomics is holding in this lab's bucket, grouped by the run it belongs to.",
       users: 'View your lab users',
     };
     return descriptions[activeTabKey.value] || '';
@@ -234,6 +241,7 @@
       runs: ['pipeline runs', 'lab runs', 'runs'],
       seqeraPipelines: ['seqera pipelines', 'seqera workflows'],
       omicsWorkflows: ['healthomics workflows'],
+      storage: ['storage'],
       users: ['users', 'lab users'],
       details: ['settings'],
     };
@@ -1063,6 +1071,7 @@
       :class="{ 'shrink-0': activeTabKey === 'dataCollections' }"
       :title="pageTitle"
       :description="pageDescription"
+      :description-class="activeTabKey === 'storage' ? 'max-w-xl text-sm' : undefined"
       :back-action="() => (superuser ? $router.push(`/orgs/${orgId || ''}`) : $router.push('/labs'))"
       :show-back="true"
       show-org-breadcrumb
@@ -1074,6 +1083,15 @@
         label="Create Workflow"
         variant="secondary"
         @click="$router.push(`/labs/${labId}/create-workflow`)"
+      />
+      <EGButton
+        v-if="activeTabKey === 'storage' && orgId"
+        label="Rescan bucket"
+        variant="secondary"
+        icon="i-heroicons-arrow-path"
+        :loading="uiStore.isRequestPending('rescanLabStorage')"
+        :disabled="uiStore.isRequestPending('rescanLabStorage') || uiStore.isRequestPending('editLabStorage')"
+        @click="useStorageStore().rescanLabStorage(orgId, labId)"
       />
       <EGButton
         v-if="!superuser && activeTabKey === 'users'"
@@ -1119,6 +1137,17 @@
         @update:explorer-tab="dataCollectionsExplorerTab = $event"
         @open-settings="openLabSettingsFromDataCollections"
       />
+    </div>
+
+    <div
+      v-if="activeTabKey === 'storage' && orgId"
+      role="tabpanel"
+      id="panel-storage"
+      aria-labelledby="tab-storage"
+      tabindex="0"
+      class="mt-4"
+    >
+      <EGLabStorage :org-id="orgId" :lab-id="labId" />
     </div>
   </div>
 

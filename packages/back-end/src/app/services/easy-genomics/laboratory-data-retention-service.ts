@@ -39,7 +39,7 @@ const MAX_RUN_FOLDER_DEPTH = 2;
  * let the reconciliation pass schedule a user's in-progress upload for deletion. This is a
  * correctness invariant of that pass rather than an operational dial, so it is not configurable.
  */
-const ORPHAN_SCAN_MIN_AGE_DAYS = 30;
+export const ORPHAN_SCAN_MIN_AGE_DAYS = 30;
 
 function orphanQuietCutoff(nowMs: number = Date.now()): Date {
   return new Date(nowMs - ORPHAN_SCAN_MIN_AGE_DAYS * 24 * 60 * 60 * 1000);
@@ -150,12 +150,37 @@ type LiveRunReferences = {
 };
 
 /** FILE#-row state for a lab, loaded once and shared by all three phases. */
-type FileRowIndex = {
+export type FileRowIndex = {
   rows: Awaited<ReturnType<LaboratoryDataTaggingService['listAllFileRowsForLab']>>;
   trackedKeys: Set<string>;
   permanentKeys: Set<string>;
   refByKey: Map<string, string>;
 };
+
+/** `permanentKeys` is every file with the Permanent tag or a link to a sample that still has it. */
+export async function loadFileRowIndex(
+  taggingService: LaboratoryDataTaggingService,
+  laboratory: Laboratory,
+): Promise<FileRowIndex> {
+  const rows = await taggingService.listAllFileRowsForLab(laboratory.LaboratoryId);
+  const permanentTagId = permanentTagIdForLaboratory(laboratory.LaboratoryId);
+  const permanentSampleIds = await taggingService.listPermanentSampleIds(laboratory.LaboratoryId);
+
+  const trackedKeys = new Set<string>();
+  const permanentKeys = new Set<string>();
+  const refByKey = new Map<string, string>();
+
+  for (const row of rows) {
+    if (!row.ObjectKey) continue;
+    trackedKeys.add(row.ObjectKey);
+    refByKey.set(row.ObjectKey, row.Ref);
+    const taggedPermanent = (row.TagIds || []).includes(permanentTagId);
+    const samplePermanent = (row.SampleIds || []).some((id) => permanentSampleIds.has(id));
+    if (taggedPermanent || samplePermanent) permanentKeys.add(row.ObjectKey);
+  }
+
+  return { rows, trackedKeys, permanentKeys, refByKey };
+}
 
 /**
  * Owns the S3 deletion half of the run-retention cascade. Extracted from the scheduled Lambda so
@@ -240,16 +265,20 @@ export class LaboratoryDataRetentionService {
       }
     }
 
-    const fileRows = await this.loadFileRowIndex(laboratory);
+    const fileRows = await loadFileRowIndex(this.taggingService, laboratory);
     // The stamp above can take the whole write slice. Reload so a run created in that window is
     // visible before any input is classified as stale.
     const runs = runsForStamp ? await this.loadRunsForSweep(laboratory.LaboratoryId, stats) : undefined;
-    await this.sweepInputFiles(laboratory, options, fileRows, stats, runs);
+    if (!laboratory.RetentionKeepInputData) {
+      await this.sweepInputFiles(laboratory, options, fileRows, stats, runs);
+    }
     if (stats.stoppedForDeadline) return stats;
 
-    if (runs && (options.outputDeletionEnabled || options.orphanReconciliationEnabled)) {
+    const orphanReconciliationEnabled =
+      options.orphanReconciliationEnabled && laboratory.RetentionIncludePrePolicyData !== false;
+    if (runs && (options.outputDeletionEnabled || orphanReconciliationEnabled)) {
       const liveReferences = this.liveRunReferencesFrom(runs);
-      if (options.orphanReconciliationEnabled) {
+      if (orphanReconciliationEnabled) {
         await this.reconcileOrphanedRunFolders(laboratory, options, liveReferences, fileRows, stats);
       }
       if (!stats.stoppedForDeadline && options.outputDeletionEnabled) {
@@ -414,27 +443,6 @@ export class LaboratoryDataRetentionService {
     console.log(
       `Lab ${laboratoryId} retention reconcile: updated=${wrote.updated} removed=${wrote.removed} deferred=${wrote.deferred}`,
     );
-  }
-
-  private async loadFileRowIndex(laboratory: Laboratory): Promise<FileRowIndex> {
-    const rows = await this.taggingService.listAllFileRowsForLab(laboratory.LaboratoryId);
-    const permanentTagId = permanentTagIdForLaboratory(laboratory.LaboratoryId);
-    const permanentSampleIds = await this.taggingService.listPermanentSampleIds(laboratory.LaboratoryId);
-
-    const trackedKeys = new Set<string>();
-    const permanentKeys = new Set<string>();
-    const refByKey = new Map<string, string>();
-
-    for (const row of rows) {
-      if (!row.ObjectKey) continue;
-      trackedKeys.add(row.ObjectKey);
-      refByKey.set(row.ObjectKey, row.Ref);
-      const taggedPermanent = (row.TagIds || []).includes(permanentTagId);
-      const samplePermanent = (row.SampleIds || []).some((id) => permanentSampleIds.has(id));
-      if (taggedPermanent || samplePermanent) permanentKeys.add(row.ObjectKey);
-    }
-
-    return { rows, trackedKeys, permanentKeys, refByKey };
   }
 
   /**
