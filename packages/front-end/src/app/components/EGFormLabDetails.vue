@@ -40,6 +40,12 @@
     DEFAULT_RUN_LIST_STATUS_POLL_INTERVAL_SECONDS,
   } from '@easy-genomics/shared-lib/src/app/utils/laboratory-run-progress-polling';
   import { fetchLabS3BucketOptions } from '@FE/utils/lab-s3-bucket-options';
+  import {
+    networkingMenuOptions,
+    networkingMenuText,
+    networkingMenuValue,
+    networkingStateFromMenu,
+  } from '@FE/utils/lab-networking-selection';
 
   const props = withDefaults(
     defineProps<{
@@ -71,7 +77,6 @@
   const runDetailPollHelpId = 'lab-settings-run-detail-poll-help';
   const seqeraSectionId = 'lab-settings-seqera-section';
   const healthOmicsSectionId = 'lab-settings-healthomics-section';
-  const networkingLabelId = 'lab-settings-networking-label';
   const networkingHelpId = 'lab-settings-networking-help';
   const notifyOwnRunsToggleLabelId = 'lab-settings-notify-own-runs-toggle-label';
   const notifyLabRunsToggleLabelId = 'lab-settings-notify-lab-runs-toggle-label';
@@ -187,38 +192,15 @@
     { value: 'openai', label: 'OpenAI' },
     { value: 'anthropic', label: 'Anthropic' },
   ];
-  // One menu: "Restricted (default)", or the ops-created configuration name typed into it.
-  const networkingSelection = computed(() => {
-    const name = state.value.AwsHealthOmicsVpcConfigurationName?.trim() ?? '';
-    if (state.value.AwsHealthOmicsNetworkingMode === 'VPC') return name || undefined;
-    return 'RESTRICTED';
-  });
-  const networkingSelectOptions = computed(() => {
-    const options = [{ label: 'Restricted (default)', value: 'RESTRICTED' }];
-    const name = state.value.AwsHealthOmicsVpcConfigurationName?.trim();
-    if (name && name !== 'RESTRICTED') options.push({ label: name, value: name });
-    return options;
-  });
-
-  function networkingMenuText(value: unknown): string {
-    if (typeof value === 'string') return value.trim();
-    if (value && typeof value === 'object' && 'label' in value) {
-      const option = value as { label: unknown; value?: unknown };
-      const picked = typeof option.value === 'string' && option.value ? option.value : option.label;
-      return typeof picked === 'string' ? picked.trim() : '';
-    }
-    return '';
-  }
+  const networkingSelection = computed(() =>
+    networkingMenuValue(state.value.AwsHealthOmicsNetworkingMode, state.value.AwsHealthOmicsVpcConfigurationName),
+  );
+  const networkingSelectOptions = computed(() => networkingMenuOptions(state.value.AwsHealthOmicsVpcConfigurationName));
 
   function setNetworkingSelection(value: unknown) {
-    const next = networkingMenuText(value);
-    if (!next || next === 'RESTRICTED') {
-      state.value.AwsHealthOmicsNetworkingMode = 'RESTRICTED';
-      state.value.AwsHealthOmicsVpcConfigurationName = '';
-      return;
-    }
-    state.value.AwsHealthOmicsNetworkingMode = 'VPC';
-    state.value.AwsHealthOmicsVpcConfigurationName = next;
+    const next = networkingStateFromMenu(value);
+    state.value.AwsHealthOmicsNetworkingMode = next.mode;
+    state.value.AwsHealthOmicsVpcConfigurationName = next.name;
   }
 
   // Seqera is soft-deprecated: only labs that already have it enabled keep seeing the
@@ -781,6 +763,10 @@
     () => useUiStore().isRequestPending('createLab') || useUiStore().isRequestPending('updateLab'),
   );
   const isLoadingRetentionPreview = ref(false);
+  // Save token submits the form too, so it shares the gates on the Save changes button.
+  const tokenSaveBlocked = computed(
+    () => isSubmittingFormData.value || !isS3BucketValidForSubmit.value || isLoadingRetentionPreview.value,
+  );
   const isSaveRetentionChangeDialogOpen = ref(false);
   const isRetentionDeleteConfirmDialogOpen = ref(false);
   const retentionPreviewCacheMonths = ref<number | null>(null);
@@ -876,6 +862,8 @@
    */
   async function onSubmit() {
     if (formMode.value === LabDetailsFormModeEnum.enum.ReadOnly) return;
+    // Enter activates the first submit button. Save token is one, and it sits above Save changes.
+    if (!isS3BucketValidForSubmit.value || isLoadingRetentionPreview.value) return;
 
     if (formMode.value === LabDetailsFormModeEnum.enum.Edit && runRetentionMonthsChanged()) {
       const ok = await ensureRetentionChangePreviewLoaded();
@@ -1614,7 +1602,7 @@
                     :variant="ButtonVariantEnum.enum.secondary"
                     u-button-type="submit"
                     label="Save token"
-                    :disabled="!state.NextFlowTowerAccessToken?.trim() || isSubmittingFormData"
+                    :disabled="!state.NextFlowTowerAccessToken?.trim() || tokenSaveBlocked"
                   />
                 </div>
               </EGFormGroup>
@@ -1675,8 +1663,11 @@
                   </svg>
                 </div>
                 <div class="min-w-0 flex-1">
-                  <label :id="networkingLabelId" class="text-sm font-medium text-black">Networking</label>
-                  <UFormGroup name="AwsHealthOmicsVpcConfigurationName" class="mt-2">
+                  <EGFormGroup
+                    label="Networking"
+                    name="AwsHealthOmicsVpcConfigurationName"
+                    class="!mb-0 [&_label]:font-medium"
+                  >
                     <USelectMenu
                       :model-value="networkingSelection"
                       :options="networkingSelectOptions"
@@ -1692,7 +1683,6 @@
                           : 'Restricted (default)'
                       "
                       :disabled="!isEditing || isSubmittingFormData"
-                      :aria-labelledby="networkingLabelId"
                       :aria-describedby="networkingHelpId"
                       class="w-full max-w-xs"
                       @update:model-value="setNetworkingSelection"
@@ -1701,13 +1691,32 @@
                         <span class="truncate">Use “{{ networkingMenuText(option) }}”</span>
                       </template>
                     </USelectMenu>
-                  </UFormGroup>
-                  <p :id="networkingHelpId" class="text-muted mt-1 text-xs">
-                    Custom VPC routes this lab's runs through your own network configuration.
-                  </p>
-                  <p v-if="state.AwsHealthOmicsNetworkingMode === 'VPC'" class="text-muted mt-1 text-xs">
-                    Name of an ACTIVE HealthOmics configuration set up by ops.
-                  </p>
+                    <div class="mt-1 flex items-start gap-1.5">
+                      <p :id="networkingHelpId" class="text-muted text-xs">
+                        Custom VPC routes this lab's runs through your own network configuration.
+                      </p>
+                      <UTooltip
+                        :delay-duration="0"
+                        :ui="{ base: 'h-auto w-auto max-w-sm whitespace-normal text-left' }"
+                      >
+                        <template #text>
+                          <p>
+                            Restricted (default) reaches only S3 and ECR in-region. VPC routes this lab's runs through a
+                            saved configuration — for example internet reference datasets, license servers, or private
+                            VPC and on-prem data.
+                          </p>
+                        </template>
+                        <UIcon
+                          name="i-heroicons-information-circle"
+                          class="text-muted h-4 w-4 shrink-0"
+                          aria-label="Networking mode guidance"
+                        />
+                      </UTooltip>
+                    </div>
+                    <p v-if="state.AwsHealthOmicsNetworkingMode === 'VPC'" class="text-muted mt-1 text-xs">
+                      Name of an ACTIVE HealthOmics configuration set up by ops.
+                    </p>
+                  </EGFormGroup>
                 </div>
               </div>
 
@@ -1783,7 +1792,7 @@
                         :variant="ButtonVariantEnum.enum.secondary"
                         u-button-type="submit"
                         label="Save token"
-                        :disabled="!state.GitHubAccessToken?.trim() || isSubmittingFormData"
+                        :disabled="!state.GitHubAccessToken?.trim() || tokenSaveBlocked"
                       />
                     </div>
                   </EGFormGroup>
@@ -1867,7 +1876,7 @@
                   :variant="ButtonVariantEnum.enum.secondary"
                   u-button-type="submit"
                   label="Save token"
-                  :disabled="!state.MicroreactAccessToken?.trim() || isSubmittingFormData"
+                  :disabled="!state.MicroreactAccessToken?.trim() || tokenSaveBlocked"
                 />
               </div>
             </EGFormGroup>
@@ -1900,10 +1909,46 @@
             <div class="flex items-start justify-between gap-4">
               <div class="min-w-0">
                 <p class="text-sm text-black">Analyse failed runs with AI</p>
-                <p class="text-muted mt-0.5 text-xs">
-                  Documented HealthOmics error codes are matched with a built-in lookup. The LLM is only used for
-                  ambiguous or free-text errors.
-                </p>
+                <div class="mt-0.5 flex items-start gap-1.5">
+                  <p class="text-muted text-xs">
+                    Documented HealthOmics error codes are matched with a built-in lookup. The LLM is only used for
+                    ambiguous or free-text errors.
+                  </p>
+                  <UTooltip :delay-duration="0" :ui="{ base: 'h-auto w-auto max-w-sm whitespace-normal text-left' }">
+                    <template #text>
+                      <div class="space-y-1.5 py-1">
+                        <p>
+                          Each integration can use a different provider — for example a cheaper model for high-volume
+                          Seqera traffic, a more accurate model for HealthOmics ambiguous cases.
+                        </p>
+                        <p class="font-medium text-black">Which provider should I choose?</p>
+                        <p>
+                          <span class="font-medium text-black">Amazon Bedrock</span>
+                          — no API key; calls run under the platform's own AWS account and IAM role, not your lab's.
+                          Simplest setup, and the error text stays within AWS, but it isn't isolated to your own AWS
+                          account.
+                        </p>
+                        <p>
+                          <span class="font-medium text-black">Anthropic (Claude)</span>
+                          — best accuracy on nuanced or ambiguous errors. Requires an Anthropic API key.
+                        </p>
+                        <p>
+                          <span class="font-medium text-black">OpenAI (GPT)</span>
+                          — low-cost small models (e.g. gpt-4o-mini) suited to high-volume traffic. Requires an OpenAI
+                          API key.
+                        </p>
+                        <p class="italic">
+                          OpenAI and Anthropic send the error text to that provider; Bedrock does not leave AWS.
+                        </p>
+                      </div>
+                    </template>
+                    <UIcon
+                      name="i-heroicons-information-circle"
+                      class="text-muted h-4 w-4 shrink-0"
+                      aria-label="LLM provider and data egress guidance"
+                    />
+                  </UTooltip>
+                </div>
               </div>
               <UToggle
                 class="mt-0.5 shrink-0"
