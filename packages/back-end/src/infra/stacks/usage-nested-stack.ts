@@ -7,7 +7,7 @@ import { IamConstruct, IamConstructProps } from '../constructs/iam-construct';
 import { LambdaConstruct } from '../constructs/lambda-construct';
 import { SqsConstruct } from '../constructs/sqs-construct';
 import { UsageNestedStackProps } from '../types/back-end-stack';
-import { RUN_COST_CAPTURE_QUEUE } from '../utils/run-cost-capture-queue';
+import { RUN_COST_CAPTURE_MAX_RECEIVE_COUNT, RUN_COST_CAPTURE_QUEUE } from '../utils/run-cost-capture-queue';
 
 /**
  * Usage limits and run costs. Its handlers sit under `controllers/easy-genomics/usage`
@@ -44,7 +44,7 @@ export class UsageNestedStack extends NestedStack {
           retentionPeriod: Duration.days(1),
           visibilityTimeout: Duration.minutes(15),
           enforceSSL: true,
-          deadLetterQueue: { queue: runCostCaptureDlq, maxReceiveCount: 3 },
+          deadLetterQueue: { queue: runCostCaptureDlq, maxReceiveCount: RUN_COST_CAPTURE_MAX_RECEIVE_COUNT },
         },
       },
     });

@@ -7,6 +7,7 @@ jest.mock('../../../../../src/app/services/easy-genomics/run-cost-capture-servic
 import { handler } from '../../../../../src/app/controllers/easy-genomics/usage/process-capture-run-cost.lambda';
 import { LaboratoryRunService } from '../../../../../src/app/services/easy-genomics/laboratory-run-service';
 import { captureRunCostOutcome } from '../../../../../src/app/services/easy-genomics/run-cost-capture-service';
+import { RUN_COST_CAPTURE_MAX_RECEIVE_COUNT } from '../../../../../src/infra/utils/run-cost-capture-queue';
 
 const LAB_ID = 'lab-1';
 const RUN_ID = 'run-1';
@@ -27,14 +28,23 @@ const finishedRun = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const event = (body: unknown): SQSEvent =>
-  ({ Records: [{ body: typeof body === 'string' ? body : JSON.stringify(body), messageId: '1' }] }) as any;
+const event = (body: unknown, receiveCount?: string): SQSEvent =>
+  ({
+    Records: [
+      {
+        body: typeof body === 'string' ? body : JSON.stringify(body),
+        messageId: '1',
+        attributes: receiveCount === undefined ? {} : { ApproximateReceiveCount: receiveCount },
+      },
+    ],
+  }) as any;
 
 const invoke = (sqsEvent: SQSEvent) => handler(sqsEvent, {} as Context, () => {});
 
 describe('process-capture-run-cost Lambda', () => {
   let mockQueryByRunId: jest.Mock;
   let mockRecordRunCostOutcome: jest.Mock;
+  let mockRecordRunCostCaptureFailure: jest.Mock;
   const mockCapture = captureRunCostOutcome as jest.Mock;
   const laboratoryRunService = (LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>).mock
     .instances[0];
@@ -48,6 +58,8 @@ describe('process-capture-run-cost Lambda', () => {
     mockRecordRunCostOutcome = jest.fn().mockResolvedValue(true);
     laboratoryRunService.queryByRunId = mockQueryByRunId;
     laboratoryRunService.recordRunCostOutcome = mockRecordRunCostOutcome;
+    mockRecordRunCostCaptureFailure = jest.fn().mockResolvedValue(true);
+    laboratoryRunService.recordRunCostCaptureFailure = mockRecordRunCostCaptureFailure;
     mockCapture.mockResolvedValue(capturedOutcome);
   });
 
@@ -101,5 +113,56 @@ describe('process-capture-run-cost Lambda', () => {
       LaboratoryRunNotFoundError,
     );
     expect(mockCapture).not.toHaveBeenCalled();
+  });
+
+  describe('on the last attempt', () => {
+    const message = { LaboratoryId: LAB_ID, RunId: RUN_ID };
+    const lastAttempt = String(RUN_COST_CAPTURE_MAX_RECEIVE_COUNT);
+
+    it('records the failure marker and still throws the original error', async () => {
+      const notFound = new Error('run not found on the platform');
+      mockCapture.mockRejectedValue(notFound);
+
+      await expect(invoke(event(message, lastAttempt))).rejects.toBe(notFound);
+
+      expect(mockRecordRunCostCaptureFailure).toHaveBeenCalledWith({
+        LaboratoryId: LAB_ID,
+        RunId: RUN_ID,
+        Error: 'run not found on the platform',
+      });
+    });
+
+    it('records the marker when the run cannot be read at all', async () => {
+      const notFound = new LaboratoryRunNotFoundError(RUN_ID);
+      mockQueryByRunId.mockRejectedValue(notFound);
+
+      await expect(invoke(event(message, lastAttempt))).rejects.toBe(notFound);
+
+      expect(mockRecordRunCostCaptureFailure).toHaveBeenCalledWith(
+        expect.objectContaining({ LaboratoryId: LAB_ID, RunId: RUN_ID }),
+      );
+    });
+
+    it('logs a failed marker write and still throws the original error', async () => {
+      const captureError = new Error('ThrottlingException');
+      const markerError = new Error('DynamoDB unavailable');
+      mockCapture.mockRejectedValue(captureError);
+      mockRecordRunCostCaptureFailure.mockRejectedValue(markerError);
+
+      await expect(invoke(event(message, lastAttempt))).rejects.toBe(captureError);
+
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining(`RunId=${RUN_ID}`), markerError);
+    });
+
+    it.each([['1'], ['2'], [undefined], ['not-a-number']])(
+      'records no marker when the receive count is %s',
+      async (receiveCount) => {
+        mockCapture.mockRejectedValue(new Error('ThrottlingException'));
+
+        await expect(invoke(event(message, receiveCount))).rejects.toThrow('ThrottlingException');
+
+        expect(mockRecordRunCostCaptureFailure).not.toHaveBeenCalled();
+      },
+    );
   });
 });

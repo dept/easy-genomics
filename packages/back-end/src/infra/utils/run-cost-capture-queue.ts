@@ -5,6 +5,9 @@
  */
 export const RUN_COST_CAPTURE_QUEUE = 'run-cost-capture-queue';
 
+/** Attempts before a capture message moves to the dead-letter queue. The consumer marks the run on the last one. */
+export const RUN_COST_CAPTURE_MAX_RECEIVE_COUNT = 3;
+
 export interface RunCostCaptureQueueLocation {
   namePrefix: string;
   region: string;

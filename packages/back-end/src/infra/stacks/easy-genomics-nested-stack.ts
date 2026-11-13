@@ -57,6 +57,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
   runExportDlq!: Queue;
   /** DLQ for key-output copies to an external bucket that time out or keep failing. */
   keyOutputDeliveryDlq!: Queue;
+  /** DLQ for run status updates that keep failing. */
+  laboratoryRunUpdateDlq!: Queue;
 
   constructor(scope: Construct, id: string, props: EasyGenomicsNestedStackProps) {
     super(scope, id);
@@ -99,6 +101,15 @@ export class EasyGenomicsNestedStack extends NestedStack {
       enforceSSL: true,
     });
 
+    // A run whose status can never be read (deleted on the platform, revoked token) is retried
+    // three times and then parked here, instead of being retried until it expires.
+    this.laboratoryRunUpdateDlq = new Queue(this, `${this.props.namePrefix}-laboratory-run-update-dlq`, {
+      queueName: `${this.props.namePrefix}-laboratory-run-update-dlq.fifo`,
+      fifo: true,
+      retentionPeriod: Duration.days(14),
+      enforceSSL: true,
+    });
+
     this.sqs = new SqsConstruct(this, `${this.props.constructNamespace}-sqs`, {
       namePrefix: this.props.namePrefix,
       envType: this.props.envType,
@@ -126,6 +137,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
           retentionPeriod: Duration.days(1),
           visibilityTimeout: Duration.minutes(15),
           enforceSSL: true,
+          deadLetterQueue: { queue: this.laboratoryRunUpdateDlq, maxReceiveCount: 3 },
         },
         // Failure classification consumer. Visibility timeout is generous (5 min) to
         // accommodate Bedrock invocation latency and occasional throttling without
@@ -346,7 +358,12 @@ export class EasyGenomicsNestedStack extends NestedStack {
           },
         },
         '/easy-genomics/laboratory/run/process-update-laboratory-run': {
-          events: [new SqsEventSource(this.sqs.sqsQueues.get('laboratory-run-update-queue')!, { batchSize: 5 })],
+          events: [
+            new SqsEventSource(this.sqs.sqsQueues.get('laboratory-run-update-queue')!, {
+              batchSize: 5,
+              reportBatchItemFailures: true,
+            }),
+          ],
           environment: {
             SEQERA_API_BASE_URL: this.props.seqeraApiBaseUrl,
             SQS_LABORATORY_RUN_FAILURE_CLASSIFICATION_QUEUE_URL:

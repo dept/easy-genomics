@@ -160,7 +160,7 @@ describe('process-update-laboratory-run.lambda', () => {
 
     const result = await handler(event, createContext(), () => {});
 
-    expect(result.statusCode).toBe(200);
+    expect(result).toEqual({ batchItemFailures: [] });
     expect(createOmicsServiceForLab as jest.Mock).toHaveBeenCalledWith('lab-1', 'org-1', 'status-check');
     expect(mockGetRun).toHaveBeenCalledWith(<GetRunCommandInput>{ id: 'ext-1' });
     expect(mockRunService.prototype.update).toHaveBeenCalled();
@@ -196,7 +196,7 @@ describe('process-update-laboratory-run.lambda', () => {
 
     const result = await handler(event, Object.freeze(node24Context) as any, () => {});
 
-    expect(result.statusCode).toBe(200);
+    expect(result).toEqual({ batchItemFailures: [] });
     expect(mockRunService.prototype.update).toHaveBeenCalled();
   });
 
@@ -222,7 +222,7 @@ describe('process-update-laboratory-run.lambda', () => {
 
     const result = await handler(event, createContext(), () => {});
 
-    expect(result.statusCode).toBe(200);
+    expect(result).toEqual({ batchItemFailures: [] });
     expect(mockGetRun).not.toHaveBeenCalled();
     expect(mockRunService.prototype.update).not.toHaveBeenCalled();
   });
@@ -270,13 +270,13 @@ describe('process-update-laboratory-run.lambda', () => {
 
     const result = await handler(event, createContext(), () => {});
 
-    expect(result.statusCode).toBe(200);
+    expect(result).toEqual({ batchItemFailures: [] });
     expect(mockSsmService.prototype.getParameter).toHaveBeenCalled();
     expect(httpRequest as jest.Mock).toHaveBeenCalled();
     expect(mockRunService.prototype.update).toHaveBeenCalled();
   });
 
-  it('handles missing SSM parameter by throwing LaboratoryAccessTokenUnavailableError', async () => {
+  it('reports the record as a batch failure when the Seqera access token is missing', async () => {
     mockQueryByRunId.mockResolvedValue({
       RunId: 'run-1',
       LaboratoryId: 'lab-1',
@@ -302,11 +302,11 @@ describe('process-update-laboratory-run.lambda', () => {
       }),
     };
 
-    const event = createEvent([{ body: JSON.stringify(snsBody) } as any]);
+    const event = createEvent([{ messageId: 'msg-1', body: JSON.stringify(snsBody) } as any]);
 
     const result = await handler(event, createContext(), () => {});
 
-    expect(result.statusCode).toBe(400);
+    expect(result).toEqual({ batchItemFailures: [{ itemIdentifier: 'msg-1' }] });
   });
 
   it('getAWSHealthOmicsStatus returns status and computes durationSeconds from startTime/stopTime', async () => {
@@ -899,6 +899,24 @@ describe('process-update-laboratory-run.lambda', () => {
       await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
 
       expect(costMessages()).toHaveLength(0);
+    });
+
+    it('does not send an already-terminal run whose cost capture gave up', async () => {
+      mockQueryByRunId.mockResolvedValue({
+        ...runningRun,
+        Status: 'COMPLETED',
+        TerminalAt: '2026-01-01T00:00:00Z',
+        RunDurationSeconds: 100,
+        NotifiedAt: '2026-01-01T00:00:00Z',
+        RunCostCaptureFailedAt: '2026-01-02T00:00:00Z',
+        RunCostCaptureError: 'run not found on the platform',
+      });
+      mockGetRun.mockResolvedValue({ status: 'COMPLETED' } as any);
+
+      await processStatusCheckEvent('UPDATE', { RunId: 'run-1' } as any);
+
+      expect(costMessages()).toHaveLength(0);
+      expect(mockUpdateRun).not.toHaveBeenCalled();
     });
 
     it('logs a failed send with the RunId and still updates the status and notifies', async () => {
@@ -1496,5 +1514,90 @@ describe('process-update-laboratory-run.lambda', () => {
       }),
     );
     expect(mockMarkTerminalNotified).toHaveBeenCalled();
+  });
+
+  describe('partial batch responses', () => {
+    const statusCheckRecord = (messageId: string, runId: string): SQSRecord =>
+      ({
+        messageId,
+        body: JSON.stringify({ Operation: 'UPDATE', Type: 'LaboratoryRun', Record: { RunId: runId } }),
+      }) as any;
+    const runFor = (runId: string) => ({
+      RunId: runId,
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      ExternalRunId: `ext-${runId}`,
+      Status: 'RUNNING',
+      Platform: 'AWS HealthOmics',
+    });
+
+    beforeEach(() => {
+      mockQueryByRunId.mockImplementation(async (runId: string) => runFor(runId));
+      mockUpdateRun.mockImplementation(async (r) => r);
+    });
+
+    it('stops at the first failing record and reports it and every record after it', async () => {
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+      mockGetRun.mockImplementation(async ({ id }) => {
+        if (id === 'ext-run-2') throw new Error('run not found on the platform');
+        return { status: 'RUNNING' };
+      });
+      const event = createEvent([
+        statusCheckRecord('msg-1', 'run-1'),
+        statusCheckRecord('msg-2', 'run-2'),
+        statusCheckRecord('msg-3', 'run-3'),
+      ]);
+
+      const result = await handler(event, createContext(), () => {});
+
+      expect(result).toEqual({ batchItemFailures: [{ itemIdentifier: 'msg-2' }, { itemIdentifier: 'msg-3' }] });
+      expect(mockQueryByRunId.mock.calls.map(([runId]) => runId)).toEqual(['run-1', 'run-2']);
+      expect(mockGetRun).toHaveBeenCalledWith({ id: 'ext-run-1' });
+      expect(mockGetRun).not.toHaveBeenCalledWith({ id: 'ext-run-3' });
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('RunId=run-2'), expect.any(Error));
+      error.mockRestore();
+    });
+
+    it('returns no failures when every record succeeds', async () => {
+      mockGetRun.mockResolvedValue({ status: 'RUNNING' });
+      const event = createEvent([statusCheckRecord('msg-1', 'run-1'), statusCheckRecord('msg-2', 'run-2')]);
+
+      const result = await handler(event, createContext(), () => {});
+
+      expect(result).toEqual({ batchItemFailures: [] });
+      expect(mockQueryByRunId).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports an unparseable body as a failure instead of throwing', async () => {
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+      mockGetRun.mockResolvedValue({ status: 'RUNNING' });
+      const event = createEvent([
+        statusCheckRecord('msg-1', 'run-1'),
+        { messageId: 'msg-2', body: 'not json' } as any,
+        statusCheckRecord('msg-3', 'run-3'),
+      ]);
+
+      const result = await handler(event, createContext(), () => {});
+
+      expect(result).toEqual({ batchItemFailures: [{ itemIdentifier: 'msg-2' }, { itemIdentifier: 'msg-3' }] });
+      expect(mockQueryByRunId).toHaveBeenCalledTimes(1);
+      error.mockRestore();
+    });
+
+    it('skips an unsupported event type without reporting it as a failure', async () => {
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+      mockGetRun.mockResolvedValue({ status: 'RUNNING' });
+      const event = createEvent([
+        { messageId: 'msg-1', body: JSON.stringify({ Operation: 'UPDATE', Type: 'Laboratory', Record: {} }) } as any,
+        statusCheckRecord('msg-2', 'run-2'),
+      ]);
+
+      const result = await handler(event, createContext(), () => {});
+
+      expect(result).toEqual({ batchItemFailures: [] });
+      expect(mockQueryByRunId).toHaveBeenCalledWith('run-2');
+      expect(error).toHaveBeenCalledWith('Unsupported SNS Processing Event Type: Laboratory');
+      error.mockRestore();
+    });
   });
 });

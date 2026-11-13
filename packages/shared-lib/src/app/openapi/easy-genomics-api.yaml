@@ -2339,6 +2339,14 @@ components:
             - SyncedAt
             - TotalUsd
           description: AWS Cost Explorer billed cost synced ~24–48h after completion.
+        RunCostCaptureFailedAt:
+          description: |-
+            ISO timestamp set when cost capture gave up on its last attempt. The status check stops
+            re-sending a run that carries it; a later successful capture removes it.
+          type: string
+        RunCostCaptureError:
+          description: Why the last cost capture attempt failed.
+          type: string
         MicroreactStatus:
           description: State of the latest Microreact export for this run. Absent means it was never sent.
           enum:
@@ -2614,6 +2622,14 @@ components:
             - SyncedAt
             - TotalUsd
           description: AWS Cost Explorer billed cost synced ~24–48h after completion.
+        RunCostCaptureFailedAt:
+          description: |-
+            ISO timestamp set when cost capture gave up on its last attempt. The status check stops
+            re-sending a run that carries it; a later successful capture removes it.
+          type: string
+        RunCostCaptureError:
+          description: Why the last cost capture attempt failed.
+          type: string
         MicroreactStatus:
           description: State of the latest Microreact export for this run. Absent means it was never sent.
           enum:
