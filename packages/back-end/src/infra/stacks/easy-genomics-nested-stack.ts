@@ -2559,6 +2559,13 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
     ]);
 
+    // The Price List API has no resource-level permissions.
+    const laboratoryStoragePricingPolicy = new PolicyStatement({
+      resources: ['*'],
+      actions: ['pricing:GetProducts'],
+      effect: Effect.ALLOW,
+    });
+
     // /easy-genomics/data-collections/process-expired-laboratory-data
     // Daily scheduled S3 retention sweep. Needs to scan all laboratories, read+mutate the
     // tagging table for every lab, and call s3:DeleteObject on the underlying objects.
@@ -2597,8 +2604,74 @@ export class EasyGenomicsNestedStack extends NestedStack {
       new PolicyStatement({
         // Bucket-level ARN (no `/*`): required to enumerate a run's results/ prefix before
         // deleting it. Object deletes are still authorised by the object-ARN statement above.
+        // GetBucketLocation resolves the region for the nightly storage snapshot's price.
         resources: ['arn:aws:s3:::*'],
-        actions: ['s3:ListBucket'],
+        actions: ['s3:ListBucket', 's3:GetBucketLocation'],
+        effect: Effect.ALLOW,
+      }),
+      laboratoryStoragePricingPolicy,
+    ]);
+
+    // /easy-genomics/laboratory/storage/* — the lab Storage page. Every route rebuilds the
+    // inventory (lab GetItem, run Query, tagging-table FILE#/SAMPLE# Query, bucket listing) and
+    // writes the STORAGE#SUMMARY snapshot row; edit-protection and remove add tag writes / deletes.
+    const laboratoryStorageRoutePolicies = [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+        ],
+        actions: ['dynamodb:GetItem'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: laboratoryDataTaggingDynamoResources,
+        actions: laboratoryDataTaggingDynamoActions,
+      }),
+      new PolicyStatement({
+        resources: ['arn:aws:s3:::*'],
+        actions: ['s3:ListBucket', 's3:GetBucketLocation'],
+        effect: Effect.ALLOW,
+      }),
+      laboratoryStoragePricingPolicy,
+    ];
+    for (const route of [
+      '/easy-genomics/laboratory/storage/list-laboratory-storage',
+      '/easy-genomics/laboratory/storage/request-laboratory-storage-scan',
+      '/easy-genomics/laboratory/storage/edit-laboratory-storage-protection',
+    ]) {
+      this.iam.addPolicyStatements(route, laboratoryStorageRoutePolicies);
+    }
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/storage/remove-laboratory-storage-items', [
+      ...laboratoryStorageRoutePolicies,
+      new PolicyStatement({
+        // Runtime `assertLaboratoryHasS3BucketAccess` / `assertKeyUnderLabPrefix` bound which keys are deleted.
+        resources: ['arn:aws:s3:::*/*'],
+        actions: ['s3:DeleteObject'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/organization/storage/list-organization-storage — reads snapshot rows only.
+    this.iam.addPolicyStatements('/easy-genomics/organization/storage/list-organization-storage', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [laboratoryDataTaggingTableArn],
+        actions: ['dynamodb:GetItem'],
         effect: Effect.ALLOW,
       }),
     ]);
@@ -2649,6 +2722,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
       '/easy-genomics/laboratory/run/request-apply-run-retention-policy',
       '/easy-genomics/laboratory/run/process-laboratory-run-stream',
       '/easy-genomics/laboratory/run/process-update-laboratory-run',
+      '/easy-genomics/laboratory/storage/edit-laboratory-storage-protection',
+      '/easy-genomics/laboratory/storage/remove-laboratory-storage-items',
     ];
 
     for (const route of laboratoryS3AccessEnforcementRoutes) {

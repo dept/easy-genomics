@@ -6,9 +6,11 @@ import {
   orderedLaboratoriesForSweep,
 } from '@BE/services/easy-genomics/laboratory-data-retention-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
+import { LaboratoryStorageService } from '@BE/services/easy-genomics/laboratory-storage-service';
 
 const laboratoryService = new LaboratoryService();
 const retentionService = new LaboratoryDataRetentionService();
+const storageService = new LaboratoryStorageService();
 
 const METRIC_NAMESPACE = 'EasyGenomics/DataRetention';
 
@@ -65,11 +67,24 @@ export const handler: Handler<ScheduledEvent, void> = async (
   const totals = await retentionService.sweepAllLaboratories(laboratories, options);
   const labsHitDeleteCap = totals.labsHitDeleteCap;
 
+  let storageSnapshotErrors = 0;
+  for (const laboratory of laboratories) {
+    // Snapshot after the sweep so the Storage page reflects tonight's deletions.
+    if (!laboratory.S3Bucket) continue;
+    try {
+      await storageService.rescan(laboratory);
+    } catch (err) {
+      console.error(`Storage snapshot failed for lab ${laboratory.LaboratoryId} (continuing):`, err);
+      storageSnapshotErrors++;
+    }
+  }
+
   console.log('Expired laboratory data sweep summary:', {
     ...options,
     laboratories: laboratories.length,
     ...totals,
     labsHitDeleteCap,
+    storageSnapshotErrors,
   });
 
   emitEmfMetrics({
@@ -85,6 +100,7 @@ export const handler: Handler<ScheduledEvent, void> = async (
     OrphanFoldersRecorded: totals.orphanFoldersRecorded,
     Errors: totals.errors,
     LabsHitDeleteCap: labsHitDeleteCap,
+    StorageSnapshotErrors: storageSnapshotErrors,
   });
 };
 

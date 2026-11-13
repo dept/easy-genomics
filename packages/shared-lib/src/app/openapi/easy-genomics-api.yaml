@@ -1755,6 +1755,14 @@ components:
             Laboratory-wide run retention policy, in months, applied after a run reaches a terminal state.
             - 0 means "never delete run records" (no TTL expiration).
           type: number
+        RetentionKeepInputData:
+          description: When true, retention deletes outputs and sample sheets only; input files stay until deleted by hand.
+          type: boolean
+        RetentionIncludePrePolicyData:
+          description: >-
+            Whether retention clears data left by runs that expired before the cascade existed. `undefined` means
+            enabled.
+          type: boolean
         RunListStatusPollIntervalSeconds:
           description: Polling interval, in seconds, for the lab runs list status refresh.
           type: number
@@ -1904,6 +1912,10 @@ components:
         HasNextFlowTowerAccessToken:
           type: boolean
         HasGitHubAccessToken:
+          type: boolean
+        RetentionKeepInputData:
+          type: boolean
+        RetentionIncludePrePolicyData:
           type: boolean
         HasHealthOmicsLlmApiKey:
           description: Boolean indicators. The actual keys live in SSM and are never returned.
@@ -2868,6 +2880,64 @@ components:
             type: string
       required:
         - buckets
+    EditLaboratoryStorageProtectionRequest:
+      type: object
+      properties:
+        OrganizationId:
+          type: string
+          format: uuid
+        LaboratoryId:
+          type: string
+          format: uuid
+        ItemIds:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          minItems: 1
+          maxItems: 100
+        Protected:
+          type: boolean
+      required:
+        - OrganizationId
+        - LaboratoryId
+        - ItemIds
+        - Protected
+      additionalProperties: false
+    RemoveLaboratoryStorageItemsRequest:
+      type: object
+      properties:
+        OrganizationId:
+          type: string
+          format: uuid
+        LaboratoryId:
+          type: string
+          format: uuid
+        ItemIds:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          minItems: 1
+          maxItems: 100
+      required:
+        - OrganizationId
+        - LaboratoryId
+        - ItemIds
+      additionalProperties: false
+    RequestLaboratoryStorageScanRequest:
+      type: object
+      properties:
+        OrganizationId:
+          type: string
+          format: uuid
+        LaboratoryId:
+          type: string
+          format: uuid
+      required:
+        - OrganizationId
+        - LaboratoryId
+      additionalProperties: false
     UpdateLaboratoryRequest:
       type: object
       properties:
@@ -2905,6 +2975,10 @@ components:
         RunRetentionMonths:
           type: integer
           minimum: 0
+        RetentionKeepInputData:
+          type: boolean
+        RetentionIncludePrePolicyData:
+          type: boolean
         RunListStatusPollIntervalSeconds:
           type: integer
           minimum: 30
@@ -10132,6 +10206,117 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/storage/edit-laboratory-storage-protection:
+    post:
+      operationId: editLaboratoryStorageProtection
+      summary: Edit Laboratory Storage Protection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditLaboratoryStorageProtectionRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/storage/list-laboratory-storage:
+    get:
+      operationId: listLaboratoryStorage
+      summary: List Laboratory Storage
+      parameters:
+        - name: organizationId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Organization UUID
+        - name: laboratoryId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Laboratory UUID
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/storage/remove-laboratory-storage-items:
+    post:
+      operationId: removeLaboratoryStorageItems
+      summary: Remove Laboratory Storage Items
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemoveLaboratoryStorageItemsRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/storage/request-laboratory-storage-scan:
+    post:
+      operationId: requestLaboratoryStorageScan
+      summary: Request Laboratory Storage Scan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestLaboratoryStorageScanRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /easy-genomics/laboratory/update-laboratory/{id}:
     put:
       operationId: updateLaboratory
@@ -10665,6 +10850,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ListS3BucketCatalogResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/organization/storage/list-organization-storage:
+    get:
+      operationId: listOrganizationStorage
+      summary: List Organization Storage
+      parameters:
+        - name: organizationId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Organization UUID
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: {}
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

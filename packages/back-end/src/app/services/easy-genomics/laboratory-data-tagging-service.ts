@@ -1,6 +1,11 @@
 import { randomUUID } from 'crypto';
+import { gunzipSync, gzipSync } from 'zlib';
 import { ConditionalCheckFailedException, QueryCommandOutput } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
+import type {
+  LaboratoryStorageSummary,
+  LaboratoryStorageTotals,
+} from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-storage';
 import {
   FileTagAssignment,
   LaboratoryDataTag,
@@ -157,6 +162,8 @@ function skFile(ref: string): string {
 function skMap(tagId: string, ref: string): string {
   return `MAP#${tagId}#${ref}`;
 }
+
+const SK_STORAGE_SUMMARY = 'STORAGE#SUMMARY';
 
 function skRunOutput(runId: string): string {
   return `RUNOUTPUT#${runId}`;
@@ -1321,6 +1328,50 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
       ExpressionAttributeNames: { '#folderCleanedAt': 'FolderCleanedAt' },
       ExpressionAttributeValues: marshall({ ':folderCleanedAt': new Date().toISOString() }),
     });
+  }
+
+  /**
+   * Stores the lab's storage inventory snapshot. Items are gzipped into one binary attribute.
+   * shortcut: one row caps a lab at roughly 10k inventory items (400 KB item limit); split into item rows if a lab outgrows it.
+   */
+  public async putStorageSummary(summary: LaboratoryStorageSummary): Promise<void> {
+    const { Items, ...totals } = summary;
+    await this.putItem({
+      TableName: TABLE_NAME,
+      Item: marshall(
+        { ...totals, Sk: SK_STORAGE_SUMMARY, ItemsGzip: gzipSync(JSON.stringify(Items)) },
+        { removeUndefinedValues: true },
+      ),
+    });
+  }
+
+  public async getStorageSummary(laboratoryId: string): Promise<LaboratoryStorageSummary | null> {
+    const res = await this.getItem({
+      TableName: TABLE_NAME,
+      Key: marshall({ LaboratoryId: laboratoryId, Sk: SK_STORAGE_SUMMARY }),
+    });
+    if (!res.Item) return null;
+    const row = unmarshall(res.Item);
+    const itemsGzip = row.ItemsGzip as Buffer;
+    delete row.Sk;
+    delete row.ItemsGzip;
+    return {
+      ...(row as LaboratoryStorageTotals),
+      Items: JSON.parse(gunzipSync(itemsGzip).toString('utf8')),
+    };
+  }
+
+  /** Totals only: the org roll-up never needs the item list, so it is not decompressed. */
+  public async getStorageTotals(laboratoryId: string): Promise<LaboratoryStorageTotals | null> {
+    const res = await this.getItem({
+      TableName: TABLE_NAME,
+      Key: marshall({ LaboratoryId: laboratoryId, Sk: SK_STORAGE_SUMMARY }),
+    });
+    if (!res.Item) return null;
+    const row = unmarshall(res.Item);
+    delete row.Sk;
+    delete row.ItemsGzip;
+    return row as LaboratoryStorageTotals;
   }
 
   public async listFilesByTag(

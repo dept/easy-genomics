@@ -159,6 +159,8 @@ export const handler: Handler = async (
           NextFlowTowerApiBaseUrl: request.NextFlowTowerApiBaseUrl,
           NextFlowTowerWorkspaceId: request.NextFlowTowerWorkspaceId,
           RunRetentionMonths: request.RunRetentionMonths,
+          RetentionKeepInputData: request.RetentionKeepInputData ?? existing.RetentionKeepInputData,
+          RetentionIncludePrePolicyData: request.RetentionIncludePrePolicyData ?? existing.RetentionIncludePrePolicyData,
           RunListStatusPollIntervalSeconds:
             request.RunListStatusPollIntervalSeconds ?? existing.RunListStatusPollIntervalSeconds,
           RunDetailProgressPollIntervalSeconds:
