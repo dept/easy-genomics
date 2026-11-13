@@ -91,6 +91,10 @@ export interface Laboratory extends BaseAttributes {
    * - 0 means "never delete run records" (no TTL expiration).
    */
   RunRetentionMonths?: number;
+  /** When true, retention deletes outputs and sample sheets only; input files stay until deleted by hand. */
+  RetentionKeepInputData?: boolean;
+  /** Whether retention clears data left by runs that expired before the cascade existed. `undefined` means enabled. */
+  RetentionIncludePrePolicyData?: boolean;
   /** Polling interval, in seconds, for the lab runs list status refresh. */
   RunListStatusPollIntervalSeconds?: number;
   /** Polling interval, in seconds, for the run detail page progress refresh. */

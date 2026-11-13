@@ -22,6 +22,14 @@ export const LaboratorySchema = z
      * - 0 means "never delete run records" (no TTL expiration).
      */
     RunRetentionMonths: z.number().int().min(0).optional(),
+    /** When true, retention deletes outputs and sample sheets only; input files stay until deleted by hand. */
+    RetentionKeepInputData: z.boolean().optional(),
+    /**
+     * Whether retention also clears data left behind by runs that expired before the cascade existed
+     * (the orphan reconciliation pass). `undefined` means enabled, which is the behaviour labs had before
+     * this field existed.
+     */
+    RetentionIncludePrePolicyData: z.boolean().optional(),
     RunListStatusPollIntervalSeconds: z.number().int().min(30).max(1800).optional(),
     RunDetailProgressPollIntervalSeconds: z.number().int().min(10).max(300).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
@@ -140,6 +148,8 @@ export const ReadLaboratorySchema = z
     HasNextFlowTowerAccessToken: z.boolean().optional(), // Return boolean indicator instead of actual NextFlowTowerAccessToken
     HasGitHubAccessToken: z.boolean().optional(), // Return boolean indicator instead of actual GitHubAccessToken
     RunRetentionMonths: z.number().int().min(0).optional(),
+    RetentionKeepInputData: z.boolean().optional(),
+    RetentionIncludePrePolicyData: z.boolean().optional(),
     RunListStatusPollIntervalSeconds: z.number().int().min(30).max(1800).optional(),
     RunDetailProgressPollIntervalSeconds: z.number().int().min(10).max(300).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
@@ -190,6 +200,8 @@ export const UpdateLaboratorySchema = z
     // name of an existing HealthOmics Configuration resource; AWS caps the name at 50 chars
     AwsHealthOmicsVpcConfigurationName: z.string().max(50).optional(),
     RunRetentionMonths: z.number().int().min(0).optional(),
+    RetentionKeepInputData: z.boolean().optional(),
+    RetentionIncludePrePolicyData: z.boolean().optional(),
     RunListStatusPollIntervalSeconds: z.number().int().min(30).max(1800).optional(),
     RunDetailProgressPollIntervalSeconds: z.number().int().min(10).max(300).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),

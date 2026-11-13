@@ -270,6 +270,22 @@ export interface paths {
     /** List Granted Buckets */
     get: operations["listGrantedBuckets"];
   };
+  "/easy-genomics/laboratory/storage/edit-laboratory-storage-protection": {
+    /** Edit Laboratory Storage Protection */
+    post: operations["editLaboratoryStorageProtection"];
+  };
+  "/easy-genomics/laboratory/storage/list-laboratory-storage": {
+    /** List Laboratory Storage */
+    get: operations["listLaboratoryStorage"];
+  };
+  "/easy-genomics/laboratory/storage/remove-laboratory-storage-items": {
+    /** Remove Laboratory Storage Items */
+    post: operations["removeLaboratoryStorageItems"];
+  };
+  "/easy-genomics/laboratory/storage/request-laboratory-storage-scan": {
+    /** Request Laboratory Storage Scan */
+    post: operations["requestLaboratoryStorageScan"];
+  };
   "/easy-genomics/laboratory/update-laboratory/{id}": {
     /** Update Laboratory */
     put: operations["updateLaboratory"];
@@ -349,6 +365,10 @@ export interface paths {
   "/easy-genomics/organization/s3-access/list-s3-bucket-catalog": {
     /** List S3 Bucket Catalog */
     get: operations["listS3BucketCatalog"];
+  };
+  "/easy-genomics/organization/storage/list-organization-storage": {
+    /** List Organization Storage */
+    get: operations["listOrganizationStorage"];
   };
   "/easy-genomics/organization/update-organization/{id}": {
     /** Update Organization */
@@ -1208,6 +1228,10 @@ export interface components {
        * - 0 means "never delete run records" (no TTL expiration).
        */
       RunRetentionMonths?: number;
+      /** @description When true, retention deletes outputs and sample sheets only; input files stay until deleted by hand. */
+      RetentionKeepInputData?: boolean;
+      /** @description Whether retention clears data left by runs that expired before the cascade existed. `undefined` means enabled. */
+      RetentionIncludePrePolicyData?: boolean;
       /** @description Polling interval, in seconds, for the lab runs list status refresh. */
       RunListStatusPollIntervalSeconds?: number;
       /** @description Polling interval, in seconds, for the run detail page progress refresh. */
@@ -1298,6 +1322,8 @@ export interface components {
       FailureAnalysisEnabled?: boolean;
       HasNextFlowTowerAccessToken?: boolean;
       HasGitHubAccessToken?: boolean;
+      RetentionKeepInputData?: boolean;
+      RetentionIncludePrePolicyData?: boolean;
       /** @description Boolean indicators. The actual keys live in SSM and are never returned. */
       HasHealthOmicsLlmApiKey?: boolean;
       HasSeqeraLlmApiKey?: boolean;
@@ -1748,6 +1774,27 @@ export interface components {
       /** @description Granted buckets this lab may read outside its own folder, except organization folders. A missing list means none. */
       wholeBuckets?: string[];
     };
+    EditLaboratoryStorageProtectionRequest: {
+      /** Format: uuid */
+      OrganizationId: string;
+      /** Format: uuid */
+      LaboratoryId: string;
+      ItemIds: string[];
+      Protected: boolean;
+    };
+    RemoveLaboratoryStorageItemsRequest: {
+      /** Format: uuid */
+      OrganizationId: string;
+      /** Format: uuid */
+      LaboratoryId: string;
+      ItemIds: string[];
+    };
+    RequestLaboratoryStorageScanRequest: {
+      /** Format: uuid */
+      OrganizationId: string;
+      /** Format: uuid */
+      LaboratoryId: string;
+    };
     UpdateLaboratoryRequest: {
       Name: string;
       Description?: string;
@@ -1764,6 +1811,8 @@ export interface components {
       AwsHealthOmicsNetworkingMode?: "RESTRICTED" | "VPC";
       AwsHealthOmicsVpcConfigurationName?: string;
       RunRetentionMonths?: number;
+      RetentionKeepInputData?: boolean;
+      RetentionIncludePrePolicyData?: boolean;
       RunListStatusPollIntervalSeconds?: number;
       RunDetailProgressPollIntervalSeconds?: number;
       EnableNewWorkflowsByDefault?: boolean;
@@ -5583,6 +5632,93 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
+  /** Edit Laboratory Storage Protection */
+  editLaboratoryStorageProtection: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EditLaboratoryStorageProtectionRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** List Laboratory Storage */
+  listLaboratoryStorage: {
+    parameters: {
+      query: {
+        /** @description Organization UUID */
+        organizationId: string;
+        /** @description Laboratory UUID */
+        laboratoryId: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Remove Laboratory Storage Items */
+  removeLaboratoryStorageItems: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RemoveLaboratoryStorageItemsRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Request Laboratory Storage Scan */
+  requestLaboratoryStorageScan: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RequestLaboratoryStorageScanRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
   /** Update Laboratory */
   updateLaboratory: {
     parameters: {
@@ -5997,6 +6133,28 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["ListS3BucketCatalogResponse"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** List Organization Storage */
+  listOrganizationStorage: {
+    parameters: {
+      query: {
+        /** @description Organization UUID */
+        organizationId: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
         };
       };
       400: components["responses"]["BadRequest"];

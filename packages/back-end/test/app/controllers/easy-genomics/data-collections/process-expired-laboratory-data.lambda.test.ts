@@ -173,6 +173,18 @@ describe('process-expired-laboratory-data.lambda eligibility', () => {
     expect(mockDeleteRow).toHaveBeenCalledWith('lab-1', 'r1');
   });
 
+  it('keeps input files when the lab sets RetentionKeepInputData', async () => {
+    mockListLabs.mockResolvedValue([{ ...lab, RetentionKeepInputData: true }]);
+    mockListFileRows.mockResolvedValueOnce([
+      { Ref: 'r1', S3Bucket: 'my-bucket', ObjectKey: 'org-1/lab-1/a.fq.gz', TagIds: ['wf-1'] },
+    ]);
+
+    await handler(event, ctx, jest.fn());
+
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockDeleteRow).not.toHaveBeenCalled();
+  });
+
   it('skips files that a surviving run still references', async () => {
     mockListAllRunsForLaboratory.mockResolvedValue([{ RunId: 'run-1', LaboratoryId: 'lab-1', Status: 'RUNNING' }]);
     mockListFileRows.mockResolvedValueOnce([
@@ -1015,6 +1027,19 @@ describe('process-expired-laboratory-data.lambda orphaned run folder reconciliat
       UntaggedInputKeys: [`${runFolder}reads_R1.fq.gz`],
       RecordedAt: expect.any(String),
     });
+  });
+
+  it('skips the orphan pass for a lab that sets RetentionIncludePrePolicyData to false', async () => {
+    mockListLabs.mockResolvedValue([{ ...lab, RetentionIncludePrePolicyData: false }]);
+    mockBucket({
+      prefixes: { [labPrefix]: [platformPrefix], [platformPrefix]: [runFolder] },
+      objects: { [runFolder]: [{ Key: `${runFolder}results/multiqc.html`, LastModified: OLD }] },
+    });
+
+    await handler(event, ctx, jest.fn());
+
+    expect(mockListChildPrefixes).not.toHaveBeenCalled();
+    expect(mockRecordExpiredRunOutput).not.toHaveBeenCalled();
   });
 
   it('records an old FASTQ at the run folder root when no file row claims it', async () => {

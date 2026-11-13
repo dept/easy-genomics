@@ -66,7 +66,6 @@
   const settingsHeadingId = 'lab-settings-heading';
   const seqeraToggleLabelId = 'lab-settings-seqera-toggle-label';
   const healthOmicsToggleLabelId = 'lab-settings-healthomics-toggle-label';
-  const retentionHelpId = 'lab-settings-retention-help';
   const runsListPollHelpId = 'lab-settings-runs-list-poll-help';
   const runDetailPollHelpId = 'lab-settings-run-detail-poll-help';
   const seqeraSectionId = 'lab-settings-seqera-section';
@@ -195,10 +194,7 @@
   // Badge / summary state for collapsible settings cards — reflects whether the section is
   // actually in effect right now, not just whether its fields are populated.
   const storageAndRunsSummary = computed(() => {
-    const bucket = state.value.S3Bucket?.trim() || 'No bucket set';
-    const months = state.value.RunRetentionMonths ?? 6;
-    const retention = months === 0 ? 'never delete' : `${months} months`;
-    return `${bucket} · ${retention}`;
+    return state.value.S3Bucket?.trim() || 'No bucket set';
   });
   const aiFailureAnalysisBadge = computed(() => {
     const configured = !!state.value.HealthOmicsLlmProvider || !!state.value.SeqeraLlmProvider;
@@ -483,7 +479,7 @@
     Description: 'General – Description',
     S3Bucket: 'Storage and runs – Default S3 bucket directory',
     Status: 'General – Status',
-    RunRetentionMonths: 'Storage and runs – Run retention',
+    RunRetentionMonths: 'Storage – Run retention',
     RunListStatusPollIntervalSeconds: 'Storage and runs – Run list poll interval',
     RunDetailProgressPollIntervalSeconds: 'Storage and runs – Run detail poll interval',
     NextFlowTowerEnabled: 'Connections – Seqera enabled',
@@ -735,78 +731,11 @@
     isReplacingMicroreactAccessToken.value = false;
     shouldClearMicroreactAccessToken.value = false;
     canSubmit.value = false;
-    retentionPreviewCacheMonths.value = null;
-    retentionPreviewCounts.value = null;
-    isSaveRetentionChangeDialogOpen.value = false;
-    isRetentionDeleteConfirmDialogOpen.value = false;
   }
 
   const isSubmittingFormData = computed(
     () => useUiStore().isRequestPending('createLab') || useUiStore().isRequestPending('updateLab'),
   );
-  const isLoadingRetentionPreview = ref(false);
-  const isSaveRetentionChangeDialogOpen = ref(false);
-  const isRetentionDeleteConfirmDialogOpen = ref(false);
-  const retentionPreviewCacheMonths = ref<number | null>(null);
-  const retentionPreviewCounts = ref<{ immediate: number; updated: number } | null>(null);
-  const retentionMonthsForDialog = computed<number>(
-    () =>
-      // ?? only so 0 stays “never delete” for the confirmation modal.
-      state.value.RunRetentionMonths ?? 6,
-  );
-  const retentionPolicyDescription = computed<string>(() =>
-    retentionMonthsForDialog.value === 0
-      ? 'never delete run records'
-      : `${retentionMonthsForDialog.value} month${Number(retentionMonthsForDialog.value) === 1 ? '' : 's'}`,
-  );
-
-  const retentionSaveDialogSecondaryMessage = computed(() => {
-    const counts = retentionPreviewCounts.value;
-    const policyLine = `New run retention policy after save: ${retentionPolicyDescription.value}.`;
-    if (!counts) return policyLine;
-    return `${policyLine}\n\n${counts.immediate} run${counts.immediate === 1 ? '' : 's'} will be deleted immediately (new expiry is in the past).\n${counts.updated} run${counts.updated === 1 ? '' : 's'} will have their expiration date updated.`;
-  });
-
-  // Second-step confirmation agreed with product/design: irreversible deletion + up-to-48h delay.
-  const retentionDeleteConfirmSecondaryMessage =
-    'This cannot be undone. Data scheduled for deletion under the new retention policy can take up to 48 hours to be permanently removed from the system.';
-
-  function retentionMonthsKey(): number {
-    return state.value.RunRetentionMonths ?? 6;
-  }
-
-  async function ensureRetentionChangePreviewLoaded(): Promise<boolean> {
-    const months = retentionMonthsKey();
-    if (retentionPreviewCacheMonths.value === months && retentionPreviewCounts.value != null) {
-      return true;
-    }
-    try {
-      isLoadingRetentionPreview.value = true;
-      const result = await $api.labs.applyRunRetentionPolicy(labId, months, { dryRun: true });
-      retentionPreviewCacheMonths.value = months;
-      retentionPreviewCounts.value = {
-        immediate: result.RunsExpireImmediately ?? 0,
-        updated: result.RunsExpirationDateUpdated ?? 0,
-      };
-      return true;
-    } catch {
-      useToastStore().error('Failed to load retention change preview');
-      return false;
-    } finally {
-      isLoadingRetentionPreview.value = false;
-    }
-  }
-
-  function runRetentionMonthsChanged(): boolean {
-    if (formMode.value !== LabDetailsFormModeEnum.enum.Edit || uneditedLabDetails.value == null) {
-      return false;
-    }
-    const prev = uneditedLabDetails.value.RunRetentionMonths;
-    const next = state.value.RunRetentionMonths;
-    const key = (v: number | undefined) => (v === undefined ? '_unset_' : String(Math.floor(Number(v))));
-    return key(prev) !== key(next);
-  }
-
   async function runSubmitAfterValidation() {
     try {
       if (formMode.value === LabDetailsFormModeEnum.enum.Create) {
@@ -841,85 +770,7 @@
   async function onSubmit() {
     if (formMode.value === LabDetailsFormModeEnum.enum.ReadOnly) return;
 
-    if (formMode.value === LabDetailsFormModeEnum.enum.Edit && runRetentionMonthsChanged()) {
-      const ok = await ensureRetentionChangePreviewLoaded();
-      if (ok) isSaveRetentionChangeDialogOpen.value = true;
-      return;
-    }
-
     await runSubmitAfterValidation();
-  }
-
-  function handleRetentionWarningDialogConfirm() {
-    isSaveRetentionChangeDialogOpen.value = false;
-    // "Never delete" only clears expiry; skip the irreversible-deletion confirmation.
-    if (retentionMonthsForDialog.value === 0) {
-      void handleConfirmSaveRetentionPolicyChange();
-      return;
-    }
-    isRetentionDeleteConfirmDialogOpen.value = true;
-  }
-
-  async function handleConfirmSaveRetentionPolicyChange() {
-    useUiStore().setRequestPending('updateLab');
-    try {
-      const parseResult = UpdateLaboratorySchema.safeParse(withNormalizedLlmFields(state.value));
-      if (!parseResult.success) {
-        console.error('Update lab failed to parse lab details; parseResult: ', parseResult);
-        throw new Error(
-          `Couldn't save — check: ${formatValidationIssues(parseResult.error.issues, LAB_DETAILS_FIELD_LABELS)}`,
-        );
-      }
-
-      const lab = parseResult.data as UpdateLaboratory;
-      const res = await $api.labs.update(labId, lab);
-
-      if (!res) {
-        useToastStore().error(`Failed to verify details for ${state.value.Name}`);
-        return;
-      }
-
-      const retentionMonths = state.value.RunRetentionMonths ?? 6;
-      try {
-        await $api.labs.applyRunRetentionPolicy(labId, retentionMonths);
-      } catch {
-        useToastStore().error(
-          'Laboratory was saved, but applying the new retention policy to existing runs failed. Try saving again or contact support.',
-        );
-        await getLabDetails({ showLoader: false });
-        return;
-      }
-
-      await saveNotificationPreferencesIfChanged();
-
-      emit('updated');
-      isEditingNextFlowTowerAccessToken.value = false;
-      isEditingGitHubAccessToken.value = false;
-      isEditingMicroreactAccessToken.value = false;
-      isReplacingGitHubAccessToken.value = false;
-      isReplacingNextFlowTowerAccessToken.value = false;
-      isReplacingMicroreactAccessToken.value = false;
-      shouldClearMicroreactAccessToken.value = false;
-      retentionPreviewCacheMonths.value = null;
-      retentionPreviewCounts.value = null;
-      await getLabDetails({ showLoader: false });
-
-      useToastStore().success(`${lab.Name} successfully updated`);
-    } catch (error: any) {
-      if (error.message === `Request error: ${ERROR_CODES['EG-304']}`) {
-        useToastStore().error('Laboratory name already taken. Please try again.');
-      } else if (error.message === `Request error: ${ERROR_CODES['EG-308']}`) {
-        useToastStore().error('Invalid Workspace ID or Personal Access Token. Please try again.');
-      } else {
-        useToastStore().error(
-          extractApiErrorMessage(error) ?? 'An unknown error occurred. Please refresh the page and try again.',
-        );
-      }
-    } finally {
-      useUiStore().setRequestComplete('updateLab');
-      isSaveRetentionChangeDialogOpen.value = false;
-      isRetentionDeleteConfirmDialogOpen.value = false;
-    }
   }
 
   async function handleCreateLab() {
@@ -1146,7 +997,6 @@
   const LAB_DETAILS_EDIT_COMPARE_KEYS = [
     'Name',
     'Description',
-    'RunRetentionMonths',
     'RunListStatusPollIntervalSeconds',
     'RunDetailProgressPollIntervalSeconds',
     'S3Bucket',
@@ -1173,11 +1023,7 @@
   type LabEditCompareKey = (typeof LAB_DETAILS_EDIT_COMPARE_KEYS)[number];
 
   function valuesDifferForLabEdit(key: LabEditCompareKey, a: unknown, b: unknown): boolean {
-    if (
-      key === 'RunRetentionMonths' ||
-      key === 'RunListStatusPollIntervalSeconds' ||
-      key === 'RunDetailProgressPollIntervalSeconds'
-    ) {
+    if (key === 'RunListStatusPollIntervalSeconds' || key === 'RunDetailProgressPollIntervalSeconds') {
       const norm = (v: unknown) => {
         if (v === undefined || v === null || v === '') return '_unset_';
         const n = Number(v);
@@ -1281,7 +1127,7 @@
     :validate="validate"
     :state="state"
     :aria-labelledby="formMode !== LabDetailsFormModeEnum.enum.Create ? settingsHeadingId : undefined"
-    :aria-busy="isSubmittingFormData || isLoadingRetentionPreview || isLoadingFormData"
+    :aria-busy="isSubmittingFormData || isLoadingFormData"
     :aria-describedby="isLoadingFormData ? 'lab-settings-loading-status' : undefined"
     @submit="onSubmit"
   >
@@ -1351,7 +1197,7 @@
       <EGCollapsibleSection
         heading-id="lab-settings-storage-heading"
         title="Storage and runs"
-        description="Where this lab’s data lives and how long run records are kept"
+        description="Where this lab’s data lives and how often run status refreshes"
         :summary="isLoadingFormData ? '' : storageAndRunsSummary"
         v-model:open="sectionOpen.storage"
       >
@@ -1375,20 +1221,6 @@
               This lab’s previous default bucket ({{ uneditedLabDetails?.S3Bucket }}) is no longer accessible, likely
               because access was revoked. Select a currently available S3 bucket to continue.
             </p>
-          </EGFormGroup>
-
-          <EGFormGroup label="Run retention (months)" name="RunRetentionMonths" eager-validation>
-            <EGInput
-              v-model.number="state.RunRetentionMonths"
-              type="number"
-              min="0"
-              max="120"
-              step="1"
-              :disabled="!isEditing || isSubmittingFormData"
-              placeholder="Enter number of months (0 for never)"
-              :aria-describedby="retentionHelpId"
-            />
-            <p :id="retentionHelpId" class="text-muted mt-1 text-xs">0 = never delete run records</p>
           </EGFormGroup>
 
           <EGFormGroup
@@ -2122,8 +1954,8 @@
     <!-- Form Buttons: Edit Mode -->
     <div v-if="formMode === LabDetailsFormModeEnum.enum.Edit" class="mt-6 flex space-x-2">
       <EGButton
-        :disabled="!canSubmit || !isS3BucketValidForSubmit || isLoadingRetentionPreview"
-        :loading="isSubmittingFormData || isLoadingRetentionPreview"
+        :disabled="!canSubmit || !isS3BucketValidForSubmit"
+        :loading="isSubmittingFormData"
         :size="ButtonSizeEnum.enum.sm"
         u-button-type="submit"
         label="Save Changes"
@@ -2139,32 +1971,6 @@
       />
     </div>
   </UForm>
-
-  <EGDialog
-    action-label="Save Changes"
-    :action-variant="ButtonVariantEnum.enum.primary"
-    cancel-label="Cancel"
-    :cancel-variant="ButtonVariantEnum.enum.secondary"
-    @action-triggered="handleRetentionWarningDialogConfirm"
-    primary-message="Warning: Data Loss Risk"
-    :secondary-message="retentionSaveDialogSecondaryMessage"
-    v-model="isSaveRetentionChangeDialogOpen"
-    :loading="isSubmittingFormData"
-    :buttons-disabled="isSubmittingFormData"
-  />
-
-  <EGDialog
-    action-label="Confirm"
-    :action-variant="ButtonVariantEnum.enum.primary"
-    cancel-label="Cancel"
-    :cancel-variant="ButtonVariantEnum.enum.secondary"
-    @action-triggered="handleConfirmSaveRetentionPolicyChange"
-    primary-message="Are you sure?"
-    :secondary-message="retentionDeleteConfirmSecondaryMessage"
-    v-model="isRetentionDeleteConfirmDialogOpen"
-    :loading="isSubmittingFormData"
-    :buttons-disabled="isSubmittingFormData"
-  />
 
   <EGDialog
     action-label="Send logs to the AI"
