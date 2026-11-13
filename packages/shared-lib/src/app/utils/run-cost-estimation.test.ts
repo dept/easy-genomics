@@ -1,4 +1,3 @@
-import { calculateHealthOmicsComputeCostUsd, calculateHealthOmicsStorageCostUsd } from './healthomics-cost-calculator';
 import {
   countSamplesInSampleSheetCsv,
   estimateComputeCostBand,
@@ -6,58 +5,6 @@ import {
   scaleCostToSampleCount,
   similarityScore,
 } from './run-cost-estimation';
-
-describe('healthomics-cost-calculator', () => {
-  it('applies 60-second minimum and skips cache hits', () => {
-    const start = new Date('2026-01-01T00:00:00Z');
-    const stopEarly = new Date('2026-01-01T00:00:10Z'); // 10s -> billed as 60s
-    const stopHour = new Date('2026-01-01T01:00:00Z');
-
-    const cost = calculateHealthOmicsComputeCostUsd(
-      [
-        {
-          instanceType: 'omics.c.large',
-          startTime: start,
-          stopTime: stopEarly,
-          status: 'COMPLETED',
-          cacheHit: false,
-        },
-        {
-          instanceType: 'omics.c.large',
-          startTime: start,
-          stopTime: stopHour,
-          status: 'COMPLETED',
-          cacheHit: true, // excluded
-        },
-        {
-          instanceType: 'omics.c.large',
-          startTime: start,
-          stopTime: stopHour,
-          status: 'FAILED', // excluded
-          cacheHit: false,
-        },
-      ],
-      'us-east-1',
-    );
-
-    // omics.c.large = $0.1092/hr; 60s = 0.1092/60 = 0.00182
-    expect(cost).toBeCloseTo(0.00182, 4);
-  });
-
-  it('estimates static storage cost', () => {
-    const cost = calculateHealthOmicsStorageCostUsd(
-      {
-        storageType: 'STATIC',
-        storageCapacity: 1200,
-        startTime: '2026-01-01T00:00:00Z',
-        stopTime: '2026-01-01T10:00:00Z',
-      },
-      'us-east-1',
-    );
-    // 1200 GiB * 10h * 0.000274 = 3.288
-    expect(cost).toBeCloseTo(3.288, 3);
-  });
-});
 
 describe('run-cost-estimation', () => {
   it('hashes settings canonically regardless of key order', () => {

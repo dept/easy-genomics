@@ -1,13 +1,20 @@
 /**
  * Calculate HealthOmics private-workflow compute cost from ListRunTasks data
- * using published regional list prices. Matches AWS billing rules:
- * - per-second billing with 60-second minimum per task
- * - exclude cacheHit tasks
- * - only bill COMPLETED tasks that actually ran
+ * using AWS list prices for the deployment region. Follows AWS billing rules:
+ * - per-second billing with a 60-second minimum per task
+ * - cache hits are free
+ * - every task that ran is billed, whatever its final status: AWS bills failed
+ *   and cancelled runs "for any resources that were used up until the point of
+ *   cancellation or failure" (https://aws.amazon.com/healthomics/pricing/).
+ *   A task with no start or stop time never ran and costs nothing.
  *
- * Rates are public list prices (us-east-1 baseline; other regions fall back to
- * us-east-1 with a warning). Enterprise discounts are not reflected.
+ * Rates come from `healthomics-rates.generated.ts`, regenerated from AWS's public
+ * price list by `pnpm run generate:healthomics-rates`. A region missing from it
+ * falls back to us-east-1 rates, and an instance type missing from it adds $0;
+ * both are logged. Enterprise discounts are not reflected.
  */
+import { HealthOmicsRegionRates } from './healthomics-price-list';
+import { HEALTHOMICS_RATES_BY_REGION } from './healthomics-rates.generated';
 
 export type OmicsRunTaskLike = {
   instanceType?: string | null;
@@ -27,50 +34,6 @@ export type OmicsRunStorageLike = {
   stopTime?: Date | string | null;
 };
 
-/** Hourly list prices (USD) for omics instance types by region. */
-export const HEALTHOMICS_INSTANCE_HOURLY_RATES_USD: Record<string, Record<string, number>> = {
-  'us-east-1': {
-    'omics.c.large': 0.1092,
-    'omics.c.xlarge': 0.2184,
-    'omics.c.2xlarge': 0.4368,
-    'omics.c.4xlarge': 0.8736,
-    'omics.c.8xlarge': 1.7472,
-    'omics.c.12xlarge': 2.6208,
-    'omics.c.16xlarge': 3.4944,
-    'omics.c.24xlarge': 5.2416,
-    'omics.m.large': 0.126,
-    'omics.m.xlarge': 0.252,
-    'omics.m.2xlarge': 0.504,
-    'omics.m.4xlarge': 1.008,
-    'omics.m.8xlarge': 2.016,
-    'omics.m.12xlarge': 3.024,
-    'omics.m.16xlarge': 4.032,
-    'omics.m.24xlarge': 6.048,
-    'omics.r.large': 0.1656,
-    'omics.r.xlarge': 0.3312,
-    'omics.r.2xlarge': 0.6624,
-    'omics.r.4xlarge': 1.3248,
-    'omics.r.8xlarge': 2.6496,
-    'omics.r.12xlarge': 3.9744,
-    'omics.r.16xlarge': 5.2992,
-    'omics.r.24xlarge': 7.9488,
-    'omics.g4dn.xlarge': 0.7358,
-    'omics.g4dn.2xlarge': 1.052,
-    'omics.g4dn.4xlarge': 1.684,
-    'omics.g4dn.8xlarge': 3.046,
-    'omics.g4dn.12xlarge': 5.464,
-    'omics.g4dn.16xlarge': 6.092,
-  },
-};
-
-/** Run storage GB-hour rates (USD) by region and storage type. */
-export const HEALTHOMICS_STORAGE_GB_HOUR_RATES_USD: Record<string, { STATIC: number; DYNAMIC: number }> = {
-  'us-east-1': {
-    STATIC: 0.000274,
-    DYNAMIC: 0.000548,
-  },
-};
-
 const DEFAULT_REGION = 'us-east-1';
 const MIN_BILLABLE_SECONDS = 60;
 
@@ -88,27 +51,43 @@ function billableSeconds(start: Date | string | null | undefined, stop: Date | s
   return Math.max(elapsed, MIN_BILLABLE_SECONDS);
 }
 
-function resolveInstanceRate(region: string, instanceType: string): number | undefined {
-  const regional =
-    HEALTHOMICS_INSTANCE_HOURLY_RATES_USD[region] ?? HEALTHOMICS_INSTANCE_HOURLY_RATES_USD[DEFAULT_REGION];
-  return regional?.[instanceType];
+function resolveRegionRates(region: string, runId: string | undefined): HealthOmicsRegionRates {
+  const regional = HEALTHOMICS_RATES_BY_REGION[region];
+  if (regional) return regional;
+  console.warn(
+    `No HealthOmics rates for region ${region}; pricing RunId=${runId ?? 'unknown'} at ${DEFAULT_REGION} rates`,
+  );
+  return HEALTHOMICS_RATES_BY_REGION[DEFAULT_REGION];
 }
 
 /**
  * Sum compute cost across ListRunTasks items.
  */
-export function calculateHealthOmicsComputeCostUsd(tasks: OmicsRunTaskLike[], region: string = DEFAULT_REGION): number {
+export function calculateHealthOmicsComputeCostUsd(
+  tasks: OmicsRunTaskLike[],
+  region: string = DEFAULT_REGION,
+  runId?: string,
+): number {
+  const rates = resolveRegionRates(region, runId);
+  const unpricedTaskCounts = new Map<string, number>();
   let total = 0;
   for (const task of tasks) {
     if (task.cacheHit) continue;
-    if ((task.status || '').toUpperCase() !== 'COMPLETED') continue;
     const instanceType = task.instanceType?.trim();
     if (!instanceType) continue;
-    const hourly = resolveInstanceRate(region, instanceType);
-    if (hourly == null) continue;
     const seconds = billableSeconds(task.startTime, task.stopTime);
     if (seconds <= 0) continue;
+    const hourly = rates.instanceHourlyUsd[instanceType];
+    if (hourly == null) {
+      unpricedTaskCounts.set(instanceType, (unpricedTaskCounts.get(instanceType) ?? 0) + 1);
+      continue;
+    }
     total += (hourly * seconds) / 3600;
+  }
+  for (const [instanceType, taskCount] of unpricedTaskCounts) {
+    console.warn(
+      `No HealthOmics rate for instance type ${instanceType} in ${region}; ${taskCount} tasks of RunId=${runId ?? 'unknown'} added $0`,
+    );
   }
   return Math.round(total * 10000) / 10000;
 }
@@ -121,6 +100,7 @@ export function calculateHealthOmicsComputeCostUsd(tasks: OmicsRunTaskLike[], re
 export function calculateHealthOmicsStorageCostUsd(
   run: OmicsRunStorageLike,
   region: string = DEFAULT_REGION,
+  runId?: string,
 ): number | undefined {
   const capacity = run.storageCapacity;
   if (capacity == null || capacity <= 0) return undefined;
@@ -131,7 +111,7 @@ export function calculateHealthOmicsStorageCostUsd(
   const hours = (stopMs - startMs) / (1000 * 3600);
   if (hours <= 0) return undefined;
 
-  const rates = HEALTHOMICS_STORAGE_GB_HOUR_RATES_USD[region] ?? HEALTHOMICS_STORAGE_GB_HOUR_RATES_USD[DEFAULT_REGION];
+  const rates = resolveRegionRates(region, runId).runStorageGbHourUsd;
   const storageType = (run.storageType || 'DYNAMIC').toUpperCase();
 
   let cost: number;
