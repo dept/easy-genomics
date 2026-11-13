@@ -757,7 +757,23 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
       );
 
       expect(runTableQuery).toBeDefined();
-      expect(runTableQuery.Action).toEqual('dynamodb:Query');
+      expect(runTableQuery.Action).toEqual(
+        expect.arrayContaining(['dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:UpdateItem']),
+      );
+    });
+
+    it('grants request-list-file-tags dynamodb:Query on the run table so stale usages can be hidden', () => {
+      const app = new App();
+      const parentStack = new Stack(app, 'parent-stack');
+      const nestedStack = new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+      const statements = statementsFor(nestedStack, '/easy-genomics/data-collections/request-list-file-tags');
+      const runTableQuery = statements.find((s) =>
+        JSON.stringify(s.Resource).includes('easy-genomics-laboratory-run-table'),
+      );
+
+      expect(runTableQuery).toBeDefined();
+      expect(runTableQuery.Action).toBe('dynamodb:Query');
     });
 
     it('grants the stream lambda dynamodb:PutItem so it can record RUNOUTPUT# markers', () => {

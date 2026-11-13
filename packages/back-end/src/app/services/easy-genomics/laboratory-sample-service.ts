@@ -1036,6 +1036,7 @@ export class LaboratorySampleService extends DynamoDBService {
     const data = unmarshall(row.Item) as Record<string, unknown>;
     const ids = ((data.SampleIds as string[]) || []).filter((id) => id !== setId);
     const tagIds = (data.TagIds as string[]) || [];
+    // Stale usages stay on the row until the sweep deletes the object.
     const hasUsages = data.LaboratoryRunUsages && Object.keys(data.LaboratoryRunUsages as object).length > 0;
 
     if (ids.length === 0 && tagIds.length === 0 && !hasUsages) {
