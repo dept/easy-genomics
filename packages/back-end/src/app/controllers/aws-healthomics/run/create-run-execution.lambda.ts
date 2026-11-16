@@ -13,7 +13,7 @@ import { coerceNumericWorkflowParams } from '@easy-genomics/shared-lib/src/app/u
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
-import { RunLimitCheckService, RunLimitInput } from '@BE/services/easy-genomics/run-limit-check-service';
+import { RunLimitCheckService, RunLimitInput, runLimitActorOf } from '@BE/services/easy-genomics/run-limit-check-service';
 import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import { OmicsService } from '@BE/services/omics-service';
 import {
@@ -168,13 +168,8 @@ export const handler: Handler = async (
       sampleSheetS3Url: typeof parsedParameters?.input === 'string' ? parsedParameters.input : undefined,
       settings: parsedParameters,
     };
-    const runLimitUserId: string | undefined =
-      event.requestContext.authorizer?.claims?.UserId ?? event.requestContext.authorizer?.claims?.['cognito:username'];
-    const runLimitVerdict = await runLimitCheckService.assertLaunchWithinLimits(
-      laboratory,
-      runLimitInput,
-      runLimitUserId,
-    );
+    const runLimitActor = runLimitActorOf(event);
+    const runLimitVerdict = await runLimitCheckService.assertLaunchWithinLimits(laboratory, runLimitInput, runLimitActor);
 
     // User metadata is optional: IAM access control is enforced via LaboratoryId/OrganizationId tagging.
     // We still accept missing `sub/email` so run creation doesn't fail for users depending on claim mapping.
@@ -241,7 +236,10 @@ export const handler: Handler = async (
       },
     });
 
-    await runLimitCheckService.logWarnedLaunch(laboratory, runLimitInput, runLimitUserId, runLimitVerdict, response.id);
+    await runLimitCheckService.logWarnedLaunch(laboratory, runLimitInput, runLimitActor, runLimitVerdict, {
+      ExternalRunId: response.id,
+      RunName: request.name,
+    });
 
     return buildResponse(200, JSON.stringify(response), event);
   } catch (err: any) {

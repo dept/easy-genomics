@@ -13,7 +13,7 @@ import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomic
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { RunCostEstimationService } from '@BE/services/easy-genomics/run-cost-estimation-service';
-import { RunLimitCheckService } from '@BE/services/easy-genomics/run-limit-check-service';
+import { RunLimitCheckService, runLimitActorOf } from '@BE/services/easy-genomics/run-limit-check-service';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
@@ -64,13 +64,17 @@ export const handler: Handler = async (
     const { platform, workflowExternalId, workflowVersionName, sampleSheetS3Url, settings } = request;
     const [estimate, limitVerdict] = await Promise.all([
       runCostEstimationService.estimate(laboratory, request),
-      runLimitCheckService.checkRunLimits(laboratory, {
-        platform,
-        workflowExternalId,
-        workflowVersionName,
-        sampleSheetS3Url,
-        settings,
-      }),
+      runLimitCheckService.checkReviewRunLimits(
+        laboratory,
+        {
+          platform,
+          workflowExternalId,
+          workflowVersionName,
+          sampleSheetS3Url,
+          settings,
+        },
+        runLimitActorOf(event),
+      ),
     ]);
     const response = limitVerdict ? { ...estimate, limitVerdict } : estimate;
     return buildResponse(200, JSON.stringify(response), event);

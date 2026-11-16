@@ -16,7 +16,7 @@ import {
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { LaboratoryWorkflowAccessService } from '@BE/services/easy-genomics/laboratory-workflow-access-service';
-import { RunLimitCheckService, RunLimitInput } from '@BE/services/easy-genomics/run-limit-check-service';
+import { RunLimitCheckService, RunLimitInput, runLimitActorOf } from '@BE/services/easy-genomics/run-limit-check-service';
 import { SsmService } from '@BE/services/ssm-service';
 import {
   validateLaboratoryManagerAccess,
@@ -100,13 +100,8 @@ export const handler: Handler = async (
       sampleSheetS3Url: typeof launchParams?.input === 'string' ? launchParams.input : undefined,
       settings: launchParams,
     };
-    const runLimitUserId: string | undefined =
-      event.requestContext.authorizer?.claims?.UserId ?? event.requestContext.authorizer?.claims?.['cognito:username'];
-    const runLimitVerdict = await runLimitCheckService.assertLaunchWithinLimits(
-      laboratory,
-      runLimitInput,
-      runLimitUserId,
-    );
+    const runLimitActor = runLimitActorOf(event);
+    const runLimitVerdict = await runLimitCheckService.assertLaunchWithinLimits(laboratory, runLimitInput, runLimitActor);
 
     // Retrieve Seqera Cloud / NextFlow Tower AccessToken from SSM
     const getParameterResponse: GetParameterCommandOutput | void = await ssmService
@@ -143,13 +138,10 @@ export const handler: Handler = async (
       throw new SeqeraApiError(error.message);
     });
 
-    await runLimitCheckService.logWarnedLaunch(
-      laboratory,
-      runLimitInput,
-      runLimitUserId,
-      runLimitVerdict,
-      response.workflowId,
-    );
+    await runLimitCheckService.logWarnedLaunch(laboratory, runLimitInput, runLimitActor, runLimitVerdict, {
+      ExternalRunId: response.workflowId,
+      RunName: createWorkflowLaunchRequest.launch?.runName,
+    });
 
     return buildResponse(200, JSON.stringify(response), event);
   } catch (err: any) {

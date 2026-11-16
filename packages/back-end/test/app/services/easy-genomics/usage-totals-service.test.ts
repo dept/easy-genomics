@@ -217,68 +217,6 @@ describe('UsageTotalsService', () => {
     });
   });
 
-  describe('addLaunchCount', () => {
-    const launch = {
-      OrganizationId: ORGANIZATION_ID,
-      LaboratoryId: LABORATORY_ID,
-      Platform: 'Seqera Cloud' as const,
-      WorkflowExternalId: 'pipeline-42',
-      Day: '2026-11-10',
-    };
-
-    it.each([
-      ['warned', '#WarnedRuns', '#BlockedLaunches'],
-      ['blocked', '#BlockedLaunches', '#WarnedRuns'],
-    ] as const)('adds one %s launch to the day with a single unconditional update', async (kind, counted, other) => {
-      updateItem.mockResolvedValue({});
-
-      await service.addLaunchCount({ ...launch, Kind: kind });
-
-      expect(updateItem).toHaveBeenCalledTimes(1);
-      const update = updateItem.mock.calls[0][0];
-      expect(update).toMatchObject({
-        TableName: 'unit-test-usage-daily-total-table',
-        Key: {
-          OrganizationId: { S: ORGANIZATION_ID },
-          DayLabWorkflow: { S: '2026-11-10#lab-1#Seqera Cloud#pipeline-42' },
-        },
-        UpdateExpression:
-          `ADD ${counted} :one, ${other} :zero, #ComputeCostUsd :zero, #StorageCostUsd :zero, #FinishedRuns :zero ` +
-          'SET #Day = :day, #LaboratoryId = :laboratoryId, #Platform = :platform, ' +
-          '#WorkflowExternalId = :workflowExternalId, #ModifiedAt = :now',
-      });
-      expect(update.ConditionExpression).toBeUndefined();
-      expect(update.ExpressionAttributeNames).toEqual({
-        '#WarnedRuns': 'WarnedRuns',
-        '#BlockedLaunches': 'BlockedLaunches',
-        '#ComputeCostUsd': 'ComputeCostUsd',
-        '#StorageCostUsd': 'StorageCostUsd',
-        '#FinishedRuns': 'FinishedRuns',
-        '#Day': 'Day',
-        '#LaboratoryId': 'LaboratoryId',
-        '#Platform': 'Platform',
-        '#WorkflowExternalId': 'WorkflowExternalId',
-        '#ModifiedAt': 'ModifiedAt',
-      });
-      expect(unmarshall(update.ExpressionAttributeValues)).toEqual({
-        ':one': 1,
-        ':zero': 0,
-        ':day': '2026-11-10',
-        ':laboratoryId': LABORATORY_ID,
-        ':platform': 'Seqera Cloud',
-        ':workflowExternalId': 'pipeline-42',
-        ':now': expect.any(String),
-      });
-    });
-
-    it('rethrows a failed write, so the caller decides what a lost count means', async () => {
-      const throttled = new Error('Throttled');
-      updateItem.mockRejectedValue(throttled);
-
-      await expect(service.addLaunchCount({ ...launch, Kind: 'blocked' })).rejects.toBe(throttled);
-    });
-  });
-
   describe('queryRange', () => {
     it('reads every page of an organization between two days, inclusive of the whole end day', async () => {
       const first = { OrganizationId: ORGANIZATION_ID, DayLabWorkflow: '2026-11-01#lab-1#Seqera Cloud#p1' };
