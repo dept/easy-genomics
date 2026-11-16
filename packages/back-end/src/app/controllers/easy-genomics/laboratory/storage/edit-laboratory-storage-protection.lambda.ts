@@ -1,12 +1,14 @@
 import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { InvalidRequestError, UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import {
+  EditLaboratoryStorageProtectionMessage,
   EditLaboratoryStorageProtectionSchema,
-  LaboratoryStorageSummary,
+  LaboratoryStorageMutationQueuedResponse,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-storage';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
+import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { LaboratoryStorageService } from '@BE/services/easy-genomics/laboratory-storage-service';
+import { SqsService } from '@BE/services/sqs-service';
 import {
   validateLaboratoryManagerAccess,
   validateOrganizationAdminAccess,
@@ -14,7 +16,7 @@ import {
 } from '@BE/utils/auth-utils';
 
 const laboratoryService = new LaboratoryService();
-const laboratoryStorageService = new LaboratoryStorageService();
+const sqsService = new SqsService();
 
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -26,24 +28,36 @@ export const handler: Handler = async (
     if (!parseResult.success) throw new InvalidRequestError();
     const { OrganizationId, LaboratoryId, ItemIds, Protected } = parseResult.data;
 
-    if (
-      !(
-        validateSystemAdminAccess(event) ||
-        validateOrganizationAdminAccess(event, OrganizationId) ||
-        validateLaboratoryManagerAccess(event, OrganizationId, LaboratoryId)
-      )
-    ) {
+    if (!(
+      validateSystemAdminAccess(event) ||
+      validateOrganizationAdminAccess(event, OrganizationId) ||
+      validateLaboratoryManagerAccess(event, OrganizationId, LaboratoryId)
+    )) {
       throw new UnauthorizedAccessError();
     }
 
-    const userId: string = event.requestContext.authorizer.claims['cognito:username'];
     const laboratory = await laboratoryService.get(OrganizationId, LaboratoryId);
-    const response: LaboratoryStorageSummary = await laboratoryStorageService.setProtection(
-      laboratory,
+    if (!laboratory.S3Bucket) throw new InvalidRequestError('This lab has no default S3 bucket.');
+
+    const queueUrl = process.env.SQS_LABORATORY_STORAGE_PROTECTION_QUEUE_URL || '';
+    if (!queueUrl) throw new InvalidRequestError('Storage protection queue is not configured.');
+
+    const userId: string = event.requestContext.authorizer.claims['cognito:username'];
+    const message: EditLaboratoryStorageProtectionMessage = {
+      OrganizationId,
+      LaboratoryId,
       ItemIds,
       Protected,
-      userId,
-    );
+      UserId: userId,
+    };
+    await sqsService.sendMessage({
+      QueueUrl: queueUrl,
+      MessageGroupId: LaboratoryId,
+      MessageDeduplicationId: uuidv4(),
+      MessageBody: JSON.stringify(message),
+    });
+
+    const response: LaboratoryStorageMutationQueuedResponse = { Status: 'Queued' };
     return buildResponse(200, JSON.stringify(response), event);
   } catch (err: any) {
     console.error(err);

@@ -56,6 +56,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
   runExportDlq!: Queue;
   /** DLQ for key-output copies to an external bucket that time out or keep failing. */
   keyOutputDeliveryDlq!: Queue;
+  /**
+   * Shared DLQ for lab-storage remove/protect workers. Without it a failing message retries for
+   * the full retention window on a lab-scoped FIFO group and blocks every later mutation for that lab.
+   */
+  laboratoryStorageDlq!: Queue;
 
   constructor(scope: Construct, id: string, props: EasyGenomicsNestedStackProps) {
     super(scope, id);
@@ -93,6 +98,13 @@ export class EasyGenomicsNestedStack extends NestedStack {
     // A failing copy must not sit on the lab's FIFO group and block later deliveries.
     this.keyOutputDeliveryDlq = new Queue(this, `${this.props.namePrefix}-key-output-delivery-dlq`, {
       queueName: `${this.props.namePrefix}-key-output-delivery-dlq.fifo`,
+      fifo: true,
+      retentionPeriod: Duration.days(14),
+      enforceSSL: true,
+    });
+
+    this.laboratoryStorageDlq = new Queue(this, `${this.props.namePrefix}-laboratory-storage-dlq`, {
+      queueName: `${this.props.namePrefix}-laboratory-storage-dlq.fifo`,
       fifo: true,
       retentionPeriod: Duration.days(14),
       enforceSSL: true,
@@ -160,6 +172,14 @@ export class EasyGenomicsNestedStack extends NestedStack {
           retentionPeriod: Duration.days(1),
           visibilityTimeout: Duration.minutes(15),
           enforceSSL: true,
+          deadLetterQueue: { queue: this.laboratoryStorageDlq, maxReceiveCount: 3 },
+        },
+        ['laboratory-storage-protection-queue']: <QueueDetails>{
+          fifo: true,
+          retentionPeriod: Duration.days(1),
+          visibilityTimeout: Duration.minutes(15),
+          enforceSSL: true,
+          deadLetterQueue: { queue: this.laboratoryStorageDlq, maxReceiveCount: 3 },
         },
         ['run-export-queue']: <QueueDetails>{
           // ~11 nested-stack resources (queue + DLQ + 4 Functions/Roles + event source).
@@ -455,6 +475,18 @@ export class EasyGenomicsNestedStack extends NestedStack {
         },
         '/easy-genomics/laboratory/storage/process-remove-laboratory-storage-items': {
           events: [new SqsEventSource(this.sqs.sqsQueues.get('laboratory-storage-removal-queue')!, { batchSize: 1 })],
+          timeoutSeconds: 900,
+        },
+        '/easy-genomics/laboratory/storage/edit-laboratory-storage-protection': {
+          environment: {
+            SQS_LABORATORY_STORAGE_PROTECTION_QUEUE_URL:
+              this.sqs.sqsQueues.get('laboratory-storage-protection-queue')?.queueUrl || '',
+          },
+        },
+        '/easy-genomics/laboratory/storage/process-edit-laboratory-storage-protection': {
+          events: [
+            new SqsEventSource(this.sqs.sqsQueues.get('laboratory-storage-protection-queue')!, { batchSize: 1 }),
+          ],
           timeoutSeconds: 900,
         },
         '/easy-genomics/laboratory/run/request-run-export-job': {
@@ -961,7 +993,9 @@ export class EasyGenomicsNestedStack extends NestedStack {
     // /easy-genomics/laboratory/update-laboratory-retention — retention attrs only (no Seqera/VPC side effects).
     this.iam.addPolicyStatements('/easy-genomics/laboratory/update-laboratory-retention', [
       new PolicyStatement({
-        resources: [`arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`],
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
         actions: ['dynamodb:Query'],
         effect: Effect.ALLOW,
       }),
@@ -2676,12 +2710,10 @@ export class EasyGenomicsNestedStack extends NestedStack {
     for (const route of [
       '/easy-genomics/laboratory/storage/list-laboratory-storage',
       '/easy-genomics/laboratory/storage/request-laboratory-storage-scan',
-      '/easy-genomics/laboratory/storage/edit-laboratory-storage-protection',
     ]) {
       this.iam.addPolicyStatements(route, laboratoryStorageRoutePolicies);
     }
-    // HTTP remove only enqueues; S3 deletes run in process-remove-laboratory-storage-items.
-    this.iam.addPolicyStatements('/easy-genomics/laboratory/storage/remove-laboratory-storage-items', [
+    const laboratoryStorageEnqueuePolicies = [
       new PolicyStatement({
         resources: [
           `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
@@ -2690,8 +2722,20 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: ['dynamodb:GetItem', 'dynamodb:Query'],
         effect: Effect.ALLOW,
       }),
+    ];
+    // HTTP remove/protect only enqueue; workers run the inventory + S3/Dynamo work.
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/storage/remove-laboratory-storage-items', [
+      ...laboratoryStorageEnqueuePolicies,
       new PolicyStatement({
         resources: [`${this.sqs.sqsQueues.get('laboratory-storage-removal-queue')?.queueArn || ''}`],
+        actions: ['sqs:SendMessage'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/storage/edit-laboratory-storage-protection', [
+      ...laboratoryStorageEnqueuePolicies,
+      new PolicyStatement({
+        resources: [`${this.sqs.sqsQueues.get('laboratory-storage-protection-queue')?.queueArn || ''}`],
         actions: ['sqs:SendMessage'],
         effect: Effect.ALLOW,
       }),
@@ -2705,6 +2749,10 @@ export class EasyGenomicsNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
     ]);
+    this.iam.addPolicyStatements(
+      '/easy-genomics/laboratory/storage/process-edit-laboratory-storage-protection',
+      laboratoryStorageRoutePolicies,
+    );
 
     // /easy-genomics/organization/storage/list-organization-storage — reads snapshot rows only.
     this.iam.addPolicyStatements('/easy-genomics/organization/storage/list-organization-storage', [
@@ -2769,7 +2817,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
       '/easy-genomics/laboratory/run/request-apply-run-retention-policy',
       '/easy-genomics/laboratory/run/process-laboratory-run-stream',
       '/easy-genomics/laboratory/run/process-update-laboratory-run',
-      '/easy-genomics/laboratory/storage/edit-laboratory-storage-protection',
+      '/easy-genomics/laboratory/storage/process-edit-laboratory-storage-protection',
       '/easy-genomics/laboratory/storage/process-remove-laboratory-storage-items',
     ];
 

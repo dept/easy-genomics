@@ -160,10 +160,14 @@ class LabsModule extends HttpFactory {
   }
 
   async rescanStorage(orgId: string, labId: string): Promise<LaboratoryStorageSummary> {
-    const res = await this.call<LaboratoryStorageSummary>('POST', '/laboratory/storage/request-laboratory-storage-scan', {
-      OrganizationId: orgId,
-      LaboratoryId: labId,
-    });
+    const res = await this.call<LaboratoryStorageSummary>(
+      'POST',
+      '/laboratory/storage/request-laboratory-storage-scan',
+      {
+        OrganizationId: orgId,
+        LaboratoryId: labId,
+      },
+    );
 
     if (!res) {
       throw new Error('Failed to rescan Laboratory storage');
@@ -177,8 +181,8 @@ class LabsModule extends HttpFactory {
     labId: string,
     itemIds: string[],
     isProtected: boolean,
-  ): Promise<LaboratoryStorageSummary> {
-    const res = await this.call<LaboratoryStorageSummary>(
+  ): Promise<RemoveLaboratoryStorageItemsResponse> {
+    const res = await this.call<RemoveLaboratoryStorageItemsResponse>(
       'POST',
       '/laboratory/storage/edit-laboratory-storage-protection',
       { OrganizationId: orgId, LaboratoryId: labId, ItemIds: itemIds, Protected: isProtected },
@@ -191,7 +195,11 @@ class LabsModule extends HttpFactory {
     return res;
   }
 
-  async removeStorageItems(orgId: string, labId: string, itemIds: string[]): Promise<RemoveLaboratoryStorageItemsResponse> {
+  async removeStorageItems(
+    orgId: string,
+    labId: string,
+    itemIds: string[],
+  ): Promise<RemoveLaboratoryStorageItemsResponse> {
     const res = await this.call<RemoveLaboratoryStorageItemsResponse>(
       'POST',
       '/laboratory/storage/remove-laboratory-storage-items',

@@ -88,6 +88,7 @@ export class LaboratoryStorageService {
   public async getOrScanSummary(laboratory: Laboratory): Promise<LaboratoryStorageSummary> {
     const stored = await this.taggingService.getStorageSummary(laboratory.LaboratoryId);
     // Totals-only rows (Items gzip exceeded the DynamoDB item limit) still need a live inventory for the page.
+    // shortcut: every page load rescans oversized labs (20 s); split STORAGE#SUMMARY into item rows when that hurts.
     if (stored && (stored.Items.length > 0 || stored.TotalBytes === 0)) return stored;
     return this.rescan(laboratory, INTERACTIVE_SCAN_BUDGET_MS);
   }

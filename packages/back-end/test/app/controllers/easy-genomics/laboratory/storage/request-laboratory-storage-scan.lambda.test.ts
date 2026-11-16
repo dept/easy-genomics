@@ -8,6 +8,7 @@ jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-storage-s
   LaboratoryStorageService: jest.fn().mockImplementation(() => ({ rescan: mockRescan })),
 }));
 jest.mock('../../../../../../src/app/utils/auth-utils', () => ({
+  validateSystemAdminAccess: jest.fn(() => false),
   validateOrganizationAdminAccess: jest.fn(() => true),
   validateLaboratoryManagerAccess: jest.fn(() => false),
 }));

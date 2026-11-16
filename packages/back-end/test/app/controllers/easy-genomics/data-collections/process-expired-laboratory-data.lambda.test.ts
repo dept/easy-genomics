@@ -87,6 +87,13 @@ jest.mock('../../../../../src/app/services/s3-service', () => ({
   })),
 }));
 
+const mockStorageRescan: jest.Mock = jest.fn();
+jest.mock('../../../../../src/app/services/easy-genomics/laboratory-storage-service', () => ({
+  LaboratoryStorageService: jest.fn().mockImplementation(() => ({
+    rescan: mockStorageRescan,
+  })),
+}));
+
 import { handler } from '../../../../../src/app/controllers/easy-genomics/data-collections/process-expired-laboratory-data.lambda';
 import { orderedLaboratoriesForSweep } from '../../../../../src/app/services/easy-genomics/laboratory-data-retention-service';
 import { permanentTagIdForLaboratory } from '../../../../../src/app/services/easy-genomics/laboratory-data-tagging-service';
@@ -133,6 +140,7 @@ function resetMocks(): void {
   mockRemoveUsages.mockReset().mockResolvedValue(undefined);
   mockUpdateRetentionMetadata.mockReset().mockResolvedValue({});
   mockUpdateRunUsageExpiresAt.mockReset().mockResolvedValue(undefined);
+  mockStorageRescan.mockReset().mockResolvedValue({});
   mockListS3AccessByLaboratoryId
     .mockReset()
     .mockResolvedValue([{ LaboratoryId: 'lab-1', OrganizationId: 'org-1', BucketName: 'my-bucket' }]);
@@ -354,7 +362,8 @@ describe('process-expired-laboratory-data.lambda eligibility', () => {
       jest.setSystemTime(Date.now() + 61_000);
     });
 
-    await handler(event, { getRemainingTimeInMillis: () => 180_000 } as Context, jest.fn());
+    // Reserve is 120s for snapshots; keep enough headroom after the 61s fake-timer advance.
+    await handler(event, { getRemainingTimeInMillis: () => 400_000 } as Context, jest.fn());
 
     expect(mockUpdateRetentionMetadata.mock.calls.map((call) => call[0].RunId)).toEqual(['run-1', 'run-2']);
     jest.useRealTimers();

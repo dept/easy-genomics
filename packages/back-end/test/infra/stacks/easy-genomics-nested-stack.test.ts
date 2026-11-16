@@ -52,6 +52,10 @@ jest.mock('../../../src/infra/constructs/sqs-construct', () => ({
       ],
       ['folder-download-queue', { queueUrl: 'https://sqs/folder', queueArn: 'arn:aws:sqs:folder' }],
       ['laboratory-storage-removal-queue', { queueUrl: 'https://sqs/storage-rm', queueArn: 'arn:aws:sqs:storage-rm' }],
+      [
+        'laboratory-storage-protection-queue',
+        { queueUrl: 'https://sqs/storage-protect', queueArn: 'arn:aws:sqs:storage-protect' },
+      ],
       ['run-export-queue', { queueUrl: 'https://sqs/export', queueArn: 'arn:aws:sqs:export' }],
       ['key-output-delivery-queue', { queueUrl: 'https://sqs/deliver', queueArn: 'arn:aws:sqs:deliver' }],
     ]),
@@ -812,7 +816,7 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     const LAB_STORAGE_INVENTORY_ROUTES = [
       '/easy-genomics/laboratory/storage/list-laboratory-storage',
       '/easy-genomics/laboratory/storage/request-laboratory-storage-scan',
-      '/easy-genomics/laboratory/storage/edit-laboratory-storage-protection',
+      '/easy-genomics/laboratory/storage/process-edit-laboratory-storage-protection',
       '/easy-genomics/laboratory/storage/process-remove-laboratory-storage-items',
     ];
 
@@ -873,14 +877,12 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
       }
     });
 
-    it('grants remove HTTP only laboratory read and SQS send', () => {
+    it('grants remove and protect HTTP only laboratory read and SQS send', () => {
       const app = new App();
       const parentStack = new Stack(app, 'parent-stack');
       const nestedStack = new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
 
-      expect(
-        statementsFor(nestedStack, '/easy-genomics/laboratory/storage/remove-laboratory-storage-items'),
-      ).toEqual(
+      expect(statementsFor(nestedStack, '/easy-genomics/laboratory/storage/remove-laboratory-storage-items')).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             Action: expect.arrayContaining(['dynamodb:GetItem', 'dynamodb:Query']),
@@ -892,15 +894,29 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
           }),
         ]),
       );
+      expect(
+        statementsFor(nestedStack, '/easy-genomics/laboratory/storage/edit-laboratory-storage-protection'),
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            Action: expect.arrayContaining(['dynamodb:GetItem', 'dynamodb:Query']),
+            Resource: expect.arrayContaining([expect.stringContaining('easy-genomics-laboratory-table')]),
+          }),
+          expect.objectContaining({
+            Action: 'sqs:SendMessage',
+            Resource: 'arn:aws:sqs:storage-protect',
+          }),
+        ]),
+      );
     });
 
-    it('keeps the inventory grants when appending the S3 access check to protect and process-remove', () => {
+    it('keeps the inventory grants when appending the S3 access check to process workers', () => {
       const app = new App();
       const parentStack = new Stack(app, 'parent-stack');
       const nestedStack = new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
 
       for (const route of [
-        '/easy-genomics/laboratory/storage/edit-laboratory-storage-protection',
+        '/easy-genomics/laboratory/storage/process-edit-laboratory-storage-protection',
         '/easy-genomics/laboratory/storage/process-remove-laboratory-storage-items',
       ]) {
         expect(statementsFor(nestedStack, route)).toEqual(

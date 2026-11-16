@@ -57,7 +57,12 @@ const useStorageStore = defineStore('storageStore', {
       const { $api } = useNuxtApp();
       useUiStore().setRequestPending('editLabStorage');
       try {
-        this.labStorage[labId] = await $api.labs.editStorageProtection(orgId, labId, itemIds, isProtected);
+        await $api.labs.editStorageProtection(orgId, labId, itemIds, isProtected);
+        useToastStore().success(
+          isProtected
+            ? 'Protection queued. Refresh storage after a moment to see the Permanent tag.'
+            : 'Unprotect queued. Refresh storage after a moment to see updated protection.',
+        );
       } catch (error) {
         console.error('Failed to update storage protection:', error);
         useToastStore().error(extractApiErrorMessage(error) ?? 'Failed to update protection. Please try again.');

@@ -70,6 +70,12 @@ export const EditLaboratoryStorageProtectionSchema = z
   .strict();
 export type EditLaboratoryStorageProtection = z.infer<typeof EditLaboratoryStorageProtectionSchema>;
 
+/** HTTP protect only enqueues; process-* applies tags. UserId is set by the HTTP handler from Cognito. */
+export const EditLaboratoryStorageProtectionMessageSchema = EditLaboratoryStorageProtectionSchema.extend({
+  UserId: z.string().min(1),
+});
+export type EditLaboratoryStorageProtectionMessage = z.infer<typeof EditLaboratoryStorageProtectionMessageSchema>;
+
 export const RemoveLaboratoryStorageItemsSchema = z
   .object({
     OrganizationId: z.string().uuid(),
@@ -79,11 +85,13 @@ export const RemoveLaboratoryStorageItemsSchema = z
   .strict();
 export type RemoveLaboratoryStorageItems = z.infer<typeof RemoveLaboratoryStorageItemsSchema>;
 
-/** HTTP remove only enqueues work; the process-* consumer deletes from S3. */
-export const RemoveLaboratoryStorageItemsResponseSchema = z.object({
+/** HTTP remove/protect only enqueue work; process-* consumers do the Dynamo/S3 updates. */
+export const LaboratoryStorageMutationQueuedResponseSchema = z.object({
   Status: z.literal('Queued'),
 });
-export type RemoveLaboratoryStorageItemsResponse = z.infer<typeof RemoveLaboratoryStorageItemsResponseSchema>;
+export type LaboratoryStorageMutationQueuedResponse = z.infer<typeof LaboratoryStorageMutationQueuedResponseSchema>;
+export const RemoveLaboratoryStorageItemsResponseSchema = LaboratoryStorageMutationQueuedResponseSchema;
+export type RemoveLaboratoryStorageItemsResponse = LaboratoryStorageMutationQueuedResponse;
 
 /** Payload published to the laboratory-storage-removal FIFO queue. */
 export const RemoveLaboratoryStorageItemsMessageSchema = RemoveLaboratoryStorageItemsSchema;

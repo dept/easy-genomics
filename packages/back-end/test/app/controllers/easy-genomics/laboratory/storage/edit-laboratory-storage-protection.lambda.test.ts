@@ -1,14 +1,16 @@
 process.env.NAME_PREFIX = 'unit-test';
+process.env.SQS_LABORATORY_STORAGE_PROTECTION_QUEUE_URL = 'https://sqs/storage-protect';
 
 import { APIGatewayProxyWithCognitoAuthorizerEvent } from 'aws-lambda';
 
-jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-service');
-jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-storage-service', () => ({
-  LaboratoryStorageService: jest.fn().mockImplementation(() => ({ setProtection: mockSetProtection })),
-}));
+const mockSendMessage = jest.fn();
 
-const mockSetProtection = jest.fn();
+jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-service');
+jest.mock('../../../../../../src/app/services/sqs-service', () => ({
+  SqsService: jest.fn().mockImplementation(() => ({ sendMessage: mockSendMessage })),
+}));
 jest.mock('../../../../../../src/app/utils/auth-utils', () => ({
+  validateSystemAdminAccess: jest.fn(() => false),
   validateOrganizationAdminAccess: jest.fn(() => true),
   validateLaboratoryManagerAccess: jest.fn(() => false),
 }));
@@ -34,10 +36,10 @@ describe('edit-laboratory-storage-protection.lambda', () => {
     jest.clearAllMocks();
     (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(true);
     (LaboratoryService.prototype.get as jest.Mock) = jest.fn().mockResolvedValue(laboratory);
-    mockSetProtection.mockResolvedValue({ Items: [] });
+    mockSendMessage.mockResolvedValue({});
   });
 
-  it('protects the selected items as the calling user', async () => {
+  it('enqueues protection for the selected items as the calling user', async () => {
     const result = await handler(
       createEvent({ OrganizationId: ORG_ID, LaboratoryId: LAB_ID, ItemIds: ['InputData#r1'], Protected: true }),
       {} as any,
@@ -45,7 +47,20 @@ describe('edit-laboratory-storage-protection.lambda', () => {
     );
 
     expect(result.statusCode).toBe(200);
-    expect(mockSetProtection).toHaveBeenCalledWith(laboratory, ['InputData#r1'], true, 'user-1');
+    expect(JSON.parse(result.body)).toEqual({ Status: 'Queued' });
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        QueueUrl: 'https://sqs/storage-protect',
+        MessageGroupId: LAB_ID,
+        MessageBody: JSON.stringify({
+          OrganizationId: ORG_ID,
+          LaboratoryId: LAB_ID,
+          ItemIds: ['InputData#r1'],
+          Protected: true,
+          UserId: 'user-1',
+        }),
+      }),
+    );
   });
 
   it('rejects callers without org admin or lab manager access', async () => {
@@ -58,7 +73,7 @@ describe('edit-laboratory-storage-protection.lambda', () => {
     );
 
     expect(result.statusCode).toBe(403);
-    expect(mockSetProtection).not.toHaveBeenCalled();
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it('rejects a request without the Protected flag', async () => {

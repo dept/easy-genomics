@@ -69,20 +69,25 @@ export const handler: Handler<ScheduledEvent, void> = async (
 
   let storageSnapshotErrors = 0;
   let storageSnapshotsSkippedDeadline = 0;
+  /** Skip starting a rescan that cannot finish before the summary/metrics log. */
+  const SNAPSHOT_MIN_BUDGET_MS = 5_000;
   for (let i = 0; i < laboratories.length; i++) {
     const laboratory = laboratories[i];
     // Snapshot after the sweep so the Storage page reflects tonight's deletions.
-    if (deadlineMs != null && Date.now() >= deadlineMs) {
+    const remainingMs = deadlineMs != null ? deadlineMs - Date.now() : undefined;
+    if (remainingMs != null && remainingMs < SNAPSHOT_MIN_BUDGET_MS) {
       storageSnapshotsSkippedDeadline = laboratories.slice(i).filter((lab) => lab.S3Bucket).length;
       console.warn('Storage snapshot loop stopped for Lambda deadline; remaining labs retry tomorrow', {
         skippedFrom: laboratory.LaboratoryId,
         storageSnapshotsSkippedDeadline,
+        remainingMs,
       });
       break;
     }
     if (!laboratory.S3Bucket) continue;
     try {
-      await storageService.rescan(laboratory);
+      // Cap the listing so one large lab cannot burn the whole reserve and kill the metrics emit.
+      await storageService.rescan(laboratory, remainingMs);
     } catch (err) {
       console.error(`Storage snapshot failed for lab ${laboratory.LaboratoryId} (continuing):`, err);
       storageSnapshotErrors++;
