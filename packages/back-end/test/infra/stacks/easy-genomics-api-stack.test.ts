@@ -87,4 +87,22 @@ describe('EasyGenomicsApiStack', () => {
     expect(table.Properties.LocalSecondaryIndexes).toBeUndefined();
     expect(table.Properties.TimeToLiveSpecification).toBeUndefined();
   });
+
+  it('creates the run limit event table with OrganizationId/EventKey and TTL on ExpiresAt', () => {
+    const tables = Template.fromStack(synthApiStack()).findResources('AWS::DynamoDB::Table', {
+      Properties: { TableName: 'test-run-limit-event-table' },
+    });
+    const [table] = Object.values(tables);
+
+    expect(Object.keys(tables)).toHaveLength(1);
+    expect(table.DeletionPolicy).toBe('Retain');
+    expect(table.Properties).toMatchObject({
+      BillingMode: 'PAY_PER_REQUEST',
+      KeySchema: [
+        { AttributeName: 'OrganizationId', KeyType: 'HASH' },
+        { AttributeName: 'EventKey', KeyType: 'RANGE' },
+      ],
+      TimeToLiveSpecification: { AttributeName: 'ExpiresAt', Enabled: true },
+    });
+  });
 });

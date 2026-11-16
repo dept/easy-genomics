@@ -56,7 +56,7 @@ export class UsageTotalsService extends DynamoDBService {
       await this.transactWriteItems({ TransactItems: this.countRunCostItems(run, new Date().toISOString()) });
       return 'counted';
     } catch (err) {
-      if (isRunAlreadyCounted(err)) {
+      if (isConditionFailedAt(err, 0)) {
         return 'already-counted';
       }
       throw err;
@@ -65,9 +65,14 @@ export class UsageTotalsService extends DynamoDBService {
 
   /** Counts every launch attempt, so there's no condition; the other counters start at zero on a new day's row. */
   public addLaunchCount = async (launch: LaunchCount): Promise<void> => {
+    await this.updateItem(this.launchCountUpdate(launch, new Date().toISOString()));
+  };
+
+  /** The day's launch-count update, for use alone or as an item of a transaction. */
+  public launchCountUpdate(launch: LaunchCount, now: string): NonNullable<TransactWriteItem['Update']> {
     const counted = launch.Kind === 'warned' ? '#WarnedRuns' : '#BlockedLaunches';
     const other = launch.Kind === 'warned' ? '#BlockedLaunches' : '#WarnedRuns';
-    await this.updateItem({
+    return {
       TableName: this.USAGE_DAILY_TOTAL_TABLE_NAME,
       Key: {
         OrganizationId: { S: launch.OrganizationId },
@@ -98,10 +103,10 @@ export class UsageTotalsService extends DynamoDBService {
         ':laboratoryId': launch.LaboratoryId,
         ':platform': launch.Platform,
         ':workflowExternalId': launch.WorkflowExternalId,
-        ':now': new Date().toISOString(),
+        ':now': now,
       }),
-    });
-  };
+    };
+  }
 
   public queryRange = async (organizationId: string, startDay: string, endDay: string): Promise<UsageDailyTotal[]> => {
     const totals: UsageDailyTotal[] = [];
@@ -195,11 +200,11 @@ export function findMissingCountField(run: LaboratoryRun): string | undefined {
   return undefined;
 }
 
-/** The run's marker is item 0, so a failed condition there means another add already counted it. */
-function isRunAlreadyCounted(err: unknown): boolean {
+/** True when the transaction was cancelled because the condition on item `index` failed. */
+export function isConditionFailedAt(err: unknown, index: number): boolean {
   return (
     (err instanceof TransactionCanceledException ||
       (err as { name?: string })?.name === 'TransactionCanceledException') &&
-    (err as TransactionCanceledException).CancellationReasons?.[0]?.Code === 'ConditionalCheckFailed'
+    (err as TransactionCanceledException).CancellationReasons?.[index]?.Code === 'ConditionalCheckFailed'
   );
 }
