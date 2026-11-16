@@ -1,10 +1,12 @@
 import {
+  WORKFLOW_KEY_OUTPUT_DESCRIPTION_MAX_LENGTH,
   WORKFLOW_KEY_OUTPUT_LABEL_MAX_LENGTH,
   WORKFLOW_KEY_OUTPUT_PATTERN_MAX_LENGTH,
   type WorkflowKeyOutput,
 } from '../types/easy-genomics/workflow-key-outputs';
 
 export type KeyOutputPatternDraft = Pick<WorkflowKeyOutput, 'Label' | 'Pattern'> & {
+  Description?: string;
   ExamplePath?: string;
 };
 
@@ -14,13 +16,37 @@ export interface InferredKeyOutputPattern extends KeyOutputPatternDraft {
 
 const JSON_OBJECT_WRAPPER = 'keyOutputs';
 
-/** True when `pattern` matches `relativePath`. `*` matches within one path segment only. */
+/**
+ * True when `pattern` matches `relativePath`.
+ * `*` matches within one path segment only, except whole-folder roles (`dir/*`)
+ * which match every file under that prefix (including nested paths).
+ */
 export function matchKeyOutputPattern(pattern: string, relativePath: string): boolean {
-  if (!pattern || !relativePath) return false;
+  if (!pattern || !relativePath || relativePath.endsWith('/')) return false;
+
+  // Folder marks store `dir/*` (last segment is exactly `*`). Nested files must match too.
+  if (isWholeFolderPattern(pattern)) {
+    const prefix = pattern.endsWith('/*') ? pattern.slice(0, -1) : pattern;
+    return relativePath.startsWith(prefix);
+  }
+
   const patternSegments = pattern.split('/');
   const pathSegments = relativePath.split('/');
   if (patternSegments.length !== pathSegments.length) return false;
   return patternSegments.every((segment, index) => matchPathSegment(segment, pathSegments[index]));
+}
+
+/** `dir/*` or legacy `dir/` — not sample globs like `dir/*.fa`. */
+export function isWholeFolderPattern(pattern: string): boolean {
+  if (!pattern) return false;
+  if (pattern.endsWith('/')) {
+    return !pattern
+      .slice(0, -1)
+      .split('/')
+      .some((segment) => segment.includes('*'));
+  }
+  if (!pattern.endsWith('/*')) return false;
+  return pattern.split('/').pop() === '*';
 }
 
 /**
@@ -73,7 +99,7 @@ export function basenameRelative(path: string): string {
  * Tick `sampleA.consensus.fa` and this becomes `dir/*.consensus.fa`, even when
  * this run only has one sample — the sample id must not be stored or the next
  * run will miss. A unique report such as `multiqc_report.html` stays exact.
- * A folder path becomes `dir/*` so it matches the files in that location.
+ * A folder path becomes `dir/*` so it matches every file under that prefix.
  */
 type FilenameIndex = {
   filePaths: string[];
@@ -348,7 +374,19 @@ export function parseKeyOutputsJson(text: string): ParseKeyOutputsJsonResult {
       return { ok: false, error: '* matches inside one path segment. ** is not supported.' };
     }
     const examplePath = typeof record.examplePath === 'string' ? record.examplePath : undefined;
-    outputs.push({ Label: label, Pattern: pattern, ExamplePath: examplePath });
+    const descriptionRaw = typeof record.description === 'string' ? record.description.trim() : undefined;
+    if (descriptionRaw && descriptionRaw.length > WORKFLOW_KEY_OUTPUT_DESCRIPTION_MAX_LENGTH) {
+      return {
+        ok: false,
+        error: `Descriptions must be ${WORKFLOW_KEY_OUTPUT_DESCRIPTION_MAX_LENGTH} characters or fewer.`,
+      };
+    }
+    outputs.push({
+      Label: label,
+      Pattern: pattern,
+      ExamplePath: examplePath,
+      ...(descriptionRaw ? { Description: descriptionRaw } : {}),
+    });
   }
 
   return { ok: true, outputs };
@@ -369,6 +407,7 @@ export function formatKeyOutputsJson(outputs: KeyOutputPatternDraft[]): string {
       [JSON_OBJECT_WRAPPER]: outputs.map((output) => ({
         label: output.Label,
         pattern: output.Pattern,
+        ...(output.Description ? { description: output.Description } : {}),
       })),
     },
     null,

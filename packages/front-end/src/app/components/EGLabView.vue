@@ -449,7 +449,7 @@
     ];
 
     if (canSetKeyOutputsForRun(run)) {
-      buttons.push([{ label: 'Set key outputs', click: () => viewSetKeyOutputsForRun(run) }]);
+      buttons.push([{ label: 'Mark selected results', click: () => viewSetKeyOutputsForRun(run) }]);
     }
 
     if (['SUBMITTED', 'STARTING', 'RUNNING'].includes(run.Status)) {
@@ -473,7 +473,7 @@
   function viewSetKeyOutputsForRun(run: LaboratoryRun): void {
     $router.push({
       path: `/labs/${props.labId}/run/${run.RunId}`,
-      query: { tab: 'Files', declareKeyOutputs: '1' },
+      query: { tab: 'All files', declareKeyOutputs: '1' },
     });
   }
 
@@ -580,23 +580,23 @@
 
   function omicsWorkflowsActionItems(workflow: LabOmicsWorkflow) {
     const items: object[][] = [];
-    const primaryItems: object[] = [
-      {
-        label: 'Output files',
-        description: 'Choose which result files matter.',
-        icon: 'i-heroicons-document-check',
-        click: () => viewSetKeyOutputs(workflow),
-      },
-    ];
+    const primaryItems: object[] = [];
 
     if (canManageWorkflowIntegrations.value) {
       primaryItems.push({
         label: 'Integrations',
-        description: 'Copy to S3, send to Microreact.',
+        description: 'Copy to S3, send to Microreact',
         icon: 'i-heroicons-link',
         click: () => viewDeliverKeyOutputs(workflow),
       });
     }
+
+    primaryItems.push({
+      label: 'Selected results',
+      description: 'Rename or remove marked output files',
+      icon: 'i-heroicons-flag',
+      click: () => viewSetKeyOutputs(workflow),
+    });
 
     items.push(primaryItems);
 
@@ -633,7 +633,7 @@
     $router.push({
       path: `/labs/${props.labId}/deliver-key-outputs/${encodeURIComponent(workflow.id)}`,
       query: {
-        tab: 'output-files',
+        tab: 'selected-results',
         ...(workflow.name ? { workflowName: workflow.name } : {}),
       },
     });

@@ -4038,6 +4038,9 @@ components:
           type: string
         Label:
           type: string
+        Description:
+          description: Optional short blurb shown under the label on Selected results.
+          type: string
         Pattern:
           type: string
         ExamplePath:
@@ -4149,6 +4152,9 @@ components:
                 type: string
                 minLength: 1
                 maxLength: 80
+              Description:
+                type: string
+                maxLength: 200
               Pattern:
                 type: string
                 minLength: 1
@@ -4226,6 +4232,9 @@ components:
                 type: string
                 minLength: 1
                 maxLength: 80
+              Description:
+                type: string
+                maxLength: 200
               Pattern:
                 type: string
                 minLength: 1
@@ -4253,6 +4262,9 @@ components:
         KeyOutputId:
           type: string
         Label:
+          type: string
+        Description:
+          description: Optional short blurb shown under the label on Selected results.
           type: string
         Pattern:
           type: string
@@ -4332,6 +4344,9 @@ components:
         KeyOutputId:
           type: string
         Label:
+          type: string
+        Description:
+          description: Optional short blurb shown under the label on Selected results.
           type: string
         Pattern:
           type: string

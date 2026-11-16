@@ -40,6 +40,7 @@
   );
   const labRun = computed<LaboratoryRun | null>(() => runStore.labRuns[labRunId] ?? null);
   const isDeclaringKeyOutputs = ref(false);
+  const isMarkingResults = ref(false);
   const keyOutputsStore = useWorkflowKeyOutputsStore();
   // Prefer OutputS3Url as the authoritative reference for the File Manager root when available (supports custom output dirs).
   // Fall back to InputS3Url for legacy runs where OutputS3Url was not set.
@@ -103,22 +104,27 @@
     () => [canDeclareKeyOutputs.value, labRun.value?.WorkflowExternalId] as const,
     ([canDeclare, workflowId]) => {
       if (!canDeclare || !workflowId) return;
-      void keyOutputsStore.load(labId, workflowId).then((definition) => {
-        if ((definition?.KeyOutputs.length ?? 0) > 0) {
-          void keyOutputsStore.loadRunMatches(labId, labRunId);
-        }
+      // Always resolve run matches for completed HealthOmics runs so All files can show
+      // TotalFileCount and Selected results can list roles (or an empty state).
+      void keyOutputsStore.load(labId, workflowId).then(() => {
+        void keyOutputsStore.loadRunMatches(labId, labRunId);
       });
     },
     { immediate: true },
   );
 
   watch(
-    () => [canDeclareKeyOutputs.value, String($route.query.declareKeyOutputs ?? '')] as const,
-    ([canDeclare, declareFlag]) => {
+    () => [canDeclareKeyOutputs.value, String($route.query.declareKeyOutputs ?? ''), labRun.value?.Platform] as const,
+    ([canDeclare, declareFlag, platform]) => {
       if (!canDeclare || declareFlag !== '1') return;
-      isDeclaringKeyOutputs.value = true;
       const nextQuery = { ...$route.query };
       delete nextQuery.declareKeyOutputs;
+      if (platform === 'AWS HealthOmics') {
+        isMarkingResults.value = true;
+        nextQuery.tab = 'All files';
+      } else {
+        isDeclaringKeyOutputs.value = true;
+      }
       void $router.replace({ path: $route.path, query: nextQuery });
     },
     { immediate: true },
@@ -126,6 +132,7 @@
 
   async function onKeyOutputsSaved(): Promise<void> {
     isDeclaringKeyOutputs.value = false;
+    isMarkingResults.value = false;
     await keyOutputsStore.loadRunMatches(labId, labRunId);
   }
 
@@ -386,14 +393,31 @@
 
   onUnmounted(() => runStore.stopAnalysisPolling(labRunId));
 
-  const tabItems = computed(() => [
-    { key: 'runDetails', label: 'Overview' },
-    {
-      key: 'fileManager',
-      label: 'All files',
-      count: runKeyOutputs.value?.TotalFileCount ?? null,
-    },
-  ]);
+  const tabItems = computed(() => {
+    if (isHealthOmics.value) {
+      return [
+        { key: 'runDetails', label: 'Overview' },
+        {
+          key: 'selectedResults',
+          label: 'Selected results',
+          count: runKeyOutputs.value?.KeyOutputs.length ?? keyOutputsDefinition.value?.KeyOutputs.length ?? null,
+        },
+        {
+          key: 'fileManager',
+          label: 'All files',
+          count: runKeyOutputs.value?.TotalFileCount ?? null,
+        },
+      ];
+    }
+    return [
+      { key: 'runDetails', label: 'Overview' },
+      {
+        key: 'fileManager',
+        label: 'All files',
+        count: runKeyOutputs.value?.TotalFileCount ?? null,
+      },
+    ];
+  });
 
   // Tab selection is round-tripped through `?tab=<label>`, so renaming the tabs
   // would strand links already shared with the previous labels.
@@ -401,6 +425,8 @@
     'Run Details': 'Overview',
     'File Manager': 'All files',
     Files: 'All files',
+    'Output files': 'Selected results',
+    Results: 'Selected results',
   };
   const tabIndex = ref(0);
 
@@ -408,12 +434,16 @@
     const requestedTab = String($route.query.tab ?? '');
     const resolvedTab = LEGACY_TAB_LABELS[requestedTab] ?? requestedTab;
     const queryTabMatchIndex = tabItems.value.findIndex(
-      (tab) => tab.label === resolvedTab || (resolvedTab.startsWith('All files') && tab.key === 'fileManager'),
+      (tab) =>
+        tab.label === resolvedTab ||
+        (resolvedTab.startsWith('All files') && tab.key === 'fileManager') ||
+        (resolvedTab.startsWith('Selected results') && tab.key === 'selectedResults'),
     );
     tabIndex.value = queryTabMatchIndex !== -1 ? queryTabMatchIndex : 0;
   }
 
   onMounted(setTabIndexFromQuery);
+  watch(tabItems, () => setTabIndexFromQuery());
 
   const updateQueryParams = useDebounceFn((params: Record<string, string | undefined>) => {
     $router.replace({ path: $route.path, query: { ...$route.query, ...params } });
@@ -427,8 +457,26 @@
   usePageTitle(() => (labRun.value?.RunName ? labRun.value.RunName : 'Run details'));
 
   function goToOverviewTab() {
-    handleTabChange(0);
+    const overviewIndex = tabItems.value.findIndex((tab) => tab.key === 'runDetails');
+    handleTabChange(overviewIndex !== -1 ? overviewIndex : 0);
   }
+
+  function goToSelectedResultsTab() {
+    const index = tabItems.value.findIndex((tab) => tab.key === 'selectedResults');
+    if (index !== -1) handleTabChange(index);
+  }
+
+  function goToAllFilesMarkMode() {
+    isMarkingResults.value = true;
+    const index = tabItems.value.findIndex((tab) => tab.key === 'fileManager');
+    if (index !== -1) handleTabChange(index);
+  }
+
+  const omicsMetaSubtitle = computed(() => {
+    const workflow = labRun.value?.WorkflowName?.trim();
+    if (!workflow) return 'AWS HealthOmics';
+    return `${workflow} on AWS HealthOmics`;
+  });
 
   /** The failure card is platform-agnostic; each platform supplies the reason differently. */
   const platformFailureReason = computed<string | null>(() =>
@@ -463,7 +511,7 @@
     show-lab-breadcrumb
     :breadcrumbs="[{ label: 'Lab Runs', to: labTab('Lab Runs') }, labRun?.RunName || '']"
   >
-    <template v-if="labRun" #titleSuffix>
+    <template v-if="labRun && !isHealthOmics" #titleSuffix>
       <EGStatusChip :status="labRun.Status" />
     </template>
 
@@ -478,11 +526,13 @@
     </UTooltip>
   </EGPageHeader>
 
-  <EGRunMetaLine v-if="labRun" :lab-run="labRun" class="mb-6 mt-2" />
+  <p v-if="labRun && isHealthOmics" class="text-muted mb-6 mt-2 text-sm">{{ omicsMetaSubtitle }}</p>
+  <EGRunMetaLine v-else-if="labRun" :lab-run="labRun" class="mb-6 mt-2" />
 
   <EGDetailTabs
     :model-value="tabIndex"
     :items="tabItems"
+    :variant="isHealthOmics ? 'pills' : 'underline'"
     aria-label="Laboratory run sections"
     @update:model-value="handleTabChange"
   >
@@ -490,13 +540,125 @@
       <!-- Overview -->
       <div v-if="item.key === 'runDetails'" class="space-y-3">
         <EGDeclareKeyOutputsEditor
-          v-if="isDeclaringKeyOutputs && labRun && s3Bucket && s3Prefix"
+          v-if="!isHealthOmics && isDeclaringKeyOutputs && labRun && s3Bucket && s3Prefix"
           :lab-id="labId"
           :lab-name="lab?.Name ?? ''"
           :run="labRun"
           @cancel="isDeclaringKeyOutputs = false"
           @saved="onKeyOutputsSaved"
         />
+        <!-- HealthOmics redesigned Overview -->
+        <div v-else-if="labRun && isHealthOmics" class="space-y-3">
+          <div v-if="platformFailureReason || omicsFailedTasks.length" class="space-y-3">
+            <EGRunFailureReason
+              v-if="platformFailureReason && labRun"
+              :reason="platformFailureReason"
+              :platform="labRun.Platform"
+              :error-report="platformErrorReport"
+            >
+              <template v-if="failureClassificationVisible" #analysis>
+                <div class="mb-3 flex items-center gap-1.5">
+                  <h4 class="text-muted text-xs font-medium uppercase tracking-wide">Failure analysis</h4>
+                  <UTooltip :delay-duration="0" :ui="{ base: 'h-auto w-auto max-w-sm whitespace-normal text-left' }">
+                    <template #text>
+                      <div class="space-y-1.5 py-1">
+                        <p>
+                          This attempts to explain the raw error above in plain language and suggests a next step. It is
+                          generated automatically, not written by a person.
+                        </p>
+                      </div>
+                    </template>
+                    <UIcon
+                      name="i-heroicons-information-circle"
+                      class="text-muted h-4 w-4 shrink-0"
+                      aria-label="How failure analysis works"
+                    />
+                  </UTooltip>
+                </div>
+                <div class="space-y-2">
+                  <div class="flex flex-wrap items-center gap-3">
+                    <span
+                      class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium"
+                      :class="failureOwnerBadgeClass"
+                    >
+                      Owner: {{ labRun?.FailureOwner }}
+                    </span>
+                    <span v-if="labRun?.FailureClassifiedBy === 'llm'" class="text-muted text-xs italic">
+                      AI-assisted classification — verify before acting
+                    </span>
+                  </div>
+                  <p v-if="labRun?.FailureSummary" class="text-sm text-black">{{ labRun.FailureSummary }}</p>
+                  <p v-if="labRun?.FailureAction" class="text-muted text-sm">
+                    <span class="font-medium text-black">What to do next:</span>
+                    {{ labRun.FailureAction }}
+                  </p>
+                  <p v-if="ambiguousEvidenceNote" class="text-muted border-l-2 border-gray-200 pl-3 text-xs">
+                    {{ ambiguousEvidenceNote }}
+                  </p>
+                  <EGAnalysisHistory :entries="labRun?.AnalysisHistory" :run-count="labRun?.AnalysisRunCount" />
+                </div>
+              </template>
+              <template v-if="canRequestAnalysis" #action>
+                <div class="flex flex-wrap items-center gap-2">
+                  <EGButton
+                    :label="analysisButtonLabel"
+                    :loading="analysisInFlight"
+                    :disabled="analysisInFlight"
+                    variant="secondary"
+                    size="xs"
+                    @click="requestAnalysis"
+                  />
+                  <EGButton
+                    v-if="analysisStalled"
+                    label="Check again"
+                    variant="secondary"
+                    size="xs"
+                    @click="checkAnalysisAgain"
+                  />
+                  <span v-if="analysisStalled" class="text-muted text-xs italic">
+                    Still processing — this can take a few minutes.
+                  </span>
+                  <span v-else-if="analysisInFlight" class="text-muted text-xs italic">Analysing…</span>
+                  <span v-else-if="labRun?.AnalysisStatus === 'Failed'" class="flex flex-col text-xs italic">
+                    <span class="text-red-700">{{ analysisErrorMessage(labRun?.AnalysisErrorCode) }}</span>
+                    <span v-if="labRun?.AnalysisErrorMessage" class="text-muted">
+                      {{ toSentenceCase(labRun.AnalysisErrorMessage) }}
+                    </span>
+                  </span>
+                </div>
+              </template>
+            </EGRunFailureReason>
+            <EGRunFailedTasks :tasks="omicsFailedTasks" />
+          </div>
+          <div v-if="showOmicsProgressCard" class="space-y-3">
+            <section class="stroke-light flex flex-col rounded-2xl border border-solid bg-white p-6 max-md:px-5">
+              <h3 class="mb-4 text-sm font-medium text-black">
+                {{ labRun.Status === 'FAILED' ? 'Failed Tasks' : 'Task Progress' }}
+              </h3>
+              <div v-if="omicsProgress?.progress && !isTerminalRunStatus(labRun.Status)" class="mb-4">
+                <EGProgressBar
+                  :percent="omicsProgress.progress.percent"
+                  :completed="omicsProgress.progress.tasksCompleted"
+                  :total="omicsProgress.progress.tasksTotal"
+                />
+              </div>
+            </section>
+          </div>
+          <EGRunOverviewStats :lab-run="labRun" :failed-task-count="omicsFailedTasks.length" />
+          <div class="grid items-start gap-3 lg:grid-cols-3">
+            <div class="flex flex-col gap-3 lg:col-span-2">
+              <EGRunDetailsCard :lab-run="labRun" variant="omics" />
+              <EGRunInputData :lab-run="labRun" :lab-id="labId" :lab-name="lab?.Name ?? ''" />
+            </div>
+            <EGRunDeliveryCard
+              :lab-id="labId"
+              :run="labRun"
+              :delivery="keyOutputDelivery"
+              :workflow-id="labRun.WorkflowExternalId"
+              @open-selected-results="goToSelectedResultsTab"
+            />
+          </div>
+        </div>
         <div v-else-if="labRun" class="grid items-start gap-3 lg:grid-cols-3">
           <div class="flex flex-col gap-3 lg:col-span-2">
             <div v-if="platformFailureReason || omicsFailedTasks.length" class="space-y-3">
@@ -704,9 +866,31 @@
         </div>
       </div>
 
+      <!-- Selected results (HealthOmics) -->
+      <div v-if="item.key === 'selectedResults'" class="space-y-4">
+        <EGSelectedResultsPanel
+          v-if="showKeyOutputsPanel && runKeyOutputs"
+          :lab-id="labId"
+          :matches="runKeyOutputs"
+          :workflow-name="labRun?.WorkflowName"
+          :workflow-id="labRun?.WorkflowExternalId"
+          :can-edit="canDeclareKeyOutputs"
+          @mark-more="goToAllFilesMarkMode"
+          @rename="goToSelectedResultsTab"
+        />
+        <div
+          v-else-if="canDeclareKeyOutputs"
+          class="stroke-light rounded-2xl border border-dashed bg-white p-8 text-center"
+        >
+          <p class="text-muted text-sm">No selected results for this workflow yet.</p>
+          <EGButton class="mt-4" label="Mark results in All files" size="sm" @click="goToAllFilesMarkMode" />
+        </div>
+        <p v-else class="text-muted text-sm">Selected results are available after a completed HealthOmics run.</p>
+      </div>
+
       <!-- All files -->
       <div v-if="item.key === 'fileManager'" class="space-y-4">
-        <p class="text-muted text-sm">
+        <p v-if="!isHealthOmics" class="text-muted text-sm">
           Everything this run produced. Looking for the results? Output files and where they were sent are on the
           <button
             type="button"
@@ -717,18 +901,31 @@
           </button>
           .
         </p>
+        <EGFileTreeExplorer
+          v-if="isHealthOmics && s3Bucket && fileExplorerS3Prefix"
+          :lab-id="labId"
+          :run-id="labRunId"
+          :s3-bucket="s3Bucket"
+          :s3-prefix="fileExplorerS3Prefix"
+          :output-files="outputFileTags"
+          :mark-mode="isMarkingResults"
+          :sample-count="labRun?.RunInputProfile?.SampleCount"
+          :can-mark-results="canDeclareKeyOutputs"
+          :workflow-id="labRun?.WorkflowExternalId"
+          :workflow-name="labRun?.WorkflowName"
+          :lab-name="lab?.Name ?? ''"
+          @update:mark-mode="isMarkingResults = $event"
+          @marked="onKeyOutputsSaved"
+        />
         <EGFileExplorer
-          v-if="s3Bucket && fileExplorerS3Prefix"
+          v-else-if="s3Bucket && fileExplorerS3Prefix"
           :lab-id="labId"
           :run-id="labRunId"
           :s3-bucket="s3Bucket"
           :s3-prefix="fileExplorerS3Prefix"
           :output-files="outputFileTags"
         />
-        <p
-          v-else-if="labRun && !isLoading"
-          class="text-muted rounded-lg border border-dashed p-6 text-center text-sm"
-        >
+        <p v-else-if="labRun && !isLoading" class="text-muted rounded-lg border border-dashed p-6 text-center text-sm">
           No S3 location is recorded for this run, so files cannot be listed.
         </p>
       </div>

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   MICROREACT_TREE_KEY_OUTPUTS_LIMIT,
   WORKFLOW_KEY_OUTPUTS_LIMIT,
+  WORKFLOW_KEY_OUTPUT_DESCRIPTION_MAX_LENGTH,
   WORKFLOW_KEY_OUTPUT_LABEL_MAX_LENGTH,
   WORKFLOW_KEY_OUTPUT_PATTERN_MAX_LENGTH,
 } from '../../types/easy-genomics/workflow-key-outputs';
@@ -57,6 +58,7 @@ export const WorkflowKeyOutputSchema = z
   .object({
     KeyOutputId: z.string().uuid(),
     Label: z.string().trim().min(1).max(WORKFLOW_KEY_OUTPUT_LABEL_MAX_LENGTH),
+    Description: z.string().trim().max(WORKFLOW_KEY_OUTPUT_DESCRIPTION_MAX_LENGTH).optional(),
     Pattern: z
       .string()
       .trim()
@@ -141,6 +143,7 @@ const EditableKeyOutputSchema = z
   .object({
     KeyOutputId: z.string().uuid().optional(),
     Label: z.string().trim().min(1).max(WORKFLOW_KEY_OUTPUT_LABEL_MAX_LENGTH),
+    Description: z.string().trim().max(WORKFLOW_KEY_OUTPUT_DESCRIPTION_MAX_LENGTH).optional(),
     Pattern: z
       .string()
       .trim()

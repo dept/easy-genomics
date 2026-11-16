@@ -6,7 +6,7 @@
   import { ButtonSizeEnum, ButtonVariantEnum } from '@FE/types/buttons';
   import { v4 as uuidv4 } from 'uuid';
 
-  type DetailTabKey = 'output-files' | 'integrations';
+  type DetailTabKey = 'selected-results' | 'integrations';
 
   const $route = useRoute();
   const $router = useRouter();
@@ -49,24 +49,28 @@
   /** False until the first lab, run, and definition load finishes. */
   const pageReady = ref(false);
 
-  const detailTabs: { key: DetailTabKey; label: string }[] = [
-    { key: 'output-files', label: 'Output files' },
+  const detailTabs: { key: DetailTabKey; label: string; count?: number }[] = [
     { key: 'integrations', label: 'Integrations' },
+    { key: 'selected-results', label: 'Selected results' },
   ];
 
   const visibleDetailTabs = computed(() =>
-    detailTabs.filter((tab) => tab.key === 'output-files' || canEditIntegrations.value),
+    detailTabs
+      .filter((tab) => tab.key === 'selected-results' || canEditIntegrations.value)
+      .map((tab) => (tab.key === 'selected-results' ? { ...tab, count: keyOutputCount.value || null } : tab)),
   );
 
   function tabFromQuery(raw: unknown): DetailTabKey {
     const value = typeof raw === 'string' ? raw.toLowerCase() : '';
-    if (value === 'output-files' || value === 'outputs' || value === 'output') return 'output-files';
+    if (value === 'selected-results' || value === 'output-files' || value === 'outputs' || value === 'output') {
+      return 'selected-results';
+    }
     return 'integrations';
   }
 
   function resolveTab(raw: unknown): DetailTabKey {
     const requested = tabFromQuery(raw);
-    if (requested === 'integrations' && !canEditIntegrations.value) return 'output-files';
+    if (requested === 'integrations' && !canEditIntegrations.value) return 'selected-results';
     return requested;
   }
 
@@ -358,6 +362,18 @@
       dropMicroreactIdsMissingFrom(definition.KeyOutputs);
     }
   }
+
+  function markResultsInRun() {
+    const run = completedWorkflowRuns.value[0];
+    if (!run) {
+      useToastStore().error('No completed HealthOmics run of this workflow to mark results from.');
+      return;
+    }
+    void $router.push({
+      path: `/labs/${labId}/run/${run.RunId}`,
+      query: { tab: 'All files', declareKeyOutputs: '1' },
+    });
+  }
 </script>
 
 <template>
@@ -395,7 +411,7 @@
       :size="ButtonSizeEnum.enum.sm"
       icon="i-heroicons-play-solid"
       :icon-right="false"
-      label="Run"
+      label="Run workflow"
       @click="runWorkflow"
     />
   </EGPageHeader>
@@ -406,8 +422,7 @@
 
   <template v-else>
     <div
-      v-if="visibleDetailTabs.length > 1"
-      class="mb-6 flex border-b border-gray-200"
+      class="stroke-light mb-6 inline-flex w-fit flex-wrap gap-1 rounded-xl border border-solid bg-white p-1"
       role="tablist"
       aria-label="Workflow output settings"
     >
@@ -416,37 +431,44 @@
         :key="tab.key"
         type="button"
         role="tab"
-        class="-mb-px border-b-2 px-1 pb-3 pt-1 text-sm font-medium transition-colors"
+        class="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
         :class="
-          activeTab === tab.key ? 'border-primary text-primary' : 'text-muted border-transparent hover:text-gray-800'
+          activeTab === tab.key
+            ? 'bg-primary text-white'
+            : 'text-text-body hover:bg-background-light-grey bg-transparent'
         "
         :aria-selected="activeTab === tab.key"
         @click="setActiveTab(tab.key)"
       >
-        <span class="px-3">{{ tab.label }}</span>
+        {{ tab.label }}
+        <span
+          v-if="tab.count != null"
+          class="inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-xs tabular-nums"
+          :class="activeTab === tab.key ? 'bg-primary-400/50 text-white' : 'bg-background-light-grey text-text-body'"
+        >
+          {{ tab.count }}
+        </span>
       </button>
     </div>
 
-    <section v-if="activeTab === 'output-files'" aria-label="Output files">
-      <p class="text-muted mb-6 max-w-3xl text-sm">
-        Choose the files from this workflow that matter. Integrations send these files, and they&apos;re applied to
-        every run of this workflow in {{ labName || 'this laboratory' }}. Pick from a completed run and we&apos;ll match
-        the same file in future runs.
-      </p>
-      <EGDeclareKeyOutputsEditor
+    <section v-if="activeTab === 'selected-results'" aria-label="Selected results">
+      <EGSelectedResultsEditor
         :lab-id="labId"
-        :lab-name="labName"
-        :available-runs="completedWorkflowRuns"
-        hide-intro
-        @cancel="backToWorkflowsTab"
+        :workflow-id="workflowId"
+        :workflow-name="workflowTitle"
+        platform="AWS HealthOmics"
+        :key-outputs="keyOutputs"
+        :source-run-id="keyOutputsStore.definitionFor(labId, workflowId)?.SourceRunId"
+        :fallback-run-id="completedWorkflowRuns[0]?.RunId"
         @saved="onOutputFilesSaved"
+        @mark-in-run="markResultsInRun"
       />
     </section>
 
     <section v-else class="w-full" aria-label="Integrations">
       <p class="text-muted mb-6 text-sm">
         When a run of this workflow completes successfully, each integration that&apos;s on sends this workflow&apos;s
-        output files.
+        selected results.
       </p>
 
       <div
@@ -461,9 +483,9 @@
             aria-hidden="true"
           />
           <div>
-            <p class="font-medium text-amber-950">No output files chosen yet</p>
+            <p class="font-medium text-amber-950">No selected results yet</p>
             <p class="mt-0.5 text-sm text-amber-900">
-              Integrations can be turned on now, but nothing will be sent until you choose output files for this
+              Integrations can be turned on now, but nothing will be sent until you choose selected results for this
               workflow.
             </p>
           </div>
@@ -472,8 +494,8 @@
           class="shrink-0 self-start sm:self-center"
           :variant="ButtonVariantEnum.enum.secondary"
           :size="ButtonSizeEnum.enum.sm"
-          label="Choose output files"
-          @click="setActiveTab('output-files')"
+          label="Edit selected results"
+          @click="setActiveTab('selected-results')"
         />
       </div>
 
@@ -540,11 +562,7 @@
               <span class="text-sm font-medium" :class="microreactEnabled ? 'text-primary' : 'text-muted'">
                 {{ microreactEnabled ? 'On' : 'Off' }}
               </span>
-              <UToggle
-                v-model="microreactEnabled"
-                :disabled="!canEditIntegrations"
-                aria-label="Microreact"
-              />
+              <UToggle v-model="microreactEnabled" :disabled="!canEditIntegrations" aria-label="Microreact" />
             </div>
           </div>
 
@@ -577,8 +595,8 @@
 
             <p v-if="microreactError" class="text-alert-danger text-sm">{{ microreactError }}</p>
             <p class="text-muted text-sm">
-              Files are sent to microreact.org as a new private project in the account that owns the laboratory's
-              access token. Anyone in the laboratory can also send a completed run from its run page.
+              Files are sent to microreact.org as a new private project in the account that owns the laboratory's access
+              token. Anyone in the laboratory can also send a completed run from its run page.
             </p>
           </div>
           <p v-if="!hasMicroreactToken" class="text-alert-danger mt-4 text-sm">
