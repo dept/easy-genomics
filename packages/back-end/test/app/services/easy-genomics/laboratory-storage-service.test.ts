@@ -166,6 +166,45 @@ describe('LaboratoryStorageService', () => {
     expect(result).toEqual(expect.objectContaining({ DeletedObjectCount: 0, SkippedObjectCount: 1 }));
   });
 
+  it('never offers workflow-definitions for deletion (path is a display label)', async () => {
+    const { service, s3Service } = setup({
+      objects: [
+        {
+          Key: `${LAB}workflow-definitions/wf-abc/definition.zip`,
+          Size: 42,
+          LastModified: daysAgo(200),
+        },
+      ],
+      runs: [],
+    });
+
+    const summary = await service.rescan(laboratory);
+    expect(summary.Items.find((i) => i.ItemId.startsWith('Unattached#workflow-definitions'))).toEqual(
+      expect.objectContaining({
+        Path: 'HealthOmics workflow definitions',
+        Deletable: false,
+      }),
+    );
+
+    const result = await service.removeItems(laboratory, ['Unattached#workflow-definitions/wf-abc/']);
+    expect(s3Service.deleteObjects).not.toHaveBeenCalled();
+    expect(result.DeletedObjectCount).toBe(0);
+  });
+
+  it('skips tagged Data Collection files that have no SampleIds', async () => {
+    const taggedKey = `${LAB}aws-healthomics/${ORPHAN}/import/a.fastq.gz`;
+    const { service, s3Service } = setup({
+      objects: [{ Key: taggedKey, Size: 9, LastModified: daysAgo(200) }],
+      runs: [],
+      fileRows: [{ ObjectKey: taggedKey, TagIds: ['tag-from-collection'] }],
+    });
+
+    const result = await service.removeItems(laboratory, [`Unattached#aws-healthomics/${ORPHAN}/`]);
+
+    expect(s3Service.deleteObjects).not.toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({ DeletedObjectCount: 0, SkippedObjectCount: 1 }));
+  });
+
   it('rejects an item id that is no longer in the bucket', async () => {
     const { service } = setup({ objects, runs: [runA] });
 

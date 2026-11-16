@@ -7,7 +7,7 @@ import {
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { LaboratoryStorageService } from '@BE/services/easy-genomics/laboratory-storage-service';
-import { validateOrganizationAdminAccess } from '@BE/utils/auth-utils';
+import { validateOrganizationAdminAccess, validateSystemAdminAccess } from '@BE/utils/auth-utils';
 
 const laboratoryService = new LaboratoryService();
 const laboratoryStorageService = new LaboratoryStorageService();
@@ -24,7 +24,7 @@ export const handler: Handler = async (
     if (!parseResult.success) throw new InvalidRequestError();
     const { OrganizationId } = parseResult.data;
 
-    if (!validateOrganizationAdminAccess(event, OrganizationId)) {
+    if (!(validateSystemAdminAccess(event) || validateOrganizationAdminAccess(event, OrganizationId))) {
       throw new UnauthorizedAccessError();
     }
 

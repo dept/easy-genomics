@@ -269,7 +269,8 @@ export class LaboratoryDataRetentionService {
     // The stamp above can take the whole write slice. Reload so a run created in that window is
     // visible before any input is classified as stale.
     const runs = runsForStamp ? await this.loadRunsForSweep(laboratory.LaboratoryId, stats) : undefined;
-    if (!laboratory.RetentionKeepInputData) {
+    const keepInputData = laboratory.RetentionKeepInputData === true;
+    if (!keepInputData) {
       await this.sweepInputFiles(laboratory, options, fileRows, stats, runs);
     }
     if (stats.stoppedForDeadline) return stats;
@@ -279,10 +280,10 @@ export class LaboratoryDataRetentionService {
     if (runs && (options.outputDeletionEnabled || orphanReconciliationEnabled)) {
       const liveReferences = this.liveRunReferencesFrom(runs);
       if (orphanReconciliationEnabled) {
-        await this.reconcileOrphanedRunFolders(laboratory, options, liveReferences, fileRows, stats);
+        await this.reconcileOrphanedRunFolders(laboratory, options, liveReferences, fileRows, stats, keepInputData);
       }
       if (!stats.stoppedForDeadline && options.outputDeletionEnabled) {
-        await this.sweepRunOutputs(laboratory, options, liveReferences, fileRows, stats);
+        await this.sweepRunOutputs(laboratory, options, liveReferences, fileRows, stats, keepInputData);
       }
     }
 
@@ -648,6 +649,7 @@ export class LaboratoryDataRetentionService {
     live: LiveRunReferences,
     fileRows: FileRowIndex,
     stats: RetentionSweepStats,
+    keepInputData: boolean,
   ): Promise<void> {
     const bucket = laboratory.S3Bucket!;
     if (options.maxOrphanFoldersPerLab === 0) return;
@@ -695,15 +697,17 @@ export class LaboratoryDataRetentionService {
               isSampleSheetKey(key, runFolder) && !fileRows.trackedKeys.has(key) && !live.sampleSheetKeys.has(key),
           );
 
-        const untaggedInputKeys = objects
-          .map((o) => o.Key)
-          .filter(
-            (key) =>
-              isRunFolderFastqKey(key, laboratory, runId) &&
-              !fileRows.trackedKeys.has(key) &&
-              !fileRows.permanentKeys.has(key) &&
-              !live.inputKeys.has(key),
-          );
+        const untaggedInputKeys = keepInputData
+          ? []
+          : objects
+              .map((o) => o.Key)
+              .filter(
+                (key) =>
+                  isRunFolderFastqKey(key, laboratory, runId) &&
+                  !fileRows.trackedKeys.has(key) &&
+                  !fileRows.permanentKeys.has(key) &&
+                  !live.inputKeys.has(key),
+              );
 
         const protectedKeys = new Set<string>([...fileRows.permanentKeys, ...live.inputKeys, ...live.sampleSheetKeys]);
         // Import folders share the UUID layout and never become a RunId. A results directory or a
@@ -712,7 +716,10 @@ export class LaboratoryDataRetentionService {
         const looksLikeRun =
           resultsObjects.length > 0 || objects.some((object) => isSampleSheetKey(object.Key, runFolder));
         const folderHasDeletableObject = objects.some(
-          (object) => !protectedKeys.has(object.Key) && !this.isPrefixStillInUse(object.Key, live.outputPrefixes),
+          (object) =>
+            !protectedKeys.has(object.Key) &&
+            !(keepInputData && isRunFolderFastqKey(object.Key, laboratory, runId)) &&
+            !this.isPrefixStillInUse(object.Key, live.outputPrefixes),
         );
         const hasPerFileWork = !!outputPrefix || sampleSheetKeys.length > 0 || untaggedInputKeys.length > 0;
         const hasWork = looksLikeRun ? folderHasDeletableObject : hasPerFileWork;
@@ -767,6 +774,7 @@ export class LaboratoryDataRetentionService {
     live: LiveRunReferences,
     fileRows: FileRowIndex,
     stats: RetentionSweepStats,
+    keepInputData: boolean,
   ): Promise<void> {
     const pending = (await this.taggingService.listExpiredRunOutputsForLab(laboratory.LaboratoryId)).filter(
       (row) => !row.CompletedAt || !row.FolderCleanedAt,
@@ -845,14 +853,19 @@ export class LaboratoryDataRetentionService {
           runFolder || row.CompletedAt ? [] : (row.UntaggedInputKeys || []).filter((key) => !live.inputKeys.has(key));
 
         // Files under the run folder are taggable, and a linked permanent sample protects them too.
-        // permanentKeys is the same set the FILE#-row sweep uses.
+        // permanentKeys is the same set the FILE#-row sweep uses. RetentionKeepInputData also keeps
+        // FASTQs under the run folder — otherwise listing the whole folder would delete them.
         const candidates = [...new Set([...listed, ...sheetKeys, ...untaggedInputKeys])].filter(
           (key) =>
             !live.inputKeys.has(key) &&
             !live.sampleSheetKeys.has(key) &&
             !this.isPrefixStillInUse(key, live.outputPrefixes),
         );
-        const keys = candidates.filter((key) => !fileRows.permanentKeys.has(key));
+        const keys = candidates.filter(
+          (key) =>
+            !fileRows.permanentKeys.has(key) &&
+            !(keepInputData && isRunFolderFastqKey(key, laboratory, row.RunId)),
+        );
         stats.outputObjectsProtected += candidates.length - keys.length;
 
         if (!keys.length) {

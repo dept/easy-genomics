@@ -155,6 +155,12 @@ export class EasyGenomicsNestedStack extends NestedStack {
           visibilityTimeout: Duration.minutes(15),
           enforceSSL: true,
         },
+        ['laboratory-storage-removal-queue']: <QueueDetails>{
+          fifo: true,
+          retentionPeriod: Duration.days(1),
+          visibilityTimeout: Duration.minutes(15),
+          enforceSSL: true,
+        },
         ['run-export-queue']: <QueueDetails>{
           // ~11 nested-stack resources (queue + DLQ + 4 Functions/Roles + event source).
           // Log retention stays in the sibling stack. Runtime prefix/grant checks
@@ -440,6 +446,16 @@ export class EasyGenomicsNestedStack extends NestedStack {
           events: [new SqsEventSource(this.sqs.sqsQueues.get('folder-download-queue')!, { batchSize: 1 })],
           timeoutSeconds: 900,
           memorySizeMb: 3008,
+        },
+        '/easy-genomics/laboratory/storage/remove-laboratory-storage-items': {
+          environment: {
+            SQS_LABORATORY_STORAGE_REMOVAL_QUEUE_URL:
+              this.sqs.sqsQueues.get('laboratory-storage-removal-queue')?.queueUrl || '',
+          },
+        },
+        '/easy-genomics/laboratory/storage/process-remove-laboratory-storage-items': {
+          events: [new SqsEventSource(this.sqs.sqsQueues.get('laboratory-storage-removal-queue')!, { batchSize: 1 })],
+          timeoutSeconds: 900,
         },
         '/easy-genomics/laboratory/run/request-run-export-job': {
           environment: {
@@ -939,6 +955,21 @@ export class EasyGenomicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: this.bedrockInvokeModelResources(),
         actions: ['bedrock:InvokeModel'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+    // /easy-genomics/laboratory/update-laboratory-retention — retention attrs only (no Seqera/VPC side effects).
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/update-laboratory-retention', [
+      new PolicyStatement({
+        resources: [`arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+        ],
+        actions: ['dynamodb:UpdateItem'],
         effect: Effect.ALLOW,
       }),
     ]);
@@ -2649,7 +2680,23 @@ export class EasyGenomicsNestedStack extends NestedStack {
     ]) {
       this.iam.addPolicyStatements(route, laboratoryStorageRoutePolicies);
     }
+    // HTTP remove only enqueues; S3 deletes run in process-remove-laboratory-storage-items.
     this.iam.addPolicyStatements('/easy-genomics/laboratory/storage/remove-laboratory-storage-items', [
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`,
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table/index/*`,
+        ],
+        actions: ['dynamodb:GetItem', 'dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [`${this.sqs.sqsQueues.get('laboratory-storage-removal-queue')?.queueArn || ''}`],
+        actions: ['sqs:SendMessage'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+    this.iam.addPolicyStatements('/easy-genomics/laboratory/storage/process-remove-laboratory-storage-items', [
       ...laboratoryStorageRoutePolicies,
       new PolicyStatement({
         // Runtime `assertLaboratoryHasS3BucketAccess` / `assertKeyUnderLabPrefix` bound which keys are deleted.
@@ -2723,7 +2770,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
       '/easy-genomics/laboratory/run/process-laboratory-run-stream',
       '/easy-genomics/laboratory/run/process-update-laboratory-run',
       '/easy-genomics/laboratory/storage/edit-laboratory-storage-protection',
-      '/easy-genomics/laboratory/storage/remove-laboratory-storage-items',
+      '/easy-genomics/laboratory/storage/process-remove-laboratory-storage-items',
     ];
 
     for (const route of laboratoryS3AccessEnforcementRoutes) {

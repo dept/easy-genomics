@@ -286,6 +286,10 @@ export interface paths {
     /** Request Laboratory Storage Scan */
     post: operations["requestLaboratoryStorageScan"];
   };
+  "/easy-genomics/laboratory/update-laboratory-retention/{id}": {
+    /** Update Laboratory Retention */
+    put: operations["updateLaboratoryRetention"];
+  };
   "/easy-genomics/laboratory/update-laboratory/{id}": {
     /** Update Laboratory */
     put: operations["updateLaboratory"];
@@ -1794,6 +1798,11 @@ export interface components {
       OrganizationId: string;
       /** Format: uuid */
       LaboratoryId: string;
+    };
+    UpdateLaboratoryRetentionRequest: {
+      RunRetentionMonths: number;
+      RetentionKeepInputData: boolean;
+      RetentionIncludePrePolicyData: boolean;
     };
     UpdateLaboratoryRequest: {
       Name: string;
@@ -5710,6 +5719,32 @@ export interface operations {
       200: {
         content: {
           "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Update Laboratory Retention */
+  updateLaboratoryRetention: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateLaboratoryRetentionRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["Laboratory"];
         };
       };
       400: components["responses"]["BadRequest"];

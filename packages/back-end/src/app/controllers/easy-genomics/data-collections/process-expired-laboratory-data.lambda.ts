@@ -16,8 +16,8 @@ const METRIC_NAMESPACE = 'EasyGenomics/DataRetention';
 
 const DEFAULT_MAX_DELETES_PER_LAB_SWEEP = 25_000;
 const DEFAULT_MAX_ORPHAN_FOLDERS_PER_LAB_SWEEP = 500;
-/** Leave time to log the summary before the 15-minute Lambda is killed. */
-const DEADLINE_RESERVE_MS = 15_000;
+/** Leave time for storage snapshots plus the summary log before the 15-minute Lambda is killed. */
+const DEADLINE_RESERVE_MS = 120_000;
 /** First retention-metadata pass per lab, so deletion still runs the same night. */
 const RETENTION_WRITE_SLICE_MS = 60_000;
 
@@ -68,8 +68,18 @@ export const handler: Handler<ScheduledEvent, void> = async (
   const labsHitDeleteCap = totals.labsHitDeleteCap;
 
   let storageSnapshotErrors = 0;
-  for (const laboratory of laboratories) {
+  let storageSnapshotsSkippedDeadline = 0;
+  for (let i = 0; i < laboratories.length; i++) {
+    const laboratory = laboratories[i];
     // Snapshot after the sweep so the Storage page reflects tonight's deletions.
+    if (deadlineMs != null && Date.now() >= deadlineMs) {
+      storageSnapshotsSkippedDeadline = laboratories.slice(i).filter((lab) => lab.S3Bucket).length;
+      console.warn('Storage snapshot loop stopped for Lambda deadline; remaining labs retry tomorrow', {
+        skippedFrom: laboratory.LaboratoryId,
+        storageSnapshotsSkippedDeadline,
+      });
+      break;
+    }
     if (!laboratory.S3Bucket) continue;
     try {
       await storageService.rescan(laboratory);
@@ -85,6 +95,7 @@ export const handler: Handler<ScheduledEvent, void> = async (
     ...totals,
     labsHitDeleteCap,
     storageSnapshotErrors,
+    storageSnapshotsSkippedDeadline,
   });
 
   emitEmfMetrics({
@@ -101,6 +112,7 @@ export const handler: Handler<ScheduledEvent, void> = async (
     Errors: totals.errors,
     LabsHitDeleteCap: labsHitDeleteCap,
     StorageSnapshotErrors: storageSnapshotErrors,
+    StorageSnapshotsSkippedDeadline: storageSnapshotsSkippedDeadline,
   });
 };
 

@@ -8,7 +8,11 @@ import {
   INTERACTIVE_SCAN_BUDGET_MS,
   LaboratoryStorageService,
 } from '@BE/services/easy-genomics/laboratory-storage-service';
-import { validateLaboratoryManagerAccess, validateOrganizationAdminAccess } from '@BE/utils/auth-utils';
+import {
+  validateLaboratoryManagerAccess,
+  validateOrganizationAdminAccess,
+  validateSystemAdminAccess,
+} from '@BE/utils/auth-utils';
 
 const laboratoryService = new LaboratoryService();
 const laboratoryStorageService = new LaboratoryStorageService();
@@ -25,6 +29,7 @@ export const handler: Handler = async (
 
     if (
       !(
+        validateSystemAdminAccess(event) ||
         validateOrganizationAdminAccess(event, OrganizationId) ||
         validateLaboratoryManagerAccess(event, OrganizationId, LaboratoryId)
       )

@@ -1332,14 +1332,24 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
 
   /**
    * Stores the lab's storage inventory snapshot. Items are gzipped into one binary attribute.
-   * shortcut: one row caps a lab at roughly 10k inventory items (400 KB item limit); split into item rows if a lab outgrows it.
+   * shortcut: one row caps a lab at roughly 10k inventory items (400 KB item limit); when gzip
+   * would blow the item, persist totals with an empty Items list so remove/rescan still succeed.
    */
   public async putStorageSummary(summary: LaboratoryStorageSummary): Promise<void> {
     const { Items, ...totals } = summary;
+    // Leave headroom for totals attributes under DynamoDB's 400 KB item limit.
+    const maxItemsGzipBytes = 350_000;
+    let itemsGzip = gzipSync(JSON.stringify(Items));
+    if (itemsGzip.length > maxItemsGzipBytes) {
+      console.warn(
+        `Storage summary ItemsGzip ${itemsGzip.length}B exceeds ${maxItemsGzipBytes} for lab ${summary.LaboratoryId}; storing totals only`,
+      );
+      itemsGzip = gzipSync('[]');
+    }
     await this.putItem({
       TableName: TABLE_NAME,
       Item: marshall(
-        { ...totals, Sk: SK_STORAGE_SUMMARY, ItemsGzip: gzipSync(JSON.stringify(Items)) },
+        { ...totals, Sk: SK_STORAGE_SUMMARY, ItemsGzip: itemsGzip },
         { removeUndefinedValues: true },
       ),
     });
@@ -1352,25 +1362,26 @@ export class LaboratoryDataTaggingService extends DynamoDBService {
     });
     if (!res.Item) return null;
     const row = unmarshall(res.Item);
-    const itemsGzip = row.ItemsGzip as Buffer;
+    const itemsGzip = row.ItemsGzip as Buffer | undefined;
     delete row.Sk;
     delete row.ItemsGzip;
     return {
       ...(row as LaboratoryStorageTotals),
-      Items: JSON.parse(gunzipSync(itemsGzip).toString('utf8')),
+      Items: itemsGzip ? JSON.parse(gunzipSync(itemsGzip).toString('utf8')) : [],
     };
   }
 
-  /** Totals only: the org roll-up never needs the item list, so it is not decompressed. */
+  /** Totals only: the org roll-up never needs the item list, so it is not fetched. */
   public async getStorageTotals(laboratoryId: string): Promise<LaboratoryStorageTotals | null> {
     const res = await this.getItem({
       TableName: TABLE_NAME,
       Key: marshall({ LaboratoryId: laboratoryId, Sk: SK_STORAGE_SUMMARY }),
+      ProjectionExpression:
+        'OrganizationId, LaboratoryId, S3Bucket, ScannedAt, TotalBytes, AttachedBytes, NoRunRecordBytes, NoRunRecordFileCount, ProtectedItemCount, RunCount, PricePerGbMonthUsd',
     });
     if (!res.Item) return null;
     const row = unmarshall(res.Item);
     delete row.Sk;
-    delete row.ItemsGzip;
     return row as LaboratoryStorageTotals;
   }
 

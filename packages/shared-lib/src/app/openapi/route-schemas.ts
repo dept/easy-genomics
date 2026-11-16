@@ -34,6 +34,7 @@ import { RequestTopLevelBucketObjectsSchema } from '../schema/easy-genomics/file
 import {
   CreateLaboratorySchema,
   UpdateLaboratorySchema,
+  UpdateLaboratoryRetentionSchema,
   RequestLaboratorySchema,
 } from '../schema/easy-genomics/laboratory';
 import { AddLaboratoryRunSchema, EditLaboratoryRunSchema } from '../schema/easy-genomics/laboratory-run';
@@ -227,6 +228,10 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
   },
   'PUT /easy-genomics/laboratory/update-laboratory/{id}': {
     request: UpdateLaboratorySchema,
+    response: 'Laboratory',
+  },
+  'PUT /easy-genomics/laboratory/update-laboratory-retention/{id}': {
+    request: UpdateLaboratoryRetentionSchema,
     response: 'Laboratory',
   },
   'PUT /easy-genomics/usage/update-laboratory-run-limits/{id}': {

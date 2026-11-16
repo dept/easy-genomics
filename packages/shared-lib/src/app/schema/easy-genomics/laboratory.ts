@@ -228,3 +228,13 @@ export const UpdateLaboratorySchema = z
     }
   });
 export type UpdateLaboratory = z.infer<typeof UpdateLaboratorySchema>;
+
+/** Retention fields only — avoids a full update-laboratory round-trip from the Storage page. */
+export const UpdateLaboratoryRetentionSchema = z
+  .object({
+    RunRetentionMonths: z.number().int().min(0),
+    RetentionKeepInputData: z.boolean(),
+    RetentionIncludePrePolicyData: z.boolean(),
+  })
+  .strict();
+export type UpdateLaboratoryRetention = z.infer<typeof UpdateLaboratoryRetentionSchema>;

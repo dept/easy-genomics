@@ -70,14 +70,8 @@ const useStorageStore = defineStore('storageStore', {
       const { $api } = useNuxtApp();
       useUiStore().setRequestPending('editLabStorage');
       try {
-        const result = await $api.labs.removeStorageItems(orgId, labId, itemIds);
-        this.labStorage[labId] = result.Summary;
-        const skipped = result.SkippedObjectCount
-          ? ` ${result.SkippedObjectCount} file${result.SkippedObjectCount === 1 ? ' was' : 's were'} kept because something still uses ${result.SkippedObjectCount === 1 ? 'it' : 'them'} or ${result.SkippedObjectCount === 1 ? 'it is' : 'they are'} protected.`
-          : '';
-        useToastStore().success(
-          `Deleted ${result.DeletedObjectCount} file${result.DeletedObjectCount === 1 ? '' : 's'}.${skipped}`,
-        );
+        await $api.labs.removeStorageItems(orgId, labId, itemIds);
+        useToastStore().success('Delete queued. Refresh storage after a moment to see updated sizes.');
       } catch (error) {
         console.error('Failed to delete stored data:', error);
         useToastStore().error(extractApiErrorMessage(error) ?? 'Failed to delete. Please try again.');

@@ -2938,6 +2938,21 @@ components:
         - OrganizationId
         - LaboratoryId
       additionalProperties: false
+    UpdateLaboratoryRetentionRequest:
+      type: object
+      properties:
+        RunRetentionMonths:
+          type: integer
+          minimum: 0
+        RetentionKeepInputData:
+          type: boolean
+        RetentionIncludePrePolicyData:
+          type: boolean
+      required:
+        - RunRetentionMonths
+        - RetentionKeepInputData
+        - RetentionIncludePrePolicyData
+      additionalProperties: false
     UpdateLaboratoryRequest:
       type: object
       properties:
@@ -10307,6 +10322,39 @@ paths:
           content:
             application/json:
               schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/laboratory/update-laboratory-retention/{id}:
+    put:
+      operationId: updateLaboratoryRetention
+      summary: Update Laboratory Retention
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLaboratoryRetentionRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Laboratory'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

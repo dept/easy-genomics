@@ -1,14 +1,16 @@
 process.env.NAME_PREFIX = 'unit-test';
+process.env.SQS_LABORATORY_STORAGE_REMOVAL_QUEUE_URL = 'https://sqs/storage-removal';
 
 import { APIGatewayProxyWithCognitoAuthorizerEvent } from 'aws-lambda';
 
-jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-service');
-jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-storage-service', () => ({
-  LaboratoryStorageService: jest.fn().mockImplementation(() => ({ removeItems: mockRemove })),
-}));
+const mockSendMessage = jest.fn();
 
-const mockRemove = jest.fn();
+jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-service');
+jest.mock('../../../../../../src/app/services/sqs-service', () => ({
+  SqsService: jest.fn().mockImplementation(() => ({ sendMessage: mockSendMessage })),
+}));
 jest.mock('../../../../../../src/app/utils/auth-utils', () => ({
+  validateSystemAdminAccess: jest.fn(() => false),
   validateOrganizationAdminAccess: jest.fn(() => false),
   validateLaboratoryManagerAccess: jest.fn(() => true),
 }));
@@ -18,6 +20,7 @@ import { LaboratoryService } from '../../../../../../src/app/services/easy-genom
 import {
   validateLaboratoryManagerAccess,
   validateOrganizationAdminAccess,
+  validateSystemAdminAccess,
 } from '../../../../../../src/app/utils/auth-utils';
 
 const ORG_ID = '00000000-0000-0000-0000-000000000001';
@@ -35,12 +38,14 @@ describe('remove-laboratory-storage-items.lambda', () => {
   const laboratory = { OrganizationId: ORG_ID, LaboratoryId: LAB_ID, S3Bucket: 'bucket' };
   beforeEach(() => {
     jest.clearAllMocks();
+    (validateSystemAdminAccess as jest.Mock).mockReturnValue(false);
     (validateLaboratoryManagerAccess as jest.Mock).mockReturnValue(true);
+    (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(false);
     (LaboratoryService.prototype.get as jest.Mock) = jest.fn().mockResolvedValue(laboratory);
-    mockRemove.mockResolvedValue({ DeletedObjectCount: 2, SkippedObjectCount: 0, Summary: {} });
+    mockSendMessage.mockResolvedValue({});
   });
 
-  it('deletes the selected items for a lab manager', async () => {
+  it('enqueues the selected items for a lab manager', async () => {
     const result = await handler(
       createEvent({ OrganizationId: ORG_ID, LaboratoryId: LAB_ID, ItemIds: ['RunOutputs#r1'] }),
       {} as any,
@@ -48,13 +53,23 @@ describe('remove-laboratory-storage-items.lambda', () => {
     );
 
     expect(result.statusCode).toBe(200);
+    expect(JSON.parse(result.body)).toEqual({ Status: 'Queued' });
     expect(validateLaboratoryManagerAccess).toHaveBeenCalledWith(expect.anything(), ORG_ID, LAB_ID);
-    expect(mockRemove).toHaveBeenCalledWith(laboratory, ['RunOutputs#r1']);
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        QueueUrl: 'https://sqs/storage-removal',
+        MessageGroupId: LAB_ID,
+        MessageBody: JSON.stringify({
+          OrganizationId: ORG_ID,
+          LaboratoryId: LAB_ID,
+          ItemIds: ['RunOutputs#r1'],
+        }),
+      }),
+    );
   });
 
   it('rejects a lab technician', async () => {
     (validateLaboratoryManagerAccess as jest.Mock).mockReturnValue(false);
-    (validateOrganizationAdminAccess as jest.Mock).mockReturnValue(false);
 
     const result = await handler(
       createEvent({ OrganizationId: ORG_ID, LaboratoryId: LAB_ID, ItemIds: ['RunOutputs#r1'] }),
@@ -63,13 +78,17 @@ describe('remove-laboratory-storage-items.lambda', () => {
     );
 
     expect(result.statusCode).toBe(403);
-    expect(mockRemove).not.toHaveBeenCalled();
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it('rejects an empty selection', async () => {
-    const result = await handler(createEvent({ OrganizationId: ORG_ID, LaboratoryId: LAB_ID, ItemIds: [] }), {} as any, () => {});
+    const result = await handler(
+      createEvent({ OrganizationId: ORG_ID, LaboratoryId: LAB_ID, ItemIds: [] }),
+      {} as any,
+      () => {},
+    );
 
     expect(result.statusCode).toBe(400);
-    expect(mockRemove).not.toHaveBeenCalled();
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 });

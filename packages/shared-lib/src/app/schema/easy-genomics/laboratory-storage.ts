@@ -79,9 +79,12 @@ export const RemoveLaboratoryStorageItemsSchema = z
   .strict();
 export type RemoveLaboratoryStorageItems = z.infer<typeof RemoveLaboratoryStorageItemsSchema>;
 
+/** HTTP remove only enqueues work; the process-* consumer deletes from S3. */
 export const RemoveLaboratoryStorageItemsResponseSchema = z.object({
-  DeletedObjectCount: z.number().int(),
-  SkippedObjectCount: z.number().int(),
-  Summary: LaboratoryStorageSummarySchema,
+  Status: z.literal('Queued'),
 });
 export type RemoveLaboratoryStorageItemsResponse = z.infer<typeof RemoveLaboratoryStorageItemsResponseSchema>;
+
+/** Payload published to the laboratory-storage-removal FIFO queue. */
+export const RemoveLaboratoryStorageItemsMessageSchema = RemoveLaboratoryStorageItemsSchema;
+export type RemoveLaboratoryStorageItemsMessage = z.infer<typeof RemoveLaboratoryStorageItemsMessageSchema>;

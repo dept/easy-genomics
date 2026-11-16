@@ -87,7 +87,9 @@ export class LaboratoryStorageService {
 
   public async getOrScanSummary(laboratory: Laboratory): Promise<LaboratoryStorageSummary> {
     const stored = await this.taggingService.getStorageSummary(laboratory.LaboratoryId);
-    return stored ?? this.rescan(laboratory, INTERACTIVE_SCAN_BUDGET_MS);
+    // Totals-only rows (Items gzip exceeded the DynamoDB item limit) still need a live inventory for the page.
+    if (stored && (stored.Items.length > 0 || stored.TotalBytes === 0)) return stored;
+    return this.rescan(laboratory, INTERACTIVE_SCAN_BUDGET_MS);
   }
 
   public async getTotals(laboratoryId: string): Promise<LaboratoryStorageTotals | null> {
@@ -185,7 +187,8 @@ export class LaboratoryStorageService {
 
   private isEntryDeletable(entry: InventoryEntry): boolean {
     if (entry.run) return isTerminalLaboratoryRunStatus(entry.run.Status);
-    if (entry.path.split('/')[0] === WORKFLOW_DEFINITIONS_FOLDER) return false;
+    // Unattached.path is a display label; the real folder lives in name / ItemId.
+    if (entry.type === 'Unattached' && entry.name.split('/')[0] === WORKFLOW_DEFINITIONS_FOLDER) return false;
     // Uploads land in their folder before the run record exists, so recent data with no run is usually a live upload.
     const newest = newestModified(entry.objects);
     return !!newest && newest.getTime() < Date.now() - ORPHAN_SCAN_MIN_AGE_DAYS * 24 * 60 * 60 * 1000;
@@ -193,6 +196,8 @@ export class LaboratoryStorageService {
 
   private isKeyDeletable(inventory: Inventory, key: string, ownRunId: string | undefined): boolean {
     if (inventory.fileRows.permanentKeys.has(key)) return false;
+    // Any FILE# row is off-limits — same fence as the retention sweep (tagged imports without SampleIds included).
+    if (inventory.fileRows.trackedKeys.has(key)) return false;
     if (inventory.sampleLinkedKeys.has(key)) return false;
     const claimants = inventory.claimants.get(key);
     return !claimants || [...claimants].every((runId) => runId === ownRunId);
@@ -229,7 +234,8 @@ export class LaboratoryStorageService {
     const runsById = new Map(runs.map((run) => [run.RunId, run]));
     const runsByInputKey = new Map<string, LaboratoryRun>();
     const runsBySampleSheetKey = new Map<string, LaboratoryRun>();
-    const outputPrefixes: Array<{ prefix: string; run: LaboratoryRun }> = [];
+    /** Output prefix → runs that publish there. Lookup walks path ancestors (O(depth)), not every run. */
+    const runsByOutputPrefix = new Map<string, LaboratoryRun[]>();
     const claimants = new Map<string, Set<string>>();
     const claim = (key: string, runId: string) => claimants.set(key, (claimants.get(key) ?? new Set()).add(runId));
 
@@ -245,10 +251,13 @@ export class LaboratoryStorageService {
         claim(sampleSheet.prefix, run.RunId);
       }
       const output = parseS3ObjectUri(run.OutputS3Url);
-      if (output) outputPrefixes.push({ prefix: normalizeS3Prefix(output.prefix), run });
+      if (output) {
+        const prefix = normalizeS3Prefix(output.prefix);
+        const list = runsByOutputPrefix.get(prefix) ?? [];
+        list.push(run);
+        runsByOutputPrefix.set(prefix, list);
+      }
     }
-    // Longest prefix first so a run nested inside another's output directory wins its own files.
-    outputPrefixes.sort((a, b) => b.prefix.length - a.prefix.length);
 
     const entries = new Map<string, InventoryEntry>();
     const add = (itemId: string, entry: Omit<InventoryEntry, 'objects'>, object: StoredObject) => {
@@ -262,7 +271,7 @@ export class LaboratoryStorageService {
       const key = object.Key;
       const runFolder = findRunFolder(key, labPrefix);
       const folderRun = runFolder ? runsById.get(runFolder.runId) : undefined;
-      const matchingOutputs = outputPrefixes.filter(({ prefix }) => key.startsWith(prefix));
+      const matchingOutputs = outputMatchesForKey(key, runsByOutputPrefix);
       for (const { run } of matchingOutputs) claim(key, run.RunId);
       if (folderRun) claim(key, folderRun.RunId);
 
@@ -405,6 +414,29 @@ function inputEntry(run: LaboratoryRun, path: string): Omit<InventoryEntry, 'obj
 function sampleSheetEntry(run: LaboratoryRun, key: string, path: string): Omit<InventoryEntry, 'objects'> {
   const fileName = key.slice(key.lastIndexOf('/') + 1);
   return { type: 'SampleSheet', name: fileName, path, detail: run.WorkflowName || 'Unknown workflow', run };
+}
+
+/**
+ * Runs whose OutputS3Url is an ancestor prefix of `key`, longest first.
+ * Walks path segments instead of testing every run prefix against every object.
+ */
+function outputMatchesForKey(
+  key: string,
+  runsByOutputPrefix: Map<string, LaboratoryRun[]>,
+): Array<{ prefix: string; run: LaboratoryRun }> {
+  const matches: Array<{ prefix: string; run: LaboratoryRun }> = [];
+  let end = key.length;
+  while (end > 0) {
+    const slash = key.lastIndexOf('/', end - 1);
+    if (slash < 0) break;
+    const prefix = key.slice(0, slash + 1);
+    const runs = runsByOutputPrefix.get(prefix);
+    if (runs) {
+      for (const run of runs) matches.push({ prefix, run });
+    }
+    end = slash;
+  }
+  return matches;
 }
 
 /** The UUID-named folder a key sits in, within the first two levels below the lab prefix. */

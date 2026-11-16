@@ -79,6 +79,22 @@ class LabsModule extends HttpFactory {
   }
 
   /**
+   * Writes only retention fields on a Laboratory (avoids full update-laboratory side effects).
+   */
+  async updateRetention(
+    labId: string,
+    retention: Pick<Laboratory, 'RunRetentionMonths' | 'RetentionKeepInputData' | 'RetentionIncludePrePolicyData'>,
+  ): Promise<Laboratory> {
+    const res = await this.call<Laboratory>('PUT', `/laboratory/update-laboratory-retention/${labId}`, retention);
+
+    if (!res) {
+      throw new Error('Failed to update Laboratory retention');
+    }
+
+    return res;
+  }
+
+  /**
    * Replace a Laboratory's run limits; a field missing from runLimits is cleared
    * @param labId
    * @param runLimits

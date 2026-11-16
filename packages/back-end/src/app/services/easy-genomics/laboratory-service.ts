@@ -8,7 +8,10 @@ import {
 } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { InvalidRequestError, LaboratoryNotFoundError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
-import { LaboratorySchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
+import {
+  LaboratorySchema,
+  UpdateLaboratoryRetention,
+} from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
 import { Laboratory, LaboratoryRunLimits } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
@@ -235,6 +238,51 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
         throw new Error(`${logRequestMessage} unsuccessful: HTTP Status Code=${response.$metadata.httpStatusCode}`);
       }
     }
+  };
+
+  /**
+   * Writes only the retention attributes, so Storage-page saves never overwrite concurrent lab edits
+   * and never touch Seqera tokens or VPC configuration.
+   */
+  public updateRetention = async (
+    laboratory: Laboratory,
+    retention: UpdateLaboratoryRetention,
+    modifiedBy: string,
+  ): Promise<Laboratory> => {
+    const logRequestMessage = `Update Laboratory Retention OrganizationId=${laboratory.OrganizationId}, LaboratoryId=${laboratory.LaboratoryId} request`;
+    console.info(logRequestMessage);
+
+    const response: UpdateItemCommandOutput = await this.updateItem({
+      TableName: this.LABORATORY_TABLE_NAME,
+      Key: marshall({ OrganizationId: laboratory.OrganizationId, LaboratoryId: laboratory.LaboratoryId }),
+      ConditionExpression: 'attribute_exists(#OrganizationId) AND attribute_exists(#LaboratoryId)',
+      UpdateExpression:
+        'SET #RunRetentionMonths = :runRetentionMonths, #RetentionKeepInputData = :retentionKeepInputData, #RetentionIncludePrePolicyData = :retentionIncludePrePolicyData, #ModifiedAt = :modifiedAt, #ModifiedBy = :modifiedBy',
+      ExpressionAttributeNames: {
+        '#OrganizationId': 'OrganizationId',
+        '#LaboratoryId': 'LaboratoryId',
+        '#RunRetentionMonths': 'RunRetentionMonths',
+        '#RetentionKeepInputData': 'RetentionKeepInputData',
+        '#RetentionIncludePrePolicyData': 'RetentionIncludePrePolicyData',
+        '#ModifiedAt': 'ModifiedAt',
+        '#ModifiedBy': 'ModifiedBy',
+      },
+      ExpressionAttributeValues: marshall({
+        ':runRetentionMonths': retention.RunRetentionMonths,
+        ':retentionKeepInputData': retention.RetentionKeepInputData,
+        ':retentionIncludePrePolicyData': retention.RetentionIncludePrePolicyData,
+        ':modifiedAt': new Date().toISOString(),
+        ':modifiedBy': modifiedBy,
+      }),
+      ReturnValues: 'ALL_NEW',
+    });
+
+    if (response.$metadata.httpStatusCode === 200 && response.Attributes) {
+      return <Laboratory>unmarshall(response.Attributes);
+    }
+    throw new InvalidRequestError(
+      `${logRequestMessage} unsuccessful: HTTP Status Code=${response.$metadata.httpStatusCode}`,
+    );
   };
 
   /**

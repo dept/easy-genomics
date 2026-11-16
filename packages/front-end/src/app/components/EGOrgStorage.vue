@@ -35,7 +35,8 @@
     let labsWithStorage = 0;
 
     for (const lab of labs.value) {
-      if (lab.RunRetentionMonths == null || lab.RunRetentionMonths === 0) labsWithNoRetention += 1;
+      // undefined inherits the back-end 6-month default; only explicit 0 means never delete.
+      if (lab.RunRetentionMonths === 0) labsWithNoRetention += 1;
       const storage = lab.Storage;
       if (!storage) continue;
       labsWithStorage += 1;
@@ -63,14 +64,12 @@
   });
 
   function retentionBadge(months: number | undefined): { label: string; class: string } {
-    if (months == null) {
-      return { label: 'Not set', class: 'bg-alert-caution-muted text-alert-caution' };
-    }
     if (months === 0) {
       return { label: 'Never', class: 'bg-alert-caution-muted text-alert-caution' };
     }
+    const effective = months ?? 6;
     return {
-      label: `${months} month${months === 1 ? '' : 's'}`,
+      label: `${effective} month${effective === 1 ? '' : 's'}`,
       class: 'bg-alert-success-muted text-alert-success-text',
     };
   }

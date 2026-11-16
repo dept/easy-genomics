@@ -1,4 +1,3 @@
-import { UpdateLaboratorySchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
 import type { UpdateLaboratoryRunLimits } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { defineStore } from 'pinia';
@@ -102,8 +101,8 @@ const useLabsStore = defineStore('labsStore', {
     },
 
     /**
-     * update-laboratory replaces the whole record, so re-read the lab and send it back with only
-     * the retention fields changed. Re-applies the run policy when the period changed.
+     * Dedicated retention update — only the three retention fields. Re-applies the run policy
+     * when the period changed.
      */
     async updateRetention(
       labId: string,
@@ -113,12 +112,12 @@ const useLabsStore = defineStore('labsStore', {
       useUiStore().setRequestPending('updateLab');
 
       try {
-        const current = await $api.labs.labDetails(labId);
-        const parsed = UpdateLaboratorySchema.safeParse({ ...current, ...retention });
-        if (!parsed.success) {
-          throw new Error(`Couldn't save retention: ${parsed.error.issues.map((i) => i.path.join('.')).join(', ')}`);
-        }
-        const lab = await $api.labs.update(labId, parsed.data);
+        const current = this.labs[labId] ?? (await $api.labs.labDetails(labId));
+        const lab = await $api.labs.updateRetention(labId, {
+          RunRetentionMonths: retention.RunRetentionMonths ?? 6,
+          RetentionKeepInputData: retention.RetentionKeepInputData === true,
+          RetentionIncludePrePolicyData: retention.RetentionIncludePrePolicyData !== false,
+        });
         this.labs[labId] = lab;
 
         const months = retention.RunRetentionMonths ?? 6;
