@@ -4,6 +4,11 @@ import {
   EstimateRunCostRequest,
   EstimateRunCostResponse,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
+import type {
+  LaboratoryStorageSummary,
+  OrganizationStorageLab,
+  RemoveLaboratoryStorageItemsResponse,
+} from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-storage';
 import {
   RemoveLaboratoryUserSchema,
   UpdateLaboratoryUserNotificationPreference,
@@ -74,6 +79,22 @@ class LabsModule extends HttpFactory {
   }
 
   /**
+   * Writes only retention fields on a Laboratory (avoids full update-laboratory side effects).
+   */
+  async updateRetention(
+    labId: string,
+    retention: Pick<Laboratory, 'RunRetentionMonths' | 'RetentionKeepInputData' | 'RetentionIncludePrePolicyData'>,
+  ): Promise<Laboratory> {
+    const res = await this.call<Laboratory>('PUT', `/laboratory/update-laboratory-retention/${labId}`, retention);
+
+    if (!res) {
+      throw new Error('Failed to update Laboratory retention');
+    }
+
+    return res;
+  }
+
+  /**
    * Replace a Laboratory's run limits; a field missing from runLimits is cleared
    * @param labId
    * @param runLimits
@@ -120,6 +141,90 @@ class LabsModule extends HttpFactory {
 
     if (!res) {
       throw new Error('Failed to apply run retention policy');
+    }
+
+    return res;
+  }
+
+  async listStorage(orgId: string, labId: string): Promise<LaboratoryStorageSummary> {
+    const res = await this.call<LaboratoryStorageSummary>(
+      'GET',
+      `/laboratory/storage/list-laboratory-storage?organizationId=${orgId}&laboratoryId=${labId}`,
+    );
+
+    if (!res) {
+      throw new Error('Failed to retrieve Laboratory storage');
+    }
+
+    return res;
+  }
+
+  async rescanStorage(orgId: string, labId: string): Promise<LaboratoryStorageSummary> {
+    const res = await this.call<LaboratoryStorageSummary>(
+      'POST',
+      '/laboratory/storage/request-laboratory-storage-scan',
+      {
+        OrganizationId: orgId,
+        LaboratoryId: labId,
+      },
+    );
+
+    if (!res) {
+      throw new Error('Failed to rescan Laboratory storage');
+    }
+
+    return res;
+  }
+
+  async editStorageProtection(
+    orgId: string,
+    labId: string,
+    itemIds: string[],
+    isProtected: boolean,
+  ): Promise<RemoveLaboratoryStorageItemsResponse> {
+    const res = await this.call<RemoveLaboratoryStorageItemsResponse>(
+      'POST',
+      '/laboratory/storage/edit-laboratory-storage-protection',
+      { OrganizationId: orgId, LaboratoryId: labId, ItemIds: itemIds, Protected: isProtected },
+    );
+
+    if (!res) {
+      throw new Error('Failed to update storage protection');
+    }
+
+    return res;
+  }
+
+  async removeStorageItems(
+    orgId: string,
+    labId: string,
+    itemIds: string[],
+  ): Promise<RemoveLaboratoryStorageItemsResponse> {
+    const res = await this.call<RemoveLaboratoryStorageItemsResponse>(
+      'POST',
+      '/laboratory/storage/remove-laboratory-storage-items',
+      { OrganizationId: orgId, LaboratoryId: labId, ItemIds: itemIds },
+    );
+
+    if (!res) {
+      throw new Error('Failed to delete stored data');
+    }
+
+    return res;
+  }
+
+  /**
+   * Read-only storage roll-up for every lab in an organization
+   * @param orgId
+   */
+  async listOrgStorage(orgId: string): Promise<OrganizationStorageLab[]> {
+    const res = await this.call<OrganizationStorageLab[]>(
+      'GET',
+      `/organization/storage/list-organization-storage?organizationId=${orgId}`,
+    );
+
+    if (!res) {
+      throw new Error('Failed to retrieve organization storage');
     }
 
     return res;

@@ -84,6 +84,7 @@
     "@aws-sdk/client-cost-explorer": "3.782.0",
     "@aws-sdk/client-dynamodb": "^3.786.0",
     "@aws-sdk/client-omics": "^3.1090.0",
+    "@aws-sdk/client-pricing": "3.782.0",
     "@aws-sdk/client-s3": "^3.782.0",
     "@aws-sdk/client-secrets-manager": "^3.782.0",
     "@aws-sdk/client-ses": "^3.782.0",

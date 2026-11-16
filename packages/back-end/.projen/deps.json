@@ -151,6 +151,11 @@
       "type": "runtime"
     },
     {
+      "name": "@aws-sdk/client-pricing",
+      "version": "3.782.0",
+      "type": "runtime"
+    },
+    {
       "name": "@aws-sdk/client-s3",
       "type": "runtime"
     },

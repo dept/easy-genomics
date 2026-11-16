@@ -87,6 +87,13 @@ jest.mock('../../../../../src/app/services/s3-service', () => ({
   })),
 }));
 
+const mockStorageRescan: jest.Mock = jest.fn();
+jest.mock('../../../../../src/app/services/easy-genomics/laboratory-storage-service', () => ({
+  LaboratoryStorageService: jest.fn().mockImplementation(() => ({
+    rescan: mockStorageRescan,
+  })),
+}));
+
 import { handler } from '../../../../../src/app/controllers/easy-genomics/data-collections/process-expired-laboratory-data.lambda';
 import { orderedLaboratoriesForSweep } from '../../../../../src/app/services/easy-genomics/laboratory-data-retention-service';
 import { permanentTagIdForLaboratory } from '../../../../../src/app/services/easy-genomics/laboratory-data-tagging-service';
@@ -133,6 +140,7 @@ function resetMocks(): void {
   mockRemoveUsages.mockReset().mockResolvedValue(undefined);
   mockUpdateRetentionMetadata.mockReset().mockResolvedValue({});
   mockUpdateRunUsageExpiresAt.mockReset().mockResolvedValue(undefined);
+  mockStorageRescan.mockReset().mockResolvedValue({});
   mockListS3AccessByLaboratoryId
     .mockReset()
     .mockResolvedValue([{ LaboratoryId: 'lab-1', OrganizationId: 'org-1', BucketName: 'my-bucket' }]);
@@ -171,6 +179,18 @@ describe('process-expired-laboratory-data.lambda eligibility', () => {
 
     expect(mockDeleteObject).toHaveBeenCalledWith({ Bucket: 'my-bucket', Key: 'org-1/lab-1/a.fq.gz' });
     expect(mockDeleteRow).toHaveBeenCalledWith('lab-1', 'r1');
+  });
+
+  it('keeps input files when the lab sets RetentionKeepInputData', async () => {
+    mockListLabs.mockResolvedValue([{ ...lab, RetentionKeepInputData: true }]);
+    mockListFileRows.mockResolvedValueOnce([
+      { Ref: 'r1', S3Bucket: 'my-bucket', ObjectKey: 'org-1/lab-1/a.fq.gz', TagIds: ['wf-1'] },
+    ]);
+
+    await handler(event, ctx, jest.fn());
+
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockDeleteRow).not.toHaveBeenCalled();
   });
 
   it('skips files that a surviving run still references', async () => {
@@ -342,7 +362,8 @@ describe('process-expired-laboratory-data.lambda eligibility', () => {
       jest.setSystemTime(Date.now() + 61_000);
     });
 
-    await handler(event, { getRemainingTimeInMillis: () => 180_000 } as Context, jest.fn());
+    // Reserve is 120s for snapshots; keep enough headroom after the 61s fake-timer advance.
+    await handler(event, { getRemainingTimeInMillis: () => 400_000 } as Context, jest.fn());
 
     expect(mockUpdateRetentionMetadata.mock.calls.map((call) => call[0].RunId)).toEqual(['run-1', 'run-2']);
     jest.useRealTimers();
@@ -1015,6 +1036,19 @@ describe('process-expired-laboratory-data.lambda orphaned run folder reconciliat
       UntaggedInputKeys: [`${runFolder}reads_R1.fq.gz`],
       RecordedAt: expect.any(String),
     });
+  });
+
+  it('skips the orphan pass for a lab that sets RetentionIncludePrePolicyData to false', async () => {
+    mockListLabs.mockResolvedValue([{ ...lab, RetentionIncludePrePolicyData: false }]);
+    mockBucket({
+      prefixes: { [labPrefix]: [platformPrefix], [platformPrefix]: [runFolder] },
+      objects: { [runFolder]: [{ Key: `${runFolder}results/multiqc.html`, LastModified: OLD }] },
+    });
+
+    await handler(event, ctx, jest.fn());
+
+    expect(mockListChildPrefixes).not.toHaveBeenCalled();
+    expect(mockRecordExpiredRunOutput).not.toHaveBeenCalled();
   });
 
   it('records an old FASTQ at the run folder root when no file row claims it', async () => {

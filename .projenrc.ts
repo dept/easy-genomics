@@ -397,6 +397,7 @@ const backEndApp = new awscdk.AwsCdkTypeScriptApp({
     '@aws-sdk/client-cloudwatch-logs@3.782.0',
     '@aws-sdk/client-cognito-identity-provider',
     '@aws-sdk/client-cost-explorer@3.782.0',
+    '@aws-sdk/client-pricing@3.782.0',
     '@aws-sdk/client-dynamodb',
     `@aws-sdk/client-omics@${awsSdkClientOmicsVersion}`,
     '@aws-sdk/client-ses',
