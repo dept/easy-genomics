@@ -16,6 +16,7 @@ jest.mock('../../../../../src/app/utils/auth-utils');
 const mockAssertLaunchWithinLimits = jest.fn();
 const mockLogWarnedLaunch = jest.fn();
 jest.mock('../../../../../src/app/services/easy-genomics/run-limit-check-service', () => ({
+  runLimitActorOf: () => ({ UserId: 'actor-user', UserEmail: 'actor@example.com' }),
   RunLimitCheckService: jest.fn().mockImplementation(() => ({
     assertLaunchWithinLimits: (...args: unknown[]) => mockAssertLaunchWithinLimits(...args),
     logWarnedLaunch: (...args: unknown[]) => mockLogWarnedLaunch(...args),
@@ -307,9 +308,9 @@ describe('create-run-execution.lambda', () => {
     expect(mockLogWarnedLaunch).toHaveBeenCalledWith(
       expect.objectContaining({ LaboratoryId: LAB_ID }),
       expect.objectContaining({ platform: 'AWS HealthOmics' }),
-      undefined,
+      { UserId: 'actor-user', UserEmail: 'actor@example.com' },
       verdict,
-      'run-123',
+      { ExternalRunId: 'run-123', RunName: 'Test run' },
     );
   });
 
@@ -503,7 +504,7 @@ describe('create-run-execution.lambda', () => {
           sampleSheetS3Url: 's3://lab-bucket/run/samplesheet.csv',
           settings: rawParameters,
         },
-        'user-id-123',
+        { UserId: 'actor-user', UserEmail: 'actor@example.com' },
       );
       expect(mockAssertLaunchWithinLimits.mock.calls[0][1].settings.max_cpus).toBe('4');
     });

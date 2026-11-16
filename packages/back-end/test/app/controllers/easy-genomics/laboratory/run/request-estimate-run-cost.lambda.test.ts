@@ -2,7 +2,7 @@ import { RunSamplesNotCountedError } from '@easy-genomics/shared-lib/src/app/uti
 import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 
 const mockEstimate = jest.fn();
-const mockCheckRunLimits = jest.fn();
+const mockCheckReviewRunLimits = jest.fn();
 const mockQueryByLaboratoryId = jest.fn();
 const mockValidateOrgAdmin = jest.fn();
 const mockValidateLabManager = jest.fn();
@@ -19,8 +19,9 @@ jest.mock('../../../../../../src/app/services/easy-genomics/run-cost-estimation-
   })),
 }));
 jest.mock('../../../../../../src/app/services/easy-genomics/run-limit-check-service', () => ({
+  runLimitActorOf: () => ({ UserId: 'actor-user', UserEmail: 'actor@example.com' }),
   RunLimitCheckService: jest.fn().mockImplementation(() => ({
-    checkRunLimits: (...args: unknown[]) => mockCheckRunLimits(...args),
+    checkReviewRunLimits: (...args: unknown[]) => mockCheckReviewRunLimits(...args),
   })),
 }));
 jest.mock('../../../../../../src/app/utils/auth-utils', () => ({
@@ -100,7 +101,7 @@ describe('request-estimate-run-cost.lambda', () => {
     mockValidateOrgAdmin.mockReturnValue(true);
     mockValidateLabManager.mockReturnValue(false);
     mockValidateLabTechnician.mockReturnValue(false);
-    mockCheckRunLimits.mockReset().mockResolvedValue(undefined);
+    mockCheckReviewRunLimits.mockReset().mockResolvedValue(undefined);
   });
 
   it('returns 404 when laboratoryId is missing', async () => {
@@ -135,7 +136,7 @@ describe('request-estimate-run-cost.lambda', () => {
     const result = await handler(createEvent(validBody), createContext(), () => {});
     expect(result.statusCode).toBe(403);
     expect(mockEstimate).not.toHaveBeenCalled();
-    expect(mockCheckRunLimits).not.toHaveBeenCalled();
+    expect(mockCheckReviewRunLimits).not.toHaveBeenCalled();
   });
 
   it('returns estimate on happy path', async () => {
@@ -182,7 +183,7 @@ describe('request-estimate-run-cost.lambda', () => {
         costEstimate: 'available',
         sampleCount: 96,
       };
-      mockCheckRunLimits.mockResolvedValue(verdict);
+      mockCheckReviewRunLimits.mockResolvedValue(verdict);
 
       const result = await handler(createEvent(reviewRequest), createContext(), () => {});
 
@@ -191,18 +192,21 @@ describe('request-estimate-run-cost.lambda', () => {
       expect(body.limitVerdict).toEqual(verdict);
     });
 
-    it('checks the run from server-derivable fields only, ignoring client-sent sizes', async () => {
+    it('checks the run from server-derivable fields only, for the signed-in user, ignoring client-sent sizes', async () => {
       await handler(
         createEvent({ ...reviewRequest, sampleCount: 1, inputBytesTotal: 1, inputFileKeys: ['x'] }),
         createContext(),
         () => {},
       );
 
-      expect(mockCheckRunLimits).toHaveBeenCalledWith(laboratory, reviewRequest);
+      expect(mockCheckReviewRunLimits).toHaveBeenCalledWith(laboratory, reviewRequest, {
+        UserId: 'actor-user',
+        UserEmail: 'actor@example.com',
+      });
     });
 
     it('returns the samples-not-counted error when the check cannot count the samples', async () => {
-      mockCheckRunLimits.mockRejectedValue(new RunSamplesNotCountedError());
+      mockCheckReviewRunLimits.mockRejectedValue(new RunSamplesNotCountedError());
 
       const result = await handler(createEvent(reviewRequest), createContext(), () => {});
 

@@ -15,10 +15,11 @@ jest.mock('../../../../src/app/services/easy-genomics/run-cost-estimation-servic
   })),
 }));
 
-const mockAddLaunchCount = jest.fn();
-jest.mock('../../../../src/app/services/easy-genomics/usage-totals-service', () => ({
-  UsageTotalsService: jest.fn().mockImplementation(() => ({
-    addLaunchCount: (...args: unknown[]) => mockAddLaunchCount(...args),
+const mockRecord = jest.fn();
+jest.mock('../../../../src/app/services/easy-genomics/run-limit-event-service', () => ({
+  ...jest.requireActual('../../../../src/app/services/easy-genomics/run-limit-event-service'),
+  RunLimitEventService: jest.fn().mockImplementation(() => ({
+    record: (...args: unknown[]) => mockRecord(...args),
   })),
 }));
 
@@ -26,9 +27,12 @@ import { readSampleSheet, sumObjectBytes } from '../../../../src/app/services/ea
 import {
   evaluateRunLimits,
   hasAnyRunLimit,
+  RunLimitActor,
   RunLimitCheckService,
   RunLimitInput,
+  runLimitActorOf,
 } from '../../../../src/app/services/easy-genomics/run-limit-check-service';
+import { blockedAttemptId } from '../../../../src/app/services/easy-genomics/run-limit-event-service';
 
 const availableEstimate = (median: number) => ({
   estimateAvailable: true,
@@ -131,7 +135,7 @@ describe('RunLimitCheckService', () => {
     mockReadSampleSheet.mockResolvedValue({ outcome: 'read', sampleCount: 96, dataFileKeys: ['a.fq.gz'] });
     mockSumObjectBytes.mockResolvedValue(5000);
     mockEstimate.mockReset().mockResolvedValue(availableEstimate(120));
-    mockAddLaunchCount.mockReset().mockResolvedValue(undefined);
+    mockRecord.mockReset().mockResolvedValue('recorded');
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     service = new RunLimitCheckService();
@@ -142,20 +146,23 @@ describe('RunLimitCheckService', () => {
     errorSpy.mockRestore();
   });
 
-  const today = () => new Date().toISOString().slice(0, 10);
-  const launchCount = (Kind: 'warned' | 'blocked') => ({
+  const actor: RunLimitActor = { UserId: 'user-1', UserEmail: 'user@example.com' };
+  const expectedEvent = (Kind: 'warned' | 'blocked') => ({
     OrganizationId: 'org-1',
     LaboratoryId: 'lab-1',
     Platform: 'AWS HealthOmics',
     WorkflowExternalId: 'wf-123',
-    Day: today(),
+    WorkflowVersionName: 'v1',
+    UserId: 'user-1',
+    UserEmail: 'user@example.com',
     Kind,
+    OccurredAt: expect.any(String),
   });
 
   /** A count write that settles a macrotask later, so a caller that doesn't await it settles first. */
   const slowCountWrite = (outcome: 'resolve' | 'reject') => {
     const state = { settled: false };
-    mockAddLaunchCount.mockImplementation(async () => {
+    mockRecord.mockImplementation(async () => {
       await new Promise((resolve) => setImmediate(resolve));
       state.settled = true;
       if (outcome === 'reject') throw new Error('ProvisionedThroughputExceededException');
@@ -163,10 +170,10 @@ describe('RunLimitCheckService', () => {
     return state;
   };
 
-  describe('checkRunLimits', () => {
+  describe('checkReviewRunLimits', () => {
     it('does no reads for a lab with no limits', async () => {
-      await expect(service.checkRunLimits(withLimits({}), input)).resolves.toBeUndefined();
-      await expect(service.checkRunLimits(laboratory, input)).resolves.toBeUndefined();
+      await expect(service.checkReviewRunLimits(withLimits({}), input, actor)).resolves.toBeUndefined();
+      await expect(service.checkReviewRunLimits(laboratory, input, actor)).resolves.toBeUndefined();
 
       expect(mockReadSampleSheet).not.toHaveBeenCalled();
       expect(mockSumObjectBytes).not.toHaveBeenCalled();
@@ -174,7 +181,7 @@ describe('RunLimitCheckService', () => {
     });
 
     it('checks a sample-only lab without computing the estimate', async () => {
-      await expect(service.checkRunLimits(withLimits({ SamplesBlockAbove: 500 }), input)).resolves.toEqual({
+      await expect(service.checkReviewRunLimits(withLimits({ SamplesBlockAbove: 500 }), input, actor)).resolves.toEqual({
         outcome: 'pass',
         hits: [],
         costEstimate: 'notChecked',
@@ -188,7 +195,7 @@ describe('RunLimitCheckService', () => {
     });
 
     it('carries the counted samples in a cost-only lab', async () => {
-      const verdict = await service.checkRunLimits(withLimits({ CostWarnAboveUsd: 150 }), input);
+      const verdict = await service.checkReviewRunLimits(withLimits({ CostWarnAboveUsd: 150 }), input, actor);
 
       expect(verdict).toEqual({ outcome: 'pass', hits: [], costEstimate: 'available', sampleCount: 96 });
     });
@@ -196,13 +203,13 @@ describe('RunLimitCheckService', () => {
     it('carries zero samples for a header-only sheet', async () => {
       mockReadSampleSheet.mockResolvedValue({ outcome: 'read', sampleCount: 0, dataFileKeys: [] });
 
-      const verdict = await service.checkRunLimits(withLimits({ SamplesWarnAbove: 300 }), input);
+      const verdict = await service.checkReviewRunLimits(withLimits({ SamplesWarnAbove: 300 }), input, actor);
 
       expect(verdict?.sampleCount).toBe(0);
     });
 
     it('estimates from the server-read samples, rethrowing history errors, with the settings it was given', async () => {
-      await service.checkRunLimits(withLimits({ CostBlockAboveUsd: 400 }), input);
+      await service.checkReviewRunLimits(withLimits({ CostBlockAboveUsd: 400 }), input, actor);
 
       expect(mockSumObjectBytes).toHaveBeenCalledWith('lab-bucket', ['a.fq.gz']);
       expect(mockEstimate).toHaveBeenCalledWith(
@@ -223,7 +230,7 @@ describe('RunLimitCheckService', () => {
     it('compares the scaled median against the cost amounts', async () => {
       mockEstimate.mockResolvedValue(availableEstimate(416.67));
 
-      const verdict = await service.checkRunLimits(withLimits({ CostBlockAboveUsd: 400 }), input);
+      const verdict = await service.checkReviewRunLimits(withLimits({ CostBlockAboveUsd: 400 }), input, actor);
 
       expect(verdict?.hits).toEqual([{ limit: 'cost', level: 'block', amount: 400, runValue: 416.67 }]);
     });
@@ -232,7 +239,7 @@ describe('RunLimitCheckService', () => {
       mockEstimate.mockResolvedValue(unavailableEstimate);
       mockReadSampleSheet.mockResolvedValue({ outcome: 'read', sampleCount: 100, dataFileKeys: [] });
 
-      const verdict = await service.checkRunLimits(withLimits({ SamplesWarnAbove: 300, CostBlockAboveUsd: 1 }), input);
+      const verdict = await service.checkReviewRunLimits(withLimits({ SamplesWarnAbove: 300, CostBlockAboveUsd: 1 }), input, actor);
 
       expect(verdict).toEqual({ outcome: 'pass', hits: [], costEstimate: 'notEnoughHistory', sampleCount: 100 });
     });
@@ -243,7 +250,7 @@ describe('RunLimitCheckService', () => {
         mockReadSampleSheet.mockResolvedValue({ outcome: 'notRead', reason });
 
         await expect(
-          service.checkRunLimits(withLimits({ SamplesWarnAbove: 300, CostBlockAboveUsd: 400 }), input),
+          service.checkReviewRunLimits(withLimits({ SamplesWarnAbove: 300, CostBlockAboveUsd: 400 }), input, actor),
         ).rejects.toBeInstanceOf(RunSamplesNotCountedError);
         expect(mockEstimate).not.toHaveBeenCalled();
       },
@@ -256,7 +263,7 @@ describe('RunLimitCheckService', () => {
       async (reason) => {
         mockReadSampleSheet.mockResolvedValue({ outcome: 'notRead', reason });
 
-        const rejection = service.checkRunLimits(withLimits({ CostWarnAboveUsd: 150 }), input);
+        const rejection = service.checkReviewRunLimits(withLimits({ CostWarnAboveUsd: 150 }), input, actor);
 
         await expect(rejection).rejects.toBeInstanceOf(RunSamplesNotCountedError);
         await expect(rejection).rejects.toThrow(/cost limit/);
@@ -267,7 +274,7 @@ describe('RunLimitCheckService', () => {
     it('reports a failed estimate as a cost estimate failure', async () => {
       mockEstimate.mockRejectedValue(new Error('AccessDeniedException'));
 
-      await expect(service.checkRunLimits(withLimits({ CostBlockAboveUsd: 400 }), input)).rejects.toBeInstanceOf(
+      await expect(service.checkReviewRunLimits(withLimits({ CostBlockAboveUsd: 400 }), input, actor)).rejects.toBeInstanceOf(
         RunCostEstimateFailedError,
       );
     });
@@ -275,9 +282,135 @@ describe('RunLimitCheckService', () => {
     it('reports failed input sizing as a cost estimate failure', async () => {
       mockSumObjectBytes.mockRejectedValue(new Error('boom'));
 
-      await expect(service.checkRunLimits(withLimits({ CostBlockAboveUsd: 400 }), input)).rejects.toBeInstanceOf(
+      await expect(service.checkReviewRunLimits(withLimits({ CostBlockAboveUsd: 400 }), input, actor)).rejects.toBeInstanceOf(
         RunCostEstimateFailedError,
       );
+    });
+
+
+    describe('recording a blocked review', () => {
+      const sampleBlockedLab = withLimits({ SamplesBlockAbove: 50 });
+
+      it('records a review-step block once and returns the verdict', async () => {
+        const verdict = await service.checkReviewRunLimits(sampleBlockedLab, input, actor);
+
+        expect(verdict?.outcome).toBe('block');
+        expect(mockRecord).toHaveBeenCalledTimes(1);
+        expect(mockRecord).toHaveBeenCalledWith({
+          ...expectedEvent('blocked'),
+          EventId: blockedAttemptId({
+            laboratoryId: 'lab-1',
+            platform: 'AWS HealthOmics',
+            workflowExternalId: 'wf-123',
+            userId: 'user-1',
+            sampleSheetS3Url: 's3://lab-bucket/run/samplesheet.csv',
+            source: 'review',
+          }),
+          Source: 'review',
+          Reason: 'limitExceeded',
+          Hits: [{ limit: 'samples', level: 'block', amount: 50, runValue: 96 }],
+          SampleCount: 96,
+        });
+      });
+
+      it('gives the same event id on every refresh of the same review', async () => {
+        await service.checkReviewRunLimits(sampleBlockedLab, input, actor);
+        await service.checkReviewRunLimits(sampleBlockedLab, input, actor);
+
+        expect(mockRecord.mock.calls[1][0].EventId).toBe(mockRecord.mock.calls[0][0].EventId);
+      });
+
+      it('records a review-step samplesNotCounted error with its reason and rethrows it unchanged', async () => {
+        mockReadSampleSheet.mockResolvedValue({ outcome: 'notRead', reason: 'unreadable' });
+
+        const error = await service.checkReviewRunLimits(sampleBlockedLab, input, actor).catch((err) => err);
+
+        expect(error).toBeInstanceOf(RunSamplesNotCountedError);
+        expect(mockRecord).toHaveBeenCalledWith(
+          expect.objectContaining({ Source: 'review', Reason: 'samplesNotCounted', Hits: [] }),
+        );
+      });
+
+      it('records a review-step cost estimate failure with its reason and rethrows it unchanged', async () => {
+        mockEstimate.mockRejectedValue(new Error('AccessDeniedException'));
+
+        const error = await service
+          .checkReviewRunLimits(withLimits({ CostBlockAboveUsd: 400 }), input, actor)
+          .catch((err) => err);
+
+        expect(error).toBeInstanceOf(RunCostEstimateFailedError);
+        expect(mockRecord).toHaveBeenCalledWith(
+          expect.objectContaining({ Source: 'review', Reason: 'costEstimateFailed' }),
+        );
+      });
+
+      it('records a block with no sample sheet under a stable event id', async () => {
+        mockReadSampleSheet.mockResolvedValue({ outcome: 'notRead', reason: 'noSampleSheet' });
+        const sheetless = { ...input, sampleSheetS3Url: undefined };
+
+        await service.checkReviewRunLimits(sampleBlockedLab, sheetless, actor).catch(() => undefined);
+
+        expect(mockRecord.mock.calls[0][0].EventId).toBe(
+          blockedAttemptId({
+            laboratoryId: 'lab-1',
+            platform: 'AWS HealthOmics',
+            workflowExternalId: 'wf-123',
+            userId: 'user-1',
+            source: 'review',
+          }),
+        );
+      });
+
+      it('logs a review-step block with its source, and only the first time it is recorded', async () => {
+        await service.checkReviewRunLimits(sampleBlockedLab, input, actor);
+        mockRecord.mockResolvedValue('already-recorded');
+        await service.checkReviewRunLimits(sampleBlockedLab, input, actor);
+
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        expect(loggedLines()[0]).toMatchObject({ event: 'RUN_LIMIT_BLOCKED', source: 'review' });
+      });
+
+      it('records a launch block after a review block of the same run as a separate event', async () => {
+        await service.checkReviewRunLimits(sampleBlockedLab, input, actor);
+        await service.assertLaunchWithinLimits(sampleBlockedLab, input, actor).catch(() => undefined);
+
+        expect(mockRecord.mock.calls[1][0].EventId).not.toBe(mockRecord.mock.calls[0][0].EventId);
+        expect(mockRecord.mock.calls[1][0].Source).toBe('launch');
+      });
+
+      it('records nothing for a pass or warn on the review step', async () => {
+        mockEstimate.mockResolvedValue(availableEstimate(182.5));
+
+        await service.checkReviewRunLimits(withLimits({ CostWarnAboveUsd: 150 }), input, actor);
+        await service.checkReviewRunLimits(withLimits({ SamplesBlockAbove: 500 }), input, actor);
+        await service.checkReviewRunLimits(laboratory, input, actor);
+
+        expect(mockRecord).not.toHaveBeenCalled();
+      });
+
+      it('still returns the verdict when recording fails', async () => {
+        slowCountWrite('reject');
+
+        await expect(service.checkReviewRunLimits(sampleBlockedLab, input, actor)).resolves.toMatchObject({
+          outcome: 'block',
+        });
+      });
+    });
+  });
+
+  describe('runLimitActorOf', () => {
+    const eventWithClaims = (claims: Record<string, string>) => ({ requestContext: { authorizer: { claims } } }) as any;
+
+    it('prefers UserId, then the Cognito username, then unknown, and carries the email', () => {
+      expect(runLimitActorOf(eventWithClaims({ 'UserId': 'u1', 'cognito:username': 'c1', 'email': 'a@b.c' }))).toEqual({
+        UserId: 'u1',
+        UserEmail: 'a@b.c',
+      });
+      expect(runLimitActorOf(eventWithClaims({ 'cognito:username': 'c1' }))).toEqual({
+        UserId: 'c1',
+        UserEmail: undefined,
+      });
+      expect(runLimitActorOf(eventWithClaims({})).UserId).toBe('unknown');
     });
   });
 
@@ -287,7 +420,7 @@ describe('RunLimitCheckService', () => {
       mockEstimate.mockResolvedValue(availableEstimate(416.67));
       const lab = withLimits({ SamplesBlockAbove: 500, CostBlockAboveUsd: 400 });
 
-      const rejection = service.assertLaunchWithinLimits(lab, input, 'user-1');
+      const rejection = service.assertLaunchWithinLimits(lab, input, actor);
 
       await expect(rejection).rejects.toBeInstanceOf(RunSampleLimitExceededError);
       await expect(rejection).rejects.toThrow(/1000 samples/);
@@ -299,6 +432,7 @@ describe('RunLimitCheckService', () => {
         platform: 'AWS HealthOmics',
         workflowExternalId: 'wf-123',
         workflowVersionName: 'v1',
+        source: 'launch',
         userId: 'user-1',
         reason: 'limitExceeded',
         hits: [
@@ -314,7 +448,7 @@ describe('RunLimitCheckService', () => {
       mockEstimate.mockRejectedValue(new Error('AccessDeniedException'));
       const lab = withLimits({ CostBlockAboveUsd: 400 });
 
-      const error = await service.assertLaunchWithinLimits(lab, input, 'user-1').catch((err) => err);
+      const error = await service.assertLaunchWithinLimits(lab, input, actor).catch((err) => err);
 
       expect(error).toBeInstanceOf(RunCostEstimateFailedError);
       expect(warnSpy).toHaveBeenCalledTimes(1);
@@ -325,7 +459,7 @@ describe('RunLimitCheckService', () => {
       mockReadSampleSheet.mockResolvedValue({ outcome: 'notRead', reason: 'unreadable' });
 
       await expect(
-        service.assertLaunchWithinLimits(withLimits({ SamplesBlockAbove: 500 }), input, 'user-1'),
+        service.assertLaunchWithinLimits(withLimits({ SamplesBlockAbove: 500 }), input, actor),
       ).rejects.toBeInstanceOf(RunSamplesNotCountedError);
       expect(loggedLines()[0]).toMatchObject({ reason: 'samplesNotCounted', hits: [] });
     });
@@ -333,36 +467,40 @@ describe('RunLimitCheckService', () => {
     describe('counting the blocked launch', () => {
       const sampleBlockedLab = withLimits({ SamplesBlockAbove: 50 });
 
-      it('adds one blocked launch and has finished the write before it throws the limit error', async () => {
+      it('records one blocked launch and has finished the write before it throws the limit error', async () => {
         const countWrite = slowCountWrite('resolve');
 
-        const error = await service.assertLaunchWithinLimits(sampleBlockedLab, input, 'user-1').catch((err) => {
+        const error = await service.assertLaunchWithinLimits(sampleBlockedLab, input, actor).catch((err) => {
           expect(countWrite.settled).toBe(true);
           return err;
         });
 
         expect(error).toBeInstanceOf(RunSampleLimitExceededError);
-        expect(mockAddLaunchCount).toHaveBeenCalledTimes(1);
-        expect(mockAddLaunchCount).toHaveBeenCalledWith(launchCount('blocked'));
+        expect(mockRecord).toHaveBeenCalledTimes(1);
+        expect(mockRecord).toHaveBeenCalledWith(
+          expect.objectContaining({ ...expectedEvent('blocked'), Source: 'launch', Reason: 'limitExceeded' }),
+        );
       });
 
-      it('counts a launch blocked because its samples could not be counted, before rethrowing', async () => {
+      it('records a launch blocked because its samples could not be counted, before rethrowing', async () => {
         mockReadSampleSheet.mockResolvedValue({ outcome: 'notRead', reason: 'unreadable' });
         const countWrite = slowCountWrite('resolve');
 
-        const error = await service.assertLaunchWithinLimits(sampleBlockedLab, input, 'user-1').catch((err) => {
+        const error = await service.assertLaunchWithinLimits(sampleBlockedLab, input, actor).catch((err) => {
           expect(countWrite.settled).toBe(true);
           return err;
         });
 
         expect(error).toBeInstanceOf(RunSamplesNotCountedError);
-        expect(mockAddLaunchCount).toHaveBeenCalledWith(launchCount('blocked'));
+        expect(mockRecord).toHaveBeenCalledWith(
+          expect.objectContaining({ ...expectedEvent('blocked'), Source: 'launch', Reason: 'samplesNotCounted' }),
+        );
       });
 
-      it('still throws the limit error, not the write error, when the count fails, and logs the failure', async () => {
+      it('still throws the limit error, not the write error, when recording fails, and logs the failure', async () => {
         const countWrite = slowCountWrite('reject');
 
-        const error = await service.assertLaunchWithinLimits(sampleBlockedLab, input, 'user-1').catch((err) => err);
+        const error = await service.assertLaunchWithinLimits(sampleBlockedLab, input, actor).catch((err) => err);
 
         expect(countWrite.settled).toBe(true);
         expect(error).toBeInstanceOf(RunSampleLimitExceededError);
@@ -372,20 +510,20 @@ describe('RunLimitCheckService', () => {
         );
       });
 
-      it('does not count a launch that passed or was only warned', async () => {
+      it('does not record a launch that passed or was only warned', async () => {
         mockEstimate.mockResolvedValue(availableEstimate(182.5));
 
-        await service.assertLaunchWithinLimits(withLimits({ CostWarnAboveUsd: 150 }), input, 'user-1');
-        await service.assertLaunchWithinLimits(laboratory, input, 'user-1');
+        await service.assertLaunchWithinLimits(withLimits({ CostWarnAboveUsd: 150 }), input, actor);
+        await service.assertLaunchWithinLimits(laboratory, input, actor);
 
-        expect(mockAddLaunchCount).not.toHaveBeenCalled();
+        expect(mockRecord).not.toHaveBeenCalled();
       });
     });
 
     it('returns a warn verdict without logging', async () => {
       mockEstimate.mockResolvedValue(availableEstimate(182.5));
 
-      const verdict = await service.assertLaunchWithinLimits(withLimits({ CostWarnAboveUsd: 150 }), input, 'user-1');
+      const verdict = await service.assertLaunchWithinLimits(withLimits({ CostWarnAboveUsd: 150 }), input, actor);
 
       expect(verdict?.outcome).toBe('warn');
       expect(warnSpy).not.toHaveBeenCalled();
@@ -401,7 +539,7 @@ describe('RunLimitCheckService', () => {
     };
 
     it('logs the warned launch with the started run id', async () => {
-      await service.logWarnedLaunch(laboratory, input, 'user-1', warnVerdict, 'run-123');
+      await service.logWarnedLaunch(laboratory, input, actor, warnVerdict, { ExternalRunId: 'run-123', RunName: 'my run' });
 
       expect(warnSpy).toHaveBeenCalledTimes(1);
       expect(loggedLines()[0]).toEqual({
@@ -411,6 +549,7 @@ describe('RunLimitCheckService', () => {
         platform: 'AWS HealthOmics',
         workflowExternalId: 'wf-123',
         workflowVersionName: 'v1',
+        source: 'launch',
         externalRunId: 'run-123',
         userId: 'user-1',
         hits: warnVerdict.hits,
@@ -419,30 +558,38 @@ describe('RunLimitCheckService', () => {
     });
 
     it.each([undefined, { outcome: 'pass' as const, hits: [], costEstimate: 'notChecked' as const }])(
-      'logs and counts nothing for a launch that was not warned (%p)',
+      'logs and records nothing for a launch that was not warned (%p)',
       async (verdict) => {
-        await service.logWarnedLaunch(laboratory, input, 'user-1', verdict, 'run-123');
+        await service.logWarnedLaunch(laboratory, input, actor, verdict, { ExternalRunId: 'run-123', RunName: 'my run' });
 
         expect(warnSpy).not.toHaveBeenCalled();
-        expect(mockAddLaunchCount).not.toHaveBeenCalled();
+        expect(mockRecord).not.toHaveBeenCalled();
       },
     );
 
-    it('adds one warned launch and has finished the write when it resolves', async () => {
+    it('records one warned launch and has finished the write when it resolves', async () => {
       const countWrite = slowCountWrite('resolve');
 
-      await service.logWarnedLaunch(laboratory, input, 'user-1', warnVerdict, 'run-123');
+      await service.logWarnedLaunch(laboratory, input, actor, warnVerdict, { ExternalRunId: 'run-123', RunName: 'my run' });
 
       expect(countWrite.settled).toBe(true);
-      expect(mockAddLaunchCount).toHaveBeenCalledTimes(1);
-      expect(mockAddLaunchCount).toHaveBeenCalledWith(launchCount('warned'));
+      expect(mockRecord).toHaveBeenCalledTimes(1);
+      expect(mockRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ...expectedEvent('warned'),
+          EventId: 'run-123',
+          ExternalRunId: 'run-123',
+          RunName: 'my run',
+          Source: 'launch',
+        }),
+      );
     });
 
-    it('logs a failed count without throwing, so the started launch still returns', async () => {
+    it('logs a failed recording without throwing, so the started launch still returns', async () => {
       const countWrite = slowCountWrite('reject');
 
       await expect(
-        service.logWarnedLaunch(laboratory, input, 'user-1', warnVerdict, 'run-123'),
+        service.logWarnedLaunch(laboratory, input, actor, warnVerdict, { ExternalRunId: 'run-123', RunName: 'my run' }),
       ).resolves.toBeUndefined();
 
       expect(countWrite.settled).toBe(true);

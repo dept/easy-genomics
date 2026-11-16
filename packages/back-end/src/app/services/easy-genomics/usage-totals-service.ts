@@ -63,12 +63,7 @@ export class UsageTotalsService extends DynamoDBService {
     }
   };
 
-  /** Counts every launch attempt, so there's no condition; the other counters start at zero on a new day's row. */
-  public addLaunchCount = async (launch: LaunchCount): Promise<void> => {
-    await this.updateItem(this.launchCountUpdate(launch, new Date().toISOString()));
-  };
-
-  /** The day's launch-count update, for use alone or as an item of a transaction. */
+  /** The day's launch-count update, to add as an item of a transaction. Counters that aren't touched start at zero on a new row. */
   public launchCountUpdate(launch: LaunchCount, now: string): NonNullable<TransactWriteItem['Update']> {
     const counted = launch.Kind === 'warned' ? '#WarnedRuns' : '#BlockedLaunches';
     const other = launch.Kind === 'warned' ? '#BlockedLaunches' : '#WarnedRuns';
