@@ -53,6 +53,15 @@ describe('matchKeyOutputPattern', () => {
     expect(isWholeFolderPattern('nextclade/*.csv')).toBe(false);
   });
 
+  it('keeps multi-level globs as one-segment matches, not whole-folder roles', () => {
+    expect(isWholeFolderPattern('*/*')).toBe(false);
+    expect(isWholeFolderPattern('results/*/*')).toBe(false);
+    expect(matchKeyOutputPattern('*/*', 'nextclade/sample01.csv')).toBe(true);
+    expect(matchKeyOutputPattern('*/*', 'nextclade/qc/sample01.json')).toBe(false);
+    expect(matchKeyOutputPattern('results/*/*', 'results/a/file.bam')).toBe(true);
+    expect(matchKeyOutputPattern('results/*/*', 'results/a/b/file.bam')).toBe(false);
+  });
+
   it('treats ? as a literal character', () => {
     expect(matchKeyOutputPattern('sample?*.csv', 'sampl.csv')).toBe(false);
     expect(matchKeyOutputPattern('sample?*.csv', 'sample?01.csv')).toBe(true);

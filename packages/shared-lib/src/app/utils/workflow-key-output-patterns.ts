@@ -36,17 +36,19 @@ export function matchKeyOutputPattern(pattern: string, relativePath: string): bo
   return patternSegments.every((segment, index) => matchPathSegment(segment, pathSegments[index]));
 }
 
-/** `dir/*` or legacy `dir/` — not sample globs like `dir/*.fa`. */
+/** `dir/*` or legacy `dir/` — not sample globs like `dir/*.fa` or multi-level star paths. */
 export function isWholeFolderPattern(pattern: string): boolean {
   if (!pattern) return false;
-  if (pattern.endsWith('/')) {
-    return !pattern
-      .slice(0, -1)
-      .split('/')
-      .some((segment) => segment.includes('*'));
+  let body: string;
+  if (pattern.endsWith('/*')) {
+    body = pattern.slice(0, -2);
+  } else if (pattern.endsWith('/')) {
+    body = pattern.slice(0, -1);
+  } else {
+    return false;
   }
-  if (!pattern.endsWith('/*')) return false;
-  return pattern.split('/').pop() === '*';
+  // Earlier wildcards mean a multi-level glob (e.g. "*/*"), not a folder role.
+  return !body.split('/').some((segment) => segment.includes('*'));
 }
 
 /**
