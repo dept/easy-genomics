@@ -478,6 +478,26 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     );
   });
 
+  // The review step records its blocks: a Get skips a block already recorded, then the event Put and the
+  // day's count Update are one transaction.
+  it.each([
+    ['dynamodb:GetItem', 'arn:aws:dynamodb:us-west-2:123456789012:table/easy-genomics-run-limit-event-table'],
+    ['dynamodb:PutItem', 'arn:aws:dynamodb:us-west-2:123456789012:table/easy-genomics-run-limit-event-table'],
+    ['dynamodb:UpdateItem', 'arn:aws:dynamodb:us-west-2:123456789012:table/easy-genomics-usage-daily-total-table'],
+  ])('grants request-estimate-run-cost %s on %s', (action, resource) => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamInstance = (IamConstruct as unknown as jest.Mock).mock.results[0].value;
+    const granted = iamInstance
+      .getPolicyStatements('/easy-genomics/laboratory/run/request-estimate-run-cost')
+      .filter((statement: any) => statement.actions.includes(action))
+      .flatMap((statement: any) => statement.resources);
+
+    expect(granted).toEqual([resource]);
+  });
+
   it('adds omics:GetConfiguration IAM policy for create-laboratory endpoint', () => {
     const app = new App();
     const parentStack = new Stack(app, 'parent-stack');
