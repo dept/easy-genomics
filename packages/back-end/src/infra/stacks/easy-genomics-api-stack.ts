@@ -527,5 +527,21 @@ export class EasyGenomicsApiStack extends Stack {
       },
     });
     this.dynamoDBTables.set(usageDailyTotalTableName, usageDailyTotalTable);
+
+    // Warned launches and blocked attempts, keyed `YYYY-MM-DD#<kind>#<id>`. Kept apart from the daily totals
+    // because these rows expire (13 months) while the totals are permanent.
+    const runLimitEventTableName = `${this.props.namePrefix}-run-limit-event-table`;
+    const runLimitEventTable = this.dynamoDB.createTable(runLimitEventTableName, {
+      partitionKey: {
+        name: 'OrganizationId',
+        type: AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'EventKey',
+        type: AttributeType.STRING,
+      },
+      timeToLiveAttribute: 'ExpiresAt',
+    });
+    this.dynamoDBTables.set(runLimitEventTableName, runLimitEventTable);
   };
 }
