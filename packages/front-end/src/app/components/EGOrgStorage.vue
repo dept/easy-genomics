@@ -1,7 +1,13 @@
 <script setup lang="ts">
   import type { OrganizationStorageLab } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-storage';
-  import { ButtonSizeEnum, ButtonVariantEnum } from '@FE/types/buttons';
   import { formatFileSize } from '@FE/utils/file-size';
+  import {
+    nextOrgStorageSort,
+    orgStorageLabLocation,
+    sortOrgStorageLabs,
+    type OrgStorageSort,
+    type OrgStorageSortColumn,
+  } from '@FE/utils/org-storage-table';
 
   const props = defineProps<{
     orgId: string;
@@ -16,6 +22,17 @@
 
   const labs = computed<OrganizationStorageLab[]>(() => storageStore.orgStorage[props.orgId] ?? []);
   const isLoading = computed(() => uiStore.isRequestPending('loadOrgStorage') && labs.value.length === 0);
+
+  const SORTABLE_COLUMNS: OrgStorageSortColumn[] = ['Name', 'Stored', 'NotLinked'];
+  const tableSort = ref<OrgStorageSort>({ column: 'Stored', direction: 'desc' });
+  const sortedLabs = computed(() => sortOrgStorageLabs(labs.value, tableSort.value));
+
+  function sortIcon(column: OrgStorageSortColumn): string {
+    if (tableSort.value.column !== column) return 'i-heroicons-arrows-up-down-20-solid';
+    return tableSort.value.direction === 'asc'
+      ? 'i-heroicons-bars-arrow-up-20-solid'
+      : 'i-heroicons-bars-arrow-down-20-solid';
+  }
 
   onMounted(() => {
     void storageStore.loadOrgStorage(props.orgId);
@@ -63,15 +80,11 @@
     return `At S3 standard pricing. Clearing everything without a run record across all labs would save about US$${Math.round(noRunRecordCost)} a month.`;
   });
 
-  function retentionBadge(months: number | undefined): { label: string; class: string } {
-    if (months === 0) {
-      return { label: 'Never', class: 'bg-alert-caution-muted text-alert-caution' };
-    }
+  function retentionLabel(months: number | undefined): string {
+    if (months === 0) return 'Never';
+    // undefined inherits the back-end 6-month default.
     const effective = months ?? 6;
-    return {
-      label: `${effective} month${effective === 1 ? '' : 's'}`,
-      class: 'bg-alert-success-muted text-alert-success-text',
-    };
+    return `${effective} month${effective === 1 ? '' : 's'}`;
   }
 
   function noRunRecordCell(lab: OrganizationStorageLab): string {
@@ -81,19 +94,20 @@
     return `${compactSize(storage.NoRunRecordBytes)} · ${pct}%`;
   }
 
-  function manageLab(labId: string) {
-    // /admin is system-admin only; org admins open the lab they already have access to.
-    const path = props.superuser ? `/admin/orgs/${props.orgId}/labs/${labId}` : `/labs/${labId}`;
-    void router.push({ path, query: { tab: 'storage' } });
+  function labStorageLocation(lab: OrganizationStorageLab) {
+    return orgStorageLabLocation(props.orgId, lab.LaboratoryId, props.superuser);
+  }
+
+  function openLabStorage(lab: OrganizationStorageLab) {
+    void router.push(labStorageLocation(lab));
   }
 
   const columns = [
-    { key: 'Name', label: 'Lab' },
-    { key: 'Total', label: 'Total', class: 'w-28', rowClass: 'w-28' },
-    { key: 'NoRunRecord', label: 'No run record', class: 'w-40', rowClass: 'w-40' },
+    { key: 'Name', label: 'Lab', sortable: true },
+    { key: 'Stored', label: 'Stored', sortable: true, class: 'w-28', rowClass: 'w-28' },
+    { key: 'NotLinked', label: 'Not linked to a run', sortable: true, class: 'w-44', rowClass: 'w-44' },
     { key: 'Runs', label: 'Runs', class: 'w-20', rowClass: 'w-20' },
     { key: 'Retention', label: 'Retention', class: 'w-32', rowClass: 'w-32' },
-    { key: 'actions', label: '', class: 'w-28', rowClass: 'w-28' },
   ];
 </script>
 
@@ -103,14 +117,12 @@
       <div class="border-stroke-light rounded-2xl border bg-white p-4">
         <USkeleton v-if="isLoading" class="h-8 w-24" />
         <p v-else class="text-heading text-2xl font-semibold">{{ compactSize(totals.totalBytes) }}</p>
-        <p class="text-muted text-xs">
-          Stored across {{ labs.length }} lab{{ labs.length === 1 ? '' : 's' }}
-        </p>
+        <p class="text-muted text-xs">Stored across {{ labs.length }} lab{{ labs.length === 1 ? '' : 's' }}</p>
       </div>
-      <div class="border-alert-caution bg-alert-caution-muted rounded-2xl border p-4">
+      <div class="border-stroke-light rounded-2xl border bg-white p-4">
         <USkeleton v-if="isLoading" class="h-8 w-24" />
-        <p v-else class="text-alert-caution text-2xl font-semibold">{{ compactSize(totals.noRunRecordBytes) }}</p>
-        <p class="text-muted text-xs">With no run record</p>
+        <p v-else class="text-heading text-2xl font-semibold">{{ compactSize(totals.noRunRecordBytes) }}</p>
+        <p class="text-muted text-xs">Not linked to a run</p>
       </div>
       <div class="border-stroke-light rounded-2xl border bg-white p-4">
         <USkeleton v-if="isLoading" class="h-8 w-24" />
@@ -119,54 +131,65 @@
         </p>
         <p class="text-muted text-xs">Estimated monthly storage</p>
       </div>
-      <div class="border-alert-caution bg-alert-caution-muted rounded-2xl border p-4">
+      <div class="border-stroke-light rounded-2xl border bg-white p-4">
         <USkeleton v-if="isLoading" class="h-8 w-8" />
-        <p v-else class="text-alert-caution text-2xl font-semibold">{{ totals.labsWithNoRetention }}</p>
+        <p v-else class="text-heading text-2xl font-semibold">{{ totals.labsWithNoRetention }}</p>
         <p class="text-muted text-xs">Labs with no retention set</p>
       </div>
     </div>
 
     <p v-if="savingLine" class="text-muted text-xs">{{ savingLine }}</p>
 
-    <EGTable :table-data="labs" :columns="columns" :is-loading="isLoading" :show-pagination="!isLoading">
+    <EGTable
+      v-model:sort="tableSort"
+      :table-data="sortedLabs"
+      :columns="columns"
+      :is-loading="isLoading"
+      :show-pagination="!isLoading"
+      :row-click-action="openLabStorage"
+    >
+      <template v-for="sortColumn in SORTABLE_COLUMNS" :key="sortColumn" #[`${sortColumn}-header`]="{ column }">
+        <UButton
+          color="gray"
+          variant="ghost"
+          class="-m-1.5"
+          trailing
+          :label="column.label"
+          :icon="sortIcon(sortColumn)"
+          @click="tableSort = nextOrgStorageSort(tableSort, sortColumn)"
+        />
+      </template>
       <template #Name-data="{ row }">
         <div class="flex min-w-0 items-start gap-2">
           <UIcon name="i-heroicons-circle-stack" class="text-muted mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <div class="min-w-0">
-            <p class="text-heading truncate text-sm font-semibold">{{ row.Name }}</p>
+            <!-- EGTable rows take no keyboard focus, so the name is the keyboard path into the lab. -->
+            <NuxtLink
+              :to="labStorageLocation(row)"
+              class="text-heading focus-visible:outline-primary-500 block truncate rounded text-sm font-semibold hover:underline focus:outline-none focus-visible:outline focus-visible:outline-2"
+              @click.stop
+            >
+              {{ row.Name }}
+            </NuxtLink>
             <p class="text-muted/70 mt-1 truncate font-mono text-xs">{{ row.S3Bucket || 'No bucket set' }}</p>
           </div>
         </div>
       </template>
-      <template #Total-data="{ row }">
+      <template #Stored-data="{ row }">
         <span class="text-heading text-sm font-semibold">
           {{ row.Storage ? compactSize(row.Storage.TotalBytes) : '—' }}
         </span>
       </template>
-      <template #NoRunRecord-data="{ row }">
+      <template #NotLinked-data="{ row }">
         <span class="text-body text-sm">{{ noRunRecordCell(row) }}</span>
       </template>
       <template #Runs-data="{ row }">
         <span class="text-body text-sm">{{ row.Storage?.RunCount ?? '—' }}</span>
       </template>
       <template #Retention-data="{ row }">
-        <span
-          class="inline-flex rounded-xl px-3 py-1 text-xs font-semibold uppercase"
-          :class="retentionBadge(row.RunRetentionMonths).class"
-        >
-          {{ retentionBadge(row.RunRetentionMonths).label }}
+        <span class="text-sm" :class="row.RunRetentionMonths === 0 ? 'text-alert-caution font-medium' : 'text-body'">
+          {{ retentionLabel(row.RunRetentionMonths) }}
         </span>
-      </template>
-      <template #actions-data="{ row }">
-        <div class="flex justify-end">
-          <EGButton
-            :size="ButtonSizeEnum.enum.sm"
-            :variant="ButtonVariantEnum.enum.secondary"
-            label="Manage"
-            :aria-label="`Manage storage for ${row.Name}`"
-            @click="manageLab(row.LaboratoryId)"
-          />
-        </div>
       </template>
     </EGTable>
 
