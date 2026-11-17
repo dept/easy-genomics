@@ -1086,8 +1086,8 @@
         variant="secondary"
         @click="$router.push(`/labs/${labId}/create-workflow`)"
       />
-      <div v-if="activeTabKey === 'storage' && orgId" class="flex items-center gap-3">
-        <span v-if="storageScannedAt" class="text-muted text-sm">
+      <div v-if="activeTabKey === 'storage' && orgId" class="flex shrink-0 items-center gap-3">
+        <span v-if="storageScannedAt" class="text-muted whitespace-nowrap text-xs leading-none">
           Scanned {{ formatStorageScannedAt(storageScannedAt) }}
         </span>
         <EGButton

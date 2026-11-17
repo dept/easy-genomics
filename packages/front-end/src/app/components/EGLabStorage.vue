@@ -7,6 +7,7 @@
   import { RunRetentionMonthsSchema } from '@FE/types/labs';
   import { formatRelativeDateTime } from '@FE/utils/date-time';
   import { formatFileSize } from '@FE/utils/file-size';
+  import { countFullyProtectedRuns, formatRetentionMonthsLabel } from '@FE/utils/lab-storage-display';
 
   const props = defineProps<{
     orgId: string;
@@ -128,7 +129,10 @@
   }
 
   function rowActionItems(item: LaboratoryStorageItem) {
-    const protectLabel = protection(item) === 'Unprotected' ? 'Protect from deletion' : 'Allow deletion';
+    // Match toggleProtection: only fully protected items flip to unprotected.
+    const protectLabel = protection(item) === 'Protected' ? 'Allow deletion' : 'Protect from deletion';
+    const blockedDelete = deleteBlockedReason(item);
+    // One group = no divider between Protect and Delete (per design).
     return [
       [
         {
@@ -136,13 +140,13 @@
           click: () => toggleProtection(item),
           disabled: item.FileCount === 0 || isMutating.value,
         },
-      ],
-      [
         {
           label: 'Delete',
+          description: blockedDelete ?? undefined,
           click: () => confirmDelete([item.ItemId]),
           isHighlighted: true,
-          disabled: !!deleteBlockedReason(item) || isMutating.value,
+          hideIcon: true,
+          disabled: !!blockedDelete || isMutating.value,
         },
       ],
     ];
@@ -229,16 +233,13 @@
   }
 
   // ---- Stats ----
-  const protectedRunCount = computed(() => summary.value?.ProtectedItemCount ?? 0);
+  /** Unique runs with at least one fully protected item — not ProtectedItemCount (one run → many items). */
+  const protectedRunCount = computed(() => countFullyProtectedRuns(items.value));
   const protectedRunLabel = computed(() => {
     const count = protectedRunCount.value;
     return `${count.toLocaleString()} run${count === 1 ? '' : 's'}`;
   });
-  const retentionMonthsLabel = computed(() => {
-    const months = lab.value?.RunRetentionMonths ?? 6;
-    if (months === 0) return 'Never';
-    return `${months} month${months === 1 ? '' : 's'}`;
-  });
+  const retentionMonthsLabel = computed(() => formatRetentionMonthsLabel(lab.value?.RunRetentionMonths ?? 6));
   const monthlyCostSubtitle = computed(() => {
     const totals = summary.value;
     if (!totals) return 'Stored';
@@ -260,7 +261,7 @@
     const current = lab.value?.RunRetentionMonths ?? 6;
     const months = presets.includes(current) ? presets : [...presets, current].sort((a, b) => a - b);
     return months.map((value) => ({
-      label: value === 0 ? 'Never' : `${value} month${value === 1 ? '' : 's'}`,
+      label: formatRetentionMonthsLabel(value),
       value,
     }));
   });
@@ -301,7 +302,7 @@
 
   const retentionWarningMessage = computed(() => {
     const months = retentionMonths.value;
-    const policy = months === 0 ? 'never delete run records' : `${months} month${months === 1 ? '' : 's'}`;
+    const policy = months === 0 ? 'never delete run records' : formatRetentionMonthsLabel(months);
     const counts = retentionPreview.value;
     const line = `New run retention policy after save: ${policy}.`;
     if (!counts) return line;
@@ -331,13 +332,13 @@
   }
 
   async function saveRetention() {
-    await labsStore.updateRetention(props.labId, {
+    const saved = await labsStore.updateRetention(props.labId, {
       RunRetentionMonths: retentionMonths.value,
       RetentionIncludePrePolicyData: includePrePolicyData.value,
       RetentionKeepInputData: keepInputData.value,
     });
     isRetentionConfirmOpen.value = false;
-    isRetentionEditorOpen.value = false;
+    if (saved) isRetentionEditorOpen.value = false;
   }
 
   const columns = [
@@ -490,10 +491,10 @@
         />
       </div>
 
-      <div class="lab-storage-table border-stroke-light overflow-hidden rounded-2xl border bg-white">
+      <div class="lab-storage-table" :class="{ 'lab-storage-table--selecting': selectedIds.size > 0 }">
         <div
           v-if="selectedIds.size > 0"
-          class="bg-primary-muted flex items-center justify-between px-4 py-3"
+          class="lab-storage-table__selection bg-primary-muted flex items-center justify-between px-4 py-3"
           role="region"
           aria-label="Selected items"
         >
@@ -564,7 +565,11 @@
           </template>
           <template #actions-data="{ row }">
             <div class="flex justify-end" @click.stop>
-              <EGActionButton :menu-label="`Actions for ${row.Name}`" :items="rowActionItems(row)" />
+              <EGActionButton
+                compact
+                :menu-label="`Actions for ${row.Name}`"
+                :items="rowActionItems(row)"
+              />
             </div>
           </template>
         </EGTable>
@@ -613,10 +618,45 @@
 </template>
 
 <style scoped lang="scss">
-  /* Selection bar + table share one rounded card; flatten EGTable's own card chrome. */
-  .lab-storage-table :deep(> .rounded-2xl) {
-    border-radius: 0;
-    box-shadow: none;
+  /*
+   * Card chrome wraps selection + EGTable's UCard only. EGTable's pagination footer is a
+   * sibling root node — leave it outside the bordered panel.
+   */
+  .lab-storage-table {
+    display: flex;
+    flex-direction: column;
+
+    &__selection {
+      border: 1px solid #e5e5e5; // stroke-light
+      border-bottom: 0;
+      border-radius: 1rem 1rem 0 0;
+    }
+
+    :deep(> .rounded-2xl) {
+      border: 1px solid #e5e5e5;
+      border-radius: 1rem;
+      background: #fff;
+      box-shadow: none;
+      overflow: hidden;
+    }
+
+    &--selecting :deep(> .rounded-2xl) {
+      border-top-left-radius: 0 !important;
+      border-top-right-radius: 0 !important;
+    }
+
+    /* Square thead top corners under the selection bar (avoids white triangles). */
+    &--selecting :deep(table),
+    &--selecting :deep(thead),
+    &--selecting :deep(thead tr),
+    &--selecting :deep(thead th) {
+      border-top-left-radius: 0 !important;
+      border-top-right-radius: 0 !important;
+    }
+
+    &--selecting :deep(> .rounded-2xl .rounded-2xl) {
+      border-radius: 0 !important;
+    }
   }
 
   /* EGTable assumes the first column is the wide name column; here the checkbox is first. */
