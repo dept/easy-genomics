@@ -1,5 +1,6 @@
 import {
   format,
+  isToday,
   parseISO,
   isValid,
   differenceInCalendarDays,
@@ -80,6 +81,15 @@ function pluralize(count: number, singular: string, plural: string): string {
  * - older → "N year(s) ago"
  * - future → absolute date (yyyy-MM-dd)
  */
+/** Storage header: "today at 11:10 am", else a short relative label. */
+export function formatStorageScannedAt(input: string | null | undefined): string | null {
+  const date = parseAndValidateDate(input);
+  if (!date) return null;
+  const time = format(date, 'h:mm aaa').toLowerCase();
+  if (isToday(date)) return `today at ${time}`;
+  return formatRelativeDateTime(input);
+}
+
 export function formatRelativeDateTime(input: string | null | undefined): string | null {
   if (!input) {
     return null;
