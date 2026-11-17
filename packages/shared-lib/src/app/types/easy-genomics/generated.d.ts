@@ -2241,6 +2241,8 @@ export interface components {
     WorkflowKeyOutput: {
       KeyOutputId: string;
       Label: string;
+      /** @description Optional short blurb shown under the label on Selected results. */
+      Description?: string;
       Pattern: string;
       /** @description Relative path of the file the user ticked when this role was inferred. */
       ExamplePath?: string;
@@ -2300,6 +2302,7 @@ export interface components {
           /** Format: uuid */
           KeyOutputId?: string;
           Label: string;
+          Description?: string;
           Pattern: string;
           ExamplePath?: string;
         }[];
@@ -2328,6 +2331,7 @@ export interface components {
           /** Format: uuid */
           KeyOutputId?: string;
           Label: string;
+          Description?: string;
           Pattern: string;
           ExamplePath?: string;
         }[];
@@ -2337,6 +2341,8 @@ export interface components {
       MatchCount: number;
       KeyOutputId: string;
       Label: string;
+      /** @description Optional short blurb shown under the label on Selected results. */
+      Description?: string;
       Pattern: string;
       /** @description Relative path of the file the user ticked when this role was inferred. */
       ExamplePath?: string;
@@ -2370,6 +2376,8 @@ export interface components {
       Matches: components["schemas"]["RunWorkflowKeyOutputMatch"][];
       KeyOutputId: string;
       Label: string;
+      /** @description Optional short blurb shown under the label on Selected results. */
+      Description?: string;
       Pattern: string;
       /** @description Relative path of the file the user ticked when this role was inferred. */
       ExamplePath?: string;

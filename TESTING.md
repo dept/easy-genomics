@@ -514,3 +514,37 @@ Environment: Date:
 - [ ] **Server block shown** — the red "This run can't be launched" message shows the server's EG-340 text, launch is
       disabled, the label is not "Launch anyway", and exactly one toast shows the same text.
 - [ ] **Seqera** — repeat on a Seqera pipeline review step. The result is the same.
+
+---
+
+## HealthOmics run Selected results / All files mark flow
+
+HealthOmics completed runs use Overview / Selected results / All files pills. Mark results in All files opens a modal,
+keeps existing selected results in the draft (including when opened via "Mark more" / `?declareKeyOutputs=1`), and Save
+replaces the workflow definition with that full draft. Folder marks store `dir/*` and match every file under that
+prefix, including nested paths.
+
+### Automated checks
+
+| Check | Result |
+| ----- | ------ |
+| `pnpm test` (shared-lib) | Description / parseKeyOutputsJson edge cases; whole-folder nested match |
+| `pnpm test` (back-end key-outputs + toRunRelativePath) | Folder placeholders stay null; Description validation |
+| `pnpm test` (front-end `s3-folder-stats`) | Recursive folder count helper |
+| Lab Manager E2E test 13 | All files + Mark results seeds existing selected-result count |
+
+### Manual steps
+
+Environment: Date:
+
+- [ ] **Seed preserved** — on a workflow that already has selected results, open a completed run → All files → Mark
+      results (or Selected results → Mark more). Bottom bar shows the existing count before any new tick. Save without
+      changes stays disabled; Cancel leaves the prior selected results intact.
+- [ ] **Mark a folder** — tick a folder, set Name/Description, Mark. Selected results shows a match count that includes
+      nested files (not "No matches"). Save, reopen Selected results / another run of the same workflow — the folder
+      role is still there.
+- [ ] **Mark a file + Expand/Collapse** — expand one folder by chevron (children load). Expand all / Collapse all
+      toggles. Mark a file, Save, confirm it appears under Selected results.
+- [ ] **Failed analysis UI** — open Overview on a failed HealthOmics run with a failed manual analysis. The analysis
+      error text shows; stalled analysis still has **Check again**.
+
