@@ -1,6 +1,6 @@
 <script setup lang="ts">
   import type { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
-  import { getDate, getTime } from '@FE/utils/date-time';
+  import { formatCompactDateTime } from '@FE/utils/date-time';
   import { formatRunDuration } from '@FE/utils/run-duration';
 
   const props = defineProps<{ labRun: LaboratoryRun }>();
@@ -20,11 +20,8 @@
    */
   const hasContent = computed<boolean>(() => !!runtime.value || !!props.labRun.CreatedAt || !!props.labRun.TerminalAt);
 
-  function timestamp(value: string | null | undefined): string | null {
-    const time = getTime(value);
-    const date = getDate(value);
-    return time && date ? `${time} ⋅ ${date}` : null;
-  }
+  const startedAt = computed<string | null>(() => formatCompactDateTime(props.labRun.CreatedAt));
+  const finishedAt = computed<string | null>(() => formatCompactDateTime(props.labRun.TerminalAt));
 </script>
 
 <template>
@@ -36,19 +33,19 @@
 
     <dl class="space-y-0">
       <div v-if="runtime" class="flex items-baseline justify-between gap-4 border-b py-3">
-        <dt class="text-muted text-sm">Total runtime</dt>
+        <dt class="text-muted text-sm">Runtime</dt>
         <dd class="text-lg font-semibold text-black">{{ runtime }}</dd>
       </div>
 
-      <div v-if="timestamp(labRun.CreatedAt)" class="flex items-baseline justify-between gap-4 border-b py-3">
-        <dt class="text-muted text-sm">Created</dt>
-        <dd class="text-sm text-black">{{ timestamp(labRun.CreatedAt) }}</dd>
+      <div v-if="startedAt" class="flex items-baseline justify-between gap-4 border-b py-3">
+        <dt class="text-muted text-sm">Started</dt>
+        <dd class="text-sm text-black">{{ startedAt }}</dd>
       </div>
 
-      <div v-if="timestamp(labRun.TerminalAt)" class="flex items-baseline justify-between gap-4 border-b py-3">
+      <div v-if="finishedAt" class="flex items-baseline justify-between gap-4 border-b py-3">
         <dt class="text-muted text-sm">{{ terminalLabel }}</dt>
         <dd class="text-sm" :class="isFailed ? 'font-medium text-red-700' : 'text-black'">
-          {{ timestamp(labRun.TerminalAt) }}
+          {{ finishedAt }}
         </dd>
       </div>
 

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LaboratoryRunLimitsSchema } from './laboratory-run-limits';
 
 export const LaboratorySchema = z
   .object({
@@ -21,6 +22,14 @@ export const LaboratorySchema = z
      * - 0 means "never delete run records" (no TTL expiration).
      */
     RunRetentionMonths: z.number().int().min(0).optional(),
+    /** When true, retention deletes outputs and sample sheets only; input files stay until deleted by hand. */
+    RetentionKeepInputData: z.boolean().optional(),
+    /**
+     * Whether retention also clears data left behind by runs that expired before the cascade existed
+     * (the orphan reconciliation pass). `undefined` means enabled, which is the behaviour labs had before
+     * this field existed.
+     */
+    RetentionIncludePrePolicyData: z.boolean().optional(),
     RunListStatusPollIntervalSeconds: z.number().int().min(30).max(1800).optional(),
     RunDetailProgressPollIntervalSeconds: z.number().int().min(10).max(300).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
@@ -65,6 +74,8 @@ export const LaboratorySchema = z
      * last completed task. Managed internally; not set via the create/update Laboratory APIs.
      */
     HealthOmicsRunCacheId: z.string().optional(),
+    /** Saved only through update-laboratory-run-limits, never through Create / Update. */
+    RunLimits: LaboratoryRunLimitsSchema.optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
@@ -104,6 +115,7 @@ export const CreateLaboratorySchema = z
     /** Write-only on Create / Update. Persisted to SSM SecureString, never echoed back. */
     HealthOmicsLlmApiKey: z.string().optional(),
     SeqeraLlmApiKey: z.string().optional(),
+    MicroreactAccessToken: z.string().optional(),
   })
   .strict()
   .superRefine((data, ctx) => {
@@ -136,6 +148,8 @@ export const ReadLaboratorySchema = z
     HasNextFlowTowerAccessToken: z.boolean().optional(), // Return boolean indicator instead of actual NextFlowTowerAccessToken
     HasGitHubAccessToken: z.boolean().optional(), // Return boolean indicator instead of actual GitHubAccessToken
     RunRetentionMonths: z.number().int().min(0).optional(),
+    RetentionKeepInputData: z.boolean().optional(),
+    RetentionIncludePrePolicyData: z.boolean().optional(),
     RunListStatusPollIntervalSeconds: z.number().int().min(30).max(1800).optional(),
     RunDetailProgressPollIntervalSeconds: z.number().int().min(10).max(300).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
@@ -150,7 +164,10 @@ export const ReadLaboratorySchema = z
     /** Boolean indicators. The actual keys live in SSM and are never returned. */
     HasHealthOmicsLlmApiKey: z.boolean().optional(),
     HasSeqeraLlmApiKey: z.boolean().optional(),
+    HasMicroreactAccessToken: z.boolean().optional(),
     HealthOmicsRunCacheId: z.string().optional(),
+    /** Saved only through update-laboratory-run-limits, never through Create / Update. */
+    RunLimits: LaboratoryRunLimitsSchema.optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
@@ -183,6 +200,8 @@ export const UpdateLaboratorySchema = z
     // name of an existing HealthOmics Configuration resource; AWS caps the name at 50 chars
     AwsHealthOmicsVpcConfigurationName: z.string().max(50).optional(),
     RunRetentionMonths: z.number().int().min(0).optional(),
+    RetentionKeepInputData: z.boolean().optional(),
+    RetentionIncludePrePolicyData: z.boolean().optional(),
     RunListStatusPollIntervalSeconds: z.number().int().min(30).max(1800).optional(),
     RunDetailProgressPollIntervalSeconds: z.number().int().min(10).max(300).optional(),
     EnableNewWorkflowsByDefault: z.boolean().optional(),
@@ -197,6 +216,7 @@ export const UpdateLaboratorySchema = z
     /** Write-only on Update. Persisted to SSM SecureString. */
     HealthOmicsLlmApiKey: z.string().optional(),
     SeqeraLlmApiKey: z.string().optional(),
+    MicroreactAccessToken: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.AwsHealthOmicsNetworkingMode === 'VPC' && !data.AwsHealthOmicsVpcConfigurationName) {
@@ -208,3 +228,13 @@ export const UpdateLaboratorySchema = z
     }
   });
 export type UpdateLaboratory = z.infer<typeof UpdateLaboratorySchema>;
+
+/** Retention fields only — avoids a full update-laboratory round-trip from the Storage page. */
+export const UpdateLaboratoryRetentionSchema = z
+  .object({
+    RunRetentionMonths: z.number().int().min(0),
+    RetentionKeepInputData: z.boolean(),
+    RetentionIncludePrePolicyData: z.boolean(),
+  })
+  .strict();
+export type UpdateLaboratoryRetention = z.infer<typeof UpdateLaboratoryRetentionSchema>;

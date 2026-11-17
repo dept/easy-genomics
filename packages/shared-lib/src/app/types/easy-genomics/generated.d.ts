@@ -270,6 +270,26 @@ export interface paths {
     /** List Granted Buckets */
     get: operations["listGrantedBuckets"];
   };
+  "/easy-genomics/laboratory/storage/edit-laboratory-storage-protection": {
+    /** Edit Laboratory Storage Protection */
+    post: operations["editLaboratoryStorageProtection"];
+  };
+  "/easy-genomics/laboratory/storage/list-laboratory-storage": {
+    /** List Laboratory Storage */
+    get: operations["listLaboratoryStorage"];
+  };
+  "/easy-genomics/laboratory/storage/remove-laboratory-storage-items": {
+    /** Remove Laboratory Storage Items */
+    post: operations["removeLaboratoryStorageItems"];
+  };
+  "/easy-genomics/laboratory/storage/request-laboratory-storage-scan": {
+    /** Request Laboratory Storage Scan */
+    post: operations["requestLaboratoryStorageScan"];
+  };
+  "/easy-genomics/laboratory/update-laboratory-retention/{id}": {
+    /** Update Laboratory Retention */
+    put: operations["updateLaboratoryRetention"];
+  };
   "/easy-genomics/laboratory/update-laboratory/{id}": {
     /** Update Laboratory */
     put: operations["updateLaboratory"];
@@ -350,6 +370,10 @@ export interface paths {
     /** List S3 Bucket Catalog */
     get: operations["listS3BucketCatalog"];
   };
+  "/easy-genomics/organization/storage/list-organization-storage": {
+    /** List Organization Storage */
+    get: operations["listOrganizationStorage"];
+  };
   "/easy-genomics/organization/update-organization/{id}": {
     /** Update Organization */
     put: operations["updateOrganization"];
@@ -397,6 +421,10 @@ export interface paths {
   "/easy-genomics/upload/create-file-upload-sample-sheet": {
     /** Create File Upload Sample Sheet */
     post: operations["createFileUploadSampleSheet"];
+  };
+  "/easy-genomics/usage/update-laboratory-run-limits/{id}": {
+    /** Update Laboratory Run Limits */
+    put: operations["updateLaboratoryRunLimits"];
   };
   "/easy-genomics/user/confirm-user-forgot-password-request": {
     /** Confirm User Forgot Password Request */
@@ -453,6 +481,10 @@ export interface paths {
   "/easy-genomics/workflow-key-outputs/request-preview-workflow-key-outputs": {
     /** Request Preview Workflow Key Outputs */
     post: operations["requestPreviewWorkflowKeyOutputs"];
+  };
+  "/easy-genomics/workflow-key-outputs/request-run-microreact-export": {
+    /** Request Run Microreact Export */
+    post: operations["requestRunMicroreactExport"];
   };
   "/easy-genomics/workflow-key-outputs/request-run-workflow-key-outputs": {
     /** Request Run Workflow Key Outputs */
@@ -1144,9 +1176,17 @@ export interface components {
       FailureAnalysisEnabled?: boolean;
       HealthOmicsLlmApiKey?: string;
       SeqeraLlmApiKey?: string;
+      MicroreactAccessToken?: string;
     };
     /** @enum {string} */
     Status: "Active" | "Inactive";
+    /** @description Per-run limits set by an organization admin. A missing amount means that check is off. */
+    LaboratoryRunLimits: {
+      CostWarnAboveUsd?: number;
+      CostBlockAboveUsd?: number;
+      SamplesWarnAbove?: number;
+      SamplesBlockAbove?: number;
+    };
     Laboratory: {
       OrganizationId: string;
       LaboratoryId: string;
@@ -1192,6 +1232,10 @@ export interface components {
        * - 0 means "never delete run records" (no TTL expiration).
        */
       RunRetentionMonths?: number;
+      /** @description When true, retention deletes outputs and sample sheets only; input files stay until deleted by hand. */
+      RetentionKeepInputData?: boolean;
+      /** @description Whether retention clears data left by runs that expired before the cascade existed. `undefined` means enabled. */
+      RetentionIncludePrePolicyData?: boolean;
       /** @description Polling interval, in seconds, for the lab runs list status refresh. */
       RunListStatusPollIntervalSeconds?: number;
       /** @description Polling interval, in seconds, for the run detail page progress refresh. */
@@ -1233,11 +1277,19 @@ export interface components {
       HasHealthOmicsLlmApiKey?: boolean;
       HasSeqeraLlmApiKey?: boolean;
       /**
+       * @description Microreact API access token used to create projects from key outputs. Projects
+       * land in the token owner's Microreact account. Stored in SSM at
+       * `/easy-genomics/organization/{OrganizationId}/laboratory/{LaboratoryId}/microreact-access-token`.
+       */
+      HasMicroreactAccessToken?: boolean;
+      /**
        * @description AWS HealthOmics run cache id used for call caching ("resume"). Lazily provisioned on the
        * first HealthOmics run and reused for all subsequent runs, so a failed run can be retried and
        * resume from its last completed task instead of recomputing everything. Managed internally.
        */
       HealthOmicsRunCacheId?: string;
+      /** @description Saved only through update-laboratory-run-limits. Missing means the lab has no limits. */
+      RunLimits?: components["schemas"]["LaboratoryRunLimits"];
       CreatedAt?: string;
       CreatedBy?: string;
       ModifiedAt?: string;
@@ -1253,10 +1305,6 @@ export interface components {
       AwsHealthOmicsEnabled?: boolean;
       NextFlowTowerEnabled?: boolean;
       NextFlowTowerApiBaseUrl?: string;
-      CreatedAt?: string;
-      CreatedBy?: string;
-      ModifiedAt?: string;
-      ModifiedBy?: string;
       S3Bucket?: string;
       NextFlowTowerWorkspaceId?: string;
       /** @enum {string} */
@@ -1278,10 +1326,24 @@ export interface components {
       FailureAnalysisEnabled?: boolean;
       HasNextFlowTowerAccessToken?: boolean;
       HasGitHubAccessToken?: boolean;
+      RetentionKeepInputData?: boolean;
+      RetentionIncludePrePolicyData?: boolean;
       /** @description Boolean indicators. The actual keys live in SSM and are never returned. */
       HasHealthOmicsLlmApiKey?: boolean;
       HasSeqeraLlmApiKey?: boolean;
+      HasMicroreactAccessToken?: boolean;
       HealthOmicsRunCacheId?: string;
+      /** @description Saved only through update-laboratory-run-limits, never through Create / Update. */
+      RunLimits?: {
+        CostWarnAboveUsd?: number;
+        CostBlockAboveUsd?: number;
+        SamplesWarnAbove?: number;
+        SamplesBlockAbove?: number;
+      };
+      CreatedAt?: string;
+      CreatedBy?: string;
+      ModifiedAt?: string;
+      ModifiedBy?: string;
     };
     RequestLaboratoryRequest: {
       /** Format: uuid */
@@ -1325,6 +1387,10 @@ export interface components {
       /** @description Optional user-authored note for this run; set at creation time. */
       Description?: string;
       WorkflowName?: string;
+      CreatedAt?: string;
+      CreatedBy?: string;
+      ModifiedAt?: string;
+      ModifiedBy?: string;
       PlatformApiBaseUrl?: string;
       WorkflowVersionName?: string;
       /**
@@ -1346,10 +1412,6 @@ export interface components {
       OutputS3Url?: string;
       SampleSheetS3Url?: string;
       Settings?: Record<string, never> | string;
-      CreatedAt?: string;
-      CreatedBy?: string;
-      ModifiedAt?: string;
-      ModifiedBy?: string;
       /**
        * @description ISO timestamp indicating when the run first reached a terminal state.
        * Used as the anchor for retention/TTL recomputation.
@@ -1511,6 +1573,16 @@ export interface components {
         SyncedAt: string;
         ByService?: Record<string, never>;
       };
+      /**
+       * @description State of the latest Microreact export for this run. Absent means it was never sent.
+       * @enum {string}
+       */
+      MicroreactStatus?: "Failed" | "Queued" | "Succeeded";
+      /** @description Project created by the latest successful export. Each export creates a new project. */
+      MicroreactProjectUrl?: string;
+      /** @description Why the latest export failed, specific enough for a lab manager to fix the settings. */
+      MicroreactErrorMessage?: string;
+      MicroreactRequestedAt?: string;
     };
     ReadLaboratoryRun: {
       LaboratoryId: string;
@@ -1525,6 +1597,10 @@ export interface components {
       /** @description Optional user-authored note for this run; set at creation time. */
       Description?: string;
       WorkflowName?: string;
+      CreatedAt?: string;
+      CreatedBy?: string;
+      ModifiedAt?: string;
+      ModifiedBy?: string;
       PlatformApiBaseUrl?: string;
       WorkflowVersionName?: string;
       WorkflowExternalId?: string;
@@ -1534,10 +1610,6 @@ export interface components {
       OutputS3Url?: string;
       SampleSheetS3Url?: string;
       Settings?: Record<string, never> | string;
-      CreatedAt?: string;
-      CreatedBy?: string;
-      ModifiedAt?: string;
-      ModifiedBy?: string;
       TerminalAt?: string;
       ExpiresAt?: number;
       RunDurationSeconds?: number;
@@ -1613,6 +1685,16 @@ export interface components {
         SyncedAt: string;
         ByService?: Record<string, never>;
       };
+      /**
+       * @description State of the latest Microreact export for this run. Absent means it was never sent.
+       * @enum {string}
+       */
+      MicroreactStatus?: "Failed" | "Queued" | "Succeeded";
+      /** @description Project created by the latest successful export. Each export creates a new project. */
+      MicroreactProjectUrl?: string;
+      /** @description Why the latest export failed, specific enough for a lab manager to fix the settings. */
+      MicroreactErrorMessage?: string;
+      MicroreactRequestedAt?: string;
     };
     RequestEstimateRunCostRequest: {
       /** @enum {string} */
@@ -1641,6 +1723,26 @@ export interface components {
         high: number;
         low: number;
         median: number;
+      };
+      /** @description Present only when the lab has at least one run limit amount set. */
+      limitVerdict?: {
+        /** @enum {string} */
+        outcome: "block" | "pass" | "warn";
+        hits: ({
+            /** @enum {string} */
+            limit: "cost" | "samples";
+            /** @enum {string} */
+            level: "block" | "warn";
+            amount: number;
+            runValue: number;
+          })[];
+        /**
+         * @description `notChecked` means the lab has no cost amount, so the estimate was not computed.
+         * @enum {string}
+         */
+        costEstimate: "available" | "notChecked" | "notEnoughHistory";
+        /** @description The server-counted samples. Absent only when a lab with cost amounts alone launched without a sample sheet. */
+        sampleCount?: number;
       };
     };
     RequestRunExportJobStatusRequest: {
@@ -1676,6 +1778,32 @@ export interface components {
       /** @description Granted buckets this lab may read outside its own folder, except organization folders. A missing list means none. */
       wholeBuckets?: string[];
     };
+    EditLaboratoryStorageProtectionRequest: {
+      /** Format: uuid */
+      OrganizationId: string;
+      /** Format: uuid */
+      LaboratoryId: string;
+      ItemIds: string[];
+      Protected: boolean;
+    };
+    RemoveLaboratoryStorageItemsRequest: {
+      /** Format: uuid */
+      OrganizationId: string;
+      /** Format: uuid */
+      LaboratoryId: string;
+      ItemIds: string[];
+    };
+    RequestLaboratoryStorageScanRequest: {
+      /** Format: uuid */
+      OrganizationId: string;
+      /** Format: uuid */
+      LaboratoryId: string;
+    };
+    UpdateLaboratoryRetentionRequest: {
+      RunRetentionMonths: number;
+      RetentionKeepInputData: boolean;
+      RetentionIncludePrePolicyData: boolean;
+    };
     UpdateLaboratoryRequest: {
       Name: string;
       Description?: string;
@@ -1692,6 +1820,8 @@ export interface components {
       AwsHealthOmicsNetworkingMode?: "RESTRICTED" | "VPC";
       AwsHealthOmicsVpcConfigurationName?: string;
       RunRetentionMonths?: number;
+      RetentionKeepInputData?: boolean;
+      RetentionIncludePrePolicyData?: boolean;
       RunListStatusPollIntervalSeconds?: number;
       RunDetailProgressPollIntervalSeconds?: number;
       EnableNewWorkflowsByDefault?: boolean;
@@ -1707,6 +1837,7 @@ export interface components {
       FailureAnalysisEnabled?: boolean;
       HealthOmicsLlmApiKey?: string;
       SeqeraLlmApiKey?: string;
+      MicroreactAccessToken?: string;
     };
     AddBulkLaboratoryUsersRequest: {
       /** Format: uuid */
@@ -1999,6 +2130,12 @@ export interface components {
           } | null, null]>;
         })[];
     };
+    UpdateLaboratoryRunLimitsRequest: {
+      CostWarnAboveUsd?: number;
+      CostBlockAboveUsd?: number;
+      SamplesWarnAbove?: number;
+      SamplesBlockAbove?: number;
+    };
     ConfirmUserForgotPasswordRequestRequest: {
       Token: string;
       Password: string;
@@ -2090,6 +2227,12 @@ export interface components {
       WorkflowId: string;
       Enabled: boolean;
       DestinationUri?: string;
+      Microreact?: {
+        Enabled?: boolean;
+        /** Format: uuid */
+        MetadataKeyOutputId?: string;
+        TreeKeyOutputIds?: string[];
+      };
     };
     /**
      * @description One role in the key-outputs definition. `Pattern` is a path glob relative to
@@ -2098,17 +2241,37 @@ export interface components {
     WorkflowKeyOutput: {
       KeyOutputId: string;
       Label: string;
+      /** @description Optional short blurb shown under the label on Selected results. */
+      Description?: string;
       Pattern: string;
       /** @description Relative path of the file the user ticked when this role was inferred. */
       ExamplePath?: string;
     };
     /**
-     * @description Where to copy this workflow's key outputs after a run completes successfully.
-     * One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+     * @description Where to deliver this workflow's key outputs after a run completes successfully:
+     * an external `s3://bucket/prefix` copy, a Microreact project, or both.
      */
     WorkflowKeyOutputDelivery: {
       Enabled: boolean;
       DestinationUri?: string;
+      /**
+       * @description Sends a completed run's key outputs to Microreact as a new private project,
+       * using the lab's Microreact access token. `MetadataKeyOutputId` names the
+       * CSV/TSV key output whose first column is the sample ID; each tree key output
+       * is a Newick file whose leaf labels match that ID.
+       */
+      Microreact?: components["schemas"]["WorkflowKeyOutputMicroreactDelivery"];
+    };
+    /**
+     * @description Sends a completed run's key outputs to Microreact as a new private project,
+     * using the lab's Microreact access token. `MetadataKeyOutputId` names the
+     * CSV/TSV key output whose first column is the sample ID; each tree key output
+     * is a Newick file whose leaf labels match that ID.
+     */
+    WorkflowKeyOutputMicroreactDelivery: {
+      Enabled: boolean;
+      MetadataKeyOutputId?: string;
+      TreeKeyOutputIds?: string[];
     };
     WorkflowKeyOutputs: {
       LaboratoryId: string;
@@ -2119,8 +2282,8 @@ export interface components {
       SourceRunId?: string;
       KeyOutputs: components["schemas"]["WorkflowKeyOutput"][];
       /**
-       * @description Where to copy this workflow's key outputs after a run completes successfully.
-       * One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+       * @description Where to deliver this workflow's key outputs after a run completes successfully:
+       * an external `s3://bucket/prefix` copy, a Microreact project, or both.
        */
       Delivery?: components["schemas"]["WorkflowKeyOutputDelivery"];
       CreatedAt?: string;
@@ -2139,6 +2302,7 @@ export interface components {
           /** Format: uuid */
           KeyOutputId?: string;
           Label: string;
+          Description?: string;
           Pattern: string;
           ExamplePath?: string;
         }[];
@@ -2151,8 +2315,8 @@ export interface components {
       SourceRunId?: string;
       KeyOutputs: components["schemas"]["WorkflowKeyOutput"][];
       /**
-       * @description Where to copy this workflow's key outputs after a run completes successfully.
-       * One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+       * @description Where to deliver this workflow's key outputs after a run completes successfully:
+       * an external `s3://bucket/prefix` copy, a Microreact project, or both.
        */
       Delivery?: components["schemas"]["WorkflowKeyOutputDelivery"];
       CreatedAt?: string;
@@ -2167,6 +2331,7 @@ export interface components {
           /** Format: uuid */
           KeyOutputId?: string;
           Label: string;
+          Description?: string;
           Pattern: string;
           ExamplePath?: string;
         }[];
@@ -2176,12 +2341,25 @@ export interface components {
       MatchCount: number;
       KeyOutputId: string;
       Label: string;
+      /** @description Optional short blurb shown under the label on Selected results. */
+      Description?: string;
       Pattern: string;
       /** @description Relative path of the file the user ticked when this role was inferred. */
       ExamplePath?: string;
     };
     PreviewWorkflowKeyOutputsResponse: {
       KeyOutputs: components["schemas"]["PreviewWorkflowKeyOutput"][];
+    };
+    RequestRunMicroreactExportRequest: {
+      /** Format: uuid */
+      LaboratoryId: string;
+      RunId: string;
+    };
+    /** @enum {string} */
+    MicroreactExportStatus: "Failed" | "Queued" | "Succeeded";
+    RequestRunMicroreactExportResponse: {
+      RunId: string;
+      MicroreactStatus: components["schemas"]["MicroreactExportStatus"];
     };
     RequestRunWorkflowKeyOutputsRequest: {
       /** Format: uuid */
@@ -2198,6 +2376,8 @@ export interface components {
       Matches: components["schemas"]["RunWorkflowKeyOutputMatch"][];
       KeyOutputId: string;
       Label: string;
+      /** @description Optional short blurb shown under the label on Selected results. */
+      Description?: string;
       Pattern: string;
       /** @description Relative path of the file the user ticked when this role was inferred. */
       ExamplePath?: string;
@@ -5469,6 +5649,119 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
+  /** Edit Laboratory Storage Protection */
+  editLaboratoryStorageProtection: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EditLaboratoryStorageProtectionRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** List Laboratory Storage */
+  listLaboratoryStorage: {
+    parameters: {
+      query: {
+        /** @description Organization UUID */
+        organizationId: string;
+        /** @description Laboratory UUID */
+        laboratoryId: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Remove Laboratory Storage Items */
+  removeLaboratoryStorageItems: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RemoveLaboratoryStorageItemsRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Request Laboratory Storage Scan */
+  requestLaboratoryStorageScan: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RequestLaboratoryStorageScanRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Update Laboratory Retention */
+  updateLaboratoryRetention: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateLaboratoryRetentionRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["Laboratory"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
   /** Update Laboratory */
   updateLaboratory: {
     parameters: {
@@ -5892,6 +6185,28 @@ export interface operations {
       500: components["responses"]["InternalError"];
     };
   };
+  /** List Organization Storage */
+  listOrganizationStorage: {
+    parameters: {
+      query: {
+        /** @description Organization UUID */
+        organizationId: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
   /** Update Organization */
   updateOrganization: {
     parameters: {
@@ -6146,6 +6461,32 @@ export interface operations {
       200: {
         content: {
           "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Update Laboratory Run Limits */
+  updateLaboratoryRunLimits: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateLaboratoryRunLimitsRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["Laboratory"];
         };
       };
       400: components["responses"]["BadRequest"];
@@ -6443,6 +6784,27 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["PreviewWorkflowKeyOutputsResponse"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Request Run Microreact Export */
+  requestRunMicroreactExport: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RequestRunMicroreactExportRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["RequestRunMicroreactExportResponse"];
         };
       };
       400: components["responses"]["BadRequest"];

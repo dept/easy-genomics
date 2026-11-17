@@ -51,6 +51,11 @@ jest.mock('../../../src/infra/constructs/sqs-construct', () => ({
         { queueUrl: 'https://sqs/classify', queueArn: 'arn:aws:sqs:classify' },
       ],
       ['folder-download-queue', { queueUrl: 'https://sqs/folder', queueArn: 'arn:aws:sqs:folder' }],
+      ['laboratory-storage-removal-queue', { queueUrl: 'https://sqs/storage-rm', queueArn: 'arn:aws:sqs:storage-rm' }],
+      [
+        'laboratory-storage-protection-queue',
+        { queueUrl: 'https://sqs/storage-protect', queueArn: 'arn:aws:sqs:storage-protect' },
+      ],
       ['run-export-queue', { queueUrl: 'https://sqs/export', queueArn: 'arn:aws:sqs:export' }],
       ['key-output-delivery-queue', { queueUrl: 'https://sqs/deliver', queueArn: 'arn:aws:sqs:deliver' }],
     ]),
@@ -110,6 +115,16 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
 
     expect(lambdaProps.environment.ENV_TYPE).toBe('dev');
     expect(lambdaProps.environment.ENV_NAME).toBe('sandbox');
+  });
+
+  it('leaves the usage controllers to the usage nested stack', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const lambdaProps = (LambdaConstruct as unknown as jest.Mock).mock.calls[0][2];
+    expect(lambdaProps.excludeDirs).toEqual(['usage']);
   });
 
   it('passes the org-email-assets CloudFront domain to lambda common environment', () => {
@@ -526,7 +541,7 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     );
   });
 
-  it('grants edit-s3-access-batch Query, PutItem and Scan on laboratory-table', () => {
+  it('grants edit-s3-access-batch Query, UpdateItem and Scan on laboratory-table', () => {
     const app = new App();
     const parentStack = new Stack(app, 'parent-stack');
     new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
@@ -538,11 +553,27 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     expect(policies).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          actions: expect.arrayContaining(['dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:Scan']),
+          actions: expect.arrayContaining(['dynamodb:Query', 'dynamodb:UpdateItem', 'dynamodb:Scan']),
           resources: expect.arrayContaining([expect.stringContaining('laboratory-table')]),
         }),
       ]),
     );
+  });
+
+  // LaboratoryService.update writes attributes in place so it never rewrites RunLimits.
+  it('grants update-laboratory UpdateItem, not PutItem, on laboratory-table', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamConstructMock = IamConstruct as unknown as jest.Mock;
+    const iamInstance = iamConstructMock.mock.results[0].value;
+    const policies = iamInstance.policyStatements.get('/easy-genomics/laboratory/update-laboratory');
+    const laboratoryTableStatement = policies.find((policy: { resources: string[] }) =>
+      policy.resources.some((resource) => resource.endsWith('-laboratory-table')),
+    );
+
+    expect(laboratoryTableStatement.actions).toEqual(['dynamodb:Query', 'dynamodb:UpdateItem']);
   });
 
   it('grants edit-s3-access-batch Query on laboratory-s3-access-table, which non-admin saves read', () => {
@@ -760,6 +791,183 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
 
       expect(taggingWrite).toBeDefined();
       expect(JSON.stringify(taggingWrite.Resource)).toContain('laboratory-data-tagging-table');
+    });
+
+    it('grants the sweep GetBucketLocation and pricing:GetProducts for the nightly storage snapshot', () => {
+      const app = new App();
+      const parentStack = new Stack(app, 'parent-stack');
+      const nestedStack = new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+      const statements = statementsFor(nestedStack, SWEEP_ROUTE);
+
+      expect(statements).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            Action: expect.arrayContaining(['s3:ListBucket', 's3:GetBucketLocation']),
+            Resource: 'arn:aws:s3:::*',
+          }),
+          expect.objectContaining({ Action: 'pricing:GetProducts', Resource: '*' }),
+        ]),
+      );
+    });
+  });
+
+  describe('lab and organization storage routes', () => {
+    const LAB_STORAGE_INVENTORY_ROUTES = [
+      '/easy-genomics/laboratory/storage/list-laboratory-storage',
+      '/easy-genomics/laboratory/storage/request-laboratory-storage-scan',
+      '/easy-genomics/laboratory/storage/process-edit-laboratory-storage-protection',
+      '/easy-genomics/laboratory/storage/process-remove-laboratory-storage-items',
+    ];
+
+    const statementsFor = (nestedStack: any, route: string) => {
+      const iamMock = IamConstruct as unknown as jest.Mock;
+      const iam = iamMock.mock.results[0].value;
+      return (iam.getPolicyStatements(route) as any[]).map((statement) =>
+        nestedStack.resolve(statement.toStatementJson()),
+      );
+    };
+
+    it('grants every inventory lab storage route what rebuilding the inventory needs', () => {
+      const app = new App();
+      const parentStack = new Stack(app, 'parent-stack');
+      const nestedStack = new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+      for (const route of LAB_STORAGE_INVENTORY_ROUTES) {
+        const statements = statementsFor(nestedStack, route);
+        expect(statements).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              Action: 'dynamodb:GetItem',
+              Resource: expect.stringContaining('easy-genomics-laboratory-table'),
+            }),
+            expect.objectContaining({
+              Action: 'dynamodb:Query',
+              Resource: expect.arrayContaining([expect.stringContaining('easy-genomics-laboratory-run-table')]),
+            }),
+            expect.objectContaining({
+              Action: expect.arrayContaining(['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query']),
+              Resource: expect.arrayContaining([expect.stringContaining('laboratory-data-tagging-table')]),
+            }),
+            expect.objectContaining({
+              Action: expect.arrayContaining(['s3:ListBucket', 's3:GetBucketLocation']),
+              Resource: 'arn:aws:s3:::*',
+            }),
+            expect.objectContaining({ Action: 'pricing:GetProducts', Resource: '*' }),
+          ]),
+        );
+      }
+    });
+
+    it('grants s3:DeleteObject only to process-remove-laboratory-storage-items', () => {
+      const app = new App();
+      const parentStack = new Stack(app, 'parent-stack');
+      const nestedStack = new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+      for (const route of [
+        ...LAB_STORAGE_INVENTORY_ROUTES,
+        '/easy-genomics/laboratory/storage/remove-laboratory-storage-items',
+      ]) {
+        const deleteGrant = statementsFor(nestedStack, route).find((s) => s.Action === 's3:DeleteObject');
+        if (route.endsWith('process-remove-laboratory-storage-items')) {
+          expect(deleteGrant).toEqual(expect.objectContaining({ Resource: 'arn:aws:s3:::*/*' }));
+        } else {
+          expect(deleteGrant).toBeUndefined();
+        }
+      }
+    });
+
+    it('grants remove and protect HTTP only laboratory read and SQS send', () => {
+      const app = new App();
+      const parentStack = new Stack(app, 'parent-stack');
+      const nestedStack = new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+      expect(statementsFor(nestedStack, '/easy-genomics/laboratory/storage/remove-laboratory-storage-items')).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            Action: expect.arrayContaining(['dynamodb:GetItem', 'dynamodb:Query']),
+            Resource: expect.arrayContaining([expect.stringContaining('easy-genomics-laboratory-table')]),
+          }),
+          expect.objectContaining({
+            Action: 'sqs:SendMessage',
+            Resource: 'arn:aws:sqs:storage-rm',
+          }),
+        ]),
+      );
+      expect(
+        statementsFor(nestedStack, '/easy-genomics/laboratory/storage/edit-laboratory-storage-protection'),
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            Action: expect.arrayContaining(['dynamodb:GetItem', 'dynamodb:Query']),
+            Resource: expect.arrayContaining([expect.stringContaining('easy-genomics-laboratory-table')]),
+          }),
+          expect.objectContaining({
+            Action: 'sqs:SendMessage',
+            Resource: 'arn:aws:sqs:storage-protect',
+          }),
+        ]),
+      );
+    });
+
+    it('keeps the inventory grants when appending the S3 access check to process workers', () => {
+      const app = new App();
+      const parentStack = new Stack(app, 'parent-stack');
+      const nestedStack = new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+      for (const route of [
+        '/easy-genomics/laboratory/storage/process-edit-laboratory-storage-protection',
+        '/easy-genomics/laboratory/storage/process-remove-laboratory-storage-items',
+      ]) {
+        expect(statementsFor(nestedStack, route)).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ Action: 's3:GetBucketTagging' }),
+            expect.objectContaining({
+              Action: 'dynamodb:Query',
+              Resource: expect.arrayContaining([expect.stringContaining('laboratory-s3-access-table')]),
+            }),
+            expect.objectContaining({ Action: 'pricing:GetProducts' }),
+          ]),
+        );
+      }
+    });
+
+    it('grants the org roll-up laboratory Query and tagging-table GetItem only', () => {
+      const app = new App();
+      const parentStack = new Stack(app, 'parent-stack');
+      const nestedStack = new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+      const statements = statementsFor(nestedStack, '/easy-genomics/organization/storage/list-organization-storage');
+
+      expect(statements).toEqual([
+        expect.objectContaining({
+          Action: 'dynamodb:Query',
+          Resource: expect.arrayContaining([expect.stringContaining('easy-genomics-laboratory-table')]),
+        }),
+        expect.objectContaining({
+          Action: 'dynamodb:GetItem',
+          Resource: expect.stringContaining('laboratory-data-tagging-table'),
+        }),
+      ]);
+    });
+
+    it('grants update-laboratory-retention laboratory Query and UpdateItem only', () => {
+      const app = new App();
+      const parentStack = new Stack(app, 'parent-stack');
+      const nestedStack = new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+      expect(statementsFor(nestedStack, '/easy-genomics/laboratory/update-laboratory-retention')).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            Action: 'dynamodb:Query',
+            Resource: expect.stringContaining('easy-genomics-laboratory-table/index/'),
+          }),
+          expect.objectContaining({
+            Action: 'dynamodb:UpdateItem',
+            Resource: expect.stringContaining('easy-genomics-laboratory-table'),
+          }),
+        ]),
+      );
     });
   });
 });

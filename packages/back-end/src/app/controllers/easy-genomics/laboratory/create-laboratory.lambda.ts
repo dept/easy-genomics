@@ -25,8 +25,10 @@ import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service
 import { OrganizationService } from '@BE/services/easy-genomics/organization-service';
 import { OmicsService } from '@BE/services/omics-service';
 import { SsmService } from '@BE/services/ssm-service';
+import { logApiGatewayEventWithoutSecrets } from '@BE/utils/api-gateway-log-utils';
 import { validateOrganizationAdminAccess } from '@BE/utils/auth-utils';
 import { assertHealthOmicsVpcConfigurationIsActive } from '@BE/utils/laboratory-omics-vpc-utils';
+import { microreactAccessTokenParameterName } from '@BE/utils/microreact-project';
 import { httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
 const organizationService = new OrganizationService();
@@ -38,7 +40,7 @@ const omicsService = new OmicsService();
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
 ): Promise<APIGatewayProxyResult> => {
-  console.log('EVENT: \n' + JSON.stringify(event, null, 2));
+  logApiGatewayEventWithoutSecrets(event);
   try {
     const currentUserId = event.requestContext.authorizer.claims['cognito:username'];
     // Post Request Body
@@ -162,6 +164,16 @@ export const handler: Handler = async (
         Name: `/easy-genomics/organization/${organization.OrganizationId}/laboratory/${laboratoryId}/github-access-token`,
         Description: `Easy Genomics Laboratory ${laboratoryId} GitHub AccessToken`,
         Value: request.GitHubAccessToken,
+        Type: 'SecureString',
+        Overwrite: false,
+      });
+    }
+
+    if (request.MicroreactAccessToken) {
+      await ssmService.putParameter({
+        Name: microreactAccessTokenParameterName(organization.OrganizationId, laboratoryId),
+        Description: `Easy Genomics Laboratory ${laboratoryId} Microreact access token`,
+        Value: request.MicroreactAccessToken,
         Type: 'SecureString',
         Overwrite: false,
       });

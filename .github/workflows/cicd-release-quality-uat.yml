@@ -186,7 +186,7 @@ jobs:
   run-e2e-tests:
     name: Run E2E Tests
     needs: build-deploy-front-end
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write
       contents: write

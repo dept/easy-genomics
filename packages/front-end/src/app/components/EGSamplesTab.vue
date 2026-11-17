@@ -9,7 +9,11 @@
   import EGSampleTagSidebar from '@FE/components/EGSampleTagSidebar.vue';
   import { useToastStore, useUiStore } from '@FE/stores';
   import { SAMPLE_LAYOUT_LABELS } from '@FE/utils/data-collections-selection';
-  import { filterSamplesBySearch } from '@FE/utils/data-collections-filters';
+  import {
+    filterSamplesBySearch,
+    formatRetentionExpiryLabel,
+    sampleMatchesTagIds,
+  } from '@FE/utils/data-collections-filters';
   import { exceedsTagNameMaxLength } from '@FE/utils/data-collections-name-validation';
 
   const props = withDefaults(
@@ -83,6 +87,7 @@
   const presetColors = TAG_PRESET_COLORS;
 
   const standardTags = computed(() => props.tags.filter((t) => (t.Kind ?? 'standard') === 'standard'));
+  const permanentTag = computed(() => props.tags.find((t) => t.Kind === 'permanent'));
   const batchTags = computed(() => props.tags.filter((t) => t.Kind === 'batch'));
 
   type SampleSection = {
@@ -110,8 +115,9 @@
     if (props.tagsFilterUntagged) {
       list = list.filter((s) => !standardTagIdsForSet(s.SampleId).length);
     } else if (props.tagsFilterTagIds.length > 0) {
-      const selected = new Set(props.tagsFilterTagIds);
-      list = list.filter((s) => standardTagIdsForSet(s.SampleId).some((tid) => selected.has(tid)));
+      list = list.filter((s) =>
+        sampleMatchesTagIds(s, standardTagIdsForSet(s.SampleId), props.tagsFilterTagIds, permanentTag.value?.TagId),
+      );
     }
     return list;
   });
@@ -263,6 +269,8 @@
   function isSelected(setId: string): boolean {
     return props.selectedIds.includes(setId);
   }
+
+  const selectionHasPermanent = computed(() => props.samples.some((s) => s.IsPermanent && isSelected(s.SampleId)));
 
   function contentsLabel(s: LaboratorySample): string {
     if (s.ContentsSummary) return s.ContentsSummary;
@@ -478,6 +486,30 @@
       emit('tag-created');
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Create tag failed');
+    } finally {
+      uiStore.setRequestComplete('dataCollectionsMutate');
+    }
+  }
+
+  function expiryLabel(sample: LaboratorySample): string {
+    return formatRetentionExpiryLabel(!!sample.IsPermanent, runUsagesForSample(sample.SampleId));
+  }
+
+  function shownExpiryLabel(sample: LaboratorySample): string | undefined {
+    const label = expiryLabel(sample);
+    return label === '—' ? undefined : label;
+  }
+
+  async function setSelectionPermanent(keep: boolean): Promise<void> {
+    const tagId = permanentTag.value?.TagId;
+    if (!tagId || !props.selectedIds.length) return;
+    uiStore.setRequestPending('dataCollectionsMutate');
+    try {
+      await addTagsToSamplesInChunks(props.selectedIds, keep ? [tagId] : [], keep ? [] : [tagId]);
+      toast.success(keep ? 'Samples will be kept permanently' : 'Permanent protection removed');
+      emit('tags-updated');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
     } finally {
       uiStore.setRequestComplete('dataCollectionsMutate');
     }
@@ -708,7 +740,7 @@
                     'z-[80]': analysisPopoverOpenKey === s.SampleId,
                   }"
                   :aria-selected="isSelected(s.SampleId)"
-                  :aria-label="`${s.Name}, ${contentsLabel(s)}`"
+                  :aria-label="`${s.Name}, ${contentsLabel(s)}${s.IsPermanent ? ', kept permanently' : ''}`"
                   @click="toggle(s.SampleId)"
                   @keydown="onSampleItemKeydown($event, s.SampleId)"
                 >
@@ -725,7 +757,8 @@
                       @update:open="onAnalysisPopoverOpen(s.SampleId, $event)"
                     />
                   </div>
-                  <div class="absolute right-2 top-2" @mousedown.stop @click.stop>
+                  <div class="absolute right-2 top-2 flex items-center gap-1.5" @mousedown.stop @click.stop>
+                    <EGPermanentLockIcon v-if="s.IsPermanent" noun="sample" />
                     <UCheckbox
                       :model-value="isSelected(s.SampleId)"
                       :label="`Select sample ${s.Name}`"
@@ -740,6 +773,9 @@
                       {{ s.Name }}
                     </div>
                     <div class="text-muted mt-1 text-xs">{{ contentsLabel(s) }}</div>
+                    <div v-if="shownExpiryLabel(s)" class="text-muted mt-0.5 text-xs tabular-nums">
+                      {{ shownExpiryLabel(s) }}
+                    </div>
                   </div>
                   <div class="mt-2 flex min-h-[1.25rem] min-w-0 max-w-full flex-wrap gap-1">
                     <span
@@ -778,13 +814,14 @@
                   <th class="text-muted p-3 text-left text-xs uppercase">Sample ID</th>
                   <th class="text-muted p-3 text-left text-xs uppercase">Contents</th>
                   <th class="text-muted p-3 text-left text-xs uppercase">Tags</th>
+                  <th class="text-muted p-3 text-left text-xs uppercase">Expires</th>
                   <th class="text-muted p-3 text-left text-xs uppercase">Run Status</th>
                 </tr>
               </thead>
               <tbody>
                 <template v-for="sec in sampleSections" :key="sec.batchId ?? 'unbatched-table'">
                   <tr class="bg-gray-50/95">
-                    <td colspan="5" class="border-t border-gray-100 px-3 py-2.5" scope="colgroup">
+                    <td colspan="6" class="border-t border-gray-100 px-3 py-2.5" scope="colgroup">
                       <div class="flex w-full min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-2">
                         <span class="text-muted min-w-0 flex-1 text-xs font-normal leading-snug tracking-wide">
                           <span class="inline-flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -852,7 +889,12 @@
                         @update:model-value="toggle(s.SampleId)"
                       />
                     </td>
-                    <td class="p-3 font-medium">{{ s.Name }}</td>
+                    <td class="p-3 font-medium">
+                      <span class="inline-flex items-center gap-1.5">
+                        <EGPermanentLockIcon v-if="s.IsPermanent" noun="sample" />
+                        {{ s.Name }}
+                      </span>
+                    </td>
                     <td class="text-muted p-3">{{ contentsLabel(s) }}</td>
                     <td class="p-3">
                       <div class="flex min-w-0 max-w-full flex-wrap gap-1">
@@ -880,6 +922,7 @@
                         </template>
                       </div>
                     </td>
+                    <td class="text-muted p-3 tabular-nums">{{ expiryLabel(s) }}</td>
                     <td class="px-3 py-2 align-middle">
                       <span class="inline-flex w-fit max-w-full align-middle" @mousedown.stop @click.stop>
                         <EGFileAnalysisHistoryTooltip
@@ -917,6 +960,22 @@
         <span v-else class="text-muted text-xs">Select samples to add or remove tags in bulk.</span>
         <div v-if="hasSelection" class="ml-auto flex flex-wrap items-center gap-2">
           <UIcon v-if="bulkPanelBusy" name="i-heroicons-arrow-path" class="text-muted h-5 w-5 shrink-0 animate-spin" />
+          <UButton
+            size="sm"
+            variant="outline"
+            :disabled="bulkPanelBusy || !permanentTag"
+            @click="setSelectionPermanent(true)"
+          >
+            Keep permanently
+          </UButton>
+          <UButton
+            size="sm"
+            variant="outline"
+            :disabled="bulkPanelBusy || !permanentTag || !selectionHasPermanent"
+            @click="setSelectionPermanent(false)"
+          >
+            Remove permanent
+          </UButton>
           <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openAddBulkPanel">Add Tags</UButton>
           <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openRemoveBulkPanel">
             Remove Tags

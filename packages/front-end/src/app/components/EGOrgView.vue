@@ -46,6 +46,8 @@
 
   const showWorkflowAccessTab = computed(() => props.superuser || props.orgAdmin);
   const showS3AccessTab = computed(() => props.superuser || props.orgAdmin);
+  const showStorageTab = computed(() => props.superuser || props.orgAdmin);
+  const showUsageLimitsTab = computed(() => props.superuser || props.orgAdmin);
 
   const tabItems = computed<{ key: string; label: string; icon: string }[]>(() => {
     const items: { key: string; label: string; icon: string }[] = [];
@@ -59,6 +61,12 @@
     if (showS3AccessTab.value) {
       items.push({ key: 's3-access', label: 'S3 access', icon: 'i-heroicons-circle-stack' });
     }
+    if (showStorageTab.value) {
+      items.push({ key: 'storage', label: 'Storage', icon: 'i-heroicons-archive-box' });
+    }
+    if (showUsageLimitsTab.value) {
+      items.push({ key: 'usage-limits', label: 'Usage limits', icon: 'i-heroicons-adjustments-horizontal' });
+    }
     items.push({ key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth' });
     items.push({ key: 'email-branding', label: 'Email Branding', icon: 'i-heroicons-envelope' });
     return items;
@@ -67,6 +75,8 @@
   /** Mount workflow access panel once opened (or via ?tab=) so data loads lazily; stay mounted to keep unsaved edits. */
   const workflowAccessPanelMounted = ref(false);
   const s3AccessPanelMounted = ref(false);
+  const storagePanelMounted = ref(false);
+  const usageLimitsPanelMounted = ref(false);
   const tabIndex = ref(0);
 
   function syncAdminTabsFromQuery() {
@@ -84,6 +94,14 @@
       if (idx >= 0) {
         tabIndex.value = idx;
         s3AccessPanelMounted.value = true;
+      }
+      return;
+    }
+    if (tab === 'storage' && showStorageTab.value) {
+      const idx = tabItems.value.findIndex((t) => t.key === 'storage');
+      if (idx >= 0) {
+        tabIndex.value = idx;
+        storagePanelMounted.value = true;
       }
     }
   }
@@ -107,6 +125,12 @@
     }
     if (item?.key === 's3-access') {
       s3AccessPanelMounted.value = true;
+    }
+    if (item?.key === 'storage') {
+      storagePanelMounted.value = true;
+    }
+    if (item?.key === 'usage-limits') {
+      usageLimitsPanelMounted.value = true;
     }
   });
 
@@ -429,8 +453,12 @@
   />
 
   <EGPageHeader
-    :title="org.Name"
-    :description="org.Description"
+    :title="activeTabKey === 'storage' ? 'Storage' : org.Name"
+    :description="
+      activeTabKey === 'storage'
+        ? 'Every lab in this organization and what it is holding. Read-only here. Open a lab to change its policy or clear anything.'
+        : org.Description
+    "
     :back-action="() => $router.push('/orgs')"
     :show-back="true"
     :is-loading="isLoading"
@@ -524,6 +552,28 @@
     class="outline-none focus:outline-none"
   >
     <EGS3LabAccessPage v-if="s3AccessPanelMounted" :org-id="props.orgId" embedded :heading-id="s3AccessHeadingId" />
+  </div>
+
+  <div
+    v-if="activeTabKey === 'storage' && showStorageTab"
+    role="tabpanel"
+    id="panel-storage"
+    aria-labelledby="tab-storage"
+    tabindex="0"
+    class="outline-none focus:outline-none"
+  >
+    <EGOrgStorage v-if="storagePanelMounted" :org-id="props.orgId" :superuser="props.superuser" />
+  </div>
+
+  <div
+    v-if="activeTabKey === 'usage-limits' && showUsageLimitsTab"
+    role="tabpanel"
+    id="panel-usage-limits"
+    aria-labelledby="tab-usage-limits"
+    tabindex="0"
+    class="outline-none focus:outline-none"
+  >
+    <EGUsageLimitsPage v-if="usageLimitsPanelMounted" :org-id="props.orgId" />
   </div>
 
   <!-- All users tab -->

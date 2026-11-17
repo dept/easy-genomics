@@ -83,6 +83,21 @@ function percentile(sorted: number[], p: number): number {
 }
 
 /**
+ * Converts a past run's cost to this run's size, assuming cost grows linearly with samples.
+ * A sample count of 0 means unknown (no sheet, or it could not be read), so the whole-run cost is kept.
+ */
+export function scaleCostToSampleCount(
+  historicalCostUsd: number,
+  historicalSampleCount: number | undefined,
+  runSampleCount: number,
+): number {
+  if (!historicalSampleCount || historicalSampleCount <= 0 || runSampleCount <= 0) {
+    return historicalCostUsd;
+  }
+  return (historicalCostUsd / historicalSampleCount) * runSampleCount;
+}
+
+/**
  * k-NN percentile band estimator for pre-run compute cost.
  */
 export function estimateComputeCostBand(
@@ -118,7 +133,9 @@ export function estimateComputeCostBand(
     };
   }
 
-  const costs = scored.map((s) => s.candidate.ActualComputeCostUsd).sort((a, b) => a - b);
+  const costs = scored
+    .map((s) => scaleCostToSampleCount(s.candidate.ActualComputeCostUsd, s.candidate.SampleCount, profile.SampleCount))
+    .sort((a, b) => a - b);
   const low = Math.round(percentile(costs, 25) * 100) / 100;
   const median = Math.round(percentile(costs, 50) * 100) / 100;
   const high = Math.round(percentile(costs, 75) * 100) / 100;

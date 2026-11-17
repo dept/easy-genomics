@@ -86,7 +86,8 @@ export class GithubActionsCICDRelease extends Component {
       jobs['run-e2e-tests'] = {
         name: 'Run E2E Tests',
         needs: ['build-deploy-front-end'],
-        runsOn,
+        // ubuntu-latest is 26.04, where older Playwright versions publish no Chromium build.
+        runsOn: ['ubuntu-24.04'],
         environment: this.environment,
         env: this.loadEnv(),
         permissions: {

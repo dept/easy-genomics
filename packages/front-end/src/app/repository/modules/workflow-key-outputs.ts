@@ -2,11 +2,13 @@ import {
   EditWorkflowKeyOutputDelivery,
   EditWorkflowKeyOutputs,
   RequestPreviewWorkflowKeyOutputs,
+  RequestRunMicroreactExport,
   RequestRunWorkflowKeyOutputs,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/workflow-key-outputs';
 import type {
   ListWorkflowKeyOutputsResponse,
   PreviewWorkflowKeyOutputsResponse,
+  RequestRunMicroreactExportResponse,
   RunWorkflowKeyOutputsResponse,
   WorkflowKeyOutputs,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
@@ -54,6 +56,16 @@ class WorkflowKeyOutputsModule extends HttpFactory {
       body,
     );
     if (!res) throw new Error('Failed to load key outputs for this run');
+    return res;
+  }
+
+  async requestMicroreactExport(body: RequestRunMicroreactExport): Promise<RequestRunMicroreactExportResponse> {
+    const res = await this.call<RequestRunMicroreactExportResponse>(
+      'POST',
+      `${BASE_PATH}/request-run-microreact-export`,
+      body,
+    );
+    if (!res) throw new Error('Failed to send this run to Microreact');
     return res;
   }
 }

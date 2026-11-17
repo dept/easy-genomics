@@ -1,23 +1,29 @@
 <script setup lang="ts">
-  import { useChangeCase } from '@vueuse/integrations/useChangeCase';
   import { useDebounceFn } from '@vueuse/core';
-  import { format } from 'date-fns';
   import type { TableSort } from './EGTable.vue';
   import type {
     S3Object,
     S3Response,
     S3TopLevelResponse,
     S3Prefix,
-    RequestTopLevelBucketObjects,
     RequestSearchBucketObjects,
     S3SearchResponse,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
+  import { formatCompactDateTime } from '@FE/utils/date-time';
+  import { formatFileSize as formatBytes } from '@FE/utils/file-size';
   import { isS3BucketAccessDeniedError } from '@FE/utils/laboratory-s3';
+  import { ButtonSizeEnum, ButtonVariantEnum } from '@FE/types/buttons';
 
   type S3SearchPrefix = S3Prefix;
 
+  export type FileExplorerOutputFile = {
+    Key: string;
+    RelativePath: string;
+    Label: string;
+  };
+
   interface FileTreeNode {
-    type?: string;
+    type?: 'file' | 'directory' | 'up' | string;
     name?: string;
     s3Key?: string;
     directoryPath?: string;
@@ -28,6 +34,8 @@
     // Keep MapType only for the intermediate builder inside transformS3Data.
     children?: FileTreeNode[] | MapType;
     isLoading?: boolean; // Track if children are being loaded
+    outputLabel?: string;
+    class?: string;
   }
 
   interface MapType {
@@ -43,35 +51,62 @@
       s3Contents?: S3Response | null;
       isLoading?: boolean;
       startPath?: string[];
+      /** Declared output files for this run — used for tags and the filter toggle. */
+      outputFiles?: FileExplorerOutputFile[];
     }>(),
-    { isLoading: true },
+    { isLoading: true, outputFiles: () => [] },
   );
 
   const { handleS3Download, downloadFolder, openHtmlFromS3, isFolderZipInProgress } = useFileDownload();
   const { $api } = useNuxtApp();
-
   const uiStore = useUiStore();
+  const listing = useS3BucketListing({
+    labId: () => props.labId,
+    s3Bucket: () => props.s3Bucket,
+    runId: () => props.runId,
+  });
 
-  const currentPath = ref<FileTreeNode[]>([{ name: 'All Files', children: [] as FileTreeNode[] }]);
+  const ROOT_LABEL = 'Run folder';
+  const currentPath = ref<FileTreeNode[]>([{ name: ROOT_LABEL, children: [] as FileTreeNode[] }]);
   const searchQuery = ref('');
   const searchResults = ref<FileTreeNode[]>([]);
   const isSearchLoading = ref(false);
   const searchRequestSeq = ref(0);
+  const fileFilter = ref<'all' | 'outputs'>('all');
   const s3Bucket = props.s3Bucket;
   const s3Prefix = props.s3Prefix;
   const normalizedRootPrefix = computed(() => (s3Prefix.endsWith('/') ? s3Prefix : `${s3Prefix}/`));
 
+  const outputLabelByKey = computed(() => {
+    const map = new Map<string, string>();
+    for (const file of props.outputFiles) {
+      map.set(file.Key, file.Label);
+      // RelativePath match covers listings whose key is already relative to the run root.
+      if (file.RelativePath) {
+        map.set(file.RelativePath, file.Label);
+        map.set(`${normalizedRootPrefix.value}${file.RelativePath}`, file.Label);
+      }
+    }
+    return map;
+  });
+
+  function outputLabelFor(node: FileTreeNode): string | undefined {
+    if (!node.s3Key && !node.name) return undefined;
+    if (node.s3Key && outputLabelByKey.value.has(node.s3Key)) {
+      return outputLabelByKey.value.get(node.s3Key);
+    }
+    if (node.s3Key?.startsWith(normalizedRootPrefix.value)) {
+      const relative = node.s3Key.slice(normalizedRootPrefix.value.length);
+      if (outputLabelByKey.value.has(relative)) return outputLabelByKey.value.get(relative);
+    }
+    return node.outputLabel;
+  }
+
   const hasOpenedStartPath = ref(false);
 
   const isRootLoading = ref(true);
-
-  // Cache for loaded directory contents to avoid re-fetching
   const loadedDirectories = ref<Map<string, FileTreeNode[]>>(new Map());
 
-  /**
-   * Transform a raw S3 API response into FileTreeNode children.
-   * Kept separate so pre-fetch calls can use it without triggering further pre-fetches.
-   */
   const transformS3Response = (response: S3TopLevelResponse): FileTreeNode[] => {
     const children: FileTreeNode[] = [];
 
@@ -84,6 +119,7 @@
           s3Key: item.Key,
           size: item.Size,
           lastModified: item.LastModified,
+          outputLabel: outputLabelByKey.value.get(item.Key),
         });
       });
     }
@@ -102,62 +138,36 @@
     return children;
   };
 
-  /**
-   * Fire-and-forget pre-fetch for the next level of all subdirectories in `children`.
-   * Called every time a directory's contents become visible so navigation is always instant.
-   */
   const prefetchNextLevel = (children: FileTreeNode[], prefixPath: string): void => {
-    children
+    const prefixes = children
       .filter((child) => child.type === 'directory')
-      .forEach((child) => {
-        const childPrefix = `${prefixPath}${child.name}/`;
-        const childCacheKey = `${s3Bucket}::${childPrefix}`;
-        if (!loadedDirectories.value.has(childCacheKey)) {
-          $api.file
-            .requestTopLevelBucketObjects({
-              LaboratoryId: props.labId,
-              RunId: props.runId,
-              S3Bucket: s3Bucket,
-              S3Prefix: childPrefix,
-            } as RequestTopLevelBucketObjects)
-            .then((childResponse: S3TopLevelResponse) => {
-              loadedDirectories.value.set(childCacheKey, transformS3Response(childResponse));
-            })
-            .catch((error) => console.error('Pre-fetch failed for', childPrefix, error));
-        }
+      .map((child) => `${prefixPath}${child.name}/`);
+    listing.prefetchTopLevel(prefixes);
+    for (const childPrefix of prefixes) {
+      const childCacheKey = `${s3Bucket}::${childPrefix}`;
+      if (loadedDirectories.value.has(childCacheKey)) continue;
+      void listing.fetchTopLevel(childPrefix).then((childResponse) => {
+        if (loadedDirectories.value.has(childCacheKey)) return;
+        const next = new Map(loadedDirectories.value);
+        next.set(childCacheKey, transformS3Response(childResponse));
+        loadedDirectories.value = next;
       });
+    }
   };
 
-  /**
-   * Load children for a given prefix, with caching.
-   */
   const loadDirectoryChildren = async (prefixPath: string): Promise<FileTreeNode[]> => {
     const cacheKey = `${s3Bucket}::${prefixPath}`;
     if (loadedDirectories.value.has(cacheKey)) {
       return loadedDirectories.value.get(cacheKey)!;
     }
 
-    try {
-      const response: S3TopLevelResponse = await $api.file.requestTopLevelBucketObjects({
-        LaboratoryId: props.labId,
-        RunId: props.runId,
-        S3Bucket: s3Bucket,
-        S3Prefix: prefixPath,
-      } as RequestTopLevelBucketObjects);
-
-      const children = transformS3Response(response);
-      loadedDirectories.value.set(cacheKey, children);
-      prefetchNextLevel(children, prefixPath);
-      return children;
-    } catch (error) {
-      console.error('Error loading directory children:', error);
-      useToastStore().error(
-        isS3BucketAccessDeniedError(error)
-          ? 'Access to this S3 bucket was revoked. Ask an organization admin to grant access, or set a new default bucket in lab settings.'
-          : 'Failed to load folder contents',
-      );
-      return [];
-    }
+    const response = await listing.fetchTopLevel(prefixPath);
+    const children = transformS3Response(response);
+    const next = new Map(loadedDirectories.value);
+    next.set(cacheKey, children);
+    loadedDirectories.value = next;
+    prefetchNextLevel(children, prefixPath);
+    return children;
   };
 
   /**
@@ -186,7 +196,7 @@
 
     if (dir.type === 'directory' && (!dir.children || (Array.isArray(dir.children) && dir.children.length === 0))) {
       const pathSegments = currentPath.value
-        .slice(1) // Skip "All Files"
+        .slice(1) // Skip run-folder root
         .map((node) => node.name)
         .concat([dir.name]);
       const fullPrefix = `${s3Prefix.endsWith('/') ? s3Prefix : s3Prefix + '/'}${pathSegments.join('/')}/`;
@@ -220,10 +230,12 @@
     () => props.s3Prefix,
     async () => {
       hasOpenedStartPath.value = false;
-      currentPath.value = [{ name: 'All Files', children: [] as FileTreeNode[] }];
-      loadedDirectories.value.clear();
+      currentPath.value = [{ name: ROOT_LABEL, children: [] as FileTreeNode[] }];
+      loadedDirectories.value = new Map();
+      listing.clearCache();
       searchQuery.value = '';
       searchResults.value = [];
+      fileFilter.value = 'all';
       await initializeRoot();
     },
   );
@@ -283,15 +295,38 @@
     });
   });
 
-  const filteredItems = computed(() => {
-    if (!searchQuery.value.trim()) {
-      return currentItems.value;
-    }
-    return searchResults.value.map((node: FileTreeNode) => {
+  const outputOnlyItems = computed(() => {
+    return props.outputFiles.map((file) => {
+      const name = file.RelativePath.split('/').filter(Boolean).pop() || file.RelativePath;
+      const node: FileTreeNode = {
+        type: 'file',
+        name,
+        s3Key: file.Key,
+        directoryPath: file.RelativePath.includes('/') ? file.RelativePath.split('/').slice(0, -1).join('/') : '',
+        size: undefined,
+        outputLabel: file.Label,
+      };
       const uniqueString = nodeUniqueString(node);
       const downloadProgress = downloads.value[uniqueString];
       return {
         ...node,
+        class: downloadProgress !== undefined ? `progress-bg-${downloadProgress}` : '',
+      };
+    });
+  });
+
+  const filteredItems = computed(() => {
+    if (fileFilter.value === 'outputs' && !searchQuery.value.trim()) {
+      return outputOnlyItems.value;
+    }
+
+    const source = searchQuery.value.trim() ? searchResults.value : currentItems.value;
+    return source.map((node: FileTreeNode) => {
+      const uniqueString = nodeUniqueString(node);
+      const downloadProgress = downloads.value[uniqueString];
+      return {
+        ...node,
+        outputLabel: outputLabelFor(node),
         class: downloadProgress !== undefined ? `progress-bg-${downloadProgress}` : '',
       };
     });
@@ -319,39 +354,38 @@
     return direction === 'asc' ? result : -result;
   }
 
-  const tableColumns = computed(() => {
-    const nameColumn = {
+  const tableColumns = computed(() => [
+    {
       key: 'name',
       label: 'Name',
       sortable: true,
       sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
         sortHelpers.stringSortCompare(String(a ?? ''), String(b ?? ''), direction),
-    };
-    return [
-      nameColumn,
-      {
-        key: 'type',
-        label: 'Type',
-        sortable: true,
-        sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
-          sortHelpers.stringSortCompare(String(a ?? ''), String(b ?? ''), direction),
-      },
-      {
-        key: 'lastModified',
-        label: 'Date Modified',
-        sortable: true,
-        sort: compareLastModified,
-      },
-      {
-        key: 'size',
-        label: 'Size',
-        sortable: true,
-        sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
-          sortHelpers.numberSortCompare(Number(a ?? 0), Number(b ?? 0), direction),
-      },
-      { key: 'actions', label: 'Actions' },
-    ];
+    },
+    {
+      key: 'lastModified',
+      label: 'Modified',
+      sortable: true,
+      sort: compareLastModified,
+    },
+    {
+      key: 'size',
+      label: 'Size',
+      sortable: true,
+      sort: (a: unknown, b: unknown, direction: 'asc' | 'desc') =>
+        sortHelpers.numberSortCompare(Number(a ?? 0), Number(b ?? 0), direction),
+    },
+    { key: 'actions', label: '' },
+  ]);
+
+  const parentFolderName = computed(() => {
+    if (currentPath.value.length < 2) return null;
+    return currentPath.value[currentPath.value.length - 2]?.name ?? ROOT_LABEL;
   });
+
+  const canDownloadCurrentFolder = computed(
+    () => fileFilter.value === 'all' && !searchQuery.value.trim() && currentPath.value.length >= 1,
+  );
 
   const fileTableSort = ref<TableSort>({ column: 'name', direction: 'asc' });
 
@@ -360,22 +394,42 @@
     const { column, direction } = fileTableSort.value;
     const col = tableColumns.value.find((c) => c.key === column);
     if (!col || !('sortable' in col) || !col.sortable || typeof col.sort !== 'function') {
-      return items;
+      // still attach up-row below
+    } else {
+      const sortFn = col.sort as (a: unknown, b: unknown, direction: 'asc' | 'desc') => number;
+
+      items.sort((rowA, rowB) => {
+        const va = (rowA as Record<string, unknown>)[column];
+        const vb = (rowB as Record<string, unknown>)[column];
+        const cmp = sortFn(va, vb, direction);
+        if (cmp !== 0) {
+          return cmp;
+        }
+        return sortHelpers.stringSortCompare(String(rowA.name ?? ''), String(rowB.name ?? ''), direction);
+      });
     }
 
-    const sortFn = col.sort as (a: unknown, b: unknown, direction: 'asc' | 'desc') => number;
-
-    items.sort((rowA, rowB) => {
-      const va = (rowA as Record<string, unknown>)[column];
-      const vb = (rowB as Record<string, unknown>)[column];
-      const cmp = sortFn(va, vb, direction);
-      if (cmp !== 0) {
-        return cmp;
-      }
-      return sortHelpers.stringSortCompare(String(rowA.name ?? ''), String(rowB.name ?? ''), direction);
-    });
+    if (
+      fileFilter.value === 'all' &&
+      !searchQuery.value.trim() &&
+      parentFolderName.value &&
+      currentPath.value.length > 1
+    ) {
+      items.unshift({
+        type: 'up',
+        name: `Up to ${parentFolderName.value}`,
+      } as FileTreeNode & { class?: string });
+    }
 
     return items;
+  });
+
+  const folderItemCountLabel = computed(() => {
+    const n = sortedTableData.value.filter((row) => row.type !== 'up').length;
+    if (fileFilter.value === 'outputs') {
+      return n === 1 ? '1 output file' : `${n.toLocaleString()} output files`;
+    }
+    return n === 1 ? '1 file in this folder' : `${n.toLocaleString()} files in this folder`;
   });
 
   // key is the uniqueString of a file tree node
@@ -416,14 +470,7 @@
   }
 
   function formatFileSize(value?: number): string {
-    if (!value) return '';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let unitIndex = 0;
-    while (value >= 1024 && unitIndex < units.length - 1) {
-      value /= 1024;
-      unitIndex++;
-    }
-    return `${value.toFixed(unitIndex === 0 ? 0 : 2)} ${units[unitIndex]}`;
+    return formatBytes(value);
   }
 
   // Helper to check if a value is a valid date string
@@ -431,6 +478,11 @@
     if (!date) return false;
     const d = new Date(date);
     return !isNaN(d.getTime());
+  }
+
+  function formatModified(date: string | undefined): string {
+    if (!isValidDate(date)) return '—';
+    return formatCompactDateTime(date!) ?? '—';
   }
 
   const searchStatusMessage = computed(() => {
@@ -451,6 +503,10 @@
   }
 
   const onRowClicked = useDebounceFn((item: FileTreeNode) => {
+    if (item.type === 'up') {
+      navigateTo(currentPath.value.length - 2);
+      return;
+    }
     if (searchQuery.value.trim()) {
       if (item.type === 'directory' && item.isSearchResult) {
         void navigateToSearchDirectory(item);
@@ -473,9 +529,16 @@
       return `s3://${s3Bucket}/${s3Prefix}`;
     }
 
-    const pathSegments = breadcrumbs.value.map((crumb) => crumb.name).filter((name) => name !== 'All Files');
+    const pathSegments = breadcrumbs.value.map((crumb) => crumb.name).filter((name) => name !== ROOT_LABEL);
     return `s3://${s3Bucket}/${s3Prefix}/${pathSegments.join('/')}`;
   });
+
+  async function downloadCurrentFolder(): Promise<void> {
+    if (!canDownloadCurrentFolder.value) return;
+    useToastStore().success('Your files have begun downloading');
+    useAnalytics().track('file_browser_action', { action: 'download_folder' });
+    await downloadFolder(props.labId, s3ObjectPath.value);
+  }
 
   function nodeUniqueString(node: FileTreeNode): string {
     const childrenLen = Array.isArray(node.children) ? node.children.length : 0;
@@ -686,32 +749,73 @@
 </script>
 
 <template>
-  <section aria-label="File explorer">
-    <EGSearchInput
-      label="Search files in bucket"
-      @input-event="(event: string) => (searchQuery = event)"
-      placeholder="Search all files in bucket"
-      class="mb-6 w-[408px]"
-    />
+  <section aria-label="File explorer" class="stroke-light rounded-2xl border border-solid bg-white p-6">
+    <div class="mb-4 flex flex-wrap items-center gap-3">
+      <EGSearchInput
+        label="Search files in this run"
+        class="min-w-[240px] flex-1"
+        placeholder="Search files in this run."
+        @input-event="(event: string) => (searchQuery = event)"
+      />
+      <div class="inline-flex rounded-lg border border-neutral-200 p-0.5" role="group" aria-label="File filter">
+        <button
+          type="button"
+          class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+          :class="
+            fileFilter === 'all' ? 'bg-primary text-white' : 'text-body hover:bg-background-dark-grey bg-transparent'
+          "
+          :aria-pressed="fileFilter === 'all'"
+          @click="fileFilter = 'all'"
+        >
+          All files
+        </button>
+        <button
+          type="button"
+          class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+          :class="
+            fileFilter === 'outputs'
+              ? 'bg-primary text-white'
+              : 'text-body hover:bg-background-dark-grey bg-transparent'
+          "
+          :aria-pressed="fileFilter === 'outputs'"
+          :disabled="outputFiles.length === 0"
+          @click="fileFilter = 'outputs'"
+        >
+          Output files only
+        </button>
+      </div>
+    </div>
 
     <p class="sr-only" aria-live="polite" aria-atomic="true">{{ searchStatusMessage }}</p>
 
-    <nav class="mb-6 min-h-[24px]" aria-label="Folder path">
-      <ol class="flex flex-wrap items-center gap-0">
-        <li v-for="(crumb, index) in breadcrumbs" :key="index" class="flex items-center text-sm">
-          <button
-            v-if="index < breadcrumbs.length - 1"
-            type="button"
-            class="focus-visible:ring-primary-500 text-gray-500 hover:text-gray-900 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
-            @click="navigateTo(index)"
-          >
-            {{ crumb.name }}
-          </button>
-          <span v-else class="font-medium text-black" aria-current="page">{{ crumb.name }}</span>
-          <span v-if="index < breadcrumbs.length - 1" class="separator mx-1 text-gray-400" aria-hidden="true">/</span>
-        </li>
-      </ol>
-    </nav>
+    <div v-if="fileFilter === 'all'" class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <nav class="min-h-[24px]" aria-label="Folder path">
+        <ol class="flex flex-wrap items-center gap-0">
+          <li v-for="(crumb, index) in breadcrumbs" :key="index" class="flex items-center text-sm">
+            <button
+              v-if="index < breadcrumbs.length - 1"
+              type="button"
+              class="focus-visible:ring-primary-500 text-gray-500 hover:text-gray-900 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+              @click="navigateTo(index)"
+            >
+              {{ crumb.name }}
+            </button>
+            <span v-else class="font-medium text-black" aria-current="page">{{ crumb.name }}</span>
+            <span v-if="index < breadcrumbs.length - 1" class="separator mx-1 text-gray-400" aria-hidden="true">/</span>
+          </li>
+        </ol>
+      </nav>
+      <EGButton
+        v-if="canDownloadCurrentFolder"
+        :size="ButtonSizeEnum.enum.sm"
+        :variant="ButtonVariantEnum.enum.secondary"
+        icon="i-heroicons-arrow-down-tray"
+        :icon-right="false"
+        label="Download this folder"
+        :disabled="isFolderZipInProgress"
+        @click="downloadCurrentFolder"
+      />
+    </div>
 
     <div v-if="isRootLoading" class="sr-only" role="status" aria-live="polite">Loading folder contents…</div>
 
@@ -722,81 +826,111 @@
       :columns="tableColumns"
       no-results-msg="No files or folders found"
       :is-loading="isRootLoading || isSearchLoading"
-      show-pagination
+      :show-pagination="false"
     >
       <template #name-data="{ row }">
-        <div class="flex items-center gap-2">
+        <div v-if="row.type === 'up'" class="flex items-center gap-2">
+          <UIcon name="i-heroicons-arrow-left" class="text-muted h-4 w-4" aria-hidden="true" />
+          <button
+            type="button"
+            class="focus-visible:ring-primary-500 text-primary text-left font-medium hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+            :aria-label="row.name"
+            @click.stop="onRowClicked(row)"
+          >
+            {{ row.name }}
+          </button>
+        </div>
+        <div v-else class="flex flex-wrap items-center gap-2">
+          <UIcon
+            :name="row.type === 'directory' ? 'i-heroicons-folder' : 'i-heroicons-document-text'"
+            class="text-muted h-4 w-4 shrink-0"
+            aria-hidden="true"
+          />
           <button
             v-if="row.type === 'directory' && (!searchQuery.trim() || row.isSearchResult)"
             type="button"
-            class="focus-visible:ring-primary-500 text-left underline hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+            class="focus-visible:ring-primary-500 text-left font-medium hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
             :aria-label="`Open folder ${row.name}`"
             @click.stop="onRowClicked(row)"
             @keydown="onDirectoryKeydown($event, row)"
           >
-            {{ row.name }}/
+            {{ row.name }}
           </button>
-          <span v-else>
-            {{ row.type === 'directory' ? `${row.name}/` : row.name }}
+          <span v-else class="font-medium text-black">{{ row.name }}</span>
+          <span
+            v-if="row.outputLabel"
+            class="bg-primary-muted text-primary inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+          >
+            Output file · {{ row.outputLabel }}
           </span>
           <span v-if="row.isLoading" class="text-xs text-gray-500" role="status">(loading…)</span>
         </div>
-        <div v-if="row.isSearchResult && row.directoryPath" class="text-xs text-gray-500">{{ row.directoryPath }}/</div>
-      </template>
-      <template #type-data="{ row }">
-        {{ useChangeCase(row.type === 'directory' ? 'Folder' : row.type, 'sentenceCase') }}
+        <div v-if="row.isSearchResult && row.directoryPath" class="text-muted ml-6 text-xs">
+          {{ row.directoryPath }}/
+        </div>
+        <div v-else-if="fileFilter === 'outputs' && row.directoryPath" class="text-muted ml-6 font-mono text-xs">
+          {{ row.directoryPath }}/{{ row.name }}
+        </div>
       </template>
       <template #lastModified-data="{ row }">
-        <span v-if="isValidDate(row.lastModified)">
-          {{ format(new Date(row.lastModified), 'MM/dd/yyyy') }}
-        </span>
-        <span v-else>—</span>
+        <span v-if="row.type !== 'up'">{{ formatModified(row.lastModified) }}</span>
       </template>
       <template #size-data="{ row }">
-        {{ formatFileSize(row.size) }}
+        <span v-if="row.type !== 'up'">{{ formatFileSize(row.size) }}</span>
       </template>
       <template #actions-data="{ row }">
-        <div class="flex justify-end gap-4">
-          <template v-if="!(row.isSearchResult && row.type === 'directory')">
-            <!-- open in new tab -->
-            <EGButton
-              v-if="isHtmlFile(row)"
-              variant="secondary"
-              label="Open"
-              :loading="uiStore.isRequestPending(`downloadHtmlFileButton-${nodeUniqueString(row)}`)"
-              @click.stop="async () => await openHtmlInNewTab(row)"
-            />
-
-            <!-- download -->
-            <UTooltip
-              :delay-duration="0"
-              :prevent="!isFolderZipInProgress"
-              :ui="{
-                base: 'h-full w-auto text-center',
-              }"
-            >
-              <template #text>
-                <span class="block text-balance">
-                  Another download is currently in progress. Please wait for it to finish before starting a new one.
-                </span>
-              </template>
-              <span class="inline-flex">
-                <EGButton
-                  variant="secondary"
-                  :label="row?.type === 'file' ? 'Download' : 'Download as zip'"
-                  :loading="downloadActive[nodeUniqueString(row)] === true"
-                  :disabled="
-                    row?.type === 'directory' &&
-                    isFolderZipInProgress &&
-                    !(downloads[nodeUniqueString(row)] !== undefined && downloads[nodeUniqueString(row)] < 100)
-                  "
-                  @click.stop="async () => await downloadFileTreeNode(row)"
-                />
+        <div
+          v-if="row.type !== 'up' && !(row.isSearchResult && row.type === 'directory')"
+          class="flex justify-end gap-1"
+        >
+          <button
+            v-if="isHtmlFile(row)"
+            type="button"
+            class="text-primary hover:text-primary-dark inline-flex h-8 w-8 items-center justify-center rounded-lg"
+            :aria-label="`Open ${row.name}`"
+            :disabled="uiStore.isRequestPending(`downloadHtmlFileButton-${nodeUniqueString(row)}`)"
+            @click.stop="openHtmlInNewTab(row)"
+          >
+            <UIcon name="i-heroicons-arrow-top-right-on-square" class="h-4 w-4" aria-hidden="true" />
+          </button>
+          <UTooltip
+            :delay-duration="0"
+            :prevent="!(row.type === 'directory' && isFolderZipInProgress)"
+            :ui="{ base: 'h-full w-auto text-center' }"
+          >
+            <template #text>
+              <span class="block text-balance">
+                Another download is currently in progress. Please wait for it to finish before starting a new one.
               </span>
-            </UTooltip>
-          </template>
+            </template>
+            <button
+              type="button"
+              class="text-primary hover:text-primary-dark inline-flex h-8 w-8 items-center justify-center rounded-lg disabled:opacity-50"
+              :aria-label="row.type === 'file' ? `Download ${row.name}` : `Download folder ${row.name}`"
+              :disabled="
+                downloadActive[nodeUniqueString(row)] === true ||
+                (row.type === 'directory' &&
+                  isFolderZipInProgress &&
+                  !(downloads[nodeUniqueString(row)] !== undefined && downloads[nodeUniqueString(row)] < 100))
+              "
+              @click.stop="downloadFileTreeNode(row)"
+            >
+              <UIcon
+                :name="
+                  downloadActive[nodeUniqueString(row)] === true
+                    ? 'i-heroicons-arrow-path'
+                    : 'i-heroicons-arrow-down-tray'
+                "
+                class="h-4 w-4"
+                :class="{ 'animate-spin': downloadActive[nodeUniqueString(row)] === true }"
+                aria-hidden="true"
+              />
+            </button>
+          </UTooltip>
         </div>
       </template>
     </EGTable>
+
+    <p class="text-muted mt-3 text-xs">{{ folderItemCountLabel }}</p>
   </section>
 </template>

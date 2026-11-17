@@ -60,4 +60,34 @@ describe('LaboratoryRunService.queryByWorkflowExternalId', () => {
     expect(rows.map((r) => r.RunId)).toEqual(['r1', 'r2']);
     queryItems.mockRestore();
   });
+
+  // Other labs' runs of a shared workflow must not fill the limit and push this lab's history out.
+  it('filters by laboratory inside the query so the limit counts only that lab', async () => {
+    const svc = new LaboratoryRunService();
+    const run1 = { RunId: 'r1', WorkflowExternalId: 'wf-1', LaboratoryId: 'lab-a' } as LaboratoryRun;
+    const run2 = { RunId: 'r2', WorkflowExternalId: 'wf-1', LaboratoryId: 'lab-a' } as LaboratoryRun;
+
+    const queryItems = jest.spyOn(svc as unknown as { queryItems: jest.Mock }, 'queryItems');
+    queryItems
+      .mockResolvedValueOnce({
+        $metadata: { httpStatusCode: 200 },
+        Items: [],
+        LastEvaluatedKey: { WorkflowExternalId: { S: 'wf-1' } },
+      })
+      .mockResolvedValueOnce({
+        $metadata: { httpStatusCode: 200 },
+        Items: [marshall(run1), marshall(run2)],
+      });
+
+    const rows = await svc.queryByWorkflowExternalId('wf-1', { limit: 2, laboratoryId: 'lab-a' });
+
+    expect(queryItems.mock.calls[0][0]).toMatchObject({
+      FilterExpression: '#LaboratoryId = :laboratoryId',
+      ExpressionAttributeNames: expect.objectContaining({ '#LaboratoryId': 'LaboratoryId' }),
+      ExpressionAttributeValues: expect.objectContaining({ ':laboratoryId': { S: 'lab-a' } }),
+    });
+    expect(queryItems).toHaveBeenCalledTimes(2);
+    expect(rows.map((r) => r.RunId)).toEqual(['r1', 'r2']);
+    queryItems.mockRestore();
+  });
 });

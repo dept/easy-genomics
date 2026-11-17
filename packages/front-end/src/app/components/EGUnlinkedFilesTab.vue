@@ -1,6 +1,8 @@
 <script setup lang="ts">
+  import type { LaboratoryRunUsageSummary } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
   import type { TableSort } from '@FE/components/EGTable.vue';
   import EGDataCollectionsFileTypeFilter from '@FE/components/EGDataCollectionsFileTypeFilter.vue';
+  import { formatRetentionExpiryLabel } from '@FE/utils/data-collections-filters';
   import {
     dataCollectionFileKind,
     enabledFileTypeKinds,
@@ -20,11 +22,19 @@
       s3Bucket: string;
       resolvedPrefix: string;
       lastScanLabel: string;
+      keyToIsPermanent?: Record<string, boolean>;
+      keyToRunUsages?: Record<string, LaboratoryRunUsageSummary[]>;
+      canSetPermanent?: boolean;
+      permanentBusy?: boolean;
       s3Configured?: boolean;
       canEditLabDetails?: boolean;
       hasSamples?: boolean;
     }>(),
     {
+      keyToIsPermanent: () => ({}),
+      keyToRunUsages: () => ({}),
+      canSetPermanent: false,
+      permanentBusy: false,
       s3Configured: true,
       canEditLabDetails: false,
       hasSamples: false,
@@ -39,6 +49,7 @@
     'group-with-regex': [];
     'add-to-sample': [];
     'open-settings': [];
+    'set-permanent': [keep: boolean];
   }>();
 
   const fileTypeFilter = ref<DataCollectionFileTypeFilter>({ fastq: true, fasta: false, other: false });
@@ -148,6 +159,26 @@
     emit('update:selectedKeys', [...next]);
   }
 
+  function toggleUnlessTextSelected(key: string): void {
+    if (window.getSelection()?.toString()) return;
+    toggle(key);
+  }
+
+  function onRowKeydown(e: KeyboardEvent, key: string): void {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggle(key);
+    }
+  }
+
+  function isPermanent(key: string): boolean {
+    return !!props.keyToIsPermanent[key];
+  }
+
+  function expiryLabel(key: string): string {
+    return formatRetentionExpiryLabel(isPermanent(key), props.keyToRunUsages[key]);
+  }
+
   function formatSize(bytes?: number): string {
     if (bytes == null) return '—';
     if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
@@ -249,22 +280,27 @@
                   <UIcon :name="sortIcon('lastModified')" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 </button>
               </th>
+              <th class="p-3 text-left text-xs uppercase text-gray-400">Expires</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading && !files.length">
-              <td colspan="5" class="p-6 text-center text-gray-400">Scanning…</td>
+              <td colspan="6" class="p-6 text-center text-gray-400">Scanning…</td>
             </tr>
             <tr v-else-if="!filtered.length">
-              <td colspan="5" class="p-6 text-center text-gray-400">No unlinked files match the current filters.</td>
+              <td colspan="6" class="p-6 text-center text-gray-400">No unlinked files match the current filters.</td>
             </tr>
             <tr
               v-for="f in sorted"
               :key="f.Key"
-              class="border-t border-gray-100 hover:bg-gray-50"
+              tabindex="0"
+              class="cursor-pointer border-t border-gray-100 hover:bg-gray-50 focus:outline-none focus-visible:bg-gray-50"
               :class="{ 'bg-primary-50': selectedKeys.includes(f.Key) }"
+              :aria-selected="selectedKeys.includes(f.Key)"
+              @click="toggleUnlessTextSelected(f.Key)"
+              @keydown.self="onRowKeydown($event, f.Key)"
             >
-              <td class="p-3">
+              <td class="p-3" @click.stop>
                 <input
                   type="checkbox"
                   :checked="selectedKeys.includes(f.Key)"
@@ -272,15 +308,21 @@
                   @change="toggle(f.Key)"
                 />
               </td>
-              <td class="p-3 font-mono text-xs">{{ fileName(f.Key) }}</td>
+              <td class="p-3 font-mono text-xs">
+                <span class="inline-flex items-center gap-1.5">
+                  <EGPermanentLockIcon v-if="isPermanent(f.Key)" noun="file" />
+                  {{ fileName(f.Key) }}
+                </span>
+              </td>
               <td class="p-3 text-xs uppercase text-gray-500">{{ dataCollectionFileKind(f.Key) }}</td>
               <td class="p-3 text-xs">{{ formatSize(f.Size) }}</td>
               <td class="p-3 text-xs text-gray-400">
                 {{ f.LastModified ? new Date(f.LastModified).toLocaleString() : '—' }}
               </td>
+              <td class="p-3 text-xs tabular-nums text-gray-500">{{ expiryLabel(f.Key) }}</td>
             </tr>
             <tr v-if="hiddenCount > 0">
-              <td colspan="5" class="p-3 text-center text-xs italic text-gray-400">
+              <td colspan="6" class="p-3 text-center text-xs italic text-gray-400">
                 {{ hiddenCount }} file(s) hidden by type filter
               </td>
             </tr>
@@ -293,13 +335,28 @@
           <strong>{{ selectedKeys.length }}</strong>
           selected
         </span>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap justify-end gap-2">
           <UButton variant="outline" :disabled="selectedKeys.length < 2" @click="emit('group-with-regex')">
             Group with regex
           </UButton>
           <UTooltip text="This lab has no samples yet. Build one first." :prevent="hasSamples" :delay-duration="0">
             <UButton variant="outline" :disabled="!hasSamples" @click="emit('add-to-sample')">Add to sample</UButton>
           </UTooltip>
+          <UButton
+            variant="outline"
+            :disabled="!canSetPermanent || permanentBusy"
+            :loading="permanentBusy"
+            @click="emit('set-permanent', true)"
+          >
+            Keep permanently
+          </UButton>
+          <UButton
+            variant="outline"
+            :disabled="!canSetPermanent || permanentBusy || !selectedKeys.some((key) => isPermanent(key))"
+            @click="emit('set-permanent', false)"
+          >
+            Remove permanent
+          </UButton>
           <UButton @click="emit('build-sample')">Build sample manually</UButton>
         </div>
       </div>

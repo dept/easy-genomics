@@ -89,6 +89,71 @@ describe('edit-workflow-key-outputs Lambda', () => {
     expect(body.CreatedBy).toEqual('original-user');
   });
 
+  it('persists an optional Description on each key output', async () => {
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        KeyOutputs: [
+          {
+            Label: 'MultiQC report',
+            Description: 'Quality summary for the whole run',
+            Pattern: 'multiqc/multiqc_report.html',
+          },
+        ],
+      }),
+      createMockContext(),
+      () => {},
+    );
+    const body = JSON.parse(result.body);
+
+    expect(result.statusCode).toEqual(200);
+    expect(body.KeyOutputs[0].Description).toEqual('Quality summary for the whole run');
+  });
+
+  it('omits a whitespace-only Description', async () => {
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        KeyOutputs: [
+          {
+            Label: 'MultiQC report',
+            Description: '   ',
+            Pattern: 'multiqc/multiqc_report.html',
+          },
+        ],
+      }),
+      createMockContext(),
+      () => {},
+    );
+    const body = JSON.parse(result.body);
+
+    expect(result.statusCode).toEqual(200);
+    expect(body.KeyOutputs[0].Description).toBeUndefined();
+  });
+
+  it('rejects a Description longer than 200 characters', async () => {
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        KeyOutputs: [
+          {
+            Label: 'MultiQC report',
+            Description: 'x'.repeat(201),
+            Pattern: 'multiqc/multiqc_report.html',
+          },
+        ],
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toEqual(400);
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
   it('allows a technician to clear declared key outputs when delivery is off', async () => {
     const result = await handler(
       createMockEvent({
@@ -133,7 +198,7 @@ describe('edit-workflow-key-outputs Lambda', () => {
     expect(mockSave).toHaveBeenCalled();
   });
 
-  it('rejects a technician when delivery is already enabled', async () => {
+  it('allows a technician to save key outputs when delivery is already enabled', async () => {
     (WorkflowKeyOutputsService as jest.MockedClass<typeof WorkflowKeyOutputsService>).prototype.get = jest
       .fn()
       .mockResolvedValue({
@@ -152,8 +217,106 @@ describe('edit-workflow-key-outputs Lambda', () => {
       () => {},
     );
 
+    expect(result.statusCode).toEqual(200);
+    expect(mockSave).toHaveBeenCalled();
+  });
+
+  it('rejects a technician when Microreact automatic sending is enabled', async () => {
+    (WorkflowKeyOutputsService as jest.MockedClass<typeof WorkflowKeyOutputsService>).prototype.get = jest
+      .fn()
+      .mockResolvedValue({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        Delivery: {
+          Enabled: false,
+          Microreact: { Enabled: true, MetadataKeyOutputId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+        },
+      });
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        KeyOutputs: [{ Label: 'Summary', Pattern: 'reports/*.html' }],
+      }),
+      createMockContext(),
+      () => {},
+    );
+
     expect(result.statusCode).toEqual(403);
     expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it('drops stale Microreact roles when key outputs are replaced', async () => {
+    (validateLaboratoryTechnicianAccess as jest.Mock).mockReturnValue(false);
+    (validateLaboratoryManagerAccess as jest.Mock).mockReturnValue(true);
+    (WorkflowKeyOutputsService as jest.MockedClass<typeof WorkflowKeyOutputsService>).prototype.get = jest
+      .fn()
+      .mockResolvedValue({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        KeyOutputs: [{ KeyOutputId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', Label: 'Old', Pattern: 'old/*.tsv' }],
+        Delivery: {
+          Enabled: false,
+          Microreact: { Enabled: true, MetadataKeyOutputId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+        },
+      });
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        KeyOutputs: [{ Label: 'New', Pattern: 'new/*.tsv' }],
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toEqual(200);
+    expect(JSON.parse(result.body).Delivery).toEqual({ Enabled: false });
+  });
+
+  it('keeps Microreact roles when the same patterns are re-saved without KeyOutputId', async () => {
+    const metadataId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const treeId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    (validateLaboratoryTechnicianAccess as jest.Mock).mockReturnValue(false);
+    (validateLaboratoryManagerAccess as jest.Mock).mockReturnValue(true);
+    (WorkflowKeyOutputsService as jest.MockedClass<typeof WorkflowKeyOutputsService>).prototype.get = jest
+      .fn()
+      .mockResolvedValue({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        KeyOutputs: [
+          { KeyOutputId: metadataId, Label: 'Summary', Pattern: 'summary/*.tsv' },
+          { KeyOutputId: treeId, Label: 'Tree', Pattern: 'tree/*.nwk' },
+        ],
+        Delivery: {
+          Enabled: false,
+          Microreact: { Enabled: true, MetadataKeyOutputId: metadataId, TreeKeyOutputIds: [treeId] },
+        },
+      });
+
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        KeyOutputs: [
+          { Label: 'Summary', Pattern: 'summary/*.tsv' },
+          { Label: 'Tree', Pattern: 'tree/*.nwk' },
+        ],
+      }),
+      createMockContext(),
+      () => {},
+    );
+    const body = JSON.parse(result.body);
+
+    expect(result.statusCode).toEqual(200);
+    expect(body.KeyOutputs.map((item: { KeyOutputId: string }) => item.KeyOutputId)).toEqual([metadataId, treeId]);
+    expect(body.Delivery.Microreact).toEqual({
+      Enabled: true,
+      MetadataKeyOutputId: metadataId,
+      TreeKeyOutputIds: [treeId],
+    });
   });
 
   it('rejects a caller with no laboratory access', async () => {

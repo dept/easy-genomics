@@ -145,7 +145,7 @@
       case 'outcome':
         return outcome.value?.CostSource === 'SEQERA_PROGRESS'
           ? 'Seqera compute estimate'
-          : 'Based on AWS list pricing';
+          : 'Estimated from AWS list prices.';
       default:
         return 'Based on similar completed runs';
     }

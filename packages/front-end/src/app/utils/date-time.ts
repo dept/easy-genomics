@@ -1,5 +1,6 @@
 import {
   format,
+  isToday,
   parseISO,
   isValid,
   differenceInCalendarDays,
@@ -36,6 +37,20 @@ export function getDate(input: string | null | undefined): string | null {
 }
 
 /**
+ * Compact local datetime for run overview copy, e.g. '14 Oct 2026, 2:08 pm'.
+ */
+export function formatCompactDateTime(input: string | null | undefined): string | null {
+  if (!input) {
+    return null;
+  }
+
+  const date = parseAndValidateDate(input);
+  if (!date) return null;
+
+  return format(date, 'd MMM yyyy, h:mm aaa');
+}
+
+/**
  * Return the time in the format hh:mm:ss a GMT+/-offset, e.g. '09:38:13 AM GMT+10'
  * @param input
  */
@@ -66,6 +81,15 @@ function pluralize(count: number, singular: string, plural: string): string {
  * - older → "N year(s) ago"
  * - future → absolute date (yyyy-MM-dd)
  */
+/** Storage header: "today at 11:10 am", else a short relative label. */
+export function formatStorageScannedAt(input: string | null | undefined): string | null {
+  const date = parseAndValidateDate(input);
+  if (!date) return null;
+  const time = format(date, 'h:mm aaa').toLowerCase();
+  if (isToday(date)) return `today at ${time}`;
+  return formatRelativeDateTime(input);
+}
+
 export function formatRelativeDateTime(input: string | null | undefined): string | null {
   if (!input) {
     return null;

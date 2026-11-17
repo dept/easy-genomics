@@ -14,7 +14,7 @@ export class FrontEndStack extends Stack {
   protected wwwHosting!: WwwHostingConstruct;
 
   constructor(scope: Construct, id: string, props: FrontEndStackProps) {
-    super(scope, id);
+    super(scope, id, props);
     this.props = props;
 
     this.wwwHosting = this.setupWwwHosting();

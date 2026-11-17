@@ -6,16 +6,18 @@ import {
   orderedLaboratoriesForSweep,
 } from '@BE/services/easy-genomics/laboratory-data-retention-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
+import { LaboratoryStorageService } from '@BE/services/easy-genomics/laboratory-storage-service';
 
 const laboratoryService = new LaboratoryService();
 const retentionService = new LaboratoryDataRetentionService();
+const storageService = new LaboratoryStorageService();
 
 const METRIC_NAMESPACE = 'EasyGenomics/DataRetention';
 
 const DEFAULT_MAX_DELETES_PER_LAB_SWEEP = 25_000;
 const DEFAULT_MAX_ORPHAN_FOLDERS_PER_LAB_SWEEP = 500;
-/** Leave time to log the summary before the 15-minute Lambda is killed. */
-const DEADLINE_RESERVE_MS = 15_000;
+/** Leave time for storage snapshots plus the summary log before the 15-minute Lambda is killed. */
+const DEADLINE_RESERVE_MS = 120_000;
 /** First retention-metadata pass per lab, so deletion still runs the same night. */
 const RETENTION_WRITE_SLICE_MS = 60_000;
 
@@ -65,11 +67,40 @@ export const handler: Handler<ScheduledEvent, void> = async (
   const totals = await retentionService.sweepAllLaboratories(laboratories, options);
   const labsHitDeleteCap = totals.labsHitDeleteCap;
 
+  let storageSnapshotErrors = 0;
+  let storageSnapshotsSkippedDeadline = 0;
+  /** Skip starting a rescan that cannot finish before the summary/metrics log. */
+  const SNAPSHOT_MIN_BUDGET_MS = 5_000;
+  for (let i = 0; i < laboratories.length; i++) {
+    const laboratory = laboratories[i];
+    // Snapshot after the sweep so the Storage page reflects tonight's deletions.
+    const remainingMs = deadlineMs != null ? deadlineMs - Date.now() : undefined;
+    if (remainingMs != null && remainingMs < SNAPSHOT_MIN_BUDGET_MS) {
+      storageSnapshotsSkippedDeadline = laboratories.slice(i).filter((lab) => lab.S3Bucket).length;
+      console.warn('Storage snapshot loop stopped for Lambda deadline; remaining labs retry tomorrow', {
+        skippedFrom: laboratory.LaboratoryId,
+        storageSnapshotsSkippedDeadline,
+        remainingMs,
+      });
+      break;
+    }
+    if (!laboratory.S3Bucket) continue;
+    try {
+      // Cap the listing so one large lab cannot burn the whole reserve and kill the metrics emit.
+      await storageService.rescan(laboratory, remainingMs);
+    } catch (err) {
+      console.error(`Storage snapshot failed for lab ${laboratory.LaboratoryId} (continuing):`, err);
+      storageSnapshotErrors++;
+    }
+  }
+
   console.log('Expired laboratory data sweep summary:', {
     ...options,
     laboratories: laboratories.length,
     ...totals,
     labsHitDeleteCap,
+    storageSnapshotErrors,
+    storageSnapshotsSkippedDeadline,
   });
 
   emitEmfMetrics({
@@ -85,6 +116,8 @@ export const handler: Handler<ScheduledEvent, void> = async (
     OrphanFoldersRecorded: totals.orphanFoldersRecorded,
     Errors: totals.errors,
     LabsHitDeleteCap: labsHitDeleteCap,
+    StorageSnapshotErrors: storageSnapshotErrors,
+    StorageSnapshotsSkippedDeadline: storageSnapshotsSkippedDeadline,
   });
 };
 

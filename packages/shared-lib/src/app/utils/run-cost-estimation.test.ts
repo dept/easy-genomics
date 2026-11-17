@@ -3,6 +3,7 @@ import {
   countSamplesInSampleSheetCsv,
   estimateComputeCostBand,
   hashRunSettings,
+  scaleCostToSampleCount,
   similarityScore,
 } from './run-cost-estimation';
 
@@ -162,5 +163,78 @@ describe('run-cost-estimation', () => {
       },
     );
     expect(score).toBe(0);
+  });
+});
+
+describe('estimateComputeCostBand sample scaling', () => {
+  // Bytes grow with samples so the similarity score is realistic: 10x size costs
+  // 0.8 (samples) + 0.6 (bytes) = 1.4 of the 1.5 budget.
+  const hist = (cost: number, samples?: number) => ({
+    ActualComputeCostUsd: cost,
+    SampleCount: samples,
+    InputBytesTotal: (samples ?? 0) * 1_000,
+    WorkflowVersionName: 'v1',
+    ParameterHash: 'p',
+    TerminalAt: new Date().toISOString(),
+  });
+  const profile = (samples: number) => ({
+    SampleCount: samples,
+    InputBytesTotal: samples * 1_000,
+    ParameterHash: 'p',
+    WorkflowVersionName: 'v1',
+  });
+
+  it('scales a 96-sample history to a 1,000-sample run', () => {
+    const band = estimateComputeCostBand(
+      profile(1000),
+      Array.from({ length: 5 }, () => hist(40, 96)),
+    );
+    expect(band.estimateAvailable).toBe(true);
+    expect(band.computeCostUsd!.median).toBeCloseTo(416.67, 2);
+  });
+
+  it("gives today's estimate for a run the same size as the history", () => {
+    const band = estimateComputeCostBand(
+      profile(96),
+      Array.from({ length: 5 }, () => hist(40, 96)),
+    );
+    expect(band.computeCostUsd!.median).toBe(40);
+  });
+
+  it("falls back to whole-run cost when the past run's sample count is 0 or missing", () => {
+    const band = estimateComputeCostBand(profile(10), [hist(40, 0), hist(40, undefined), hist(40, 0)]);
+    expect(band.estimateAvailable).toBe(true);
+    expect(band.computeCostUsd!.median).toBe(40);
+  });
+
+  it("falls back to whole-run cost when this run's sample count is 0", () => {
+    const band = estimateComputeCostBand(
+      profile(0),
+      Array.from({ length: 3 }, () => hist(40, 96)),
+    );
+    expect(band.estimateAvailable).toBe(true);
+    expect(band.computeCostUsd!.median).toBe(40);
+  });
+
+  it('has no estimate for a 10x run on a different workflow version (pins current scoring)', () => {
+    const band = estimateComputeCostBand(
+      { ...profile(1000), WorkflowVersionName: 'v2' },
+      Array.from({ length: 5 }, () => hist(40, 96)),
+    );
+    expect(band.estimateAvailable).toBe(false);
+  });
+
+  describe('scaleCostToSampleCount', () => {
+    it('scales cost per sample to the run sample count', () => {
+      expect(scaleCostToSampleCount(40, 96, 1000)).toBeCloseTo(416.67, 2);
+    });
+
+    it.each([
+      [0, 1000],
+      [undefined, 1000],
+      [96, 0],
+    ])('returns the whole-run cost when historical=%p and run=%p', (historicalSampleCount, runSampleCount) => {
+      expect(scaleCostToSampleCount(40, historicalSampleCount, runSampleCount)).toBe(40);
+    });
   });
 });

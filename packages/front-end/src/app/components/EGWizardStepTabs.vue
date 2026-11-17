@@ -24,7 +24,7 @@
 
   /**
    * Tab styles must live in this SFC so Tailwind includes the utility classes.
-   * Duplicate changes to EGDetailTabs.vue and any page-local EGTabsStyles.
+   * These stay pills. EGDetailTabs uses an underline and is styled on its own.
    *
    * Once launched, every step is complete and none is "current", but HeadlessUI's TabGroup always
    * keeps one tab internally selected (it has no concept of "no selection"). Without this override,

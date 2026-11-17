@@ -71,6 +71,7 @@ const LabDetailsSchema = z.object({
   NextFlowTowerEnabled: z.boolean(),
   NextFlowTowerAccessToken: NextFlowTowerAccessTokenSchema,
   GitHubAccessToken: GitHubAccessTokenSchema.optional(),
+  MicroreactAccessToken: z.string().trim().optional(),
   NextFlowTowerWorkspaceId: NextFlowTowerWorkspaceIdSchema,
   NextFlowTowerApiBaseUrl: NextFlowTowerApiBaseUrlSchema,
   AwsHealthOmicsEnabled: z.boolean(),
