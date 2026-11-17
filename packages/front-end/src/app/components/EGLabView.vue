@@ -179,9 +179,9 @@
       if (omicsAvailable) items.push(omicsWorkflowsTab);
     }
     items.push(dataCollectionsTab);
+    items.push({ ...usersTab, dividerBefore: items.length > 0 });
     // Lab managers, org admins, and system admins (superuser lab view from Manage).
     if (props.superuser || userStore.canEditLabUsers(props.labId)) items.push(storageTab);
-    items.push({ ...usersTab, dividerBefore: items.length > 0 });
     if (!userStore.isSuperuser && userStore.canEditLabDetails()) items.push(detailsTab);
 
     return items;
@@ -227,11 +227,13 @@
       runs: 'View your pipeline runs',
       seqeraPipelines: 'View your Seqera pipelines',
       omicsWorkflows: 'View your HealthOmics workflows',
-      storage: "Everything Easy Genomics is holding in this lab's bucket, grouped by the run it belongs to.",
+      storage: 'What this lab is keeping in its bucket, grouped by run.',
       users: 'View your lab users',
     };
     return descriptions[activeTabKey.value] || '';
   });
+
+  const storageScannedAt = computed(() => useStorageStore().labStorage[props.labId]?.ScannedAt);
 
   function setTabIndex() {
     const requestedTab = (props.initialTab ?? '').trim().toLowerCase();
@@ -1084,15 +1086,19 @@
         variant="secondary"
         @click="$router.push(`/labs/${labId}/create-workflow`)"
       />
-      <EGButton
-        v-if="activeTabKey === 'storage' && orgId"
-        label="Rescan bucket"
-        variant="secondary"
-        icon="i-heroicons-arrow-path"
-        :loading="uiStore.isRequestPending('rescanLabStorage')"
-        :disabled="uiStore.isRequestPending('rescanLabStorage') || uiStore.isRequestPending('editLabStorage')"
-        @click="useStorageStore().rescanLabStorage(orgId, labId)"
-      />
+      <div v-if="activeTabKey === 'storage' && orgId" class="flex shrink-0 items-center gap-3">
+        <span v-if="storageScannedAt" class="text-muted whitespace-nowrap text-xs leading-none">
+          Scanned {{ formatStorageScannedAt(storageScannedAt) }}
+        </span>
+        <EGButton
+          label="Rescan"
+          variant="secondary"
+          icon="i-heroicons-arrow-path"
+          :loading="uiStore.isRequestPending('rescanLabStorage')"
+          :disabled="uiStore.isRequestPending('rescanLabStorage') || uiStore.isRequestPending('editLabStorage')"
+          @click="useStorageStore().rescanLabStorage(orgId, labId)"
+        />
+      </div>
       <EGButton
         v-if="!superuser && activeTabKey === 'users'"
         u-button-type="button"

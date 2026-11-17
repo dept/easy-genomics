@@ -7,6 +7,7 @@
   import { RunRetentionMonthsSchema } from '@FE/types/labs';
   import { formatRelativeDateTime } from '@FE/utils/date-time';
   import { formatFileSize } from '@FE/utils/file-size';
+  import { countFullyProtectedRuns, formatRetentionMonthsLabel } from '@FE/utils/lab-storage-display';
 
   const props = defineProps<{
     orgId: string;
@@ -47,38 +48,39 @@
   }
 
   // ---- Filters ----
-  type TypeTab = 'all' | LaboratoryStorageItemType;
-  type AgeFilter = 'all' | 30 | 90;
+  type TypeFilter = 'all' | LaboratoryStorageItemType;
+  type AgeFilter = 'all' | '30' | '90';
 
-  const typeTab = ref<TypeTab>('all');
+  const typeFilter = ref<TypeFilter>('all');
   const ageFilter = ref<AgeFilter>('all');
   const searchQuery = ref('');
 
-  const typeTabs = computed<{ key: TypeTab; label: string; count: number }[]>(() => {
-    const count = (type: LaboratoryStorageItemType) => items.value.filter((item) => item.Type === type).length;
-    return [
-      { key: 'all', label: 'Everything', count: items.value.length },
-      { key: 'RunOutputs', label: 'Run outputs', count: count('RunOutputs') },
-      { key: 'InputData', label: 'Input data', count: count('InputData') },
-      { key: 'SampleSheet', label: 'Sample sheets', count: count('SampleSheet') },
-      { key: 'Unattached', label: 'No run record', count: count('Unattached') },
-    ];
-  });
-
-  const ageFilters: { key: AgeFilter; label: string }[] = [
-    { key: 'all', label: 'All ages' },
-    { key: 30, label: 'Older than 30 days' },
-    { key: 90, label: 'Older than 90 days' },
+  const typeFilterOptions: { label: string; value: TypeFilter }[] = [
+    { label: 'All types', value: 'all' },
+    { label: 'Run outputs', value: 'RunOutputs' },
+    { label: 'Input data', value: 'InputData' },
+    { label: 'Sample sheets', value: 'SampleSheet' },
+    { label: 'Not linked to a run', value: 'Unattached' },
   ];
+
+  const ageFilterOptions: { label: string; value: AgeFilter }[] = [
+    { label: 'Any age', value: 'all' },
+    { label: 'Older than 30 days', value: '30' },
+    { label: 'Older than 90 days', value: '90' },
+  ];
+
+  // Match EGSearchInput height (px-5 py-4).
+  const filterSelectUi = { padding: { sm: 'px-5 py-4' } };
 
   const filteredItems = computed(() => {
     const query = searchQuery.value.trim().toLowerCase();
     const now = Date.now();
+    const minAgeDays = ageFilter.value === 'all' ? 0 : Number(ageFilter.value);
     return items.value.filter((item) => {
-      if (typeTab.value !== 'all' && item.Type !== typeTab.value) return false;
-      if (ageFilter.value !== 'all') {
+      if (typeFilter.value !== 'all' && item.Type !== typeFilter.value) return false;
+      if (minAgeDays > 0) {
         const modified = item.LastModified ? Date.parse(item.LastModified) : now;
-        if (now - modified < ageFilter.value * DAY_MS) return false;
+        if (now - modified < minAgeDays * DAY_MS) return false;
       }
       if (!query) return true;
       return [item.Name, item.Path, item.Detail, item.RunId].some((field) => field?.toLowerCase().includes(query));
@@ -86,11 +88,11 @@
   });
 
   // ---- Row presentation ----
-  const typeMeta: Record<LaboratoryStorageItemType, { label: string; icon: string }> = {
-    RunOutputs: { label: 'Run outputs', icon: 'i-heroicons-folder' },
-    InputData: { label: 'Input data', icon: 'i-heroicons-arrow-up-tray' },
-    SampleSheet: { label: 'Sample sheet', icon: 'i-heroicons-document-text' },
-    Unattached: { label: 'Unattached', icon: 'i-heroicons-exclamation-circle' },
+  const typeLabels: Record<LaboratoryStorageItemType, string> = {
+    RunOutputs: 'Run outputs',
+    InputData: 'Input data',
+    SampleSheet: 'Sample sheets',
+    Unattached: 'Not linked to a run',
   };
 
   type Protection = 'Protected' | 'Partial' | 'Unprotected';
@@ -100,31 +102,54 @@
     return item.ProtectedFileCount > 0 ? 'Partial' : 'Unprotected';
   }
 
-  function statusChip(item: LaboratoryStorageItem): { label: string; class: string; note?: string } {
-    if (item.Status === 'Running') return { label: 'Running', class: 'bg-primary-muted text-primary' };
+  /** "Run outputs · TheiaCoV_Illumina_PE · 412 files" / "Outside any run folder · 1 file" */
+  function itemSubtitle(item: LaboratoryStorageItem): string {
+    const files = `${item.FileCount.toLocaleString()} file${item.FileCount === 1 ? '' : 's'}`;
+    if (item.Type === 'Unattached') {
+      return item.Detail ? `${item.Detail} · ${files}` : files;
+    }
+    const parts = [typeLabels[item.Type]];
+    if (item.Detail) parts.push(item.Detail);
+    parts.push(files);
+    return parts.join(' · ');
+  }
+
+  /** Flagged statuses only — Active / success stay blank. */
+  function statusFlag(item: LaboratoryStorageItem): { label: string; dotClass: string } | null {
     const state = protection(item);
-    if (state === 'Protected') return { label: 'Protected', class: 'bg-background-light-grey text-body' };
-    if (state === 'Partial') {
-      return {
-        label: 'Partly protected',
-        class: 'bg-background-light-grey text-body',
-        note: `${item.ProtectedFileCount} of ${item.FileCount} files`,
-      };
+    if (state === 'Protected') return { label: 'Protected', dotClass: 'bg-primary' };
+    if (state === 'Partial') return { label: 'Partly protected', dotClass: 'bg-primary' };
+    if (item.Type === 'Unattached' || item.Status === 'NoRunRecord') {
+      return { label: 'Not linked to a run', dotClass: 'bg-alert-caution' };
     }
-    switch (item.Status) {
-      case 'Expiring':
-        return {
-          label: 'Scheduled for deletion',
-          class: 'bg-alert-caution-muted text-alert-caution',
-          note: 'Expected within 48 hours',
-        };
-      case 'RunFailed':
-        return { label: 'Run failed', class: 'bg-alert-caution-muted text-alert-caution' };
-      case 'NoRunRecord':
-        return { label: 'No run record', class: 'bg-alert-danger-muted text-alert-danger' };
-      default:
-        return { label: 'Active', class: 'bg-alert-success-muted text-alert-success-text' };
-    }
+    if (item.Status === 'Expiring') return { label: 'Scheduled for deletion', dotClass: 'bg-alert-caution' };
+    if (item.Status === 'RunFailed') return { label: 'Run failed', dotClass: 'bg-alert-caution' };
+    if (item.Status === 'Running') return { label: 'Running', dotClass: 'bg-primary' };
+    return null;
+  }
+
+  function rowActionItems(item: LaboratoryStorageItem) {
+    // Match toggleProtection: only fully protected items flip to unprotected.
+    const protectLabel = protection(item) === 'Protected' ? 'Allow deletion' : 'Protect from deletion';
+    const blockedDelete = deleteBlockedReason(item);
+    // One group = no divider between Protect and Delete (per design).
+    return [
+      [
+        {
+          label: protectLabel,
+          click: () => toggleProtection(item),
+          disabled: item.FileCount === 0 || isMutating.value,
+        },
+        {
+          label: 'Delete',
+          description: blockedDelete ?? undefined,
+          click: () => confirmDelete([item.ItemId]),
+          isHighlighted: true,
+          hideIcon: true,
+          disabled: !!blockedDelete || isMutating.value,
+        },
+      ],
+    ];
   }
 
   function deleteBlockedReason(item: LaboratoryStorageItem): string | null {
@@ -182,10 +207,6 @@
     );
   }
 
-  async function protectSelected() {
-    await storageStore.setLabStorageProtection(props.orgId, props.labId, [...selectedIds.value], true);
-  }
-
   const pendingDeleteIds = ref<string[]>([]);
   const isDeleteDialogOpen = ref(false);
   const pendingDeleteItems = computed(() => items.value.filter((item) => pendingDeleteIds.value.includes(item.ItemId)));
@@ -212,19 +233,38 @@
   }
 
   // ---- Stats ----
-  const noRunRecordSavingLine = computed(() => {
+  /** Unique runs with at least one fully protected item — not ProtectedItemCount (one run → many items). */
+  const protectedRunCount = computed(() => countFullyProtectedRuns(items.value));
+  const protectedRunLabel = computed(() => {
+    const count = protectedRunCount.value;
+    return `${count.toLocaleString()} run${count === 1 ? '' : 's'}`;
+  });
+  const retentionMonthsLabel = computed(() => formatRetentionMonthsLabel(lab.value?.RunRetentionMonths ?? 6));
+  const monthlyCostSubtitle = computed(() => {
     const totals = summary.value;
-    if (!totals?.PricePerGbMonthUsd) return '';
-    return (
-      `Roughly ${monthlyUsd(totals.TotalBytes)} a month at S3 standard pricing. ` +
-      `Clearing everything without a run record would take that to ${monthlyUsd(totals.TotalBytes - totals.NoRunRecordBytes)}.`
-    );
+    if (!totals) return 'Stored';
+    if (!totals.PricePerGbMonthUsd) return 'Stored';
+    return `Stored · about ${monthlyUsd(totals.TotalBytes)} a month`;
   });
 
+  function reviewUnattached() {
+    typeFilter.value = 'Unattached';
+  }
+
   // ---- Retention ----
+  const isRetentionEditorOpen = ref(false);
   const retentionMonths = ref<number>(6);
   const includePrePolicyData = ref(true);
   const keepInputData = ref(false);
+  const retentionMonthOptions = computed(() => {
+    const presets = [0, 1, 2, 3, 6, 9, 12, 18, 24, 36, 48, 60, 120];
+    const current = lab.value?.RunRetentionMonths ?? 6;
+    const months = presets.includes(current) ? presets : [...presets, current].sort((a, b) => a - b);
+    return months.map((value) => ({
+      label: formatRetentionMonthsLabel(value),
+      value,
+    }));
+  });
 
   function resetRetentionForm() {
     retentionMonths.value = lab.value?.RunRetentionMonths ?? 6;
@@ -233,6 +273,16 @@
     keepInputData.value = lab.value?.RetentionKeepInputData === true;
   }
   watch(lab, resetRetentionForm, { immediate: true });
+
+  function openRetentionEditor() {
+    resetRetentionForm();
+    isRetentionEditorOpen.value = true;
+  }
+
+  function closeRetentionEditor() {
+    resetRetentionForm();
+    isRetentionEditorOpen.value = false;
+  }
 
   const retentionError = computed(() => {
     const result = RunRetentionMonthsSchema.safeParse(retentionMonths.value);
@@ -252,7 +302,7 @@
 
   const retentionWarningMessage = computed(() => {
     const months = retentionMonths.value;
-    const policy = months === 0 ? 'never delete run records' : `${months} month${months === 1 ? '' : 's'}`;
+    const policy = months === 0 ? 'never delete run records' : formatRetentionMonthsLabel(months);
     const counts = retentionPreview.value;
     const line = `New run retention policy after save: ${policy}.`;
     if (!counts) return line;
@@ -282,35 +332,27 @@
   }
 
   async function saveRetention() {
-    await labsStore.updateRetention(props.labId, {
+    const saved = await labsStore.updateRetention(props.labId, {
       RunRetentionMonths: retentionMonths.value,
       RetentionIncludePrePolicyData: includePrePolicyData.value,
       RetentionKeepInputData: keepInputData.value,
     });
     isRetentionConfirmOpen.value = false;
+    if (saved) isRetentionEditorOpen.value = false;
   }
 
   const columns = [
     { key: 'select', label: '', class: 'w-10', rowClass: 'w-10' },
     { key: 'Name', label: 'Item' },
-    { key: 'Type', label: 'Type' },
-    { key: 'FileCount', label: 'Files', class: 'w-20', rowClass: 'w-20' },
-    { key: 'SizeBytes', label: 'Size', class: 'w-24', rowClass: 'w-24' },
-    { key: 'LastModified', label: 'Last modified', class: 'w-32', rowClass: 'w-32' },
+    { key: 'SizeBytes', label: 'Size', class: 'w-28', rowClass: 'w-28' },
+    { key: 'LastModified', label: 'Last modified', class: 'w-36', rowClass: 'w-36' },
     { key: 'Status', label: 'Status', class: 'w-48', rowClass: 'w-48' },
-    { key: 'actions', label: 'Actions', class: 'w-24', rowClass: 'w-24' },
+    { key: 'actions', label: '', class: 'w-14', rowClass: 'w-14' },
   ];
 </script>
 
 <template>
   <div class="space-y-4">
-    <span
-      class="bg-background-dark-grey text-muted inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs"
-    >
-      <UIcon name="i-heroicons-lock-closed" class="h-3.5 w-3.5" aria-hidden="true" />
-      Lab managers and above
-    </span>
-
     <div
       v-if="!lab?.S3Bucket"
       class="border-stroke-light text-muted rounded-2xl border bg-white p-6 text-sm"
@@ -321,56 +363,109 @@
 
     <template v-else>
       <!-- Stats -->
-      <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div class="border-stroke-light rounded-2xl border bg-white p-4">
+      <div
+        class="border-stroke-light divide-stroke-light grid grid-cols-2 divide-y overflow-hidden rounded-2xl border bg-white lg:grid-cols-4 lg:divide-x lg:divide-y-0"
+        role="group"
+        aria-label="Lab storage summary"
+      >
+        <div class="p-4">
           <USkeleton v-if="isLoading" class="h-8 w-24" />
           <p v-else class="text-heading text-2xl font-semibold">{{ compactSize(summary?.TotalBytes ?? 0) }}</p>
-          <p class="text-muted text-xs">Total stored in this lab</p>
+          <p class="text-muted mt-1 text-xs">{{ monthlyCostSubtitle }}</p>
         </div>
-        <div class="border-stroke-light rounded-2xl border bg-white p-4">
+        <div class="p-4">
           <USkeleton v-if="isLoading" class="h-8 w-24" />
-          <p v-else class="text-heading text-2xl font-semibold">{{ compactSize(summary?.AttachedBytes ?? 0) }}</p>
-          <p class="text-muted text-xs">Attached to a run</p>
-        </div>
-        <div class="border-alert-caution bg-alert-caution-muted rounded-2xl border p-4">
-          <USkeleton v-if="isLoading" class="h-8 w-24" />
-          <p v-else class="text-alert-caution text-2xl font-semibold">
+          <p v-else class="text-heading text-2xl font-semibold">
             {{ compactSize(summary?.NoRunRecordBytes ?? 0) }}
           </p>
-          <p class="text-muted text-xs">
-            {{ (summary?.NoRunRecordFileCount ?? 0).toLocaleString() }} files with no run record
+          <p class="text-muted mt-1 text-xs">
+            Not linked to a run · {{ (summary?.NoRunRecordFileCount ?? 0).toLocaleString() }} files
           </p>
+          <button
+            type="button"
+            class="text-primary mt-2 text-sm font-medium hover:underline"
+            @click="reviewUnattached"
+          >
+            Review
+          </button>
         </div>
-        <div class="border-stroke-light rounded-2xl border bg-white p-4">
+        <div class="p-4">
           <USkeleton v-if="isLoading" class="h-8 w-24" />
-          <p v-else class="text-heading text-2xl font-semibold">{{ summary?.ProtectedItemCount ?? 0 }}</p>
-          <p class="text-muted text-xs">Protected from deletion</p>
+          <p v-else class="text-heading text-2xl font-semibold">{{ protectedRunLabel }}</p>
+          <p class="text-muted mt-1 text-xs">Protected from deletion</p>
+        </div>
+        <div class="p-4">
+          <USkeleton v-if="isLoading" class="h-8 w-24" />
+          <p v-else class="text-heading text-2xl font-semibold">{{ retentionMonthsLabel }}</p>
+          <p class="text-muted mt-1 text-xs">Automatic retention</p>
+          <button
+            v-if="canEditRetention"
+            type="button"
+            class="text-primary mt-2 text-sm font-medium hover:underline"
+            @click="isRetentionEditorOpen ? closeRetentionEditor() : openRetentionEditor()"
+          >
+            {{ isRetentionEditorOpen ? 'Close' : 'Edit' }}
+          </button>
+          <p v-else class="text-muted mt-2 text-xs">Only an organization admin can change this.</p>
         </div>
       </div>
 
-      <p class="text-muted text-xs">
-        {{ noRunRecordSavingLine }}
-        <span v-if="summary?.ScannedAt">Scanned {{ formatRelativeDateTime(summary.ScannedAt) }}.</span>
-      </p>
+      <!-- Retention editor (opened from Edit on the retention pill) -->
+      <section
+        v-if="isRetentionEditorOpen && canEditRetention"
+        aria-labelledby="lab-storage-retention-heading"
+        class="border-stroke-light rounded-2xl border bg-white p-4"
+      >
+        <h2 id="lab-storage-retention-heading" class="sr-only">Edit automatic retention</h2>
+        <div class="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:items-start">
+          <EGFormGroup
+            label="Clear run outputs and sample sheets after"
+            name="RunRetentionMonths"
+            :error="retentionError"
+          >
+            <USelect
+              :model-value="retentionMonths"
+              :options="retentionMonthOptions"
+              :disabled="isSavingRetention"
+              aria-describedby="lab-storage-retention-help"
+              @update:model-value="retentionMonths = Number($event)"
+            />
+            <p id="lab-storage-retention-help" class="text-muted mt-1 text-xs">
+              Counted from when the run finished. Protected runs are always skipped.
+            </p>
+          </EGFormGroup>
+          <div class="space-y-3 md:pt-8">
+            <UCheckbox
+              v-model="includePrePolicyData"
+              :disabled="isSavingRetention"
+              label="Also apply to data from before this policy"
+            />
+            <UCheckbox
+              v-model="keepInputData"
+              :disabled="isSavingRetention"
+              label="Keep input data (sequencing reads)"
+            />
+          </div>
+        </div>
+        <div class="mt-4 flex justify-end gap-2">
+          <EGButton
+            :size="ButtonSizeEnum.enum.sm"
+            :variant="ButtonVariantEnum.enum.secondary"
+            label="Cancel"
+            :disabled="isSavingRetention"
+            @click="closeRetentionEditor"
+          />
+          <EGButton
+            :size="ButtonSizeEnum.enum.sm"
+            label="Save"
+            :disabled="!retentionDirty || !!retentionError || isSavingRetention || isLoadingRetentionPreview"
+            :loading="isSavingRetention || isLoadingRetentionPreview"
+            @click="handleSaveRetention"
+          />
+        </div>
+      </section>
 
-      <!-- Type tabs -->
-      <div role="tablist" aria-label="Filter by type" class="border-stroke-light flex gap-6 border-b">
-        <button
-          v-for="tab in typeTabs"
-          :key="tab.key"
-          type="button"
-          role="tab"
-          :aria-selected="typeTab === tab.key"
-          class="-mb-px flex items-center gap-2 border-b-2 pb-2 text-sm"
-          :class="typeTab === tab.key ? 'border-primary text-heading font-semibold' : 'text-muted border-transparent'"
-          @click="typeTab = tab.key"
-        >
-          {{ tab.label }}
-          <span class="bg-background-light-grey rounded-full px-2 text-xs">{{ tab.count }}</span>
-        </button>
-      </div>
-
-      <!-- Search + age -->
+      <!-- Search + filters -->
       <div class="flex flex-wrap items-center gap-3">
         <EGSearchInput
           class="w-full max-w-sm"
@@ -378,54 +473,51 @@
           placeholder="Search runs, samples or paths"
           @input-event="searchQuery = $event"
         />
-        <div role="group" aria-label="Filter by age" class="flex flex-wrap gap-2">
-          <button
-            v-for="filter in ageFilters"
-            :key="String(filter.key)"
-            type="button"
-            :aria-pressed="ageFilter === filter.key"
-            class="rounded-full border px-4 py-3 text-sm leading-none"
-            :class="
-              ageFilter === filter.key
-                ? 'border-primary bg-primary-muted text-primary'
-                : 'border-stroke-light text-body bg-white'
-            "
-            @click="ageFilter = filter.key"
-          >
-            {{ filter.label }}
-          </button>
-        </div>
+        <USelect
+          :model-value="typeFilter"
+          :options="typeFilterOptions"
+          class="w-48"
+          aria-label="Filter by type"
+          :ui="filterSelectUi"
+          @update:model-value="typeFilter = $event"
+        />
+        <USelect
+          :model-value="ageFilter"
+          :options="ageFilterOptions"
+          class="w-52"
+          aria-label="Filter by age"
+          :ui="filterSelectUi"
+          @update:model-value="ageFilter = $event"
+        />
       </div>
 
-      <!-- Bulk actions -->
-      <div
-        v-if="selectedIds.size > 0"
-        class="bg-primary-muted flex items-center justify-between rounded-2xl px-4 py-2 text-sm"
-        role="region"
-        aria-label="Selected items"
-      >
-        <span>{{ selectedIds.size }} selected · {{ compactSize(selectedBytes) }}</span>
-        <div class="flex gap-2">
-          <EGButton
-            :size="ButtonSizeEnum.enum.sm"
-            :variant="ButtonVariantEnum.enum.secondary"
-            label="Protect"
-            icon="i-heroicons-lock-closed"
-            :disabled="isMutating"
-            @click="protectSelected"
-          />
-          <EGButton
-            :size="ButtonSizeEnum.enum.sm"
-            :variant="ButtonVariantEnum.enum.destructive"
-            label="Delete"
-            icon="i-heroicons-trash"
-            :disabled="isMutating"
-            @click="confirmDelete([...selectedIds])"
-          />
+      <div class="lab-storage-table" :class="{ 'lab-storage-table--selecting': selectedIds.size > 0 }">
+        <div
+          v-if="selectedIds.size > 0"
+          class="lab-storage-table__selection bg-primary-muted flex items-center justify-between px-4 py-3"
+          role="region"
+          aria-label="Selected items"
+        >
+          <span class="text-heading text-sm font-semibold">
+            {{ selectedIds.size }} selected · {{ compactSize(selectedBytes) }}
+          </span>
+          <div class="flex gap-2">
+            <EGButton
+              :size="ButtonSizeEnum.enum.sm"
+              :variant="ButtonVariantEnum.enum.secondary"
+              label="Clear"
+              :disabled="isMutating"
+              @click="selectedIds = new Set()"
+            />
+            <EGButton
+              :size="ButtonSizeEnum.enum.sm"
+              :variant="ButtonVariantEnum.enum.destructive"
+              label="Delete"
+              :disabled="isMutating"
+              @click="confirmDelete([...selectedIds])"
+            />
+          </div>
         </div>
-      </div>
-
-      <div class="lab-storage-table">
         <EGTable :table-data="filteredItems" :columns="columns" :is-loading="isLoading" :show-pagination="!isLoading">
           <template #select-header>
             <UCheckbox
@@ -447,139 +539,42 @@
             />
           </template>
           <template #Name-data="{ row }">
-            <div class="flex min-w-0 items-start gap-2">
-              <span
-                class="bg-background-light-grey text-muted inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
-              >
-                <UIcon :name="typeMeta[row.Type as LaboratoryStorageItemType].icon" class="h-4 w-4" />
-              </span>
-              <div class="min-w-0">
-                <p class="text-heading truncate text-sm font-semibold">{{ row.Name }}</p>
-                <p class="text-muted/70 mt-0.5 truncate font-mono text-xs">{{ row.Path }}</p>
-              </div>
+            <div class="min-w-0">
+              <p class="text-heading truncate text-sm font-semibold">{{ row.Name }}</p>
+              <p class="text-muted mt-0.5 truncate text-xs">{{ itemSubtitle(row) }}</p>
             </div>
           </template>
-          <template #Type-data="{ row }">
-            <p class="text-body text-sm">{{ typeMeta[row.Type as LaboratoryStorageItemType].label }}</p>
-            <p class="text-muted text-xs">{{ row.Detail }}</p>
-          </template>
-          <template #FileCount-data="{ row }">
-            <span class="text-body text-sm">{{ row.FileCount.toLocaleString() }}</span>
-          </template>
           <template #SizeBytes-data="{ row }">
-            <span class="text-heading text-sm font-semibold">{{ compactSize(row.SizeBytes) }}</span>
+            <span class="text-body text-sm">{{ compactSize(row.SizeBytes) }}</span>
           </template>
           <template #LastModified-data="{ row }">
             <span class="text-body text-sm">{{ formatRelativeDateTime(row.LastModified) ?? '—' }}</span>
           </template>
           <template #Status-data="{ row }">
             <span
-              class="inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase"
-              :class="statusChip(row).class"
+              v-if="statusFlag(row)"
+              class="text-body inline-flex items-center gap-2 text-sm"
             >
-              {{ statusChip(row).label }}
+              <span
+                class="h-2 w-2 shrink-0 rounded-full"
+                :class="statusFlag(row)?.dotClass"
+                aria-hidden="true"
+              />
+              {{ statusFlag(row)?.label }}
             </span>
-            <p v-if="statusChip(row).note" class="text-muted mt-1 text-xs">{{ statusChip(row).note }}</p>
           </template>
           <template #actions-data="{ row }">
-            <div class="flex gap-2">
-              <UButton
-                :icon="protection(row) === 'Unprotected' ? 'i-heroicons-lock-open' : 'i-heroicons-lock-closed'"
-                size="xs"
-                :color="protection(row) === 'Protected' ? 'primary' : 'gray'"
-                :variant="protection(row) === 'Unprotected' ? 'outline' : 'soft'"
-                :disabled="row.FileCount === 0 || isMutating"
-                :aria-label="protection(row) === 'Protected' ? `Unprotect ${row.Name}` : `Protect ${row.Name}`"
-                :title="protection(row) === 'Protected' ? 'Allow deletion' : 'Protect from deletion'"
-                :ui="{ rounded: 'rounded-full' }"
-                @click="toggleProtection(row)"
-              />
-              <UButton
-                icon="i-heroicons-trash"
-                size="xs"
-                color="gray"
-                variant="outline"
-                :disabled="!!deleteBlockedReason(row) || isMutating"
-                :aria-label="`Delete ${row.Name}`"
-                :title="deleteBlockedReason(row) ?? 'Delete'"
-                :ui="{ rounded: 'rounded-full' }"
-                @click="confirmDelete([row.ItemId])"
+            <div class="flex justify-end" @click.stop>
+              <EGActionButton
+                compact
+                :menu-label="`Actions for ${row.Name}`"
+                :items="rowActionItems(row)"
               />
             </div>
           </template>
         </EGTable>
       </div>
     </template>
-
-    <!-- Automatic retention -->
-    <section
-      aria-labelledby="lab-storage-retention-heading"
-      class="border-stroke-light rounded-2xl border bg-white"
-    >
-      <div class="border-stroke-light flex items-center justify-between border-b px-4 py-3">
-        <h2 id="lab-storage-retention-heading" class="text-heading text-sm font-semibold">Automatic retention</h2>
-        <span class="text-muted text-xs">Moved here from Lab Settings</span>
-      </div>
-      <div class="grid gap-6 p-4 md:grid-cols-3">
-        <EGFormGroup label="Run retention (months)" name="RunRetentionMonths" :error="retentionError">
-          <EGInput
-            v-model.number="retentionMonths"
-            type="number"
-            min="0"
-            max="120"
-            step="1"
-            :disabled="!canEditRetention || isSavingRetention"
-            aria-describedby="lab-storage-retention-help"
-          />
-          <p id="lab-storage-retention-help" class="text-muted mt-1 text-xs">
-            0 = never delete run records. Applies to outputs and sample sheets. Protected runs are always skipped.
-          </p>
-        </EGFormGroup>
-        <div>
-          <UCheckbox
-            v-model="includePrePolicyData"
-            :disabled="!canEditRetention || isSavingRetention"
-            label="Apply to data created before this policy"
-            aria-describedby="lab-storage-pre-policy-help"
-          />
-          <p id="lab-storage-pre-policy-help" class="text-muted mt-1 pl-6 text-xs">
-            Without it, anything already in the bucket when the policy was set stays forever, which is how unattached
-            data builds up.
-          </p>
-        </div>
-        <div>
-          <UCheckbox
-            v-model="keepInputData"
-            :disabled="!canEditRetention || isSavingRetention"
-            label="Keep input data"
-            aria-describedby="lab-storage-keep-input-help"
-          />
-          <p id="lab-storage-keep-input-help" class="text-muted mt-1 pl-6 text-xs">
-            Retention clears outputs and sample sheets only. Sequencing reads stay until deleted from the list above.
-          </p>
-        </div>
-      </div>
-      <p v-if="!canEditRetention" class="text-muted px-4 pb-4 text-xs">
-        Only an organization admin can change this lab's retention.
-      </p>
-    </section>
-
-    <div v-if="canEditRetention" class="flex gap-2">
-      <EGButton
-        :size="ButtonSizeEnum.enum.sm"
-        label="Save Changes"
-        :disabled="!retentionDirty || !!retentionError || isSavingRetention || isLoadingRetentionPreview"
-        :loading="isSavingRetention || isLoadingRetentionPreview"
-        @click="handleSaveRetention"
-      />
-      <EGButton
-        :size="ButtonSizeEnum.enum.sm"
-        :variant="ButtonVariantEnum.enum.secondary"
-        label="Cancel"
-        :disabled="!retentionDirty || isSavingRetention"
-        @click="resetRetentionForm"
-      />
-    </div>
 
     <EGDialog
       v-model="isDeleteDialogOpen"
@@ -623,6 +618,47 @@
 </template>
 
 <style scoped lang="scss">
+  /*
+   * Card chrome wraps selection + EGTable's UCard only. EGTable's pagination footer is a
+   * sibling root node — leave it outside the bordered panel.
+   */
+  .lab-storage-table {
+    display: flex;
+    flex-direction: column;
+
+    &__selection {
+      border: 1px solid #e5e5e5; // stroke-light
+      border-bottom: 0;
+      border-radius: 1rem 1rem 0 0;
+    }
+
+    :deep(> .rounded-2xl) {
+      border: 1px solid #e5e5e5;
+      border-radius: 1rem;
+      background: #fff;
+      box-shadow: none;
+      overflow: hidden;
+    }
+
+    &--selecting :deep(> .rounded-2xl) {
+      border-top-left-radius: 0 !important;
+      border-top-right-radius: 0 !important;
+    }
+
+    /* Square thead top corners under the selection bar (avoids white triangles). */
+    &--selecting :deep(table),
+    &--selecting :deep(thead),
+    &--selecting :deep(thead tr),
+    &--selecting :deep(thead th) {
+      border-top-left-radius: 0 !important;
+      border-top-right-radius: 0 !important;
+    }
+
+    &--selecting :deep(> .rounded-2xl .rounded-2xl) {
+      border-radius: 0 !important;
+    }
+  }
+
   /* EGTable assumes the first column is the wide name column; here the checkbox is first. */
   .lab-storage-table :deep(table) {
     thead tr th:first-child,
