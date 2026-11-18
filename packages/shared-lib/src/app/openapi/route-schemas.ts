@@ -257,6 +257,15 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
       { name: 'month', required: false, description: 'YYYY-MM; required when period is month' },
     ],
   },
+  'GET /easy-genomics/usage/list-run-limit-events': {
+    response: 'RunLimitEventsResponse',
+    query: [
+      { name: 'organizationId', required: true, description: 'Organization UUID' },
+      { name: 'period', required: true, description: 'month, 30d, 60d or 90d; rolling periods end today (UTC)' },
+      { name: 'month', required: false, description: 'YYYY-MM; required when period is month' },
+      { name: 'kind', required: true, description: 'warned or blocked' },
+    ],
+  },
   'DELETE /easy-genomics/laboratory/delete-laboratory/{id}': {},
   'GET /easy-genomics/laboratory/list-laboratories': {
     response: 'Laboratory',

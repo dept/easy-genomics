@@ -113,6 +113,8 @@ export class UsageNestedStack extends NestedStack {
     const healthOmicsRatesParameterArn = `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/${this.props.namePrefix}/healthomics-rates/current`;
     const laboratoryTableArn = `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-table`;
     const laboratoryRunTableArn = `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-laboratory-run-table`;
+    const runLimitEventTableArn = `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-run-limit-event-table`;
+    const userTableArn = `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-user-table`;
     const usageDailyTotalTableArn = `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-usage-daily-total-table`;
 
     // /easy-genomics/usage/update-laboratory-run-limits
@@ -179,6 +181,21 @@ export class UsageNestedStack extends NestedStack {
       new PolicyStatement({
         resources: [laboratoryTableArn],
         actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
+    // /easy-genomics/usage/list-run-limit-events
+    // UserService.listUsers reads names with a BatchGetItem on the user table.
+    this.iam.addPolicyStatements('/easy-genomics/usage/list-run-limit-events', [
+      new PolicyStatement({
+        resources: [runLimitEventTableArn],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [userTableArn],
+        actions: ['dynamodb:BatchGetItem'],
         effect: Effect.ALLOW,
       }),
     ]);
