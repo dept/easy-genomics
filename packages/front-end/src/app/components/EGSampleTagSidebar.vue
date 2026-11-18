@@ -43,18 +43,9 @@
 
   const setsMatchingSearch = computed(() => filterSamplesBySearch(props.samples, props.tags, props.search));
 
-  const sidebarTags = computed(() => sidebarTagsForSamples(props.tags, setsMatchingSearch.value));
+  const sidebarTags = computed(() => sidebarTagsForSamples(props.tags));
 
   const permanentSampleCount = computed(() => setsMatchingSearch.value.filter((s) => s.IsPermanent).length);
-
-  watch(permanentSampleCount, (count) => {
-    const permanentTagId = props.tags.find((t) => t.Kind === 'permanent')?.TagId;
-    if (!permanentTagId || count > 0 || !props.tagsFilterTagIds.includes(permanentTagId)) return;
-    emit(
-      'update:tagsFilterTagIds',
-      props.tagsFilterTagIds.filter((id) => id !== permanentTagId),
-    );
-  });
 
   function standardTagIdsForSet(setId: string): string[] {
     const tagIdSet = new Set(standardTags.value.map((t) => t.TagId));
