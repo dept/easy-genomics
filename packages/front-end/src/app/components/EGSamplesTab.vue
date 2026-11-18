@@ -10,9 +10,11 @@
   import { useToastStore, useUiStore } from '@FE/stores';
   import { SAMPLE_LAYOUT_LABELS } from '@FE/utils/data-collections-selection';
   import {
+    countPermanentInSelection,
     filterSamplesBySearch,
     formatRetentionExpiryLabel,
     sampleMatchesTagIds,
+    sidebarTagsForSamples,
   } from '@FE/utils/data-collections-filters';
   import { exceedsTagNameMaxLength } from '@FE/utils/data-collections-name-validation';
 
@@ -88,6 +90,7 @@
 
   const standardTags = computed(() => props.tags.filter((t) => (t.Kind ?? 'standard') === 'standard'));
   const permanentTag = computed(() => props.tags.find((t) => t.Kind === 'permanent'));
+  const assignableTags = computed(() => sidebarTagsForSamples(props.tags));
   const batchTags = computed(() => props.tags.filter((t) => t.Kind === 'batch'));
 
   type SampleSection = {
@@ -165,6 +168,9 @@
         counts.set(tid, (counts.get(tid) || 0) + 1);
       }
     }
+    const permanentId = permanentTag.value?.TagId;
+    const permanentCount = permanentId ? countPermanentInSelection(props.samples, sel) : 0;
+    if (permanentId && permanentCount > 0) counts.set(permanentId, permanentCount);
     return [...counts.entries()]
       .map(([tagId, count]) => ({ tagId, count }))
       .sort((a, b) => {
@@ -1020,7 +1026,15 @@
                   class="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
                   :style="{ background: tagById(row.tagId)?.ColorHex || '#ccc' }"
                 />
-                <span class="truncate font-medium">{{ tagById(row.tagId)?.Name ?? row.tagId }}</span>
+                <span class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span class="truncate font-medium">{{ tagById(row.tagId)?.Name ?? row.tagId }}</span>
+                  <span
+                    v-if="tagById(row.tagId)?.Kind === 'permanent'"
+                    class="text-muted shrink-0 text-[10px] font-normal"
+                  >
+                    Protect from expiry
+                  </span>
+                </span>
               </span>
               <span class="text-muted shrink-0 text-xs tabular-nums">{{ row.count }} / {{ selectedIds.length }}</span>
             </li>
@@ -1031,7 +1045,7 @@
           <h3 class="text-muted mb-3 text-xs font-semibold uppercase tracking-wide">Add Tags</h3>
           <ul class="max-h-56 space-y-2 overflow-y-auto pr-1 text-sm">
             <li
-              v-for="t in standardTags"
+              v-for="t in assignableTags"
               :key="'add-' + t.TagId"
               class="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 hover:bg-gray-50"
             >
@@ -1042,7 +1056,12 @@
                 @update:model-value="toggleBulkAddTag(t.TagId)"
               />
               <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: t.ColorHex }" />
-              <span class="truncate">{{ t.Name }}</span>
+              <span class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span class="truncate">{{ t.Name }}</span>
+                <span v-if="t.Kind === 'permanent'" class="text-muted shrink-0 text-[10px] font-normal">
+                  Protect from expiry
+                </span>
+              </span>
             </li>
           </ul>
           <div class="mt-3 border-t border-gray-100 pt-3">
@@ -1105,7 +1124,12 @@
                 class="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
                 :style="{ background: tagById(tid)?.ColorHex || '#ccc' }"
               />
-              <span class="truncate">{{ tagById(tid)?.Name ?? tid }}</span>
+              <span class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span class="truncate">{{ tagById(tid)?.Name ?? tid }}</span>
+                <span v-if="tagById(tid)?.Kind === 'permanent'" class="text-muted shrink-0 text-[10px] font-normal">
+                  Protect from expiry
+                </span>
+              </span>
             </li>
           </ul>
         </div>

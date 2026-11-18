@@ -68,14 +68,20 @@ export function isExpiringSoon(opts: {
 }
 
 /**
- * Samples side list: user tags, plus Permanent once the current sample list has one.
- * Permanent is system-managed, so it is not created from the "New Tag" field.
+ * Samples side list: user tags, plus the system Permanent tag whenever the lab has one.
+ * It stays visible at count 0. Permanent is not created from the "New Tag" field.
  */
-export function sidebarTagsForSamples(tags: LaboratoryDataTag[], samples: LaboratorySample[]): LaboratoryDataTag[] {
+export function sidebarTagsForSamples(tags: LaboratoryDataTag[]): LaboratoryDataTag[] {
   const standard = tags.filter((t) => (t.Kind ?? 'standard') === 'standard');
   const permanent = tags.find((t) => t.Kind === 'permanent');
-  if (!permanent || !samples.some((s) => s.IsPermanent)) return standard;
-  return [...standard, permanent];
+  return permanent ? [...standard, permanent] : standard;
+}
+
+/** How many selected samples are permanent. The id is not in the sample's standard tag ids. */
+export function countPermanentInSelection(samples: LaboratorySample[], selectedIds: readonly string[]): number {
+  if (!selectedIds.length) return 0;
+  const selected = new Set(selectedIds);
+  return samples.filter((sample) => selected.has(sample.SampleId) && sample.IsPermanent).length;
 }
 
 /** Tag filter is OR. Permanent matches `IsPermanent` because that id is not stored in the sample's standard tag ids. */
