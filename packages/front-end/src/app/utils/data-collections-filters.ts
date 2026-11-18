@@ -84,6 +84,38 @@ export function countPermanentInSelection(samples: LaboratorySample[], selectedI
   return samples.filter((sample) => selected.has(sample.SampleId) && sample.IsPermanent).length;
 }
 
+/** Drag payload for dropping samples onto a side-list tag. */
+export const SAMPLE_DRAG_MIME = 'application/x-eg-sample-ids';
+
+/** Dragging a selected sample carries the whole selection. An unselected sample carries only itself. */
+export function sampleIdsForDrag(draggedId: string, selectedIds: readonly string[]): string[] {
+  return selectedIds.includes(draggedId) ? [...selectedIds] : [draggedId];
+}
+
+export function parseSampleDragPayload(raw: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((id): id is string => typeof id === 'string' && id.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+/** Samples that do not already have the dropped tag. Permanent is read from `IsPermanent`, not standard tag ids. */
+export function sampleIdsMissingTag(
+  sampleIds: readonly string[],
+  tagId: string,
+  sampleIdToTagIds: Record<string, string[]>,
+  permanentTagId: string | undefined,
+  permanentSampleIds: ReadonlySet<string>,
+): string[] {
+  return sampleIds.filter((id) => {
+    if (permanentTagId && tagId === permanentTagId) return !permanentSampleIds.has(id);
+    return !(sampleIdToTagIds[id] ?? []).includes(tagId);
+  });
+}
+
 /** Tag filter is OR. Permanent matches `IsPermanent` because that id is not stored in the sample's standard tag ids. */
 export function sampleMatchesTagIds(
   sample: LaboratorySample,

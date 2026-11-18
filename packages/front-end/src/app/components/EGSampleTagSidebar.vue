@@ -5,7 +5,12 @@
   import EGDialog from '@FE/components/EGDialog.vue';
   import { useToastStore, useUiStore } from '@FE/stores';
   import { ButtonVariantEnum } from '@FE/types/buttons';
-  import { filterSamplesBySearch, sidebarTagsForSamples } from '@FE/utils/data-collections-filters';
+  import {
+    filterSamplesBySearch,
+    parseSampleDragPayload,
+    SAMPLE_DRAG_MIME,
+    sidebarTagsForSamples,
+  } from '@FE/utils/data-collections-filters';
   import { exceedsTagNameMaxLength } from '@FE/utils/data-collections-name-validation';
 
   const props = defineProps<{
@@ -24,6 +29,7 @@
     'update:tagsFilterTagIds': [ids: string[]];
     'tag-created': [];
     'tag-deleted': [tagId: string];
+    'samples-dropped': [payload: { tagId: string; sampleIds: string[] }];
   }>();
 
   const { $api } = useNuxtApp();
@@ -38,6 +44,40 @@
   const isDeleteTagDialogOpen = ref(false);
 
   const presetColors = TAG_PRESET_COLORS;
+  const tagDropHighlightId = ref<string | null>(null);
+
+  function dragHasSamples(event: DragEvent): boolean {
+    return [...(event.dataTransfer?.types ?? [])].includes(SAMPLE_DRAG_MIME);
+  }
+
+  function onTagRowDragOver(event: DragEvent, tagId: string): void {
+    if (!dragHasSamples(event)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    tagDropHighlightId.value = tagId;
+  }
+
+  function onTagRowDragLeave(event: DragEvent, tagId: string): void {
+    const current = event.currentTarget as HTMLElement | null;
+    const related = event.relatedTarget as Node | null;
+    if (current && related && current.contains(related)) return;
+    if (tagDropHighlightId.value === tagId) tagDropHighlightId.value = null;
+  }
+
+  function onTagRowDrop(event: DragEvent, tagId: string): void {
+    tagDropHighlightId.value = null;
+    event.preventDefault();
+    const sampleIds = parseSampleDragPayload(event.dataTransfer?.getData(SAMPLE_DRAG_MIME) ?? '');
+    if (!sampleIds.length) return;
+    emit('samples-dropped', { tagId, sampleIds });
+  }
+
+  function clearTagDropHighlight(): void {
+    tagDropHighlightId.value = null;
+  }
+
+  onMounted(() => window.addEventListener('dragend', clearTagDropHighlight));
+  onBeforeUnmount(() => window.removeEventListener('dragend', clearTagDropHighlight));
 
   const standardTags = computed(() => props.tags.filter((t) => (t.Kind ?? 'standard') === 'standard'));
 
@@ -230,8 +270,14 @@
           v-for="t in sidebarTags"
           :key="t.TagId"
           class="hover:bg-primary-muted group flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm"
-          :class="{ 'bg-primary-muted font-medium': isStandardTagFilterActive(t.TagId) }"
+          :class="{
+            'bg-primary-muted font-medium': isStandardTagFilterActive(t.TagId),
+            'ring-primary ring-2 ring-inset': tagDropHighlightId === t.TagId,
+          }"
           @click="onStandardTagFilterClick(t.TagId)"
+          @dragover="onTagRowDragOver($event, t.TagId)"
+          @dragleave="onTagRowDragLeave($event, t.TagId)"
+          @drop="onTagRowDrop($event, t.TagId)"
         >
           <span class="flex min-w-0 items-center gap-2">
             <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: t.ColorHex }" />
