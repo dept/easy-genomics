@@ -256,15 +256,6 @@
   const retentionMonths = ref<number>(6);
   const includePrePolicyData = ref(true);
   const keepInputData = ref(false);
-  const retentionMonthOptions = computed(() => {
-    const presets = [0, 1, 2, 3, 6, 9, 12, 18, 24, 36, 48, 60, 120];
-    const current = lab.value?.RunRetentionMonths ?? 6;
-    const months = presets.includes(current) ? presets : [...presets, current].sort((a, b) => a - b);
-    return months.map((value) => ({
-      label: formatRetentionMonthsLabel(value),
-      value,
-    }));
-  });
 
   function resetRetentionForm() {
     retentionMonths.value = lab.value?.RunRetentionMonths ?? 6;
@@ -423,15 +414,19 @@
             name="RunRetentionMonths"
             :error="retentionError"
           >
-            <USelect
-              :model-value="retentionMonths"
-              :options="retentionMonthOptions"
+            <EGInput
+              v-model.number="retentionMonths"
+              type="number"
+              min="0"
+              max="120"
+              step="1"
+              suffix="months"
+              class="w-full"
               :disabled="isSavingRetention"
               aria-describedby="lab-storage-retention-help"
-              @update:model-value="retentionMonths = Number($event)"
             />
             <p id="lab-storage-retention-help" class="text-muted mt-1 text-xs">
-              Counted from when the run finished. Protected runs are always skipped.
+              Counted from when the run finished. Enter 0 to keep them forever. Protected runs are always skipped.
             </p>
           </EGFormGroup>
           <div class="space-y-3 md:pt-8">

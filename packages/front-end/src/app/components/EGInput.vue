@@ -39,8 +39,9 @@
     base: [
       '!shadow-none border-background-stroke-dark text-body bg-white disabled:text-muted disabled:bg-background-light-grey disabled:opacity-100',
       props.compact ? 'h-10' : 'h-13',
-      props.compact
-        ? '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+      // Hide native number spinners (Chrome/Safari/Firefox) — always, not only compact.
+      props.type === 'number'
+        ? '[appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
         : '',
     ].join(' '),
     rounded: 'rounded-md',
