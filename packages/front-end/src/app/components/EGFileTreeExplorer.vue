@@ -95,15 +95,17 @@
   const expandedIds = ref<Set<string>>(new Set());
   const focusedIndex = ref(0);
   const draftMarks = ref<Map<string, PendingMark>>(new Map());
-  const baselineSnapshot = ref('');
   const isRootLoading = ref(true);
   const isExpandingAll = ref(false);
-  const isSavingMarks = ref(false);
+  const isPersistingMarks = ref(false);
   const isMarkModalOpen = ref(false);
   const isMarkModalBusy = ref(false);
   const markModalNode = ref<TreeNode | null>(null);
   const markModalName = ref('');
   const markModalDescription = ref('');
+  const isUnmarkDialogOpen = ref(false);
+  const isUnmarkBusy = ref(false);
+  const unmarkTarget = ref<PendingMark | null>(null);
   const searchQuery = ref('');
   const searchResults = ref<TreeNode[]>([]);
   const isSearchLoading = ref(false);
@@ -128,15 +130,18 @@
     return outputLabelByKey.value.get(node.s3Key) || outputLabelByKey.value.get(node.relativePath) || node.outputLabel;
   }
 
-  /** Folder badge when any declared output lives under this relative path. */
-  function folderOutputLabel(relativePath: string): string | undefined {
+  /**
+   * Folder badge only when every file under this path is a marked match.
+   * Partial marks stay on the files themselves — do not bubble to ancestors.
+   */
+  function folderOutputLabel(relativePath: string, fileCount?: number): string | undefined {
+    if (fileCount == null || fileCount <= 0) return undefined;
     const prefix = relativePath.endsWith('/') ? relativePath : `${relativePath}/`;
-    for (const file of props.outputFiles) {
-      if (file.RelativePath === relativePath || file.RelativePath.startsWith(prefix)) {
-        return file.Label;
-      }
-    }
-    return undefined;
+    const under = props.outputFiles.filter(
+      (file) => file.RelativePath === relativePath || file.RelativePath.startsWith(prefix),
+    );
+    if (under.length < fileCount) return undefined;
+    return under[0]?.Label;
   }
 
   function transformResponse(response: S3TopLevelResponse, parentRelative: string): TreeNode[] {
@@ -168,7 +173,7 @@
           s3Key: prefix.Prefix,
           relativePath,
           children: [],
-          outputLabel: folderOutputLabel(relativePath),
+          outputLabel: undefined,
         });
       });
     }
@@ -234,7 +239,6 @@
     async () => {
       expandedIds.value = new Set();
       draftMarks.value = new Map();
-      baselineSnapshot.value = '';
       listing.clearCache();
       treeChildrenCache.value = new Map();
       searchQuery.value = '';
@@ -294,7 +298,9 @@
   function flattenVisible(nodes: TreeNode[], depth = 0): Array<TreeNode & { depth: number }> {
     const rows: Array<TreeNode & { depth: number }> = [];
     for (const node of nodes) {
-      rows.push({ ...node, depth, outputLabel: outputLabelFor(node) || folderOutputLabel(node.relativePath) });
+      const folderLabel =
+        node.type === 'directory' ? folderOutputLabel(node.relativePath, node.fileCount) : undefined;
+      rows.push({ ...node, depth, outputLabel: outputLabelFor(node) || folderLabel });
       if (node.type === 'directory' && expandedIds.value.has(node.id) && node.children?.length) {
         rows.push(...flattenVisible(node.children, depth + 1));
       }
@@ -390,23 +396,9 @@
     return node.relativePath;
   }
 
-  function draftSnapshot(marks: Map<string, PendingMark>): string {
-    return JSON.stringify(
-      [...marks.values()]
-        .map((mark) => ({
-          pathKey: mark.pathKey,
-          label: mark.label.trim(),
-          description: mark.description.trim(),
-          pattern: mark.pattern.trim(),
-        }))
-        .sort((a, b) => a.pathKey.localeCompare(b.pathKey)),
-    );
-  }
-
   function seedDraftFromDefinition(): void {
     if (!props.workflowId) {
       draftMarks.value = new Map();
-      baselineSnapshot.value = draftSnapshot(draftMarks.value);
       return;
     }
     const definition = keyOutputsStore.definitionFor(props.labId, props.workflowId);
@@ -433,45 +425,31 @@
       });
     }
     draftMarks.value = next;
-    baselineSnapshot.value = draftSnapshot(next);
+  }
+
+  /** Role covering this row — exact path, parent folder role, or run-match for a pattern. */
+  function markCoveringNode(node: TreeNode): PendingMark | undefined {
+    const pathKey = pathKeyFor(node);
+    const direct = draftMarks.value.get(pathKey);
+    if (direct) return direct;
+
+    for (const mark of draftMarks.value.values()) {
+      if (!mark.isFolder) continue;
+      if (pathKey === mark.pathKey || pathKey.startsWith(mark.pathKey)) return mark;
+    }
+
+    if (!props.runId) return undefined;
+    const matches = keyOutputsStore.matchesFor(props.labId, props.runId);
+    const role = matches?.KeyOutputs.find((item) =>
+      item.Matches.some((file) => file.RelativePath === node.relativePath || file.Key === node.s3Key),
+    );
+    if (!role) return undefined;
+    return [...draftMarks.value.values()].find((mark) => mark.keyOutputId === role.KeyOutputId);
   }
 
   function isSelected(node: TreeNode): boolean {
-    return draftMarks.value.has(pathKeyFor(node));
+    return !!markCoveringNode(node);
   }
-
-  const changeCount = computed(() => {
-    const current = draftSnapshot(draftMarks.value);
-    if (current === baselineSnapshot.value) return 0;
-    const currentRows = JSON.parse(current) as Array<{
-      pathKey: string;
-      label: string;
-      description: string;
-      pattern: string;
-    }>;
-    const baselineRows = JSON.parse(baselineSnapshot.value || '[]') as Array<{
-      pathKey: string;
-      label: string;
-      description: string;
-      pattern: string;
-    }>;
-    const baselineByPath = new Map(baselineRows.map((row) => [row.pathKey, row]));
-    const currentByPath = new Map(currentRows.map((row) => [row.pathKey, row]));
-    let changes = 0;
-    for (const [path, row] of currentByPath) {
-      const prev = baselineByPath.get(path);
-      if (!prev || prev.label !== row.label || prev.description !== row.description || prev.pattern !== row.pattern) {
-        changes += 1;
-      }
-    }
-    for (const path of baselineByPath.keys()) {
-      if (!currentByPath.has(path)) changes += 1;
-    }
-    return changes;
-  });
-
-  const hasMarkChanges = computed(() => changeCount.value > 0);
-  const totalSelectedResults = computed(() => draftMarks.value.size);
 
   const markBannerText = computed(() => {
     const workflow = props.workflowName?.trim() || 'this workflow';
@@ -493,6 +471,14 @@
     return size ? `1 file · ${size}` : '1 file';
   });
 
+  const unmarkDialogSecondary = computed(() => {
+    const mark = unmarkTarget.value;
+    if (!mark) return '';
+    return mark.label
+      ? `This removes “${mark.label}” from Selected results for every run of this workflow.`
+      : 'This removes the selected result for every run of this workflow.';
+  });
+
   function openMarkModal(node: TreeNode): void {
     markModalNode.value = node;
     const existing = draftMarks.value.get(pathKeyFor(node));
@@ -509,20 +495,52 @@
     isMarkModalBusy.value = false;
   }
 
+  function closeUnmarkDialog(): void {
+    if (isUnmarkBusy.value) return;
+    isUnmarkDialogOpen.value = false;
+    unmarkTarget.value = null;
+  }
+
   function onCheckboxClick(node: TreeNode): void {
-    if (isSelected(node)) {
-      const next = new Map(draftMarks.value);
-      next.delete(pathKeyFor(node));
-      draftMarks.value = next;
+    const covering = markCoveringNode(node);
+    if (covering) {
+      unmarkTarget.value = covering;
+      isUnmarkDialogOpen.value = true;
       return;
     }
     openMarkModal(node);
+  }
+
+  async function persistMarks(next: Map<string, PendingMark>, successMessage: string): Promise<boolean> {
+    if (!props.workflowId || !props.runId) return false;
+    const saved = await keyOutputsStore.save(
+      props.labId,
+      props.workflowId,
+      [...next.values()].map((mark) => ({
+        KeyOutputId: mark.keyOutputId,
+        Label: mark.label.trim(),
+        Description: mark.description.trim() || undefined,
+        Pattern: mark.pattern.trim(),
+        ExamplePath: mark.examplePath,
+      })),
+      {
+        WorkflowName: props.workflowName ?? undefined,
+        Platform: 'AWS HealthOmics',
+        SourceRunId: props.runId,
+      },
+    );
+    if (!saved) return false;
+    draftMarks.value = next;
+    toast.success(successMessage);
+    emit('marked');
+    return true;
   }
 
   async function confirmMarkModal(): Promise<void> {
     const node = markModalNode.value;
     if (!node || !props.runId || !markModalName.value.trim()) return;
     isMarkModalBusy.value = true;
+    isPersistingMarks.value = true;
     try {
       // Directory S3 keys end with `/`; preview rejects those — strip so folders become `dir/*`.
       const previewKey = node.s3Key.replace(/\/+$/, '');
@@ -546,47 +564,36 @@
         isFolder: node.type === 'directory',
         fileCount: node.fileCount,
       });
-      draftMarks.value = next;
-      closeMarkModal();
+      const saved = await persistMarks(next, 'Selected results updated.');
+      if (saved) closeMarkModal();
     } finally {
       isMarkModalBusy.value = false;
+      isPersistingMarks.value = false;
     }
   }
 
-  async function saveMarkedResults(): Promise<void> {
-    if (!props.workflowId || !props.runId || !hasMarkChanges.value) return;
-    isSavingMarks.value = true;
+  async function confirmUnmark(): Promise<void> {
+    const mark = unmarkTarget.value;
+    if (!mark) return;
+    isUnmarkBusy.value = true;
+    isPersistingMarks.value = true;
     try {
-      const saved = await keyOutputsStore.save(
-        props.labId,
-        props.workflowId,
-        [...draftMarks.value.values()].map((mark) => ({
-          KeyOutputId: mark.keyOutputId,
-          Label: mark.label.trim(),
-          Description: mark.description.trim() || undefined,
-          Pattern: mark.pattern.trim(),
-          ExamplePath: mark.examplePath,
-        })),
-        {
-          WorkflowName: props.workflowName ?? undefined,
-          Platform: 'AWS HealthOmics',
-          SourceRunId: props.runId,
-        },
-      );
-      if (!saved) return;
-      toast.success('Selected results updated.');
-      baselineSnapshot.value = draftSnapshot(draftMarks.value);
-      emit('update:markMode', false);
-      emit('marked');
+      const next = new Map(draftMarks.value);
+      next.delete(mark.pathKey);
+      const saved = await persistMarks(next, 'Selected result removed.');
+      if (saved) {
+        isUnmarkDialogOpen.value = false;
+        unmarkTarget.value = null;
+      }
     } finally {
-      isSavingMarks.value = false;
+      isUnmarkBusy.value = false;
+      isPersistingMarks.value = false;
     }
   }
 
-  function cancelMarkMode(): void {
-    draftMarks.value = new Map();
-    baselineSnapshot.value = '';
+  function exitMarkMode(): void {
     closeMarkModal();
+    closeUnmarkDialog();
     emit('update:markMode', false);
   }
 
@@ -601,11 +608,11 @@
       if (enabled) seedDraftFromDefinition();
       else {
         draftMarks.value = new Map();
-        baselineSnapshot.value = '';
         closeMarkModal();
+        closeUnmarkDialog();
       }
     },
-    // Mounts with markMode=true (Mark more / declareKeyOutputs) must seed or Save wipes existing roles.
+    // Mounts with markMode=true (Mark more / declareKeyOutputs) must seed existing roles.
     { immediate: true },
   );
 
@@ -667,7 +674,24 @@
     } else if (event.key === 'ArrowLeft') {
       event.preventDefault();
       const row = rows[focusedIndex.value];
-      if (row?.type === 'directory' && expandedIds.value.has(row.id)) void toggleExpand(row);
+      if (!row) return;
+      if (row.type === 'directory' && expandedIds.value.has(row.id)) {
+        void toggleExpand(row);
+        return;
+      }
+      // Close the containing folder and move focus to it.
+      if (row.depth > 0) {
+        for (let i = focusedIndex.value - 1; i >= 0; i -= 1) {
+          if (rows[i].depth === row.depth - 1) {
+            const parent = rows[i];
+            if (parent.type === 'directory' && expandedIds.value.has(parent.id)) {
+              void toggleExpand(parent);
+            }
+            focusedIndex.value = i;
+            return;
+          }
+        }
+      }
     } else if (event.key === 'Enter') {
       event.preventDefault();
       const row = rows[focusedIndex.value];
@@ -717,7 +741,7 @@
           s3Key: prefix.Prefix,
           relativePath: relative,
           children: [],
-          outputLabel: folderOutputLabel(relative),
+          outputLabel: undefined,
         };
       });
       const files = (response.Contents || []).map((item) => {
@@ -767,9 +791,9 @@
         :disabled="!!searchQuery.trim() || isRootLoading"
         @click="toggleExpandCollapseAll"
       />
-      <div v-if="!markMode" class="ml-auto flex flex-wrap items-center gap-2">
+      <div class="ml-auto flex flex-wrap items-center gap-2">
         <EGButton
-          v-if="canMarkResults"
+          v-if="canMarkResults && !markMode"
           :size="ButtonSizeEnum.enum.sm"
           :variant="ButtonVariantEnum.enum.secondary"
           icon="i-heroicons-flag"
@@ -778,6 +802,15 @@
           @click="enterMarkMode"
         />
         <EGButton
+          v-if="markMode"
+          :size="ButtonSizeEnum.enum.sm"
+          :variant="ButtonVariantEnum.enum.secondary"
+          label="Done"
+          :disabled="isPersistingMarks"
+          @click="exitMarkMode"
+        />
+        <EGButton
+          v-if="!markMode"
           :size="ButtonSizeEnum.enum.sm"
           :variant="ButtonVariantEnum.enum.primary"
           icon="i-heroicons-arrow-down-tray"
@@ -807,7 +840,7 @@
       @keydown="onKeydown"
     >
       <div
-        class="text-muted grid grid-cols-[minmax(0,1fr)_7rem_6rem_2.5rem] gap-2 border-b border-gray-100 px-4 py-2 text-xs font-medium uppercase tracking-wide"
+        class="text-muted grid grid-cols-[minmax(0,1fr)_7rem_6rem_5.5rem] gap-2 border-b border-gray-100 px-4 py-2 text-xs font-medium uppercase tracking-wide"
       >
         <span>Name</span>
         <span class="text-right">Files</span>
@@ -824,7 +857,7 @@
           v-for="(row, index) in visibleRows"
           :key="row.id"
           role="row"
-          class="grid grid-cols-[minmax(0,1fr)_7rem_6rem_2.5rem] items-center gap-2 px-4 py-2.5 text-sm"
+          class="grid grid-cols-[minmax(0,1fr)_7rem_6rem_5.5rem] items-center gap-2 px-4 py-2.5 text-sm"
           :class="[
             index === focusedIndex && !isSelected(row) ? 'bg-primary-muted/40' : 'hover:bg-gray-50',
             markMode && isSelected(row) ? 'ring-primary/40 bg-primary-muted/20 ring-1 ring-inset' : '',
@@ -841,6 +874,7 @@
               type="checkbox"
               class="border-stroke-light text-primary h-4 w-4 shrink-0 rounded"
               :checked="isSelected(row)"
+              :disabled="isPersistingMarks"
               :aria-label="`Mark ${row.name}`"
               @click.prevent.stop="onCheckboxClick(row)"
             />
@@ -886,7 +920,7 @@
           <span class="text-muted text-right tabular-nums">
             {{ row.type === 'directory' ? formatBytes(row.totalSize) || '—' : formatBytes(row.size) || '—' }}
           </span>
-          <div class="flex justify-end">
+          <div class="flex justify-end gap-2">
             <button
               v-if="isHtml(row)"
               type="button"
@@ -910,50 +944,6 @@
       </ul>
 
       <p class="text-muted border-t border-gray-100 px-4 py-3 text-xs">{{ footerLabel }}</p>
-    </div>
-
-    <div
-      v-if="markMode"
-      class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-neutral-900 px-4 py-3 text-white"
-      role="region"
-      aria-label="Mark results actions"
-    >
-      <p class="text-sm text-white/80">
-        <span :class="hasMarkChanges ? 'font-medium text-white' : 'font-medium text-white/60'">
-          {{
-            hasMarkChanges
-              ? `${changeCount.toLocaleString()} ${changeCount === 1 ? 'change' : 'changes'}`
-              : 'No changes yet'
-          }}
-        </span>
-        <span class="text-white/60">
-          · {{ totalSelectedResults.toLocaleString() }} selected
-          {{ totalSelectedResults === 1 ? 'result' : 'results' }} in total
-        </span>
-      </p>
-      <div class="flex items-center gap-3">
-        <button
-          type="button"
-          class="text-sm text-white/80 hover:text-white"
-          :disabled="isSavingMarks"
-          @click="cancelMarkMode"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed"
-          :class="hasMarkChanges ? 'bg-white text-neutral-900 hover:bg-white/90' : 'bg-neutral-700 text-white/50'"
-          :disabled="!hasMarkChanges || isSavingMarks"
-          @click="saveMarkedResults"
-        >
-          <span v-if="isSavingMarks" class="inline-flex items-center gap-2">
-            <UIcon name="i-heroicons-arrow-path" class="h-4 w-4 animate-spin" aria-hidden="true" />
-            Save
-          </span>
-          <span v-else>Save</span>
-        </button>
-      </div>
     </div>
 
     <UModal
@@ -1007,5 +997,19 @@
         </div>
       </div>
     </UModal>
+
+    <EGDialog
+      v-model="isUnmarkDialogOpen"
+      primary-message="Unmark this result?"
+      :secondary-message="unmarkDialogSecondary"
+      action-label="Confirm"
+      :action-variant="ButtonVariantEnum.enum.destructive"
+      cancel-label="Cancel"
+      :cancel-variant="ButtonVariantEnum.enum.secondary"
+      :loading="isUnmarkBusy"
+      :buttons-disabled="isUnmarkBusy"
+      @action-triggered="confirmUnmark"
+      @update:model-value="(open) => !open && closeUnmarkDialog()"
+    />
   </section>
 </template>
