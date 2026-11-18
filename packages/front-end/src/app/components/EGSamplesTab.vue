@@ -13,6 +13,9 @@
     countPermanentInSelection,
     filterSamplesBySearch,
     formatRetentionExpiryLabel,
+    SAMPLE_DRAG_MIME,
+    sampleIdsForDrag,
+    sampleIdsMissingTag,
     sampleMatchesTagIds,
     sidebarTagsForSamples,
   } from '@FE/utils/data-collections-filters';
@@ -521,6 +524,41 @@
     }
   }
 
+  function onSampleDragStart(event: DragEvent, sampleId: string): void {
+    const ids = sampleIdsForDrag(sampleId, props.selectedIds);
+    event.dataTransfer?.setData(SAMPLE_DRAG_MIME, JSON.stringify(ids));
+    event.dataTransfer?.setData('text/plain', 'samples');
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+  }
+
+  async function onSamplesDropped(tagId: string, sampleIds: string[]): Promise<void> {
+    const permanentSampleIds = new Set(props.samples.filter((s) => s.IsPermanent).map((s) => s.SampleId));
+    const missing = sampleIdsMissingTag(
+      sampleIds,
+      tagId,
+      props.sampleIdToTagIds,
+      permanentTag.value?.TagId,
+      permanentSampleIds,
+    );
+    if (!missing.length) {
+      toast.info(
+        sampleIds.length === 1 ? 'Tag already applied to that sample.' : 'Tag already applied to those samples.',
+      );
+      return;
+    }
+    uiStore.setRequestPending('dataCollectionsMutate');
+    try {
+      await addTagsToSamplesInChunks(missing, [tagId], []);
+      toast.success('Tags updated');
+      emit('update:selectedIds', []);
+      emit('tags-updated');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      uiStore.setRequestComplete('dataCollectionsMutate');
+    }
+  }
+
   async function applyBulkChanges(): Promise<void> {
     if (!props.selectedIds.length) return;
     const setIds = [...props.selectedIds];
@@ -564,6 +602,7 @@
         @update:tags-filter-tag-ids="emit('update:tagsFilterTagIds', $event)"
         @tag-created="emit('tag-created')"
         @tag-deleted="emit('tag-deleted', $event)"
+        @samples-dropped="onSamplesDropped($event.tagId, $event.sampleIds)"
       />
 
       <div class="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -747,6 +786,8 @@
                   }"
                   :aria-selected="isSelected(s.SampleId)"
                   :aria-label="`${s.Name}, ${contentsLabel(s)}${s.IsPermanent ? ', kept permanently' : ''}`"
+                  draggable="true"
+                  @dragstart="onSampleDragStart($event, s.SampleId)"
                   @click="toggle(s.SampleId)"
                   @keydown="onSampleItemKeydown($event, s.SampleId)"
                 >
@@ -884,6 +925,8 @@
                       'relative z-[80]': analysisPopoverOpenKey === s.SampleId,
                     }"
                     :aria-selected="isSelected(s.SampleId)"
+                    draggable="true"
+                    @dragstart="onSampleDragStart($event, s.SampleId)"
                     @click="toggle(s.SampleId)"
                     @keydown="onSampleItemKeydown($event, s.SampleId)"
                   >
