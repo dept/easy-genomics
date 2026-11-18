@@ -20,7 +20,6 @@
   const uiStore = useUiStore();
 
   const DAY_MS = 24 * 60 * 60 * 1000;
-  const BYTES_PER_GB = 1024 ** 3;
 
   const lab = computed(() => labsStore.labs[props.labId]);
   const summary = computed(() => storageStore.labStorage[props.labId]);
@@ -40,11 +39,6 @@
   function compactSize(bytes: number): string {
     const [value, unit] = formatFileSize(bytes).split(' ');
     return `${parseFloat(value)} ${unit}`;
-  }
-
-  function monthlyUsd(bytes: number): string {
-    const price = summary.value?.PricePerGbMonthUsd ?? 0;
-    return `US$${((bytes / BYTES_PER_GB) * price).toFixed(2)}`;
   }
 
   // ---- Filters ----
@@ -240,12 +234,6 @@
     return `${count.toLocaleString()} run${count === 1 ? '' : 's'}`;
   });
   const retentionMonthsLabel = computed(() => formatRetentionMonthsLabel(lab.value?.RunRetentionMonths ?? 6));
-  const monthlyCostSubtitle = computed(() => {
-    const totals = summary.value;
-    if (!totals) return 'Stored';
-    if (!totals.PricePerGbMonthUsd) return 'Stored';
-    return `Stored · about ${monthlyUsd(totals.TotalBytes)} a month`;
-  });
 
   function reviewUnattached() {
     typeFilter.value = 'Unattached';
@@ -256,15 +244,6 @@
   const retentionMonths = ref<number>(6);
   const includePrePolicyData = ref(true);
   const keepInputData = ref(false);
-  const retentionMonthOptions = computed(() => {
-    const presets = [0, 1, 2, 3, 6, 9, 12, 18, 24, 36, 48, 60, 120];
-    const current = lab.value?.RunRetentionMonths ?? 6;
-    const months = presets.includes(current) ? presets : [...presets, current].sort((a, b) => a - b);
-    return months.map((value) => ({
-      label: formatRetentionMonthsLabel(value),
-      value,
-    }));
-  });
 
   function resetRetentionForm() {
     retentionMonths.value = lab.value?.RunRetentionMonths ?? 6;
@@ -371,7 +350,7 @@
         <div class="p-4">
           <USkeleton v-if="isLoading" class="h-8 w-24" />
           <p v-else class="text-heading text-2xl font-semibold">{{ compactSize(summary?.TotalBytes ?? 0) }}</p>
-          <p class="text-muted mt-1 text-xs">{{ monthlyCostSubtitle }}</p>
+          <p class="text-muted mt-1 text-xs">Stored</p>
         </div>
         <div class="p-4">
           <USkeleton v-if="isLoading" class="h-8 w-24" />
@@ -423,15 +402,19 @@
             name="RunRetentionMonths"
             :error="retentionError"
           >
-            <USelect
-              :model-value="retentionMonths"
-              :options="retentionMonthOptions"
+            <EGInput
+              v-model.number="retentionMonths"
+              type="number"
+              min="0"
+              max="120"
+              step="1"
+              suffix="months"
+              class="w-full"
               :disabled="isSavingRetention"
               aria-describedby="lab-storage-retention-help"
-              @update:model-value="retentionMonths = Number($event)"
             />
             <p id="lab-storage-retention-help" class="text-muted mt-1 text-xs">
-              Counted from when the run finished. Protected runs are always skipped.
+              Counted from when the run finished. Enter 0 to keep them forever. Protected runs are always skipped.
             </p>
           </EGFormGroup>
           <div class="space-y-3 md:pt-8">

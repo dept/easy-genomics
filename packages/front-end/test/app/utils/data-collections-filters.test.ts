@@ -4,9 +4,13 @@ import type {
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/data-collections';
 import type { LaboratorySample } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
 import {
+  countPermanentInSelection,
   filterSamplesBySearch,
   formatRetentionExpiryLabel,
   isExpiringSoon,
+  parseSampleDragPayload,
+  sampleIdsForDrag,
+  sampleIdsMissingTag,
   sampleMatchesTagIds,
   sidebarTagsForSamples,
   soonestExpiresAtForUsages,
@@ -207,16 +211,40 @@ describe('sidebarTagsForSamples', () => {
   const permanent = tag('perm-1', 'Permanent', 'permanent');
   const batch = tag('batch-1', 'Run-1', 'batch');
 
-  it('hides Permanent until a sample in the list is permanent', () => {
-    expect(sidebarTagsForSamples([standardTag, permanent, batch], [sample('s1', 'Alpha')])).toEqual([standardTag]);
+  it('shows Permanent even when no sample is permanent', () => {
+    expect(sidebarTagsForSamples([standardTag, permanent, batch])).toEqual([standardTag, permanent]);
   });
 
-  it('appends Permanent when a sample is permanent', () => {
+  it('omits Permanent when the lab tag list has none', () => {
+    expect(sidebarTagsForSamples([standardTag, batch])).toEqual([standardTag]);
+  });
+});
+
+describe('countPermanentInSelection', () => {
+  it('counts selected samples marked permanent', () => {
     const kept = { ...sample('s1', 'Alpha'), IsPermanent: true };
-    expect(sidebarTagsForSamples([standardTag, permanent, batch], [kept, sample('s2', 'Beta')])).toEqual([
-      standardTag,
-      permanent,
-    ]);
+    const alsoKept = { ...sample('s2', 'Beta'), IsPermanent: true };
+    expect(countPermanentInSelection([kept, alsoKept, sample('s3', 'Gamma')], ['s1', 's3'])).toBe(1);
+    expect(countPermanentInSelection([kept], [])).toBe(0);
+  });
+});
+
+describe('sample drag onto a tag', () => {
+  it('drags the selection when the dragged sample is selected, otherwise only that sample', () => {
+    expect(sampleIdsForDrag('s2', ['s1', 's2'])).toEqual(['s1', 's2']);
+    expect(sampleIdsForDrag('s3', ['s1', 's2'])).toEqual(['s3']);
+  });
+
+  it('drops a bad payload instead of throwing', () => {
+    expect(parseSampleDragPayload('not-json')).toEqual([]);
+    expect(parseSampleDragPayload('{"id":"s1"}')).toEqual([]);
+    expect(parseSampleDragPayload('["s1","","s2"]')).toEqual(['s1', 's2']);
+  });
+
+  it('skips samples that already have the tag, including Permanent via IsPermanent', () => {
+    const tags = { s1: ['tag-1'], s2: [] };
+    expect(sampleIdsMissingTag(['s1', 's2'], 'tag-1', tags, 'perm-1', new Set())).toEqual(['s2']);
+    expect(sampleIdsMissingTag(['s1', 's2'], 'perm-1', tags, 'perm-1', new Set(['s1']))).toEqual(['s2']);
   });
 });
 

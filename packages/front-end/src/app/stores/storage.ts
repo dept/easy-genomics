@@ -4,6 +4,10 @@ import type {
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-storage';
 import { defineStore } from 'pinia';
 import { extractApiErrorMessage } from '@FE/utils/api-utils';
+import {
+  applyStorageProtectionOptimistic,
+  applyStorageRemovalOptimistic,
+} from '@FE/utils/lab-storage-display';
 
 interface StorageStoreState {
   // indexed by labId
@@ -58,11 +62,12 @@ const useStorageStore = defineStore('storageStore', {
       useUiStore().setRequestPending('editLabStorage');
       try {
         await $api.labs.editStorageProtection(orgId, labId, itemIds, isProtected);
-        useToastStore().success(
-          isProtected
-            ? 'Protection queued. Refresh storage after a moment to see the Permanent tag.'
-            : 'Unprotect queued. Refresh storage after a moment to see updated protection.',
-        );
+        // HTTP only enqueues tagging; patch local inventory so Status / pills update now.
+        const current = this.labStorage[labId];
+        if (current) {
+          this.labStorage[labId] = applyStorageProtectionOptimistic(current, itemIds, isProtected);
+        }
+        useToastStore().success(isProtected ? 'Protected from deletion' : 'Protection removed');
       } catch (error) {
         console.error('Failed to update storage protection:', error);
         useToastStore().error(extractApiErrorMessage(error) ?? 'Failed to update protection. Please try again.');
@@ -76,7 +81,12 @@ const useStorageStore = defineStore('storageStore', {
       useUiStore().setRequestPending('editLabStorage');
       try {
         await $api.labs.removeStorageItems(orgId, labId, itemIds);
-        useToastStore().success('Delete queued. Refresh storage after a moment to see updated sizes.');
+        // HTTP only enqueues deletes; drop rows locally so the table and size pills update now.
+        const current = this.labStorage[labId];
+        if (current) {
+          this.labStorage[labId] = applyStorageRemovalOptimistic(current, itemIds);
+        }
+        useToastStore().success('Deleted from storage list');
       } catch (error) {
         console.error('Failed to delete stored data:', error);
         useToastStore().error(extractApiErrorMessage(error) ?? 'Failed to delete. Please try again.');
