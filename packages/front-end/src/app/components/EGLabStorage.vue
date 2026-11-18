@@ -20,7 +20,6 @@
   const uiStore = useUiStore();
 
   const DAY_MS = 24 * 60 * 60 * 1000;
-  const BYTES_PER_GB = 1024 ** 3;
 
   const lab = computed(() => labsStore.labs[props.labId]);
   const summary = computed(() => storageStore.labStorage[props.labId]);
@@ -40,11 +39,6 @@
   function compactSize(bytes: number): string {
     const [value, unit] = formatFileSize(bytes).split(' ');
     return `${parseFloat(value)} ${unit}`;
-  }
-
-  function monthlyUsd(bytes: number): string {
-    const price = summary.value?.PricePerGbMonthUsd ?? 0;
-    return `US$${((bytes / BYTES_PER_GB) * price).toFixed(2)}`;
   }
 
   // ---- Filters ----
@@ -240,12 +234,6 @@
     return `${count.toLocaleString()} run${count === 1 ? '' : 's'}`;
   });
   const retentionMonthsLabel = computed(() => formatRetentionMonthsLabel(lab.value?.RunRetentionMonths ?? 6));
-  const monthlyCostSubtitle = computed(() => {
-    const totals = summary.value;
-    if (!totals) return 'Stored';
-    if (!totals.PricePerGbMonthUsd) return 'Stored';
-    return `Stored · about ${monthlyUsd(totals.TotalBytes)} a month`;
-  });
 
   function reviewUnattached() {
     typeFilter.value = 'Unattached';
@@ -362,7 +350,7 @@
         <div class="p-4">
           <USkeleton v-if="isLoading" class="h-8 w-24" />
           <p v-else class="text-heading text-2xl font-semibold">{{ compactSize(summary?.TotalBytes ?? 0) }}</p>
-          <p class="text-muted mt-1 text-xs">{{ monthlyCostSubtitle }}</p>
+          <p class="text-muted mt-1 text-xs">Stored</p>
         </div>
         <div class="p-4">
           <USkeleton v-if="isLoading" class="h-8 w-24" />
