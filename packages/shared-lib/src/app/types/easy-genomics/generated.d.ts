@@ -430,6 +430,10 @@ export interface paths {
     /** List Run Costs */
     get: operations["listRunCosts"];
   };
+  "/easy-genomics/usage/list-run-limit-events": {
+    /** List Run Limit Events */
+    get: operations["listRunLimitEvents"];
+  };
   "/easy-genomics/usage/update-laboratory-run-limits/{id}": {
     /** Update Laboratory Run Limits */
     put: operations["updateLaboratoryRunLimits"];
@@ -2240,6 +2244,47 @@ export interface components {
         BlockedLaunches: number;
       };
       Labs: components["schemas"]["RunCostsLabRow"][];
+    };
+    RunLimitEventView: ({
+      LaboratoryId: string;
+      RunName?: string;
+      OrganizationId: string;
+      Platform: components["schemas"]["RunType"];
+      EventKey: string;
+      /** @enum {string} */
+      Kind: "blocked" | "warned";
+      Day: string;
+      OccurredAt: string;
+      WorkflowExternalId: string;
+      WorkflowVersionName?: string;
+      UserId: string;
+      UserEmail?: string;
+      /** @enum {string} */
+      Source: "launch" | "review";
+      /** @enum {string} */
+      Reason?: "costEstimateFailed" | "limitExceeded" | "samplesNotCounted";
+      Hits: ({
+          /** @enum {string} */
+          limit: "cost" | "samples";
+          /** @enum {string} */
+          level: "block" | "warn";
+          amount: number;
+          runValue: number;
+          /**
+           * @description Set only when the amount is the workflow's own. Absent means the lab's, so labs without workflow limits get unchanged verdicts.
+           * @constant
+           */
+          amountSource?: "workflow";
+        })[];
+      SampleCount?: number;
+      CostEstimateUsd?: number;
+      ExternalRunId?: string;
+    }) & {
+      UserDisplayName: string;
+    };
+    RunLimitEventsResponse: {
+      Events: components["schemas"]["RunLimitEventView"][];
+      Truncated: boolean;
     };
     UpdateLaboratoryRunLimitsRequest: {
       CostWarnAboveUsd?: number;
@@ -6628,6 +6673,34 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["RunCostsReport"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** List Run Limit Events */
+  listRunLimitEvents: {
+    parameters: {
+      query: {
+        /** @description Organization UUID */
+        organizationId: string;
+        /** @description month, 30d, 60d or 90d; rolling periods end today (UTC) */
+        period: string;
+        /** @description YYYY-MM; required when period is month */
+        month?: string;
+        /** @description warned or blocked */
+        kind: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["RunLimitEventsResponse"];
         };
       };
       400: components["responses"]["BadRequest"];

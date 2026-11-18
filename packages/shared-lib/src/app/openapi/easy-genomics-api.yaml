@@ -3990,6 +3990,114 @@ components:
         - PreviousPeriod
         - PreviousTotals
         - Totals
+    RunLimitEventView:
+      allOf:
+        - type: object
+          properties:
+            LaboratoryId:
+              type: string
+            RunName:
+              type: string
+            OrganizationId:
+              type: string
+            Platform:
+              $ref: '#/components/schemas/RunType'
+            EventKey:
+              type: string
+            Kind:
+              enum:
+                - blocked
+                - warned
+              type: string
+            Day:
+              type: string
+            OccurredAt:
+              type: string
+            WorkflowExternalId:
+              type: string
+            WorkflowVersionName:
+              type: string
+            UserId:
+              type: string
+            UserEmail:
+              type: string
+            Source:
+              enum:
+                - launch
+                - review
+              type: string
+            Reason:
+              enum:
+                - costEstimateFailed
+                - limitExceeded
+                - samplesNotCounted
+              type: string
+            Hits:
+              type: array
+              items:
+                type: object
+                properties:
+                  limit:
+                    enum:
+                      - cost
+                      - samples
+                    type: string
+                  level:
+                    enum:
+                      - block
+                      - warn
+                    type: string
+                  amount:
+                    type: number
+                  runValue:
+                    type: number
+                  amountSource:
+                    description: >-
+                      Set only when the amount is the workflow's own. Absent means the lab's, so labs without workflow
+                      limits get unchanged verdicts.
+                    const: workflow
+                    type: string
+                required:
+                  - amount
+                  - level
+                  - limit
+                  - runValue
+            SampleCount:
+              type: number
+            CostEstimateUsd:
+              type: number
+            ExternalRunId:
+              type: string
+          required:
+            - Day
+            - EventKey
+            - Hits
+            - Kind
+            - LaboratoryId
+            - OccurredAt
+            - OrganizationId
+            - Platform
+            - Source
+            - UserId
+            - WorkflowExternalId
+        - type: object
+          properties:
+            UserDisplayName:
+              type: string
+          required:
+            - UserDisplayName
+    RunLimitEventsResponse:
+      type: object
+      properties:
+        Events:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunLimitEventView'
+        Truncated:
+          type: boolean
+      required:
+        - Events
+        - Truncated
     UpdateLaboratoryRunLimitsRequest:
       type: object
       properties:
@@ -11591,6 +11699,52 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RunCostsReport'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/usage/list-run-limit-events:
+    get:
+      operationId: listRunLimitEvents
+      summary: List Run Limit Events
+      parameters:
+        - name: organizationId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Organization UUID
+        - name: period
+          in: query
+          required: true
+          schema:
+            type: string
+          description: month, 30d, 60d or 90d; rolling periods end today (UTC)
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: string
+          description: YYYY-MM; required when period is month
+        - name: kind
+          in: query
+          required: true
+          schema:
+            type: string
+          description: warned or blocked
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunLimitEventsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
