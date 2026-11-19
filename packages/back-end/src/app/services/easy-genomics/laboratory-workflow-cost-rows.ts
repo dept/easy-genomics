@@ -1,5 +1,4 @@
 import { MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE } from '@easy-genomics/shared-lib/src/app/constants/run-cost';
-import { RunType } from '@easy-genomics/shared-lib/src/app/types/base-entity';
 import {
   LaboratoryWorkflowCostRow,
   WorkflowCostLimits,
@@ -7,17 +6,16 @@ import {
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import { LaboratoryWorkflowAccessPlatform } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-workflow-access';
 import { parseWorkflowAccessSortKey } from '@easy-genomics/shared-lib/src/app/utils/laboratory-workflow-access-key';
-import { workflowRunLimitsKey } from '@easy-genomics/shared-lib/src/app/utils/workflow-run-limits';
+import { percentileToCents } from '@easy-genomics/shared-lib/src/app/utils/run-cost-estimation';
+import {
+  workflowAccessPlatformForRun,
+  workflowRunLimitsKey,
+} from '@easy-genomics/shared-lib/src/app/utils/workflow-run-limits';
 
 // Same success rule as the run cost estimator, so the typical cost and the estimate agree on which runs count.
 const SUCCESS_STATUSES = new Set(['COMPLETED', 'SUCCEEDED']);
 const TYPICAL_COST_WINDOW_DAYS = 180;
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-const PLATFORM_BY_RUN_TYPE: Record<RunType, LaboratoryWorkflowAccessPlatform> = {
-  'AWS HealthOmics': 'HEALTH_OMICS',
-  'Seqera Cloud': 'SEQERA',
-};
 
 type WorkflowRunGroup = {
   platform: LaboratoryWorkflowAccessPlatform;
@@ -35,11 +33,8 @@ function countedCost(run: LaboratoryRun, windowStartMs: number): number | undefi
   return cost;
 }
 
-function medianToCents(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  const median = sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-  return Math.round(median * 100) / 100;
+function medianCostToCents(costsUsd: number[]): number {
+  return percentileToCents([...costsUsd].sort((a, b) => a - b), 50);
 }
 
 function groupRunsByWorkflow(runs: LaboratoryRun[], now: Date): Map<string, WorkflowRunGroup> {
@@ -47,7 +42,7 @@ function groupRunsByWorkflow(runs: LaboratoryRun[], now: Date): Map<string, Work
   const groups = new Map<string, WorkflowRunGroup>();
 
   for (const run of runs) {
-    const platform = PLATFORM_BY_RUN_TYPE[run.Platform];
+    const platform = workflowAccessPlatformForRun(run.Platform);
     if (!platform || !run.WorkflowExternalId) continue;
 
     const key = workflowRunLimitsKey(platform, run.WorkflowExternalId);
@@ -92,7 +87,7 @@ export function buildLaboratoryWorkflowCostRows(
       ...(limits?.CostWarnAboveUsd !== undefined ? { CostWarnAboveUsd: limits.CostWarnAboveUsd } : {}),
       ...(limits?.CostBlockAboveUsd !== undefined ? { CostBlockAboveUsd: limits.CostBlockAboveUsd } : {}),
       ...(counted >= MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE
-        ? { TypicalRunCostUsd: medianToCents(group.countedCosts) }
+        ? { TypicalRunCostUsd: medianCostToCents(group.countedCosts) }
         : {}),
       CountedRunCount: counted,
     });

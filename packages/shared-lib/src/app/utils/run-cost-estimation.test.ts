@@ -3,6 +3,7 @@ import {
   countSamplesInSampleSheetCsv,
   estimateComputeCostBand,
   hashRunSettings,
+  percentileToCents,
   scaleCostToSampleCount,
   similarityScore,
 } from './run-cost-estimation';
@@ -236,5 +237,23 @@ describe('estimateComputeCostBand sample scaling', () => {
     ])('returns the whole-run cost when historical=%p and run=%p', (historicalSampleCount, runSampleCount) => {
       expect(scaleCostToSampleCount(40, historicalSampleCount, runSampleCount)).toBe(40);
     });
+  });
+});
+
+describe('percentileToCents', () => {
+  it('takes the middle value of an odd count', () => {
+    expect(percentileToCents([100, 101, 104], 50)).toBe(101);
+  });
+
+  it('takes the mean of the middle two for an even count', () => {
+    expect(percentileToCents([100, 101, 102, 104], 50)).toBe(101.5);
+  });
+
+  it('rounds to whole cents', () => {
+    expect(percentileToCents([1.001, 1.004], 50)).toBe(1);
+  });
+
+  it('is 0 for no costs', () => {
+    expect(percentileToCents([], 50)).toBe(0);
   });
 });
