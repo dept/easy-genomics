@@ -3,6 +3,7 @@ process.env.NAME_PREFIX = 'unit-test';
 import { Laboratory, LaboratoryRunLimits } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import {
   RunCostEstimateFailedError,
+  RunCostLimitExceededError,
   RunSampleLimitExceededError,
   RunSamplesNotCountedError,
 } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
@@ -17,6 +18,7 @@ jest.mock('../../../../src/app/services/easy-genomics/run-cost-estimation-servic
 
 import { readSampleSheet, sumObjectBytes } from '../../../../src/app/services/easy-genomics/run-input-profile-service';
 import {
+  effectiveRunLimits,
   evaluateRunLimits,
   hasAnyRunLimit,
   RunLimitCheckService,
@@ -342,5 +344,113 @@ describe('RunLimitCheckService', () => {
         expect(warnSpy).not.toHaveBeenCalled();
       },
     );
+  });
+
+  describe('workflow cost limits', () => {
+    const workflowLimits = { 'HEALTH_OMICS#5734690': { WorkflowName: 'nf-core/rnaseq', CostBlockAboveUsd: 800 } };
+    const limitedLab = {
+      ...laboratory,
+      RunLimits: { CostWarnAboveUsd: 150, CostBlockAboveUsd: 400 },
+      WorkflowRunLimits: workflowLimits,
+    } as Laboratory;
+    const run: RunLimitInput = { ...input, workflowExternalId: '5734690', workflowVersionName: '3.14' };
+
+    it("passes a US$600 run under the workflow's US$800 block amount, warning on the lab's US$150", async () => {
+      mockEstimate.mockResolvedValue(availableEstimate(600));
+
+      const verdict = await service.checkRunLimits(limitedLab, run);
+
+      expect(verdict?.outcome).toBe('warn');
+      expect(verdict?.hits).toEqual([{ limit: 'cost', level: 'warn', amount: 150, runValue: 600 }]);
+    });
+
+    it("blocks a US$900 run on the workflow's amount and says so", async () => {
+      mockEstimate.mockResolvedValue(availableEstimate(900));
+
+      const verdict = await service.checkRunLimits(limitedLab, run);
+      expect(verdict?.hits).toEqual([
+        { limit: 'cost', level: 'block', amount: 800, runValue: 900, amountSource: 'workflow' },
+      ]);
+
+      const launch = service.assertLaunchWithinLimits(limitedLab, run, 'user-1');
+      await expect(launch).rejects.toBeInstanceOf(RunCostLimitExceededError);
+      await expect(launch).rejects.toThrow("this workflow's block amount of $800.00");
+    });
+
+    it("checks a lab whose only limits are the workflow's", async () => {
+      mockEstimate.mockResolvedValue(availableEstimate(900));
+      const workflowOnlyLab = { ...laboratory, WorkflowRunLimits: workflowLimits } as Laboratory;
+
+      const verdict = await service.checkRunLimits(workflowOnlyLab, run);
+
+      expect(verdict?.outcome).toBe('block');
+      expect(verdict?.hits).toEqual([
+        { limit: 'cost', level: 'block', amount: 800, runValue: 900, amountSource: 'workflow' },
+      ]);
+    });
+
+    it('checks a new version against the same workflow limits', async () => {
+      mockEstimate.mockResolvedValue(availableEstimate(900));
+
+      const verdict = await service.checkRunLimits(limitedLab, { ...run, workflowVersionName: '3.15' });
+
+      expect(verdict?.hits).toEqual([
+        { limit: 'cost', level: 'block', amount: 800, runValue: 900, amountSource: 'workflow' },
+      ]);
+    });
+
+    it('uses the SEQERA key for a Seqera launch', async () => {
+      mockEstimate.mockResolvedValue(availableEstimate(900));
+      const seqeraLab = {
+        ...limitedLab,
+        WorkflowRunLimits: { 'SEQERA#42': { WorkflowName: 'nf-core/sarek', CostBlockAboveUsd: 800 } },
+      } as Laboratory;
+
+      const verdict = await service.checkRunLimits(seqeraLab, {
+        ...run,
+        platform: 'Seqera Cloud',
+        workflowExternalId: '42',
+      });
+
+      expect(verdict?.hits).toEqual([
+        { limit: 'cost', level: 'block', amount: 800, runValue: 900, amountSource: 'workflow' },
+      ]);
+    });
+
+    it("ignores another workflow's limits", async () => {
+      mockEstimate.mockResolvedValue(availableEstimate(900));
+      const otherWorkflowLab = {
+        ...limitedLab,
+        WorkflowRunLimits: { 'HEALTH_OMICS#999': { WorkflowName: 'other', CostBlockAboveUsd: 800 } },
+      } as Laboratory;
+
+      const verdict = await service.checkRunLimits(otherWorkflowLab, run);
+
+      expect(verdict?.hits).toEqual([{ limit: 'cost', level: 'block', amount: 400, runValue: 900 }]);
+    });
+
+    it('still makes no reads for a lab with no lab or workflow limits', async () => {
+      const noLimitsLab = { ...laboratory, WorkflowRunLimits: {} } as Laboratory;
+
+      await expect(service.checkRunLimits(noLimitsLab, run)).resolves.toBeUndefined();
+
+      expect(mockReadSampleSheet).not.toHaveBeenCalled();
+      expect(mockEstimate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('effectiveRunLimits', () => {
+    it("keeps the lab's sample amounts and resolves each cost amount on its own", () => {
+      const lab = {
+        ...laboratory,
+        RunLimits: { SamplesBlockAbove: 500, CostWarnAboveUsd: 150, CostBlockAboveUsd: 400 },
+        WorkflowRunLimits: { 'HEALTH_OMICS#wf-123': { WorkflowName: 'x', CostBlockAboveUsd: 800 } },
+      } as Laboratory;
+
+      expect(effectiveRunLimits(lab, input)).toEqual({
+        limits: { SamplesBlockAbove: 500, CostWarnAboveUsd: 150, CostBlockAboveUsd: 800 },
+        costFromWorkflow: { warn: false, block: true },
+      });
+    });
   });
 });

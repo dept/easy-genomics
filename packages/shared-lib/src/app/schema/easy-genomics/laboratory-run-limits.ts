@@ -95,6 +95,8 @@ export const RunLimitHitSchema = z
     level: z.enum(['warn', 'block']),
     amount: z.number(),
     runValue: z.number(),
+    /** Set only when the amount is the workflow's own. Absent means the lab's, so labs without workflow limits get unchanged verdicts. */
+    amountSource: z.literal('workflow').optional(),
   })
   .strict();
 export type RunLimitHit = z.infer<typeof RunLimitHitSchema>;

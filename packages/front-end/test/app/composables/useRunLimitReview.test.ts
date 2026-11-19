@@ -18,7 +18,10 @@ const LAB_ID = 'lab-1';
 const mockEstimateRunCost = jest.fn();
 const mockToastError = jest.fn();
 const mockLoadLab = jest.fn();
-let labs: Record<string, { RunLimits?: Record<string, number> }> = {};
+let labs: Record<
+  string,
+  { RunLimits?: Record<string, number>; WorkflowRunLimits?: Record<string, Record<string, unknown>> }
+> = {};
 
 // useRunLimitReview relies on Nuxt auto-imports (no explicit import).
 (global as any).ref = ref;
@@ -104,6 +107,16 @@ describe('useRunLimitReview', () => {
     const { review } = useRunLimitReview(LAB_ID, () => request);
 
     expect(review.value.launchDisabled).toBe(true);
+  });
+
+  it('disables launch before the estimate loads when only the workflow has limits, without rebuilding the request', () => {
+    labs[LAB_ID].WorkflowRunLimits = { 'HEALTH_OMICS#wf-1': { WorkflowName: 'wf', CostBlockAboveUsd: 400 } };
+    const buildRequest = jest.fn(() => request);
+    const { review } = useRunLimitReview(LAB_ID, buildRequest);
+    buildRequest.mockClear();
+
+    expect(review.value.launchDisabled).toBe(true);
+    expect(buildRequest).not.toHaveBeenCalled();
   });
 
   it('marks limits not checked when the estimate call fails', async () => {

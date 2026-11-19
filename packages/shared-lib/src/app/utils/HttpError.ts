@@ -318,9 +318,10 @@ export class LaboratoryFailureAnalysisDisabledError extends HttpError {
  * @param blockAboveUsd
  */
 export class RunCostLimitExceededError extends HttpError {
-  constructor(estimateUsd: number, blockAboveUsd: number) {
+  constructor(estimateUsd: number, blockAboveUsd: number, amountSource?: 'workflow') {
+    const owner = amountSource === 'workflow' ? "this workflow's" : "this laboratory's";
     super(
-      `Estimated run cost of $${estimateUsd.toFixed(2)} is above this laboratory's block amount of $${blockAboveUsd.toFixed(2)}. Split the samples into smaller runs, or ask an organization admin to change the limit.`,
+      `Estimated run cost of $${estimateUsd.toFixed(2)} is above ${owner} block amount of $${blockAboveUsd.toFixed(2)}. Split the samples into smaller runs, or ask an organization admin to change the limit.`,
       400,
       'EG-339',
     );

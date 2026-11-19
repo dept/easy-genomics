@@ -9,6 +9,10 @@ import {
   RunSampleLimitExceededError,
   RunSamplesNotCountedError,
 } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
+import {
+  resolveCostLimits,
+  workflowRunLimitsKeyForRun,
+} from '@easy-genomics/shared-lib/src/app/utils/workflow-run-limits';
 import { RunCostEstimationService } from '@BE/services/easy-genomics/run-cost-estimation-service';
 import { readSampleSheet, sumObjectBytes } from '@BE/services/easy-genomics/run-input-profile-service';
 
@@ -45,6 +49,30 @@ export function hasAnyRunLimit(limits?: LaboratoryRunLimits): boolean {
   );
 }
 
+type CostFromWorkflow = { warn: boolean; block: boolean };
+
+/** The lab's sample amounts with the cost amounts that apply to this run's workflow (the workflow's, else the lab's). */
+export function effectiveRunLimits(
+  laboratory: Laboratory,
+  input: RunLimitInput,
+): { limits: LaboratoryRunLimits; costFromWorkflow: CostFromWorkflow } {
+  const labLimits = laboratory.RunLimits ?? {};
+  const workflowLimits =
+    laboratory.WorkflowRunLimits?.[workflowRunLimitsKeyForRun(input.platform, input.workflowExternalId)];
+  const { warnAbove, blockAbove } = resolveCostLimits(labLimits, workflowLimits);
+
+  const limits: LaboratoryRunLimits = {};
+  if (labLimits.SamplesWarnAbove !== undefined) limits.SamplesWarnAbove = labLimits.SamplesWarnAbove;
+  if (labLimits.SamplesBlockAbove !== undefined) limits.SamplesBlockAbove = labLimits.SamplesBlockAbove;
+  if (warnAbove) limits.CostWarnAboveUsd = warnAbove.amount;
+  if (blockAbove) limits.CostBlockAboveUsd = blockAbove.amount;
+
+  return {
+    limits,
+    costFromWorkflow: { warn: warnAbove?.source === 'workflow', block: blockAbove?.source === 'workflow' },
+  };
+}
+
 function limitHit(
   limit: RunLimitHit['limit'],
   runValue: number,
@@ -66,6 +94,7 @@ export function evaluateRunLimits(
   sampleCount: number | undefined,
   costEstimateUsd: number | undefined,
   costEstimate: RunLimitVerdict['costEstimate'],
+  costFromWorkflow?: CostFromWorkflow,
 ): RunLimitVerdict {
   const hits: RunLimitHit[] = [];
   if (sampleCount !== undefined) {
@@ -74,6 +103,8 @@ export function evaluateRunLimits(
   }
   if (costEstimateUsd !== undefined) {
     const costHit = limitHit('cost', costEstimateUsd, limits.CostWarnAboveUsd, limits.CostBlockAboveUsd);
+    // Only a workflow's own amount is marked, so a lab without workflow limits gets phase 1's exact hits.
+    if (costHit && costFromWorkflow?.[costHit.level]) costHit.amountSource = 'workflow';
     if (costHit) hits.push(costHit);
   }
 
@@ -134,7 +165,7 @@ export class RunLimitCheckService {
     const sampleBlock = blockHits.find((hit) => hit.limit === 'samples');
     if (sampleBlock) throw new RunSampleLimitExceededError(sampleBlock.runValue, sampleBlock.amount);
     const costBlock = blockHits.find((hit) => hit.limit === 'cost')!;
-    throw new RunCostLimitExceededError(costBlock.runValue, costBlock.amount);
+    throw new RunCostLimitExceededError(costBlock.runValue, costBlock.amount, costBlock.amountSource);
   }
 
   /**
@@ -166,8 +197,9 @@ export class RunLimitCheckService {
   }
 
   private async checkRun(laboratory: Laboratory, input: RunLimitInput): Promise<CheckedRun | undefined> {
-    const limits = laboratory.RunLimits;
-    if (!limits || !hasAnyRunLimit(limits)) return undefined;
+    // The effective limits, not the lab's alone, so a lab whose only limits are a workflow's is still checked.
+    const { limits, costFromWorkflow } = effectiveRunLimits(laboratory, input);
+    if (!hasAnyRunLimit(limits)) return undefined;
 
     const hasSampleLimit = isAmountSet(limits.SamplesWarnAbove) || isAmountSet(limits.SamplesBlockAbove);
     const hasCostLimit = isAmountSet(limits.CostWarnAboveUsd) || isAmountSet(limits.CostBlockAboveUsd);
@@ -192,7 +224,10 @@ export class RunLimitCheckService {
 
     const costEstimateUsd = await this.estimateCostUsd(laboratory, input, sampleCount!, dataFileKeys);
     const costEstimate = costEstimateUsd === undefined ? 'notEnoughHistory' : 'available';
-    return { verdict: evaluateRunLimits(limits, sampleCount, costEstimateUsd, costEstimate), costEstimateUsd };
+    return {
+      verdict: evaluateRunLimits(limits, sampleCount, costEstimateUsd, costEstimate, costFromWorkflow),
+      costEstimateUsd,
+    };
   }
 
   /** The scaled median, or undefined when there's not enough history. Any failure is RunCostEstimateFailedError. */
