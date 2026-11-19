@@ -1831,6 +1831,11 @@ components:
         RunLimits:
           description: Saved only through update-laboratory-run-limits. Missing means the lab has no limits.
           $ref: '#/components/schemas/LaboratoryRunLimits'
+        WorkflowRunLimits:
+          type: object
+          description: |-
+            Saved only through update-laboratory-workflow-run-limits, never through Create / Update.
+            Keyed `${Platform}#${WorkflowId}`. Missing or empty means no workflow has its own limits.
         CreatedAt:
           type: string
         CreatedBy:
@@ -1938,6 +1943,9 @@ components:
             SamplesBlockAbove:
               type: number
           description: Saved only through update-laboratory-run-limits, never through Create / Update.
+        WorkflowRunLimits:
+          type: object
+          description: Saved only through update-laboratory-workflow-run-limits, never through Create / Update.
         CreatedAt:
           type: string
         CreatedBy:
@@ -3784,6 +3792,32 @@ components:
         SamplesBlockAbove:
           type: integer
           exclusiveMinimum: 0
+      additionalProperties: false
+    UpdateLaboratoryWorkflowRunLimitsRequest:
+      type: object
+      properties:
+        Platform:
+          type: string
+          enum:
+            - HEALTH_OMICS
+            - SEQERA
+        WorkflowId:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{1,128}$
+        WorkflowName:
+          type: string
+          minLength: 1
+          maxLength: 256
+        CostWarnAboveUsd:
+          type: number
+          exclusiveMinimum: 0
+        CostBlockAboveUsd:
+          type: number
+          exclusiveMinimum: 0
+      required:
+        - Platform
+        - WorkflowId
+        - WorkflowName
       additionalProperties: false
     ConfirmUserForgotPasswordRequestRequest:
       type: object
@@ -11302,6 +11336,39 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/UpdateLaboratoryRunLimitsRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Laboratory'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/usage/update-laboratory-workflow-run-limits/{id}:
+    put:
+      operationId: updateLaboratoryWorkflowRunLimits
+      summary: Update Laboratory Workflow Run Limits
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLaboratoryWorkflowRunLimitsRequest'
       responses:
         '200':
           description: Success
