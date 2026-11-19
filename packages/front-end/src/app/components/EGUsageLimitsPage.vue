@@ -8,6 +8,7 @@
     type RunLimitField,
     type RunLimitsDraft,
   } from '@FE/utils/usage-limits-form';
+  import { workflowsWithLimitsText } from '@FE/utils/workflow-limits-form';
 
   const props = withDefaults(
     defineProps<{
@@ -26,6 +27,8 @@
   const editingLabId = ref<string | null>(null);
   const draft = ref<RunLimitsDraft>(runLimitsToDraft(undefined));
   const savedLabId = ref<string | null>(null);
+  const expandedLabIds = ref<Set<string>>(new Set());
+  const workflowLoadStates = ref<Record<string, 'loading' | 'loaded' | 'failed'>>({});
 
   const LIMIT_COLUMNS: { field: RunLimitField; kind: 'usd' | 'count'; label: string }[] = [
     { field: 'CostWarnAboveUsd', kind: 'usd', label: 'Cost warn above' },
@@ -68,6 +71,25 @@
     if (saved) {
       editingLabId.value = null;
       savedLabId.value = labId;
+    }
+  }
+
+  async function loadWorkflows(labId: string) {
+    workflowLoadStates.value[labId] = 'loading';
+    const loaded = await labsStore.loadWorkflowCostRows(labId);
+    workflowLoadStates.value[labId] = loaded ? 'loaded' : 'failed';
+  }
+
+  // Loading on first expand keeps the page to one request; a failed load is retried on the next expand.
+  function toggleWorkflows(labId: string) {
+    if (expandedLabIds.value.has(labId)) {
+      expandedLabIds.value.delete(labId);
+      return;
+    }
+    expandedLabIds.value.add(labId);
+    const loadState = workflowLoadStates.value[labId];
+    if (loadState !== 'loaded' && loadState !== 'loading') {
+      loadWorkflows(labId);
     }
   }
 
@@ -130,83 +152,117 @@
             </thead>
 
             <tbody>
-              <tr v-for="lab in labs" :key="lab.LaboratoryId" class="border-background-dark-grey border-t">
-                <th scope="row" class="px-3 py-3 text-left font-medium">
-                  <span class="inline-flex items-center gap-2">
-                    {{ lab.Name }}
-                    <span
-                      v-if="savedLabId === lab.LaboratoryId"
-                      class="bg-alert-success-muted text-alert-success-text rounded-full px-2 py-0.5 text-xs"
-                    >
-                      Saved
+              <template v-for="lab in labs" :key="lab.LaboratoryId">
+                <tr class="border-background-dark-grey border-t">
+                  <th scope="row" class="px-3 py-3 text-left font-medium">
+                    <span class="inline-flex items-center gap-2">
+                      <button
+                        type="button"
+                        class="inline-flex"
+                        :aria-expanded="expandedLabIds.has(lab.LaboratoryId)"
+                        :aria-controls="`workflow-limits-${lab.LaboratoryId}`"
+                        :aria-label="
+                          expandedLabIds.has(lab.LaboratoryId)
+                            ? `Hide workflows for ${lab.Name}`
+                            : `Show workflows for ${lab.Name}`
+                        "
+                        @click="toggleWorkflows(lab.LaboratoryId)"
+                      >
+                        <UIcon
+                          name="i-heroicons-chevron-right"
+                          class="text-muted h-4 w-4 shrink-0 transition-transform"
+                          :class="{ 'rotate-90': expandedLabIds.has(lab.LaboratoryId) }"
+                          aria-hidden="true"
+                        />
+                      </button>
+                      {{ lab.Name }}
+                      <span
+                        v-if="savedLabId === lab.LaboratoryId"
+                        class="bg-alert-success-muted text-alert-success-text rounded-full px-2 py-0.5 text-xs"
+                      >
+                        Saved
+                      </span>
                     </span>
-                  </span>
-                </th>
+                    <span v-if="workflowsWithLimitsText(lab)" class="text-muted mt-0.5 block pl-6 text-xs font-normal">
+                      {{ workflowsWithLimitsText(lab) }}
+                    </span>
+                  </th>
 
-                <template v-if="editingLabId === lab.LaboratoryId">
-                  <td v-for="column in LIMIT_COLUMNS" :key="column.field" class="px-3 py-2">
-                    <UInput
-                      class="w-full min-w-0"
-                      type="number"
-                      min="0"
-                      :step="column.kind === 'usd' ? '0.01' : '1'"
-                      placeholder="Not set"
-                      :aria-label="column.label"
-                      :model-value="draft[column.field]"
-                      :color="draftError?.field === column.field ? 'red' : undefined"
-                      @update:model-value="(value: unknown) => setDraftField(column.field, value)"
+                  <template v-if="editingLabId === lab.LaboratoryId">
+                    <td v-for="column in LIMIT_COLUMNS" :key="column.field" class="px-3 py-2">
+                      <UInput
+                        class="w-full min-w-0"
+                        type="number"
+                        min="0"
+                        :step="column.kind === 'usd' ? '0.01' : '1'"
+                        placeholder="Not set"
+                        :aria-label="column.label"
+                        :model-value="draft[column.field]"
+                        :color="draftError?.field === column.field ? 'red' : undefined"
+                        @update:model-value="(value: unknown) => setDraftField(column.field, value)"
+                      >
+                        <template v-if="column.kind === 'usd'" #leading>
+                          <span class="text-muted text-xs">US$</span>
+                        </template>
+                      </UInput>
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-2">
+                      <div class="flex justify-end gap-2">
+                        <EGButton
+                          u-button-type="button"
+                          size="sm"
+                          variant="secondary"
+                          label="Cancel"
+                          :disabled="isSaving"
+                          @click="cancelEdit"
+                        />
+                        <EGButton
+                          u-button-type="button"
+                          size="sm"
+                          label="Save"
+                          :disabled="!!draftError || isSaving"
+                          :loading="isSaving"
+                          @click="save"
+                        />
+                      </div>
+                    </td>
+                  </template>
+
+                  <template v-else>
+                    <td
+                      v-for="column in LIMIT_COLUMNS"
+                      :key="column.field"
+                      class="px-3 py-3 text-left"
+                      :class="{ 'text-muted': lab.RunLimits?.[column.field] === undefined }"
                     >
-                      <template v-if="column.kind === 'usd'" #leading>
-                        <span class="text-muted text-xs">US$</span>
-                      </template>
-                    </UInput>
+                      {{ formatRunLimit(lab.RunLimits?.[column.field], column.kind) }}
+                    </td>
+                    <td class="px-3 py-3">
+                      <div class="flex justify-end">
+                        <EGButton
+                          u-button-type="button"
+                          size="sm"
+                          variant="secondary"
+                          label="Edit"
+                          :aria-label="`Edit limits for ${lab.Name}`"
+                          :disabled="editingLabId !== null || isSaving"
+                          @click="startEdit(lab)"
+                        />
+                      </div>
+                    </td>
+                  </template>
+                </tr>
+                <tr v-if="expandedLabIds.has(lab.LaboratoryId)" :id="`workflow-limits-${lab.LaboratoryId}`">
+                  <td colspan="6" class="p-0">
+                    <EGUsageLimitsWorkflowPanel
+                      :lab="lab"
+                      :load-state="workflowLoadStates[lab.LaboratoryId] ?? 'loading'"
+                      :disabled="editingLabId === lab.LaboratoryId"
+                      @retry="loadWorkflows(lab.LaboratoryId)"
+                    />
                   </td>
-                  <td class="whitespace-nowrap px-3 py-2">
-                    <div class="flex justify-end gap-2">
-                      <EGButton
-                        u-button-type="button"
-                        size="sm"
-                        variant="secondary"
-                        label="Cancel"
-                        :disabled="isSaving"
-                        @click="cancelEdit"
-                      />
-                      <EGButton
-                        u-button-type="button"
-                        size="sm"
-                        label="Save"
-                        :disabled="!!draftError || isSaving"
-                        :loading="isSaving"
-                        @click="save"
-                      />
-                    </div>
-                  </td>
-                </template>
-
-                <template v-else>
-                  <td
-                    v-for="column in LIMIT_COLUMNS"
-                    :key="column.field"
-                    class="px-3 py-3 text-left"
-                    :class="{ 'text-muted': lab.RunLimits?.[column.field] === undefined }"
-                  >
-                    {{ formatRunLimit(lab.RunLimits?.[column.field], column.kind) }}
-                  </td>
-                  <td class="px-3 py-3">
-                    <div class="flex justify-end">
-                      <EGButton
-                        u-button-type="button"
-                        size="sm"
-                        variant="secondary"
-                        label="Edit"
-                        :aria-label="`Edit limits for ${lab.Name}`"
-                        :disabled="editingLabId !== null || isSaving"
-                        @click="startEdit(lab)"
-                      />
-                    </div>
-                  </td>
-                </template>
-              </tr>
+                </tr>
+              </template>
             </tbody>
           </table>
         </div>
