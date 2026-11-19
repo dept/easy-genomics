@@ -1,3 +1,4 @@
+import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { handler } from '../../../../../src/app/controllers/easy-genomics/usage/update-laboratory-workflow-run-limits.lambda';
 
@@ -11,7 +12,6 @@ describe('update-laboratory-workflow-run-limits.lambda', () => {
   const ORG_ID = '00000000-0000-0000-0000-000000000001';
   const OTHER_ORG_ID = '00000000-0000-0000-0000-000000000009';
   const LAB_ID = '00000000-0000-0000-0000-000000000002';
-  const WORKFLOW_KEY = 'HEALTH_OMICS#5734690';
   const base = { Platform: 'HEALTH_OMICS', WorkflowId: '5734690', WorkflowName: 'nf-core/rnaseq' };
   const labRunLimits = { CostWarnAboveUsd: 150, CostBlockAboveUsd: 400 };
   let existing: Record<string, unknown>;
@@ -37,37 +37,22 @@ describe('update-laboratory-workflow-run-limits.lambda', () => {
     jest.clearAllMocks();
     existing = { OrganizationId: ORG_ID, LaboratoryId: LAB_ID, Name: 'Lab', Status: 'Active', RunLimits: labRunLimits };
     mockLabService.prototype.queryByLaboratoryId = jest.fn().mockImplementation(async () => existing);
-    mockLabService.prototype.updateWorkflowRunLimits = jest.fn().mockImplementation(async () => existing);
+    mockLabService.prototype.saveWorkflowRunLimits = jest.fn().mockImplementation(async () => existing);
     mockLabService.prototype.updateRunLimits = jest.fn();
     mockLabService.prototype.update = jest.fn();
     mockValidateOrgAdmin.mockReturnValue(true);
     mockValidateSystemAdmin.mockReturnValue(false);
   });
 
-  it("saves a workflow amount above the lab's for an org admin", async () => {
-    const result = await invoke(JSON.stringify({ ...base, CostWarnAboveUsd: 300, CostBlockAboveUsd: 800 }));
+  it('saves the parsed request for an org admin', async () => {
+    const request = { ...base, CostWarnAboveUsd: 300, CostBlockAboveUsd: 800 };
+
+    const result = await invoke(JSON.stringify(request));
 
     expect(result.statusCode).toBe(200);
-    expect(mockLabService.prototype.updateWorkflowRunLimits).toHaveBeenCalledWith(
-      existing,
-      WORKFLOW_KEY,
-      { WorkflowName: 'nf-core/rnaseq', CostWarnAboveUsd: 300, CostBlockAboveUsd: 800 },
-      'admin-user',
-    );
+    expect(mockLabService.prototype.saveWorkflowRunLimits).toHaveBeenCalledWith(existing, request, 'admin-user');
     expect(mockLabService.prototype.updateRunLimits).not.toHaveBeenCalled();
     expect(mockLabService.prototype.update).not.toHaveBeenCalled();
-  });
-
-  it('saves one amount without writing the other', async () => {
-    const result = await invoke(JSON.stringify({ ...base, CostBlockAboveUsd: 800 }));
-
-    expect(result.statusCode).toBe(200);
-    expect(mockLabService.prototype.updateWorkflowRunLimits).toHaveBeenCalledWith(
-      existing,
-      WORKFLOW_KEY,
-      { WorkflowName: 'nf-core/rnaseq', CostBlockAboveUsd: 800 },
-      'admin-user',
-    );
   });
 
   it('saves the limits for a system admin', async () => {
@@ -79,28 +64,15 @@ describe('update-laboratory-workflow-run-limits.lambda', () => {
     expect(result.statusCode).toBe(200);
   });
 
-  it("rejects a warn amount that would sit above the lab's block amount", async () => {
-    existing.RunLimits = { CostBlockAboveUsd: 400 };
+  it('returns 400 with the message when the amounts would be out of order', async () => {
+    const message =
+      "For nf-core/rnaseq, block above (US$400, the lab's) must be higher than warn above (US$500, the workflow's) for estimated cost per run.";
+    mockLabService.prototype.saveWorkflowRunLimits = jest.fn().mockRejectedValue(new InvalidRequestError(message));
 
     const result = await invoke(JSON.stringify({ ...base, CostWarnAboveUsd: 500 }));
 
     expect(result.statusCode).toBe(400);
-    expect(JSON.parse(result.body).Error).toBe(
-      "Invalid request: For nf-core/rnaseq, block above (US$400, the lab's) must be higher than warn above (US$500, the workflow's) for estimated cost per run.",
-    );
-    expect(mockLabService.prototype.updateWorkflowRunLimits).not.toHaveBeenCalled();
-  });
-
-  it("removes the workflow's entry when both amounts are omitted", async () => {
-    const result = await invoke(JSON.stringify(base));
-
-    expect(result.statusCode).toBe(200);
-    expect(mockLabService.prototype.updateWorkflowRunLimits).toHaveBeenCalledWith(
-      existing,
-      WORKFLOW_KEY,
-      undefined,
-      'admin-user',
-    );
+    expect(JSON.parse(result.body).Error).toBe(`Invalid request: ${message}`);
   });
 
   it('returns 403 for a lab manager or technician', async () => {
@@ -110,7 +82,7 @@ describe('update-laboratory-workflow-run-limits.lambda', () => {
 
     expect(result.statusCode).toBe(403);
     expect(JSON.parse(result.body).ErrorCode).toBe('EG-103');
-    expect(mockLabService.prototype.updateWorkflowRunLimits).not.toHaveBeenCalled();
+    expect(mockLabService.prototype.saveWorkflowRunLimits).not.toHaveBeenCalled();
   });
 
   it('returns 403 for an org admin of another organization', async () => {
@@ -120,7 +92,7 @@ describe('update-laboratory-workflow-run-limits.lambda', () => {
 
     expect(mockValidateOrgAdmin).toHaveBeenCalledWith(expect.anything(), ORG_ID);
     expect(result.statusCode).toBe(403);
-    expect(mockLabService.prototype.updateWorkflowRunLimits).not.toHaveBeenCalled();
+    expect(mockLabService.prototype.saveWorkflowRunLimits).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -134,7 +106,7 @@ describe('update-laboratory-workflow-run-limits.lambda', () => {
 
     expect(result.statusCode).toBe(400);
     expect(JSON.parse(result.body).ErrorCode).toBe('EG-102');
-    expect(mockLabService.prototype.updateWorkflowRunLimits).not.toHaveBeenCalled();
+    expect(mockLabService.prototype.saveWorkflowRunLimits).not.toHaveBeenCalled();
   });
 
   it('returns 400 when the path id is missing', async () => {

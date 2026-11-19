@@ -12,11 +12,17 @@ import {
   LaboratorySchema,
   UpdateLaboratoryRetention,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
+import { UpdateLaboratoryWorkflowRunLimits } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-limits';
 import {
   Laboratory,
   LaboratoryRunLimits,
   WorkflowCostLimits,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import {
+  costLimitsOrderError,
+  resolveCostLimits,
+  workflowRunLimitsKey,
+} from '@easy-genomics/shared-lib/src/app/utils/workflow-run-limits';
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
 
@@ -301,6 +307,11 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
     const logRequestMessage = `Update Laboratory Run Limits OrganizationId=${laboratory.OrganizationId}, LaboratoryId=${laboratory.LaboratoryId} request`;
     console.info(logRequestMessage);
 
+    // A workflow's blank amount falls back to the lab's, so a lab change can put that workflow out of order.
+    for (const workflowLimits of Object.values(laboratory.WorkflowRunLimits ?? {})) {
+      assertCostLimitsInOrder(runLimits, workflowLimits, workflowLimits.WorkflowName);
+    }
+
     const marshalledRunLimits = marshall(runLimits, { removeUndefinedValues: true });
     const hasRunLimits = Object.keys(marshalledRunLimits).length > 0;
     const setModified = 'SET #ModifiedAt = :modifiedAt, #ModifiedBy = :modifiedBy';
@@ -331,6 +342,32 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
     } else {
       throw new Error(`${logRequestMessage} unsuccessful: HTTP Status Code=${response.$metadata.httpStatusCode}`);
     }
+  };
+
+  /**
+   * Saves one workflow's cost limits as requested. Omitting both amounts removes the workflow's entry, so the lab's
+   * amounts apply again.
+   */
+  public saveWorkflowRunLimits = async (
+    laboratory: Laboratory,
+    request: UpdateLaboratoryWorkflowRunLimits,
+    modifiedBy: string,
+  ): Promise<Laboratory> => {
+    const { Platform, WorkflowId, WorkflowName, CostWarnAboveUsd, CostBlockAboveUsd } = request;
+
+    // A blank amount falls back to the lab's, so the order is checked on the amounts that will actually apply.
+    assertCostLimitsInOrder(laboratory.RunLimits, { CostWarnAboveUsd, CostBlockAboveUsd }, WorkflowName);
+
+    const hasAmounts = CostWarnAboveUsd !== undefined || CostBlockAboveUsd !== undefined;
+    const limits: WorkflowCostLimits | undefined = hasAmounts
+      ? {
+          WorkflowName,
+          ...(CostWarnAboveUsd !== undefined ? { CostWarnAboveUsd } : {}),
+          ...(CostBlockAboveUsd !== undefined ? { CostBlockAboveUsd } : {}),
+        }
+      : undefined;
+
+    return this.updateWorkflowRunLimits(laboratory, workflowRunLimitsKey(Platform, WorkflowId), limits, modifiedBy);
   };
 
   /**
@@ -425,6 +462,15 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
       throw new Error(`${logRequestMessage} unsuccessful: HTTP Status Code=${response.$metadata.httpStatusCode}`);
     }
   };
+}
+
+function assertCostLimitsInOrder(
+  labLimits: LaboratoryRunLimits | undefined,
+  workflowLimits: Pick<WorkflowCostLimits, 'CostWarnAboveUsd' | 'CostBlockAboveUsd'>,
+  workflowName: string,
+): void {
+  const orderError = costLimitsOrderError(resolveCostLimits(labLimits, workflowLimits), workflowName);
+  if (orderError) throw new InvalidRequestError(orderError);
 }
 
 const KEY_ATTRIBUTES = ['OrganizationId', 'LaboratoryId'];
