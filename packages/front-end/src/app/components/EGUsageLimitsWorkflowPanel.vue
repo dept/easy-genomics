@@ -116,7 +116,7 @@
             :class="{ 'border-background-dark-grey border-t': index > 0 }"
           >
             <th scope="row" class="px-3 py-2 font-normal">
-              <span class="inline-flex items-center gap-2">
+              <div class="flex items-center gap-2">
                 <span>
                   {{ row.WorkflowName }}
                   <span v-if="row.LatestVersionName" class="text-muted">{{ row.LatestVersionName }}</span>
@@ -127,15 +127,18 @@
                 >
                   Saved
                 </span>
-              </span>
-              <UTooltip :delay-duration="0" :ui="{ base: 'h-auto w-auto max-w-sm whitespace-normal text-left' }">
-                <template #text>
-                  <p>{{ typicalCostTooltip(row) }}</p>
-                </template>
-                <button type="button" class="text-muted mt-0.5 block text-xs underline decoration-dotted">
-                  {{ typicalCostText(row) }}
-                </button>
-              </UTooltip>
+              </div>
+              <!-- The tooltip's own wrapper is inline, so this keeps the typical cost on its own line. -->
+              <div class="mt-0.5">
+                <UTooltip :delay-duration="0" :ui="{ base: 'h-auto w-auto max-w-sm whitespace-normal text-left' }">
+                  <template #text>
+                    <p>{{ typicalCostTooltip(row) }}</p>
+                  </template>
+                  <button type="button" class="text-muted text-xs underline decoration-dotted">
+                    {{ typicalCostText(row) }}
+                  </button>
+                </UTooltip>
+              </div>
             </th>
             <td class="px-3 py-2">
               <UInput
