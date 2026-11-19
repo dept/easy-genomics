@@ -56,5 +56,19 @@ export class UsageNestedStack extends NestedStack {
         effect: Effect.ALLOW,
       }),
     ]);
+
+    // /easy-genomics/usage/update-laboratory-workflow-run-limits
+    this.iam.addPolicyStatements('/easy-genomics/usage/update-laboratory-workflow-run-limits', [
+      new PolicyStatement({
+        resources: [`${laboratoryTableArn}/index/*`],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [laboratoryTableArn],
+        actions: ['dynamodb:UpdateItem'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
   };
 }
