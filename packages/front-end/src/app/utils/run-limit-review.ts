@@ -3,7 +3,10 @@ import type {
   RunLimitHit,
   RunLimitVerdict,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-limits';
-import type { LaboratoryRunLimits } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import type {
+  LaboratoryRunLimits,
+  WorkflowCostLimits,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 
 export type RunLimitReviewInput = {
   /** The response's verdict; undefined means no limits apply and the review step looks as it always has. */
@@ -18,6 +21,8 @@ export type RunLimitReviewInput = {
   runLimits?: LaboratoryRunLimits;
   /** The lab is being reloaded, so `runLimits` may be an out-of-date copy. */
   runLimitsLoading?: boolean;
+  /** This run's workflow's own cost amounts, from the same lab copy as `runLimits`. */
+  workflowCostLimits?: WorkflowCostLimits;
 };
 
 export type RunLimitMessage = { tone: 'warn' | 'block'; role: 'status' | 'alert'; title: string; body: string };
@@ -73,16 +78,20 @@ function formatRunUsd(runValue: number, amount: number): string {
   return rounded <= amount ? formatUsdWithCents(runValue) : formatCount(rounded);
 }
 
+function amountOwner(hit: RunLimitHit): string {
+  return hit.amountSource === 'workflow' ? "this workflow's" : "this lab's";
+}
+
 function warnSentence(hit: RunLimitHit): string {
   if (hit.limit === 'cost') {
-    return `This run is estimated at about US$${formatRunUsd(hit.runValue, hit.amount)}, over this lab's US$${formatAmountUsd(hit.amount)} warning amount.`;
+    return `This run is estimated at about US$${formatRunUsd(hit.runValue, hit.amount)}, over ${amountOwner(hit)} US$${formatAmountUsd(hit.amount)} warning amount.`;
   }
   return `This run has ${formatCount(hit.runValue)} samples, over this lab's warning amount of ${formatCount(hit.amount)} per run.`;
 }
 
 function blockSentence(hit: RunLimitHit): string {
   if (hit.limit === 'cost') {
-    return `It's estimated at about US$${formatRunUsd(hit.runValue, hit.amount)}, over this lab's US$${formatAmountUsd(hit.amount)} limit.`;
+    return `It's estimated at about US$${formatRunUsd(hit.runValue, hit.amount)}, over ${amountOwner(hit)} US$${formatAmountUsd(hit.amount)} limit.`;
   }
   return `It has ${formatCount(hit.runValue)} samples, and this lab allows ${formatCount(hit.amount)} per run.`;
 }
@@ -102,12 +111,14 @@ function warnTitle(hits: RunLimitHit[]): string {
   return hasCost ? 'Cost warning' : 'Sample warning';
 }
 
-function hasAnyLimit(runLimits?: LaboratoryRunLimits): boolean {
+function hasAnyLimit(runLimits?: LaboratoryRunLimits, workflowCostLimits?: WorkflowCostLimits): boolean {
   return (
     runLimits?.CostWarnAboveUsd !== undefined ||
     runLimits?.CostBlockAboveUsd !== undefined ||
     runLimits?.SamplesWarnAbove !== undefined ||
-    runLimits?.SamplesBlockAbove !== undefined
+    runLimits?.SamplesBlockAbove !== undefined ||
+    workflowCostLimits?.CostWarnAboveUsd !== undefined ||
+    workflowCostLimits?.CostBlockAboveUsd !== undefined
   );
 }
 
@@ -170,7 +181,7 @@ function deriveNotEnoughHistoryText(input: RunLimitReviewInput): string | null {
 
 /** Everything the review step shows about run limits, decided from the server's verdict and any limit error. */
 export function deriveRunLimitReview(input: RunLimitReviewInput): RunLimitReview {
-  const labHasLimits = hasAnyLimit(input.runLimits);
+  const labHasLimits = hasAnyLimit(input.runLimits, input.workflowCostLimits);
   const message = deriveMessage(input, labHasLimits);
   return {
     samplesRow: deriveSamplesRow(input),
