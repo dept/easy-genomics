@@ -12,7 +12,11 @@ import {
   LaboratorySchema,
   UpdateLaboratoryRetention,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
-import { Laboratory, LaboratoryRunLimits } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import {
+  Laboratory,
+  LaboratoryRunLimits,
+  WorkflowCostLimits,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
 
@@ -174,9 +178,9 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
   };
 
   /**
-   * Updates the lab's attributes in place rather than replacing the item, and never writes RunLimits. Run limits are
-   * saved only by updateRunLimits; a full-item put here would write back the RunLimits read at the start of this
-   * request and undo a limits save made in the meantime.
+   * Updates the lab's attributes in place rather than replacing the item, and never writes RunLimits or
+   * WorkflowRunLimits. They are saved only by updateRunLimits and updateWorkflowRunLimits; a full-item put here would
+   * write back the limits read at the start of this request and undo a limits save made in the meantime.
    */
   public update = async (laboratory: Laboratory, existing: Laboratory): Promise<Laboratory> => {
     const logRequestMessage = `Update Laboratory OrganizationId=${laboratory.OrganizationId}, LaboratoryId=${laboratory.LaboratoryId}, Name=${laboratory.Name} request`;
@@ -329,6 +333,65 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
     }
   };
 
+  /**
+   * Writes only one workflow's entry in WorkflowRunLimits, so saves for different workflows never overwrite each
+   * other and never touch the lab's own settings. `undefined` limits remove the entry.
+   */
+  public updateWorkflowRunLimits = async (
+    laboratory: Laboratory,
+    workflowKey: string,
+    limits: WorkflowCostLimits | undefined,
+    modifiedBy: string,
+  ): Promise<Laboratory> => {
+    const logRequestMessage = `Update Laboratory Workflow Run Limits OrganizationId=${laboratory.OrganizationId}, LaboratoryId=${laboratory.LaboratoryId}, WorkflowKey=${workflowKey} request`;
+    console.info(logRequestMessage);
+
+    const key = marshall({ OrganizationId: laboratory.OrganizationId, LaboratoryId: laboratory.LaboratoryId });
+    const conditionExpression = 'attribute_exists(#OrganizationId) AND attribute_exists(#LaboratoryId)';
+    const keyNames = { '#OrganizationId': 'OrganizationId', '#LaboratoryId': 'LaboratoryId' };
+
+    // DynamoDB rejects a nested SET or REMOVE when the parent map is missing, so create it first; a no-op otherwise.
+    await this.updateItem({
+      TableName: this.LABORATORY_TABLE_NAME,
+      Key: key,
+      ConditionExpression: conditionExpression,
+      UpdateExpression: 'SET #WorkflowRunLimits = if_not_exists(#WorkflowRunLimits, :emptyMap)',
+      ExpressionAttributeNames: { ...keyNames, '#WorkflowRunLimits': 'WorkflowRunLimits' },
+      ExpressionAttributeValues: { ':emptyMap': { M: {} } },
+    });
+
+    const setModified = '#ModifiedAt = :modifiedAt, #ModifiedBy = :modifiedBy';
+    const response: UpdateItemCommandOutput = await this.updateItem({
+      TableName: this.LABORATORY_TABLE_NAME,
+      Key: key,
+      ConditionExpression: conditionExpression,
+      UpdateExpression: limits
+        ? `SET #WorkflowRunLimits.#workflowKey = :limits, ${setModified}`
+        : `REMOVE #WorkflowRunLimits.#workflowKey SET ${setModified}`,
+      ExpressionAttributeNames: {
+        ...keyNames,
+        '#WorkflowRunLimits': 'WorkflowRunLimits',
+        // The key holds a '#', so it only ever goes in as an attribute name, never into the expression text.
+        '#workflowKey': workflowKey,
+        '#ModifiedAt': 'ModifiedAt',
+        '#ModifiedBy': 'ModifiedBy',
+      },
+      ExpressionAttributeValues: {
+        ...(limits ? { ':limits': { M: marshall(limits, { removeUndefinedValues: true }) } } : {}),
+        ':modifiedAt': { S: new Date().toISOString() },
+        ':modifiedBy': { S: modifiedBy },
+      },
+      // The LaboratoryId index is eventually consistent, so reading the lab back through it could miss this write.
+      ReturnValues: 'ALL_NEW',
+    });
+
+    if (response.$metadata.httpStatusCode === 200 && response.Attributes) {
+      return <Laboratory>unmarshall(response.Attributes);
+    } else {
+      throw new Error(`${logRequestMessage} unsuccessful: HTTP Status Code=${response.$metadata.httpStatusCode}`);
+    }
+  };
+
   public delete = async (laboratory: Laboratory): Promise<boolean> => {
     const logRequestMessage = `Delete Laboratory OrganizationId=${laboratory.OrganizationId}, LaboratoryId=${laboratory.LaboratoryId}, Name=${laboratory.Name} request`;
     console.info(logRequestMessage);
@@ -366,7 +429,7 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
 
 const KEY_ATTRIBUTES = ['OrganizationId', 'LaboratoryId'];
 // Attributes with a dedicated writer, which a general lab update must leave untouched.
-const SEPARATELY_WRITTEN_ATTRIBUTES = ['RunLimits'];
+const SEPARATELY_WRITTEN_ATTRIBUTES = ['RunLimits', 'WorkflowRunLimits'];
 
 /**
  * SETs every attribute `laboratory` has and REMOVEs the ones only `existing` has, matching what replacing the item

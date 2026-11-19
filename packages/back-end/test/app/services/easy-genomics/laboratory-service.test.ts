@@ -87,6 +87,70 @@ describe('LaboratoryService.updateRunLimits', () => {
   });
 });
 
+describe('LaboratoryService.updateWorkflowRunLimits', () => {
+  const laboratory = { OrganizationId: 'o1', LaboratoryId: 'l1', Name: 'Lab A' } as Laboratory;
+  const workflowKey = 'HEALTH_OMICS#5734690';
+
+  const setup = () => {
+    const svc = new LaboratoryService();
+    const updateItem = jest
+      .spyOn(svc as unknown as { updateItem: jest.Mock }, 'updateItem')
+      .mockResolvedValue({ $metadata: { httpStatusCode: 200 }, Attributes: marshall(laboratory) });
+    const queryByLaboratoryId = jest.spyOn(svc, 'queryByLaboratoryId');
+    return { svc, updateItem, queryByLaboratoryId };
+  };
+
+  // DynamoDB rejects a nested SET when the parent map does not exist, so the first call creates it.
+  it('creates the map, then sets only this workflow\'s entry', async () => {
+    const { svc, updateItem, queryByLaboratoryId } = setup();
+    const limits = { WorkflowName: 'nf-core/rnaseq', CostWarnAboveUsd: 300, CostBlockAboveUsd: 800 };
+
+    const result = await svc.updateWorkflowRunLimits(laboratory, workflowKey, limits, 'admin-user');
+
+    expect(updateItem).toHaveBeenCalledTimes(2);
+    const [createMap, setEntry] = updateItem.mock.calls.map((call) => call[0]);
+    for (const input of [createMap, setEntry]) {
+      expect(input.Key).toEqual(marshall({ OrganizationId: 'o1', LaboratoryId: 'l1' }));
+      expect(input.ConditionExpression).toBe('attribute_exists(#OrganizationId) AND attribute_exists(#LaboratoryId)');
+    }
+    expect(createMap.UpdateExpression).toContain('if_not_exists(#WorkflowRunLimits, :emptyMap)');
+    expect(createMap.ExpressionAttributeValues[':emptyMap']).toEqual({ M: {} });
+    expect(setEntry.UpdateExpression).toContain('#WorkflowRunLimits.#workflowKey = :limits');
+    expect(setEntry.ExpressionAttributeNames['#workflowKey']).toBe(workflowKey);
+    expect(setEntry.ExpressionAttributeValues[':limits']).toEqual({ M: marshall(limits) });
+    expect(setEntry.ExpressionAttributeValues[':modifiedBy']).toEqual({ S: 'admin-user' });
+    expect(setEntry.ReturnValues).toBe('ALL_NEW');
+    expect(queryByLaboratoryId).not.toHaveBeenCalled();
+    expect(result).toEqual(laboratory);
+  });
+
+  it('removes the entry when the limits are undefined', async () => {
+    const { svc, updateItem } = setup();
+
+    await svc.updateWorkflowRunLimits(laboratory, workflowKey, undefined, 'admin-user');
+
+    const setEntry = updateItem.mock.calls[1][0];
+    expect(setEntry.UpdateExpression).toContain('REMOVE #WorkflowRunLimits.#workflowKey');
+    expect(setEntry.ExpressionAttributeNames['#workflowKey']).toBe(workflowKey);
+    expect(setEntry.ExpressionAttributeValues[':limits']).toBeUndefined();
+  });
+
+  it('does not write an undefined amount', async () => {
+    const { svc, updateItem } = setup();
+
+    await svc.updateWorkflowRunLimits(
+      laboratory,
+      workflowKey,
+      { WorkflowName: 'nf-core/rnaseq', CostWarnAboveUsd: undefined, CostBlockAboveUsd: 800 },
+      'admin-user',
+    );
+
+    expect(updateItem.mock.calls[1][0].ExpressionAttributeValues[':limits']).toEqual({
+      M: { WorkflowName: { S: 'nf-core/rnaseq' }, CostBlockAboveUsd: { N: '800' } },
+    });
+  });
+});
+
 describe('LaboratoryService.update', () => {
   const ORG_ID = '7a2c1d4e-0b3f-4c5a-9d6e-1f2a3b4c5d6e';
   const LAB_ID = 'b3e4f5a6-1c2d-4e3f-8a9b-0c1d2e3f4a5b';
@@ -127,6 +191,19 @@ describe('LaboratoryService.update', () => {
     expect(writtenNames(input)).toEqual(expect.arrayContaining(['Name', 'Description', 'AwsHealthOmicsEnabled']));
     expect(writtenNames(input)).not.toContain('RunLimits');
     expect(input.UpdateExpression).not.toMatch(/#OrganizationId =|#LaboratoryId =/);
+  });
+
+  // update() REMOVEs what the request lacks, so without the skip a Lab Settings save would wipe every workflow limit.
+  it('never writes WorkflowRunLimits from a general lab update', async () => {
+    const { svc, updateItem } = setup();
+    const withWorkflowLimits = {
+      ...existing,
+      WorkflowRunLimits: { 'HEALTH_OMICS#5734690': { WorkflowName: 'nf-core/rnaseq', CostBlockAboveUsd: 800 } },
+    } as Laboratory;
+
+    await svc.update({ ...existing, Description: 'New description' }, withWorkflowLimits);
+
+    expect(writtenNames(updateItem.mock.calls[0][0])).not.toContain('WorkflowRunLimits');
   });
 
   it('removes attributes the updated lab no longer has, as replacing the item did', async () => {
