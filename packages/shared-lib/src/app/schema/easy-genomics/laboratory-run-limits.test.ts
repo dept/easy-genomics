@@ -140,6 +140,16 @@ describe('RunLimitVerdictSchema', () => {
     );
   });
 
+  it("accepts a cost hit whose amount is the workflow's", () => {
+    const hit = { limit: 'cost', level: 'block', amount: 800, runValue: 900, amountSource: 'workflow' };
+    expect(RunLimitHitSchema.safeParse(hit).success).toBe(true);
+  });
+
+  it('rejects an amountSource of "lab", since an absent amountSource means the lab\'s', () => {
+    const hit = { limit: 'cost', level: 'block', amount: 400, runValue: 470, amountSource: 'lab' };
+    expect(RunLimitHitSchema.safeParse(hit).success).toBe(false);
+  });
+
   it('rejects an unknown outcome', () => {
     expect(RunLimitVerdictSchema.safeParse({ outcome: 'stop', hits: [], costEstimate: 'available' }).success).toBe(
       false,
@@ -224,5 +234,19 @@ describe('run limit errors', () => {
     expect(error.statusCode).toBe(statusCode);
     expect(error.errorCode).toBe(errorCode);
     expect(error.message).toBe(message);
+  });
+});
+
+describe('RunCostLimitExceededError amount source', () => {
+  it("names the workflow's block amount", () => {
+    expect(new RunCostLimitExceededError(900, 800, 'workflow').message).toBe(
+      "Estimated run cost of $900.00 is above this workflow's block amount of $800.00. Split the samples into smaller runs, or ask an organization admin to change the limit.",
+    );
+  });
+
+  it('keeps the lab wording by default', () => {
+    expect(new RunCostLimitExceededError(470, 400).message).toContain(
+      "above this laboratory's block amount of $400.00",
+    );
   });
 });
