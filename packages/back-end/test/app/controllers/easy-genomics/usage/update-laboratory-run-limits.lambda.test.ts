@@ -84,6 +84,38 @@ describe('update-laboratory-run-limits.lambda', () => {
     expect(mockLabService.prototype.updateRunLimits).not.toHaveBeenCalled();
   });
 
+  describe('with a workflow that has its own limits', () => {
+    const withWorkflowLimits = {
+      ...existing,
+      WorkflowRunLimits: { 'HEALTH_OMICS#5734690': { WorkflowName: 'nf-core/rnaseq', CostBlockAboveUsd: 600 } },
+    };
+
+    beforeEach(() => {
+      mockLabService.prototype.queryByLaboratoryId = jest.fn().mockResolvedValue(withWorkflowLimits);
+    });
+
+    it("rejects a lab warn amount that would sit above a workflow's own block amount", async () => {
+      const result = await invoke(LAB_ID, JSON.stringify({ CostWarnAboveUsd: 700, CostBlockAboveUsd: 900 }));
+
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).Error).toBe(
+        "Invalid request: For nf-core/rnaseq, block above (US$600, the workflow's) must be higher than warn above (US$700, the lab's) for estimated cost per run.",
+      );
+      expect(mockLabService.prototype.updateRunLimits).not.toHaveBeenCalled();
+    });
+
+    it('saves the lab limits when every workflow stays in order', async () => {
+      const result = await invoke(LAB_ID, JSON.stringify({ CostWarnAboveUsd: 500 }));
+
+      expect(result.statusCode).toBe(200);
+      expect(mockLabService.prototype.updateRunLimits).toHaveBeenCalledWith(
+        withWorkflowLimits,
+        { CostWarnAboveUsd: 500 },
+        'admin-user',
+      );
+    });
+  });
+
   it.each([
     ['a missing body', undefined],
     ['a null body', 'null'],
