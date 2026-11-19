@@ -2780,6 +2780,12 @@ components:
                     type: number
                   runValue:
                     type: number
+                  amountSource:
+                    description: >-
+                      Set only when the amount is the workflow's own. Absent means the lab's, so labs without workflow
+                      limits get unchanged verdicts.
+                    const: workflow
+                    type: string
                 required:
                   - amount
                   - level

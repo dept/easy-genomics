@@ -1770,6 +1770,11 @@ export interface components {
             level: "block" | "warn";
             amount: number;
             runValue: number;
+            /**
+             * @description Set only when the amount is the workflow's own. Absent means the lab's, so labs without workflow limits get unchanged verdicts.
+             * @constant
+             */
+            amountSource?: "workflow";
           })[];
         /**
          * @description `notChecked` means the lab has no cost amount, so the estimate was not computed.
