@@ -62,6 +62,23 @@ describe('UsageNestedStack', () => {
     ]);
   });
 
+  it('lets the workflow list handler read the lab and its runs', () => {
+    const stack = createStack();
+
+    const statements = stack.iam
+      .getPolicyStatements('/easy-genomics/usage/list-laboratory-workflow-run-limits')
+      .map((statement) => statement.toStatementJson());
+
+    expect(statements).toEqual([
+      { Effect: 'Allow', Action: 'dynamodb:Query', Resource: `${laboratoryTableArn}/index/*` },
+      {
+        Effect: 'Allow',
+        Action: 'dynamodb:Query',
+        Resource: `arn:aws:dynamodb:${region}:${account}:table/test-laboratory-run-table`,
+      },
+    ]);
+  });
+
   it('builds only the usage controllers, with their IAM policies attached', () => {
     const stack = createStack();
 

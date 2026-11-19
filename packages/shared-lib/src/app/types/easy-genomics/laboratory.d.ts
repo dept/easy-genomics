@@ -33,6 +33,7 @@
  * }
  */
 import { BaseAttributes, Status } from '../base-entity';
+import { LaboratoryWorkflowAccessPlatform } from './laboratory-workflow-access';
 
 /**
  * Per-run limits set by an organization admin. A missing amount means that check is off.
@@ -51,6 +52,22 @@ export interface WorkflowCostLimits {
   WorkflowName: string;
   CostWarnAboveUsd?: number;
   CostBlockAboveUsd?: number;
+}
+
+/**
+ * One workflow on the Usage limits page: its own cost amounts, if any, and its typical run cost in this lab.
+ */
+export interface LaboratoryWorkflowCostRow {
+  Platform: LaboratoryWorkflowAccessPlatform;
+  WorkflowId: string;
+  WorkflowName: string;
+  LatestVersionName?: string;
+  /** The workflow's own amounts only, never the lab's. */
+  CostWarnAboveUsd?: number;
+  CostBlockAboveUsd?: number;
+  /** Absent, never 0, when fewer than MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE runs were counted. */
+  TypicalRunCostUsd?: number;
+  CountedRunCount: number;
 }
 
 export interface Laboratory extends BaseAttributes {

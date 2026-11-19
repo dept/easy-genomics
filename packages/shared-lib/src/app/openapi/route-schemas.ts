@@ -245,6 +245,10 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
     request: UpdateLaboratoryWorkflowRunLimitsSchema,
     response: 'Laboratory',
   },
+  'GET /easy-genomics/usage/list-laboratory-workflow-run-limits': {
+    response: 'LaboratoryWorkflowCostRow',
+    query: [{ name: 'laboratoryId', required: true, description: 'Laboratory UUID' }],
+  },
   'DELETE /easy-genomics/laboratory/delete-laboratory/{id}': {},
   'GET /easy-genomics/laboratory/list-laboratories': {
     response: 'Laboratory',

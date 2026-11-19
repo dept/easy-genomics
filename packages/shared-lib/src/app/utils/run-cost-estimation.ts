@@ -82,6 +82,11 @@ function percentile(sorted: number[], p: number): number {
   return sorted[lo] * (1 - w) + sorted[hi] * w;
 }
 
+/** The p-th percentile of costs sorted ascending, rounded to whole cents. */
+export function percentileToCents(sortedCostsUsd: number[], p: number): number {
+  return Math.round(percentile(sortedCostsUsd, p) * 100) / 100;
+}
+
 /**
  * Converts a past run's cost to this run's size, assuming cost grows linearly with samples.
  * A sample count of 0 means unknown (no sheet, or it could not be read), so the whole-run cost is kept.
@@ -136,9 +141,9 @@ export function estimateComputeCostBand(
   const costs = scored
     .map((s) => scaleCostToSampleCount(s.candidate.ActualComputeCostUsd, s.candidate.SampleCount, profile.SampleCount))
     .sort((a, b) => a - b);
-  const low = Math.round(percentile(costs, 25) * 100) / 100;
-  const median = Math.round(percentile(costs, 50) * 100) / 100;
-  const high = Math.round(percentile(costs, 75) * 100) / 100;
+  const low = percentileToCents(costs, 25);
+  const median = percentileToCents(costs, 50);
+  const high = percentileToCents(costs, 75);
   const spread = median > 0 ? (high - low) / median : 1;
   const sameVersion =
     scored.filter((s) => (s.candidate.WorkflowVersionName || '') === (profile.WorkflowVersionName || '')).length ===
