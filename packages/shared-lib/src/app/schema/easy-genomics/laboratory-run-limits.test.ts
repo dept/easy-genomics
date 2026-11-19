@@ -1,6 +1,11 @@
 import { LaboratorySchema } from './laboratory';
 import { EstimateRunCostResponseSchema } from './laboratory-run-cost';
-import { LaboratoryRunLimitsSchema, RunLimitHitSchema, RunLimitVerdictSchema } from './laboratory-run-limits';
+import {
+  LaboratoryRunLimitsSchema,
+  RunLimitHitSchema,
+  RunLimitVerdictSchema,
+  UpdateLaboratoryWorkflowRunLimitsSchema,
+} from './laboratory-run-limits';
 import {
   RunCostEstimateFailedError,
   RunCostLimitExceededError,
@@ -11,7 +16,10 @@ import {
 describe('LaboratoryRunLimitsSchema', () => {
   it.each([
     ['no limits', {}],
-    ['all four limits', { CostWarnAboveUsd: 150, CostBlockAboveUsd: 400, SamplesWarnAbove: 300, SamplesBlockAbove: 500 }],
+    [
+      'all four limits',
+      { CostWarnAboveUsd: 150, CostBlockAboveUsd: 400, SamplesWarnAbove: 300, SamplesBlockAbove: 500 },
+    ],
     ['a single limit', { SamplesBlockAbove: 500 }],
   ])('accepts %s', (_label, limits) => {
     expect(LaboratoryRunLimitsSchema.safeParse(limits).success).toBe(true);
@@ -63,6 +71,63 @@ describe('LaboratorySchema RunLimits', () => {
 
   it('accepts a laboratory with RunLimits', () => {
     expect(LaboratorySchema.safeParse({ ...laboratory, RunLimits: { SamplesBlockAbove: 500 } }).success).toBe(true);
+  });
+});
+
+describe('UpdateLaboratoryWorkflowRunLimitsSchema', () => {
+  const base = { Platform: 'HEALTH_OMICS', WorkflowId: '5734690', WorkflowName: 'nf-core/rnaseq' };
+
+  it.each([
+    ['both amounts', { ...base, CostWarnAboveUsd: 300, CostBlockAboveUsd: 800 }],
+    ['one amount', { ...base, CostBlockAboveUsd: 800 }],
+    ['no amounts (clears the workflow)', base],
+  ])('accepts %s', (_label, body) => {
+    expect(UpdateLaboratoryWorkflowRunLimitsSchema.safeParse(body).success).toBe(true);
+  });
+
+  it.each([
+    ['block not above warn', { ...base, CostWarnAboveUsd: 800, CostBlockAboveUsd: 800 }],
+    ['a negative amount', { ...base, CostWarnAboveUsd: -1 }],
+    ['a string amount', { ...base, CostWarnAboveUsd: '300' }],
+    ['a sample amount', { ...base, SamplesBlockAbove: 10 }],
+    ['an unknown platform', { ...base, Platform: 'AWS HealthOmics' }],
+    ['a workflow id with a #', { ...base, WorkflowId: 'a#b' }],
+    ['a missing workflow name', { Platform: 'SEQERA', WorkflowId: '42' }],
+  ])('rejects %s', (_label, body) => {
+    expect(UpdateLaboratoryWorkflowRunLimitsSchema.safeParse(body).success).toBe(false);
+  });
+
+  it('uses the lab-level cost message when block is not above warn', () => {
+    const result = UpdateLaboratoryWorkflowRunLimitsSchema.safeParse({
+      ...base,
+      CostWarnAboveUsd: 800,
+      CostBlockAboveUsd: 800,
+    });
+    expect(result.error!.issues).toEqual([
+      expect.objectContaining({
+        path: ['CostBlockAboveUsd'],
+        message: 'Block above must be higher than warn above for estimated cost per run.',
+      }),
+    ]);
+  });
+});
+
+describe('LaboratorySchema WorkflowRunLimits', () => {
+  const laboratory = {
+    OrganizationId: '11111111-2222-4333-8444-555555555555',
+    LaboratoryId: '66666666-7777-4888-9999-000000000000',
+    Name: 'Lab',
+    Status: 'Active',
+  };
+
+  it('accepts a lab with workflow limits', () => {
+    const WorkflowRunLimits = { 'HEALTH_OMICS#5734690': { WorkflowName: 'nf-core/rnaseq', CostBlockAboveUsd: 800 } };
+    expect(LaboratorySchema.safeParse({ ...laboratory, WorkflowRunLimits }).success).toBe(true);
+  });
+
+  it('rejects a workflow entry with a sample amount', () => {
+    const WorkflowRunLimits = { 'HEALTH_OMICS#5734690': { WorkflowName: 'nf-core/rnaseq', SamplesBlockAbove: 10 } };
+    expect(LaboratorySchema.safeParse({ ...laboratory, WorkflowRunLimits }).success).toBe(false);
   });
 });
 
