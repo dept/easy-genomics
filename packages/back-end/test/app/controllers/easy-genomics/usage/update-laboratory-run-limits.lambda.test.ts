@@ -1,3 +1,4 @@
+import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { handler } from '../../../../../src/app/controllers/easy-genomics/usage/update-laboratory-run-limits.lambda';
 
@@ -84,36 +85,15 @@ describe('update-laboratory-run-limits.lambda', () => {
     expect(mockLabService.prototype.updateRunLimits).not.toHaveBeenCalled();
   });
 
-  describe('with a workflow that has its own limits', () => {
-    const withWorkflowLimits = {
-      ...existing,
-      WorkflowRunLimits: { 'HEALTH_OMICS#5734690': { WorkflowName: 'nf-core/rnaseq', CostBlockAboveUsd: 600 } },
-    };
+  it("returns 400 with the message when a workflow's amounts would be out of order", async () => {
+    const message =
+      "For nf-core/rnaseq, block above (US$600, the workflow's) must be higher than warn above (US$700, the lab's) for estimated cost per run.";
+    mockLabService.prototype.updateRunLimits = jest.fn().mockRejectedValue(new InvalidRequestError(message));
 
-    beforeEach(() => {
-      mockLabService.prototype.queryByLaboratoryId = jest.fn().mockResolvedValue(withWorkflowLimits);
-    });
+    const result = await invoke(LAB_ID, JSON.stringify({ CostWarnAboveUsd: 700, CostBlockAboveUsd: 900 }));
 
-    it("rejects a lab warn amount that would sit above a workflow's own block amount", async () => {
-      const result = await invoke(LAB_ID, JSON.stringify({ CostWarnAboveUsd: 700, CostBlockAboveUsd: 900 }));
-
-      expect(result.statusCode).toBe(400);
-      expect(JSON.parse(result.body).Error).toBe(
-        "Invalid request: For nf-core/rnaseq, block above (US$600, the workflow's) must be higher than warn above (US$700, the lab's) for estimated cost per run.",
-      );
-      expect(mockLabService.prototype.updateRunLimits).not.toHaveBeenCalled();
-    });
-
-    it('saves the lab limits when every workflow stays in order', async () => {
-      const result = await invoke(LAB_ID, JSON.stringify({ CostWarnAboveUsd: 500 }));
-
-      expect(result.statusCode).toBe(200);
-      expect(mockLabService.prototype.updateRunLimits).toHaveBeenCalledWith(
-        withWorkflowLimits,
-        { CostWarnAboveUsd: 500 },
-        'admin-user',
-      );
-    });
+    expect(result.statusCode).toBe(400);
+    expect(JSON.parse(result.body).Error).toBe(`Invalid request: ${message}`);
   });
 
   it.each([

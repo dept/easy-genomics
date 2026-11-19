@@ -1,6 +1,7 @@
 process.env.NAME_PREFIX = 'unit-test';
 
 import { marshall } from '@aws-sdk/util-dynamodb';
+import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryService } from '../../../../src/app/services/easy-genomics/laboratory-service';
 
@@ -85,6 +86,101 @@ describe('LaboratoryService.updateRunLimits', () => {
       M: { CostWarnAboveUsd: { N: '150' } },
     });
   });
+  describe('with a workflow that has its own limits', () => {
+    const withWorkflowLimits = {
+      ...laboratory,
+      WorkflowRunLimits: { 'HEALTH_OMICS#5734690': { WorkflowName: 'nf-core/rnaseq', CostBlockAboveUsd: 600 } },
+    } as Laboratory;
+
+    it("rejects a lab warn amount that would sit above a workflow's own block amount", async () => {
+      const { svc, updateItem } = setup();
+
+      await expect(
+        svc.updateRunLimits(withWorkflowLimits, { CostWarnAboveUsd: 700, CostBlockAboveUsd: 900 }, 'admin-user'),
+      ).rejects.toThrow(
+        new InvalidRequestError(
+          "For nf-core/rnaseq, block above (US$600, the workflow's) must be higher than warn above (US$700, the lab's) for estimated cost per run.",
+        ),
+      );
+      expect(updateItem).not.toHaveBeenCalled();
+    });
+
+    it('saves the lab limits when every workflow stays in order', async () => {
+      const { svc, updateItem } = setup();
+
+      await svc.updateRunLimits(withWorkflowLimits, { CostWarnAboveUsd: 500 }, 'admin-user');
+
+      expect(updateItem).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+describe('LaboratoryService.saveWorkflowRunLimits', () => {
+  const base = { Platform: 'HEALTH_OMICS' as const, WorkflowId: '5734690', WorkflowName: 'nf-core/rnaseq' };
+  const laboratory = {
+    OrganizationId: 'o1',
+    LaboratoryId: 'l1',
+    Name: 'Lab A',
+    RunLimits: { CostWarnAboveUsd: 150, CostBlockAboveUsd: 400 },
+  } as Laboratory;
+
+  const setup = () => {
+    const svc = new LaboratoryService();
+    const updateWorkflowRunLimits = jest.spyOn(svc, 'updateWorkflowRunLimits').mockResolvedValue(laboratory);
+    return { svc, updateWorkflowRunLimits };
+  };
+
+  it("saves a workflow amount above the lab's under the workflow's key", async () => {
+    const { svc, updateWorkflowRunLimits } = setup();
+
+    await svc.saveWorkflowRunLimits(
+      laboratory,
+      { ...base, CostWarnAboveUsd: 300, CostBlockAboveUsd: 800 },
+      'admin-user',
+    );
+
+    expect(updateWorkflowRunLimits).toHaveBeenCalledWith(
+      laboratory,
+      'HEALTH_OMICS#5734690',
+      { WorkflowName: 'nf-core/rnaseq', CostWarnAboveUsd: 300, CostBlockAboveUsd: 800 },
+      'admin-user',
+    );
+  });
+
+  it('saves one amount without writing the other', async () => {
+    const { svc, updateWorkflowRunLimits } = setup();
+
+    await svc.saveWorkflowRunLimits(laboratory, { ...base, CostBlockAboveUsd: 800 }, 'admin-user');
+
+    expect(updateWorkflowRunLimits).toHaveBeenCalledWith(
+      laboratory,
+      'HEALTH_OMICS#5734690',
+      { WorkflowName: 'nf-core/rnaseq', CostBlockAboveUsd: 800 },
+      'admin-user',
+    );
+  });
+
+  it("removes the workflow's entry when both amounts are omitted", async () => {
+    const { svc, updateWorkflowRunLimits } = setup();
+
+    await svc.saveWorkflowRunLimits(laboratory, base, 'admin-user');
+
+    expect(updateWorkflowRunLimits).toHaveBeenCalledWith(laboratory, 'HEALTH_OMICS#5734690', undefined, 'admin-user');
+  });
+
+  it("rejects a warn amount that would sit above the lab's block amount and writes nothing", async () => {
+    const { svc, updateWorkflowRunLimits } = setup();
+    const labWithBlockOnly = { ...laboratory, RunLimits: { CostBlockAboveUsd: 400 } };
+
+    await expect(
+      svc.saveWorkflowRunLimits(labWithBlockOnly, { ...base, CostWarnAboveUsd: 500 }, 'admin-user'),
+    ).rejects.toThrow(
+      new InvalidRequestError(
+        "For nf-core/rnaseq, block above (US$400, the lab's) must be higher than warn above (US$500, the workflow's) for estimated cost per run.",
+      ),
+    );
+    expect(updateWorkflowRunLimits).not.toHaveBeenCalled();
+  });
 });
 
 describe('LaboratoryService.updateWorkflowRunLimits', () => {
@@ -101,7 +197,7 @@ describe('LaboratoryService.updateWorkflowRunLimits', () => {
   };
 
   // DynamoDB rejects a nested SET when the parent map does not exist, so the first call creates it.
-  it('creates the map, then sets only this workflow\'s entry', async () => {
+  it("creates the map, then sets only this workflow's entry", async () => {
     const { svc, updateItem, queryByLaboratoryId } = setup();
     const limits = { WorkflowName: 'nf-core/rnaseq', CostWarnAboveUsd: 300, CostBlockAboveUsd: 800 };
 
