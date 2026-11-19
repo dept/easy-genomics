@@ -143,6 +143,20 @@ export class UsageNestedStack extends NestedStack {
       }),
     ]);
 
+    // /easy-genomics/usage/list-laboratory-workflow-run-limits
+    this.iam.addPolicyStatements('/easy-genomics/usage/list-laboratory-workflow-run-limits', [
+      new PolicyStatement({
+        resources: [`${laboratoryTableArn}/index/*`],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [laboratoryRunTableArn],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
+    ]);
+
     // /easy-genomics/usage/process-refresh-healthomics-rates
     if (ratesRefreshEnabled) {
       this.iam.addPolicyStatements('/easy-genomics/usage/process-refresh-healthomics-rates', [
