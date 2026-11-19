@@ -44,7 +44,10 @@ import {
   RequestRunExportPreviewSchema,
 } from '../schema/easy-genomics/laboratory-run/request-run-export-job';
 import { EstimateRunCostRequestSchema } from '../schema/easy-genomics/laboratory-run-cost';
-import { UpdateLaboratoryRunLimitsSchema } from '../schema/easy-genomics/laboratory-run-limits';
+import {
+  UpdateLaboratoryRunLimitsSchema,
+  UpdateLaboratoryWorkflowRunLimitsSchema,
+} from '../schema/easy-genomics/laboratory-run-limits';
 import { BatchUpdateLaboratoryS3AccessRequestSchema } from '../schema/easy-genomics/laboratory-s3-access';
 import {
   EditLaboratoryStorageProtectionSchema,
@@ -236,6 +239,10 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
   },
   'PUT /easy-genomics/usage/update-laboratory-run-limits/{id}': {
     request: UpdateLaboratoryRunLimitsSchema,
+    response: 'Laboratory',
+  },
+  'PUT /easy-genomics/usage/update-laboratory-workflow-run-limits/{id}': {
+    request: UpdateLaboratoryWorkflowRunLimitsSchema,
     response: 'Laboratory',
   },
   'GET /easy-genomics/usage/list-run-costs': {
