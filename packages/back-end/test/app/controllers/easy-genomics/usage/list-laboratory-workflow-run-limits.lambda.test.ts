@@ -7,7 +7,10 @@ jest.mock('../../../../../src/app/utils/auth-utils');
 
 import { LaboratoryRunService } from '../../../../../src/app/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '../../../../../src/app/services/easy-genomics/laboratory-service';
-import { buildLaboratoryWorkflowCostRows } from '../../../../../src/app/services/easy-genomics/laboratory-workflow-cost-rows';
+import {
+  buildLaboratoryWorkflowCostRows,
+  WORKFLOW_COST_ROW_RUN_ATTRIBUTES,
+} from '../../../../../src/app/services/easy-genomics/laboratory-workflow-cost-rows';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
@@ -52,7 +55,13 @@ describe('list-laboratory-workflow-run-limits.lambda', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    existing = { OrganizationId: ORG_ID, LaboratoryId: LAB_ID, Name: 'Lab', Status: 'Active', WorkflowRunLimits: workflowRunLimits };
+    existing = {
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      Name: 'Lab',
+      Status: 'Active',
+      WorkflowRunLimits: workflowRunLimits,
+    };
     mockLabService.prototype.queryByLaboratoryId = jest.fn().mockImplementation(async () => existing);
     mockRunService.prototype.listAllRunsForLaboratory = jest.fn().mockResolvedValue(runs);
     mockRunService.prototype.queryByLaboratoryId = jest.fn().mockResolvedValue([]);
@@ -74,10 +83,13 @@ describe('list-laboratory-workflow-run-limits.lambda', () => {
     ]);
   });
 
-  it('reads every page of runs', async () => {
+  it('reads every page of runs, with only the attributes the rows need', async () => {
     await invoke();
 
-    expect(mockRunService.prototype.listAllRunsForLaboratory).toHaveBeenCalledWith(LAB_ID);
+    expect(mockRunService.prototype.listAllRunsForLaboratory).toHaveBeenCalledWith(
+      LAB_ID,
+      WORKFLOW_COST_ROW_RUN_ATTRIBUTES,
+    );
     expect(mockRunService.prototype.queryByLaboratoryId).not.toHaveBeenCalled();
   });
 

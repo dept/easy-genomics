@@ -5,7 +5,10 @@ import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-geno
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { buildLaboratoryWorkflowCostRows } from '@BE/services/easy-genomics/laboratory-workflow-cost-rows';
+import {
+  buildLaboratoryWorkflowCostRows,
+  WORKFLOW_COST_ROW_RUN_ATTRIBUTES,
+} from '@BE/services/easy-genomics/laboratory-workflow-cost-rows';
 import {
   validateLaboratoryManagerAccess,
   validateLaboratoryTechnicianAccess,
@@ -38,7 +41,10 @@ export const handler: Handler = async (
     }
 
     // Every page, not just the first: a partial history would silently drop workflows and skew the median.
-    const runs: LaboratoryRun[] = await laboratoryRunService.listAllRunsForLaboratory(laboratory.LaboratoryId);
+    const runs: LaboratoryRun[] = await laboratoryRunService.listAllRunsForLaboratory(
+      laboratory.LaboratoryId,
+      WORKFLOW_COST_ROW_RUN_ATTRIBUTES,
+    );
     const rows = buildLaboratoryWorkflowCostRows(runs, laboratory.WorkflowRunLimits, new Date());
 
     return buildResponse(200, JSON.stringify(rows), event);

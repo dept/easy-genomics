@@ -12,6 +12,18 @@ import {
   workflowRunLimitsKey,
 } from '@easy-genomics/shared-lib/src/app/utils/workflow-run-limits';
 
+/** The run attributes the rows are built from, so the run list can read only these. */
+export const WORKFLOW_COST_ROW_RUN_ATTRIBUTES: readonly (keyof LaboratoryRun)[] = [
+  'WorkflowExternalId',
+  'Platform',
+  'WorkflowName',
+  'WorkflowVersionName',
+  'Status',
+  'TerminalAt',
+  'CreatedAt',
+  'RunCostOutcome',
+];
+
 // Same success rule as the run cost estimator, so the typical cost and the estimate agree on which runs count.
 const SUCCESS_STATUSES = new Set(['COMPLETED', 'SUCCEEDED']);
 const TYPICAL_COST_WINDOW_DAYS = 180;

@@ -61,6 +61,19 @@ function withCoercedInputFileKeys(run: LaboratoryRun): LaboratoryRun {
   return { ...run, InputFileKeys: next };
 }
 
+const RUN_KEY_ATTRIBUTES: (keyof LaboratoryRun)[] = ['LaboratoryId', 'RunId'];
+
+function buildRunProjection(attributes: readonly (keyof LaboratoryRun)[]): {
+  expression: string;
+  names: Record<string, string>;
+} {
+  const projected = [...new Set([...RUN_KEY_ATTRIBUTES, ...attributes])];
+  return {
+    expression: projected.map((attribute) => `#${attribute}`).join(', '),
+    names: Object.fromEntries(projected.map((attribute) => [`#${attribute}`, attribute])),
+  };
+}
+
 export class LaboratoryRunService extends DynamoDBService implements Service<LaboratoryRun> {
   readonly LABORATORY_RUN_TABLE_NAME: string = `${process.env.NAME_PREFIX}-laboratory-run-table`;
 
@@ -185,17 +198,25 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
    * render a page of runs, but callers deciding whether data is still referenced must see the
    * complete set: a run missing from a truncated page reads as "no longer exists", which for the
    * retention sweep means deleting a live run's outputs. Use this wherever absence implies safety.
+   *
+   * With `projectionAttributes`, each run holds only those attributes and its keys, so callers that read a few fields
+   * of every run don't pay to read the rest.
    */
-  public listAllRunsForLaboratory = async (laboratoryId: string): Promise<LaboratoryRun[]> => {
+  public listAllRunsForLaboratory = async (
+    laboratoryId: string,
+    projectionAttributes?: readonly (keyof LaboratoryRun)[],
+  ): Promise<LaboratoryRun[]> => {
     const results: LaboratoryRun[] = [];
     let lastKey: Record<string, any> | undefined;
+    const projection = projectionAttributes ? buildRunProjection(projectionAttributes) : undefined;
 
     do {
       const response: QueryCommandOutput = await this.queryItems({
         TableName: this.LABORATORY_RUN_TABLE_NAME,
         KeyConditionExpression: '#LaboratoryId = :laboratoryId',
-        ExpressionAttributeNames: { '#LaboratoryId': 'LaboratoryId' },
+        ExpressionAttributeNames: { '#LaboratoryId': 'LaboratoryId', ...projection?.names },
         ExpressionAttributeValues: { ':laboratoryId': { S: laboratoryId } },
+        ...(projection ? { ProjectionExpression: projection.expression } : {}),
         ...(lastKey ? { ExclusiveStartKey: lastKey } : {}),
       });
       if (response.$metadata.httpStatusCode !== 200) {
