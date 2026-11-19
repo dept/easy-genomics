@@ -1,3 +1,4 @@
+import { RunType } from '../types/base-entity';
 import { LaboratoryRunLimits, WorkflowCostLimits } from '../types/easy-genomics/laboratory';
 import { LaboratoryWorkflowAccessPlatform } from '../types/easy-genomics/laboratory-workflow-access';
 
@@ -10,6 +11,23 @@ export type ResolvedCostLimits = {
 
 export function workflowRunLimitsKey(platform: LaboratoryWorkflowAccessPlatform, workflowId: string): string {
   return `${platform}#${workflowId}`;
+}
+
+const WORKFLOW_PLATFORM_BY_RUN_PLATFORM: Record<RunType, LaboratoryWorkflowAccessPlatform> = {
+  'AWS HealthOmics': 'HEALTH_OMICS',
+  'Seqera Cloud': 'SEQERA',
+};
+
+/** Undefined for a platform no workflow limit can be keyed on, so callers can skip it. */
+export function workflowAccessPlatformForRun(platform: string): LaboratoryWorkflowAccessPlatform | undefined {
+  return Object.prototype.hasOwnProperty.call(WORKFLOW_PLATFORM_BY_RUN_PLATFORM, platform)
+    ? WORKFLOW_PLATFORM_BY_RUN_PLATFORM[platform as RunType]
+    : undefined;
+}
+
+/** A run names its platform differently from the stored key, so it is mapped first. */
+export function workflowRunLimitsKeyForRun(platform: RunType, workflowExternalId: string): string {
+  return workflowRunLimitsKey(WORKFLOW_PLATFORM_BY_RUN_PLATFORM[platform], workflowExternalId);
 }
 
 function resolveAmount(

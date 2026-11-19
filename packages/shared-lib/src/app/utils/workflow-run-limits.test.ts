@@ -1,4 +1,10 @@
-import { costLimitsOrderError, resolveCostLimits, workflowRunLimitsKey } from './workflow-run-limits';
+import {
+  costLimitsOrderError,
+  resolveCostLimits,
+  workflowAccessPlatformForRun,
+  workflowRunLimitsKey,
+  workflowRunLimitsKeyForRun,
+} from './workflow-run-limits';
 
 describe('resolveCostLimits', () => {
   it('takes each field from the workflow when set and from the lab otherwise', () => {
@@ -53,5 +59,26 @@ describe('costLimitsOrderError', () => {
 describe('workflowRunLimitsKey', () => {
   it('builds the key the workflow access table uses', () => {
     expect(workflowRunLimitsKey('SEQERA', '42')).toBe('SEQERA#42');
+  });
+});
+
+describe('workflowRunLimitsKeyForRun', () => {
+  it('maps a HealthOmics run to the stored key', () => {
+    expect(workflowRunLimitsKeyForRun('AWS HealthOmics', '5734690')).toBe('HEALTH_OMICS#5734690');
+  });
+
+  it('maps a Seqera run to the stored key', () => {
+    expect(workflowRunLimitsKeyForRun('Seqera Cloud', '42')).toBe('SEQERA#42');
+  });
+});
+
+describe('workflowAccessPlatformForRun', () => {
+  it('maps each run platform to its access platform', () => {
+    expect(workflowAccessPlatformForRun('AWS HealthOmics')).toBe('HEALTH_OMICS');
+    expect(workflowAccessPlatformForRun('Seqera Cloud')).toBe('SEQERA');
+  });
+
+  it.each(['', 'HEALTH_OMICS', 'toString', 'Other Cloud'])('returns undefined for %p', (platform) => {
+    expect(workflowAccessPlatformForRun(platform)).toBeUndefined();
   });
 });
