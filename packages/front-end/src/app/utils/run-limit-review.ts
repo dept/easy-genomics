@@ -111,6 +111,27 @@ function hasAnyLimit(runLimits?: LaboratoryRunLimits): boolean {
   );
 }
 
+/** Set when the lab has a cost amount this run can't be checked against because the lab has too few past runs. */
+function costNotEstimatedSentence(input: RunLimitReviewInput): string | null {
+  if (input.verdict?.costEstimate !== 'notEnoughHistory') {
+    return null;
+  }
+  const blockAbove = input.runLimits?.CostBlockAboveUsd;
+  const warnAbove = input.runLimits?.CostWarnAboveUsd;
+  let amountText: string;
+  if (blockAbove !== undefined) {
+    amountText = `this lab's US$${formatAmountUsd(blockAbove)} cost limit`;
+  } else if (warnAbove !== undefined) {
+    amountText = `this lab's US$${formatAmountUsd(warnAbove)} cost warning amount`;
+  } else {
+    return null;
+  }
+  return (
+    "There aren't enough past runs of this workflow in this lab to estimate this run's cost, " +
+    `so it isn't checked against ${amountText}. It could cost more than that.`
+  );
+}
+
 function deriveMessage(input: RunLimitReviewInput, labHasLimits: boolean): RunLimitMessage | null {
   if (input.serverBlockMessage) {
     return { tone: 'block', role: 'alert', title: BLOCK_TITLE, body: input.serverBlockMessage };
@@ -119,10 +140,14 @@ function deriveMessage(input: RunLimitReviewInput, labHasLimits: boolean): RunLi
     const sentences = hitsAt(input.verdict, 'block').map(blockSentence);
     return { tone: 'block', role: 'alert', title: BLOCK_TITLE, body: [...sentences, BLOCK_ADVICE].join(' ') };
   }
+  const costNotEstimated = costNotEstimatedSentence(input);
   if (input.verdict?.outcome === 'warn') {
     const hits = hitsAt(input.verdict, 'warn');
-    const body = [...hits.map(warnSentence), WARN_ADVICE].join(' ');
-    return { tone: 'warn', role: 'status', title: warnTitle(hits), body };
+    const sentences = [...hits.map(warnSentence), ...(costNotEstimated ? [costNotEstimated] : []), WARN_ADVICE];
+    return { tone: 'warn', role: 'status', title: warnTitle(hits), body: sentences.join(' ') };
+  }
+  if (costNotEstimated) {
+    return { tone: 'warn', role: 'status', title: 'Cost not estimated', body: costNotEstimated };
   }
   if (input.estimateFailed && labHasLimits) {
     return {
