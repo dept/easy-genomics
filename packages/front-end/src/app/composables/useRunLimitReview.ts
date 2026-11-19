@@ -2,6 +2,7 @@ import type {
   EstimateRunCostRequest,
   EstimateRunCostResponse,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
+import { workflowRunLimitsKeyForRun } from '@easy-genomics/shared-lib/src/app/utils/workflow-run-limits';
 import { deriveRunLimitReview, runLimitErrorMessage } from '@FE/utils/run-limit-review';
 
 /**
@@ -29,8 +30,14 @@ export function useRunLimitReview(labId: string, buildRequest: () => EstimateRun
       serverBlockMessage: serverBlockMessage.value,
       runLimits: labsStore.labs[labId]?.RunLimits,
       runLimitsLoading: runLimitsLoading.value,
+      workflowCostLimits: workflowCostLimits(),
     }),
   );
+
+  function workflowCostLimits() {
+    const { platform, workflowExternalId } = buildRequest();
+    return labsStore.labs[labId]?.WorkflowRunLimits?.[workflowRunLimitsKeyForRun(platform, workflowExternalId)];
+  }
 
   async function reloadRunLimits(): Promise<void> {
     runLimitsLoading.value = true;

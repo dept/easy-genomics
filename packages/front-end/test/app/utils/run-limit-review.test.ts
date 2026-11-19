@@ -383,6 +383,52 @@ describe('deriveRunLimitReview', () => {
 
     expect(review.samplesRow).toEqual({ countText: null, limitText: 'Limit: 500 per run' });
   });
+
+  it("names the workflow's warning amount", () => {
+    const review = deriveRunLimitReview(
+      input({
+        verdict: verdict({ outcome: 'warn', hits: [{ ...hit('cost', 'warn', 300, 340), amountSource: 'workflow' }] }),
+      }),
+    );
+
+    expect(review.message?.body).toContain(
+      "This run is estimated at about US$340, over this workflow's US$300 warning amount.",
+    );
+  });
+
+  it("names the workflow's block amount", () => {
+    const review = deriveRunLimitReview(
+      input({
+        verdict: verdict({ outcome: 'block', hits: [{ ...hit('cost', 'block', 800, 900), amountSource: 'workflow' }] }),
+      }),
+    );
+
+    expect(review.message?.body).toContain("It's estimated at about US$900, over this workflow's US$800 limit.");
+  });
+
+  it("disables launch while loading in a lab whose only limits are the workflow's", () => {
+    const review = deriveRunLimitReview(
+      input({
+        estimate: null,
+        loading: true,
+        workflowCostLimits: { WorkflowName: 'nf-core/rnaseq', CostBlockAboveUsd: 800 },
+      }),
+    );
+
+    expect(review.launchDisabled).toBe(true);
+  });
+
+  it('shows "Limits not checked" for a failed estimate when only the workflow has limits', () => {
+    const review = deriveRunLimitReview(
+      input({
+        estimate: null,
+        estimateFailed: true,
+        workflowCostLimits: { WorkflowName: 'nf-core/rnaseq', CostBlockAboveUsd: 800 },
+      }),
+    );
+
+    expect(review.message?.title).toBe('Limits not checked');
+  });
 });
 
 describe('runLimitErrorMessage', () => {
