@@ -14,8 +14,14 @@ import {
   UpdateLaboratoryUserNotificationPreference,
   UpdateLaboratoryUserNotificationPreferenceSchema,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-user';
-import type { UpdateLaboratoryRunLimits } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
-import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import type {
+  UpdateLaboratoryRunLimits,
+  UpdateLaboratoryWorkflowRunLimits,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
+import {
+  Laboratory,
+  LaboratoryWorkflowCostRow,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import { LaboratoryUser } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user';
 import { LaboratoryUserDetails } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-user-details';
@@ -104,6 +110,39 @@ class LabsModule extends HttpFactory {
 
     if (!res) {
       throw new Error('Failed to update Laboratory run limits');
+    }
+
+    return res;
+  }
+
+  /**
+   * The workflows a Laboratory has run, plus any with their own limits, with each one's typical run cost
+   * @param labId
+   */
+  async listWorkflowRunLimits(labId: string): Promise<LaboratoryWorkflowCostRow[]> {
+    const res = await this.call<LaboratoryWorkflowCostRow[]>(
+      'GET',
+      `/usage/list-laboratory-workflow-run-limits?laboratoryId=${labId}`,
+    );
+
+    if (!res) {
+      throw new Error('Failed to retrieve Laboratory workflow run limits');
+    }
+
+    return res;
+  }
+
+  /**
+   * Replace one workflow's cost limits in a Laboratory; an amount missing from the body is cleared,
+   * and omitting both removes the workflow's limits
+   * @param labId
+   * @param body
+   */
+  async updateWorkflowRunLimits(labId: string, body: UpdateLaboratoryWorkflowRunLimits): Promise<Laboratory> {
+    const res = await this.call<Laboratory>('PUT', `/usage/update-laboratory-workflow-run-limits/${labId}`, body);
+
+    if (!res) {
+      throw new Error('Failed to update Laboratory workflow run limits');
     }
 
     return res;
