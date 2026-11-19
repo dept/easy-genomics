@@ -281,6 +281,52 @@ describe('LaboratoryRunService.listAllRunsForLaboratory', () => {
     queryItems.mockRestore();
   });
 
+  it('reads every attribute when no projection is given', async () => {
+    const svc = new LaboratoryRunService();
+    const queryItems = jest
+      .spyOn(svc as unknown as { queryItems: jest.Mock }, 'queryItems')
+      .mockResolvedValueOnce({ $metadata: { httpStatusCode: 200 }, Items: [runItem('run-a')] });
+
+    await svc.listAllRunsForLaboratory(laboratoryId);
+
+    expect(queryItems.mock.calls[0][0].ProjectionExpression).toBeUndefined();
+    expect(queryItems.mock.calls[0][0].ExpressionAttributeNames).toEqual({ '#LaboratoryId': 'LaboratoryId' });
+    queryItems.mockRestore();
+  });
+
+  it('reads only the projected attributes and the keys, on every page', async () => {
+    const svc = new LaboratoryRunService();
+    const queryItems = jest
+      .spyOn(svc as unknown as { queryItems: jest.Mock }, 'queryItems')
+      .mockResolvedValueOnce({
+        $metadata: { httpStatusCode: 200 },
+        Items: [marshall({ LaboratoryId: laboratoryId, RunId: 'run-a', Status: 'SUCCEEDED' })],
+        LastEvaluatedKey: { LaboratoryId: { S: laboratoryId }, RunId: { S: 'run-a' } },
+      })
+      .mockResolvedValueOnce({
+        $metadata: { httpStatusCode: 200 },
+        Items: [marshall({ LaboratoryId: laboratoryId, RunId: 'run-b', Status: 'FAILED' })],
+      });
+
+    const runs = await svc.listAllRunsForLaboratory(laboratoryId, ['Status', 'CreatedAt']);
+
+    for (const [input] of queryItems.mock.calls) {
+      expect(input.ProjectionExpression).toBe('#LaboratoryId, #RunId, #Status, #CreatedAt');
+      expect(input.ExpressionAttributeNames).toEqual({
+        '#LaboratoryId': 'LaboratoryId',
+        '#RunId': 'RunId',
+        '#Status': 'Status',
+        '#CreatedAt': 'CreatedAt',
+      });
+    }
+    // No InputFileKeys in the projection, so none is added to the runs.
+    expect(runs).toEqual([
+      { LaboratoryId: laboratoryId, RunId: 'run-a', Status: 'SUCCEEDED' },
+      { LaboratoryId: laboratoryId, RunId: 'run-b', Status: 'FAILED' },
+    ]);
+    queryItems.mockRestore();
+  });
+
   it('throws rather than returning a partial list when a page fails', async () => {
     const svc = new LaboratoryRunService();
     const queryItems = jest
