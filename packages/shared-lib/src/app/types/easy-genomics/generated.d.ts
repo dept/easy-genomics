@@ -430,6 +430,10 @@ export interface paths {
     /** Update Laboratory Run Limits */
     put: operations["updateLaboratoryRunLimits"];
   };
+  "/easy-genomics/usage/update-laboratory-workflow-run-limits/{id}": {
+    /** Update Laboratory Workflow Run Limits */
+    put: operations["updateLaboratoryWorkflowRunLimits"];
+  };
   "/easy-genomics/user/confirm-user-forgot-password-request": {
     /** Confirm User Forgot Password Request */
     post: operations["confirmUserForgotPasswordRequest"];
@@ -1294,6 +1298,11 @@ export interface components {
       HealthOmicsRunCacheId?: string;
       /** @description Saved only through update-laboratory-run-limits. Missing means the lab has no limits. */
       RunLimits?: components["schemas"]["LaboratoryRunLimits"];
+      /**
+       * @description Saved only through update-laboratory-workflow-run-limits, never through Create / Update.
+       * Keyed `${Platform}#${WorkflowId}`. Missing or empty means no workflow has its own limits.
+       */
+      WorkflowRunLimits?: Record<string, never>;
       CreatedAt?: string;
       CreatedBy?: string;
       ModifiedAt?: string;
@@ -1344,6 +1353,8 @@ export interface components {
         SamplesWarnAbove?: number;
         SamplesBlockAbove?: number;
       };
+      /** @description Saved only through update-laboratory-workflow-run-limits, never through Create / Update. */
+      WorkflowRunLimits?: Record<string, never>;
       CreatedAt?: string;
       CreatedBy?: string;
       ModifiedAt?: string;
@@ -2211,6 +2222,14 @@ export interface components {
       CostBlockAboveUsd?: number;
       SamplesWarnAbove?: number;
       SamplesBlockAbove?: number;
+    };
+    UpdateLaboratoryWorkflowRunLimitsRequest: {
+      /** @enum {string} */
+      Platform: "HEALTH_OMICS" | "SEQERA";
+      WorkflowId: string;
+      WorkflowName: string;
+      CostWarnAboveUsd?: number;
+      CostBlockAboveUsd?: number;
     };
     ConfirmUserForgotPasswordRequestRequest: {
       Token: string;
@@ -6582,6 +6601,32 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": components["schemas"]["UpdateLaboratoryRunLimitsRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["Laboratory"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** Update Laboratory Workflow Run Limits */
+  updateLaboratoryWorkflowRunLimits: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateLaboratoryWorkflowRunLimitsRequest"];
       };
     };
     responses: {
