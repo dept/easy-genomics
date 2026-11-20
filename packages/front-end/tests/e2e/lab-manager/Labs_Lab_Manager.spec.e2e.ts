@@ -1,6 +1,7 @@
 import { test, expect } from 'playwright/test';
 import { randomUUID } from 'node:crypto';
 import { envConfig } from '../../../config/env-config';
+import { openLab } from '../helpers/labs';
 
 const labName = 'Playwright test lab';
 const labNameUpdated = 'Automated Lab - Updated';
@@ -24,36 +25,24 @@ test('01 - Hide Create a new Laboratory button', async ({ page, baseURL }) => {
   await page.waitForTimeout(2000);
 
   // confirm button if enabled/visible
-  await expect(page.getByRole('button', { name: 'Create a new Lab' })).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Create a new lab' })).toBeHidden();
 });
 
 test('02 - Hide Remove a Laboratory option', async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/labs`);
   await page.waitForLoadState('networkidle');
 
-  // Check if any test lab exists
-  let hasTestLab = true;
-  try {
-    hasTestLab = await page.getByRole('row').nth(1).isVisible();
-  } catch (error) {
-    console.error('No labs found');
-  }
-
-  if (hasTestLab) {
-    // Click on the first lab row available
-    await page.getByRole('row').locator('button').nth(1).click();
-
-    // Confirm if Remove option is available on the first row
-    await expect(page.getByRole('menuitem', { name: 'Remove' })).toBeHidden();
-  }
+  // Removing a lab is only offered to org admins, through each row's More actions menu
+  await expect(page.getByRole('button', { name: /^More actions for / })).toHaveCount(0);
 });
 
 test('03 - Hide Organization link', async ({ page, baseURL }) => {
   await page.goto(`${baseURL}`);
   await page.waitForLoadState('networkidle');
 
-  //check if the Organizations menu is visible
+  // Only system admins get the Organizations link; everyone else switches through the org and lab chip
   await expect(page.getByRole('link', { name: 'Organizations' })).toBeHidden();
+  await expect(page.getByRole('link', { name: /Switch organization or lab/ })).toBeVisible();
 });
 
 test('04 - Hide Lab Settings tab', async ({ page, baseURL }) => {
@@ -68,8 +57,7 @@ test('04 - Hide Lab Settings tab', async ({ page, baseURL }) => {
   }
 
   if (hasTestLab == true) {
-    await page.getByRole('row', { name: labName }).locator('button').click();
-    await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+    await openLab(page, labName);
 
     // Lab managers cannot edit lab details, so the Settings tab is not shown
     await expect(page.getByRole('tab', { name: 'Settings' })).toBeHidden();
@@ -88,8 +76,7 @@ test('04 - Hide Lab Settings tab', async ({ page, baseURL }) => {
   }
 
   if (hasUpdatedTestLab == true) {
-    await page.getByRole('row', { name: labNameUpdated }).locator('button').click();
-    await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+    await openLab(page, labNameUpdated);
 
     // Lab managers cannot edit lab details, so the Settings tab is not shown
     await expect(page.getByRole('tab', { name: 'Settings' })).toBeHidden();
@@ -110,8 +97,7 @@ test('05 - Remove user from a Laboratory Successfully', async ({ page, baseURL }
   }
 
   if (hasUpdatedTestLab) {
-    await page.getByRole('row', { name: labNameUpdated }).locator('button').click();
-    await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+    await openLab(page, labNameUpdated);
     await page.getByRole('tab', { name: 'Users' }).click();
     await page.waitForTimeout(5 * 1000);
     await page.waitForLoadState('networkidle');
@@ -139,9 +125,7 @@ test('05 - Remove user from a Laboratory Successfully', async ({ page, baseURL }
 test('06 - Add a Lab Technician to a Lab Successfully', async ({ page, baseURL }) => {
   // Check if the user has been added already to a Lab
   await page.goto(`${baseURL}/labs`);
-  await page.getByRole('row', { name: labNameUpdated }).locator('button').click();
-  await page.waitForLoadState('networkidle');
-  await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+  await openLab(page, labNameUpdated);
   await page.getByRole('tab', { name: 'Users' }).click();
 
   let userHidden = false;
@@ -177,8 +161,7 @@ test('07 - Launch Seqera Run Successfully', async ({ page, baseURL }) => {
   // Check if a 'Playwright test lab' is existing then update can proceed
   if (hasTestLab) {
     // update Laboratory
-    await page.getByRole('row', { name: labNameUpdated }).locator('button').click();
-    await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+    await openLab(page, labNameUpdated);
     await page.waitForTimeout(5 * 1000);
 
     const automatedLabURL = await page.url();
@@ -271,8 +254,7 @@ test('08 - Check Seqera Run Details', async ({ page, baseURL }) => {
 
   // Check if a 'Playwright test lab' is existing then update can proceed
   if (hasTestLab) {
-    await page.getByRole('row', { name: labNameUpdated }).locator('button').click();
-    await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+    await openLab(page, labNameUpdated);
     await page.waitForTimeout(5 * 1000);
     await page.getByRole('tab', { name: 'Pipeline Runs' }).click();
     await page.waitForLoadState('networkidle');
@@ -319,8 +301,7 @@ test('09 - Check Seqera Run File Manager if files exist', async ({ page, baseURL
 
   // Check if a 'Playwright test lab' is existing then update can proceed
   if (hasTestLab) {
-    await page.getByRole('row', { name: labNameUpdated }).locator('button').click();
-    await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+    await openLab(page, labNameUpdated);
     await page.waitForTimeout(5 * 1000);
     await page.getByRole('tab', { name: 'Pipeline Runs' }).click();
     await page.waitForLoadState('networkidle');
@@ -391,8 +372,7 @@ test('11 - Launch HealthOmics Run Successfully', async ({ page, baseURL }) => {
   // Check if a 'Playwright test lab' is existing then update can proceed
   if (hasTestLab) {
     // update Laboratory
-    await page.getByRole('row', { name: labNameUpdated }).locator('button').click();
-    await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+    await openLab(page, labNameUpdated);
     await page.waitForTimeout(5 * 1000);
 
     const automatedLabURL = await page.url();
@@ -483,8 +463,7 @@ test('12 - Check HealthOmics Run Details', async ({ page, baseURL }) => {
 
   // Check if a 'Playwright test lab' is existing then update can proceed
   if (hasTestLab) {
-    await page.getByRole('row', { name: labNameUpdated }).locator('button').click();
-    await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+    await openLab(page, labNameUpdated);
     await page.waitForTimeout(5 * 1000);
     await page.getByRole('tab', { name: 'Pipeline Runs' }).click();
     await page.waitForLoadState('networkidle');
@@ -529,8 +508,7 @@ test('13 - Check HealthOmics Run All files if files exist', async ({ page, baseU
 
   // Check if a 'Playwright test lab' is existing then update can proceed
   if (hasTestLab) {
-    await page.getByRole('row', { name: labNameUpdated }).locator('button').click();
-    await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+    await openLab(page, labNameUpdated);
     await page.waitForTimeout(5 * 1000);
     await page.getByRole('tab', { name: 'Pipeline Runs' }).click();
     await page.waitForLoadState('networkidle');
@@ -607,8 +585,7 @@ test('14 - Launch HealthOmics Run without a file successfully', async ({ page, b
   // Check if a 'Playwright test lab' is existing then update can proceed
   if (hasTestLab) {
     // update Laboratory
-    await page.getByRole('row', { name: labNameUpdated }).locator('button').click();
-    await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+    await openLab(page, labNameUpdated);
     await page.waitForTimeout(5 * 1000);
     await page.getByRole('tab', { name: 'HealthOmics Workflows' }).click();
     await page.waitForLoadState('networkidle');
@@ -672,8 +649,7 @@ test('15 - Launch Seqera Run with a single file successfully', async ({ page, ba
   // Check if a 'Playwright test lab' is existing then update can proceed
   if (hasTestLab) {
     // update Laboratory
-    await page.getByRole('row', { name: labNameUpdated }).locator('button').click();
-    await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+    await openLab(page, labNameUpdated);
     await page.waitForTimeout(5 * 1000);
     await page.getByRole('tab', { name: 'Seqera Pipelines' }).click();
     await page.waitForLoadState('networkidle');
@@ -746,8 +722,7 @@ test('16 - Check if user can upload a single and pair files together unsuccessfu
   // Check if a 'Playwright test lab' is existing then update can proceed
   if (hasTestLab) {
     // update Laboratory
-    await page.getByRole('row', { name: labNameUpdated }).locator('button').click();
-    await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+    await openLab(page, labNameUpdated);
     await page.waitForTimeout(5 * 1000);
     await page.getByRole('tab', { name: 'Seqera Pipelines' }).click();
     await page.waitForLoadState('networkidle');

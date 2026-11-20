@@ -62,6 +62,35 @@
   function isClickableCrumb(crumb: NormalizedBreadcrumb, index: number): boolean {
     return Boolean(crumb.to) && !isCurrentCrumb(index);
   }
+
+  const route = useRoute();
+  const userStore = useUserStore();
+  const orgsStore = useOrgsStore();
+  const labsStore = useLabsStore();
+
+  function routeParam(name: string): string | null {
+    const value = route.params[name];
+    return typeof value === 'string' && value.length > 0 ? value : null;
+  }
+
+  // System admins and Organization settings name the org in the URL; everyone else is in their working org.
+  const breadcrumbOrgName = computed<string>(() => {
+    const orgId = routeParam('orgId') ?? (userStore.isSuperuser ? null : userStore.currentOrgId);
+    return orgId ? (orgsStore.orgs[orgId]?.Name ?? '') : '';
+  });
+
+  const breadcrumbLabName = computed<string>(() => {
+    const labId = routeParam('labId');
+    return labId ? (labsStore.labs[labId]?.Name ?? '') : '';
+  });
+
+  onBeforeMount(async () => {
+    // Signing in straight to a deep lab URL can leave the lab out of the store.
+    const labId = routeParam('labId');
+    if (props.showLabBreadcrumb && labId && !labsStore.labs[labId]) {
+      await labsStore.loadLab(labId);
+    }
+  });
 </script>
 
 <template>
@@ -73,13 +102,13 @@
         <nav v-if="showOrgBreadcrumb || showLabBreadcrumb || breadcrumbs.length" aria-label="Breadcrumb">
           <ol class="font-schibsted text-body flex list-none flex-row flex-wrap items-center gap-4 p-0 text-sm">
             <li v-if="showOrgBreadcrumb">
-              <EGBreadcrumbOrgs />
+              <span>{{ breadcrumbOrgName }}</span>
             </li>
 
             <template v-if="showLabBreadcrumb">
               <li aria-hidden="true">/</li>
               <li>
-                <EGBreadcrumbLabs />
+                <span>{{ breadcrumbLabName }}</span>
               </li>
             </template>
 

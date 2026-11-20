@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization';
+  import { contextChipText } from '@FE/utils/org-lab-navigation';
 
   const props = withDefaults(
     defineProps<{
@@ -25,29 +25,35 @@
     return $router.currentRoute.value.path.includes(url);
   }
 
-  const currentLabId = computed<string | null>(() => {
-    const labId = $route.params.labId;
-    return typeof labId === 'string' && labId.length > 0 ? labId : null;
+  function routeParam(name: string): string | null {
+    const value = $route.params[name];
+    return typeof value === 'string' && value.length > 0 ? value : null;
+  }
+
+  const inOrgSettings = computed<boolean>(() => $route.path.startsWith(`${orgsPath}/`));
+
+  const chipOrgName = computed<string | null>(() => {
+    const orgId = (inOrgSettings.value ? routeParam('orgId') : null) ?? userStore.currentOrgId;
+    return orgId ? (orgsStore.orgs[orgId]?.Name ?? null) : null;
   });
 
-  const currentLabName = computed<string | null>(() => {
-    if (!currentLabId.value) {
-      return null;
-    }
-    return labsStore.labs[currentLabId.value]?.Name ?? null;
+  const chipLabName = computed<string | null>(() => {
+    const labId = routeParam('labId') ?? userStore.mostRecentLabId;
+    return labId ? (labsStore.labs[labId]?.Name ?? null) : null;
   });
 
-  const labsNavLabel = computed<string>(() => {
-    if (currentLabName.value) {
-      return `Labs · ${currentLabName.value}`;
-    }
-    return 'Labs';
+  const chip = computed(() =>
+    contextChipText({ orgName: chipOrgName.value, labName: chipLabName.value, inOrgSettings: inOrgSettings.value }),
+  );
+
+  const chipAriaLabel = computed<string>(() => {
+    const where = inOrgSettings.value
+      ? `Organization settings for ${chipOrgName.value ?? 'your organization'}`
+      : `Working in ${[chipLabName.value, chipOrgName.value].filter(Boolean).join(', ')}`;
+    return `${where}. Switch organization or lab`;
   });
 
   const acctDropdownIsOpen = ref<boolean>(false);
-
-  const switchToOrgId = ref<string | null>(null);
-  const switchOrgDialogOpen = ref<boolean>(false);
 
   const accountMenuPanelId = 'account-menu-panel';
   const accountMenuRoot = ref<HTMLElement | null>(null);
@@ -164,12 +170,6 @@
     signOutAndRedirect();
   }
 
-  function selectSwitchToOrg(orgId: string): void {
-    closeAccountMenu();
-    switchToOrgId.value = orgId;
-    switchOrgDialogOpen.value = true;
-  }
-
   function onAccountMenuFocusOut(event: FocusEvent): void {
     const nextFocused = event.relatedTarget as Node | null;
 
@@ -181,12 +181,6 @@
       closeAccountMenu();
     }
   }
-
-  const otherOrgs = computed<Organization[]>(() =>
-    Object.values(orgsStore.orgs)
-      .filter((org) => org.OrganizationId !== userStore.currentOrgId)
-      .sort((a, b) => useSort().stringSortCompare(a.Name, b.Name)),
-  );
 </script>
 
 <template>
@@ -206,20 +200,18 @@
 
         <div class="flex min-w-0 items-center gap-2 md:gap-4">
           <nav aria-label="Primary" class="flex min-w-0 items-center gap-2 md:gap-4">
-            <ULink
+            <NuxtLink
               v-if="!userStore.isSuperuser"
               :to="labsPath"
-              :aria-current="isSubpath(labsPath) ? 'page' : undefined"
-              :aria-label="currentLabName ? `Labs, currently viewing ${currentLabName}` : 'Labs'"
-              inactive-class="text-body"
-              active-class="text-primary-dark bg-primary-muted"
-              :class="isSubpath(labsPath) ? 'text-primary-dark bg-primary-muted' : ''"
-              class="ULink text-body focus-visible:outline-primary-500 flex h-[30px] min-w-0 max-w-[12rem] items-center justify-center rounded-xl px-3 py-1 font-serif text-sm tracking-normal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 md:max-w-[18rem] md:px-4"
+              :aria-current="$route.path === labsPath ? 'page' : undefined"
+              :aria-label="chipAriaLabel"
+              class="bg-primary-muted text-primary-dark focus-visible:outline-primary-500 flex h-11 min-w-0 max-w-[14rem] flex-col justify-center rounded-xl px-3 leading-tight focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 md:max-w-[22rem] md:px-4"
             >
-              <span class="min-w-0 truncate">{{ labsNavLabel }}</span>
-            </ULink>
+              <span v-if="chip.orgLine" class="truncate text-xs opacity-80">{{ chip.orgLine }}</span>
+              <span class="truncate text-sm font-semibold">{{ chip.mainLine }}</span>
+            </NuxtLink>
             <ULink
-              v-if="userStore.canManageAnyOrgs()"
+              v-else
               :to="orgsPath"
               :aria-current="isSubpath(orgsPath) ? 'page' : undefined"
               inactive-class="text-body"
@@ -255,52 +247,28 @@
               class="account-menu-panel absolute right-0 top-full z-50 mt-1 w-80 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg"
               @keydown="onPanelKeydown"
             >
+              <div class="bg-background-light-grey flex flex-col gap-1 p-4">
+                <EGUserDisplay :initials="userStore.currentUserInitials" :name="userStore.currentUserDisplayName" />
+                <span v-if="userStore.currentUserDetails.email" class="text-muted truncate text-sm">
+                  {{ userStore.currentUserDetails.email }}
+                </span>
+              </div>
+
               <button
                 v-if="!userStore.isSuperuser"
                 type="button"
-                class="bg-background-light-grey focus-visible:outline-primary-500 flex w-full flex-row items-center gap-3 p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                class="focus-visible:outline-primary-500 w-full border-t px-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                 @click="goToProfile"
               >
-                <EGUserDisplay
-                  class="grow"
-                  :initials="userStore.currentUserInitials"
-                  :name="userStore.currentUserDisplayName"
-                  :organization="orgsStore.orgs[userStore.currentOrgId]?.Name ?? null"
-                />
-                <UIcon name="i-heroicons-chevron-right" class="h-6 w-6 shrink-0" aria-hidden="true" />
+                Edit profile
               </button>
-              <div v-else class="bg-background-light-grey p-4">
-                <EGUserDisplay
-                  :initials="userStore.currentUserInitials"
-                  :name="userStore.currentUserDisplayName"
-                  :organization="orgsStore.orgs[userStore.currentOrgId]?.Name ?? null"
-                />
-              </div>
-
-              <div v-if="!userStore.isSuperuser && otherOrgs.length > 0" class="bg-background-light-grey px-4 pb-2">
-                <div id="other-orgs-heading" class="text-muted pt-2">Other Organizations</div>
-
-                <div role="group" aria-labelledby="other-orgs-heading" class="flex w-full flex-col items-start">
-                  <div v-for="(org, i) of otherOrgs" :key="org.OrganizationId" class="flex w-full flex-col items-start">
-                    <div v-if="i > 0" class="w-full border-t" role="presentation" />
-
-                    <button
-                      type="button"
-                      class="focus-visible:outline-primary-500 flex min-h-[44px] w-full items-center justify-between py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-                      @click="selectSwitchToOrg(org.OrganizationId)"
-                    >
-                      <span class="truncate-text font-medium">{{ org.Name }}</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
 
               <button
                 type="button"
-                class="text-primary focus-visible:outline-primary-500 w-full p-4 text-left underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                class="text-primary focus-visible:outline-primary-500 w-full border-t px-4 py-3 text-left underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                 @click="onSignOut"
               >
-                Sign Out
+                Sign out
               </button>
             </div>
           </div>
@@ -313,8 +281,6 @@
       </template>
     </div>
   </header>
-
-  <EGSwitchOrgModal v-model="switchOrgDialogOpen" :switch-to-org-id="switchToOrgId" />
 </template>
 
 <style scoped lang="scss">
