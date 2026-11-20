@@ -326,6 +326,7 @@ sharedLib.addScripts({
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
 });
 sharedLib.addTask('generate:openapi', { exec: 'tsx src/app/openapi/generate-openapi.ts' });
+sharedLib.addTask('generate:healthomics-rates', { exec: 'tsx src/app/utils/generate-healthomics-rates.ts' });
 sharedLib.addTask('lint:openapi', { exec: 'redocly lint src/app/openapi/easy-genomics-api.yaml' });
 sharedLib.addTask('generate:api-types', {
   exec: 'openapi-typescript src/app/openapi/easy-genomics-api.yaml -o src/app/types/easy-genomics/generated.d.ts',

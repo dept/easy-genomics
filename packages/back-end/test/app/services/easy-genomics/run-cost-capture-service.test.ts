@@ -16,13 +16,13 @@ import { createOmicsServiceForLab } from '../../../../src/app/services/omics-lab
 import { SsmService } from '../../../../src/app/services/ssm-service';
 import { getNextFlowApiQueryParameters, httpRequest } from '../../../../src/app/utils/rest-api-utils';
 
-function mockOmicsServiceForLab(options?: { storageCapacity?: number }) {
+function mockOmicsServiceForLab(options?: { storageCapacity?: number; instanceType?: string }) {
   const start = new Date('2026-01-01T00:00:00Z');
   const stop = new Date('2026-01-01T01:00:00Z');
   (createOmicsServiceForLab as jest.Mock).mockResolvedValue({
     listAllRunTasks: jest.fn().mockResolvedValue([
       {
-        instanceType: 'omics.c.large',
+        instanceType: options?.instanceType ?? 'omics.c.large',
         startTime: start,
         stopTime: stop,
         status: 'COMPLETED',
@@ -55,6 +55,24 @@ describe('captureRunCostOutcome', () => {
       RunCostOutcome: existing,
     } as LaboratoryRun);
     expect(result).toEqual(existing);
+  });
+
+  it('names the run when a task is on an instance type with no rate', async () => {
+    mockOmicsServiceForLab({ instanceType: 'omics.z.huge' });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const result = await captureRunCostOutcome({
+      Platform: 'AWS HealthOmics',
+      RunId: 'run-unpriced-1',
+      ExternalRunId: 'omics-1',
+      LaboratoryId: 'lab-1',
+      OrganizationId: 'org-1',
+      UserId: 'user-1',
+    } as LaboratoryRun);
+
+    expect(result?.ActualComputeCostUsd).toBe(0);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('RunId=run-unpriced-1'));
+    warn.mockRestore();
   });
 
   it('captures HealthOmics compute and storage costs', async () => {
