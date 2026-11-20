@@ -2,6 +2,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import useLabsStore from '../../../src/app/stores/labs';
 
 const labDetails = jest.fn();
+const list = jest.fn();
 const updateRunLimits = jest.fn();
 const toastError = jest.fn();
 const isAuthed = jest.fn();
@@ -12,19 +13,38 @@ beforeEach(() => {
   jest.spyOn(console, 'error').mockImplementation(() => {});
 
   labDetails.mockReset().mockRejectedValue(new Error('network'));
+  list.mockReset();
   updateRunLimits.mockReset();
   toastError.mockReset();
   isAuthed.mockReset().mockResolvedValue(true);
   isLoggingOut = false;
 
   Object.assign(global, {
-    useNuxtApp: () => ({ $api: { labs: { labDetails, list: jest.fn(), updateRunLimits } } }),
+    useNuxtApp: () => ({ $api: { labs: { labDetails, list, updateRunLimits } } }),
     useToastStore: () => ({ error: toastError }),
     useUiStore: () => ({ isLoggingOut }),
     useAuth: () => ({ isAuthed }),
   });
 
   useLabsStore().reset();
+});
+
+describe('loadLabsForOrg', () => {
+  it('reports success and stores the labs', async () => {
+    list.mockResolvedValue([{ LaboratoryId: 'lab-1', OrganizationId: 'org-1', Name: 'Sequencing' }]);
+
+    await expect(useLabsStore().loadLabsForOrg('org-1')).resolves.toBe(true);
+    expect(useLabsStore().labIdsByOrg['org-1']).toEqual(['lab-1']);
+  });
+
+  it('reports failure and keeps the labs it had, so callers can tell stale from fresh', async () => {
+    list.mockResolvedValueOnce([{ LaboratoryId: 'lab-1', OrganizationId: 'org-1', Name: 'Sequencing' }]);
+    await useLabsStore().loadLabsForOrg('org-1');
+    list.mockRejectedValueOnce(new Error('403'));
+
+    await expect(useLabsStore().loadLabsForOrg('org-1')).resolves.toBe(false);
+    expect(useLabsStore().labIdsByOrg['org-1']).toEqual(['lab-1']);
+  });
 });
 
 describe('labs store load error toasts', () => {
