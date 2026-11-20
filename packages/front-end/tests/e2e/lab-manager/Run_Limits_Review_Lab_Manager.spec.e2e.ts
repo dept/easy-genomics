@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { test, expect, type Browser, type Page } from 'playwright/test';
 import type { LaboratoryRunLimits } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { envConfig } from '../../../config/env-config';
+import { openLab as openLabFromList } from '../helpers/labs';
 
 const labName = 'Automated Lab - Updated';
 const omicsWorkflow = 'k-florek/workshop-main';
@@ -66,8 +67,7 @@ async function openLab(page: Page, baseURL: string): Promise<boolean> {
   if (!hasLab) {
     return false;
   }
-  await page.getByRole('row', { name: labName }).locator('button').click();
-  await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+  await openLabFromList(page, labName);
   await page.waitForLoadState('networkidle');
   laboratoryId = page.url().match(/labs\/([^/?#]+)/)?.[1];
   return !!laboratoryId;
