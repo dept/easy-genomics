@@ -17,8 +17,8 @@ const ssmService = new SsmService();
 
 /**
  * Capture platform compute (and optional Omics storage) cost once a run reaches
- * a terminal state. Best-effort: callers should swallow failures so status sync
- * is never blocked by cost instrumentation.
+ * a terminal state. Throws on a platform error so the process-capture-run-cost
+ * consumer can retry; returns undefined when there is no cost to record.
  */
 export async function captureRunCostOutcome(laboratoryRun: LaboratoryRun): Promise<RunCostOutcome | undefined> {
   if (laboratoryRun.RunCostOutcome?.CostCapturedAt) {
