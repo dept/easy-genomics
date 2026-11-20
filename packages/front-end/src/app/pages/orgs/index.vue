@@ -1,26 +1,7 @@
 <script setup lang="ts">
-  import { Organization } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/organization';
-
-  definePageMeta({ fullWidthContent: true });
-
-  const $router = useRouter();
-  const { switchTo } = useSwitchOrganization();
-
-  if (!useUserStore().canManageAnyOrgs()) {
-    $router.push({ path: '/' });
-  }
-
-  async function onSelectOrg(org: Organization): Promise<void> {
-    await switchTo(org.OrganizationId, { showToast: false });
-    await navigateTo('/');
-  }
-
-  async function onManageOrg(org: Organization): Promise<void> {
-    await switchTo(org.OrganizationId, { showToast: false });
-    await navigateTo(`/orgs/${org.OrganizationId}`);
-  }
+  // Organizations are picked on the Organizations and labs page; system admins never land here
+  // because the auth guard rewrites their routes to /admin/orgs.
+  await navigateTo('/labs', { replace: true });
 </script>
 
-<template>
-  <EGOrgsList @select-org="onSelectOrg" @manage-org="onManageOrg" />
-</template>
+<template></template>
