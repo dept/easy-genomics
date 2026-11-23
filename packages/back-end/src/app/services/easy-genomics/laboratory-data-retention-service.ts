@@ -1,11 +1,13 @@
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import {
+  encodeS3ObjectRef,
   ExpiredRunOutput,
   LaboratoryDataTaggingService,
   permanentTagIdForLaboratory,
 } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
+import { LaboratorySampleService } from '@BE/services/easy-genomics/laboratory-sample-service';
 import { S3Service } from '@BE/services/s3-service';
 import {
   calculateExpiresAtEpochSeconds,
@@ -197,15 +199,18 @@ export class LaboratoryDataRetentionService {
   private readonly s3Service: S3Service;
   private readonly taggingService: LaboratoryDataTaggingService;
   private readonly runService: LaboratoryRunService;
+  private readonly sampleService: LaboratorySampleService;
 
   public constructor(deps?: {
     s3Service?: S3Service;
     taggingService?: LaboratoryDataTaggingService;
     runService?: LaboratoryRunService;
+    sampleService?: LaboratorySampleService;
   }) {
     this.s3Service = deps?.s3Service ?? new S3Service();
     this.taggingService = deps?.taggingService ?? new LaboratoryDataTaggingService();
     this.runService = deps?.runService ?? new LaboratoryRunService();
+    this.sampleService = deps?.sampleService ?? new LaboratorySampleService();
   }
 
   /**
@@ -594,6 +599,21 @@ export class LaboratoryDataRetentionService {
     return false;
   }
 
+  /**
+   * Keys in `keys` whose file row lists a sample right now, read fresh rather than from the sweep's
+   * snapshot. The ref is built from this bucket, the same way adding a file to a sample writes it.
+   */
+  private async findKeysLinkedToSamples(laboratoryId: string, bucket: string, keys: string[]): Promise<Set<string>> {
+    const keyByRef = new Map(keys.map((key) => [encodeS3ObjectRef(bucket, key), key]));
+    const sampleIdsByRef = await this.sampleService.getSampleIdsForFileRefs(laboratoryId, [...keyByRef.keys()]);
+    const linked = new Set<string>();
+    for (const [ref, sampleIds] of sampleIdsByRef) {
+      const key = keyByRef.get(ref);
+      if (key && sampleIds.length > 0) linked.add(key);
+    }
+    return linked;
+  }
+
   /** Removes usages whose runs are gone from a file this sweep is keeping. */
   private async dropStaleUsages(
     laboratory: Laboratory,
@@ -902,21 +922,27 @@ export class LaboratoryDataRetentionService {
         const batch = keys.slice(0, remaining);
         if (batch.length < keys.length) stats.hitDeleteCap = true;
 
-        const removed = await this.deleteKeysInBatches(bucket, batch);
+        // The file-row snapshot predates this delete; a key added to a sample since then must survive.
+        // A failed re-check throws into the catch below, so nothing in the batch is deleted.
+        const newlyLinked = await this.findKeysLinkedToSamples(laboratory.LaboratoryId, bucket, batch);
+        const deletable = batch.filter((key) => !newlyLinked.has(key));
+        stats.outputObjectsProtected += newlyLinked.size;
+
+        const removed = await this.deleteKeysInBatches(bucket, deletable);
         remaining -= removed;
         stats.outputObjectsDeleted += removed;
-        stats.sampleSheetsDeleted += sheetKeys.filter((k) => batch.includes(k)).length;
+        stats.sampleSheetsDeleted += sheetKeys.filter((k) => deletable.includes(k)).length;
 
         // Drop FILE# rows for any deleted object that had one, so the tagging table does not keep
         // pointing at objects that no longer exist.
-        for (const key of batch) {
+        for (const key of deletable) {
           const ref = fileRows.refByKey.get(key);
           if (ref) await this.taggingService.deleteFileRowAndAssociations(laboratory.LaboratoryId, ref);
         }
 
         // Only retire the marker when everything deletable drained; otherwise the next sweep
         // resumes. Permanent-protected and sample-linked keys are intentionally retained and do not block this.
-        if (removed === keys.length) {
+        if (removed + newlyLinked.size === keys.length) {
           if (row.OutputPrefix) stats.outputPrefixesDeleted++;
           await this.retireRunOutput(laboratory.LaboratoryId, row);
         }
