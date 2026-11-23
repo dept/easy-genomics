@@ -85,9 +85,3 @@ export function formatRunLimit(value: number | undefined, kind: 'usd' | 'count')
   const amount = value.toLocaleString('en-US');
   return kind === 'usd' ? `US$${amount}` : amount;
 }
-
-export function usageLimitsNote(editingLabName: string | null, error: RunLimitsDraftError | null): string {
-  if (error) return error.message;
-  if (editingLabName !== null) return `Editing ${editingLabName}. Leave an amount blank to skip it.`;
-  return 'Runs already going are never stopped by a change here.';
-}

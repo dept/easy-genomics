@@ -3,7 +3,6 @@ import {
   formatRunLimit,
   runLimitsDraftError,
   runLimitsToDraft,
-  usageLimitsNote,
   type RunLimitsDraft,
 } from '../../../src/app/utils/usage-limits-form';
 
@@ -86,13 +85,5 @@ describe('formatRunLimit', () => {
     expect(formatRunLimit(1500, 'usd')).toBe('US$1,500');
     expect(formatRunLimit(1000, 'count')).toBe('1,000');
     expect(formatRunLimit(undefined, 'usd')).toBe('Not set');
-  });
-});
-
-describe('usageLimitsNote', () => {
-  it('picks the note', () => {
-    expect(usageLimitsNote(null, null)).toBe('Runs already going are never stopped by a change here.');
-    expect(usageLimitsNote('Sequencing', null)).toBe('Editing Sequencing. Leave an amount blank to skip it.');
-    expect(usageLimitsNote('Sequencing', { field: 'SamplesBlockAbove', message: 'X' })).toBe('X');
   });
 });

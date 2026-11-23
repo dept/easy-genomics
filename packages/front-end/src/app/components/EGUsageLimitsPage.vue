@@ -5,7 +5,6 @@
     formatRunLimit,
     runLimitsDraftError,
     runLimitsToDraft,
-    usageLimitsNote,
     type RunLimitField,
     type RunLimitsDraft,
   } from '@FE/utils/usage-limits-form';
@@ -38,11 +37,7 @@
   const labs = computed<Laboratory[]>(() =>
     [...labsStore.labsForOrg(props.orgId)].sort((labA, labB) => labA.Name.localeCompare(labB.Name)),
   );
-  const editingLabName = computed<string | null>(
-    () => labs.value.find((lab) => lab.LaboratoryId === editingLabId.value)?.Name ?? null,
-  );
   const draftError = computed(() => (editingLabId.value ? runLimitsDraftError(draft.value) : null));
-  const note = computed(() => usageLimitsNote(editingLabName.value, draftError.value));
 
   // The store is persisted, so always fetch: a stale localStorage copy must not be what the admin edits.
   onMounted(async () => {
@@ -83,14 +78,7 @@
 
 <template>
   <div :aria-busy="isLoading || isSaving" class="flex flex-col gap-6">
-    <div>
-      <EGText :id="props.headingId" tag="h2" class="mb-2">Usage limits</EGText>
-      <p class="text-muted max-w-3xl text-sm">
-        Set how much a single run can cost, and how many samples it can include, for each lab. If a run goes over,
-        technicians are warned or stopped on the review step before it starts. Only organization admins can change
-        these, and any amount can be left blank.
-      </p>
-    </div>
+    <EGText :id="props.headingId" tag="h2" class="sr-only">Usage limits</EGText>
 
     <section class="border-background-dark-grey rounded-xl border bg-white p-6" aria-labelledby="usage-limits-by-lab">
       <EGText id="usage-limits-by-lab" tag="h3" class="mb-1">Limits by lab</EGText>
@@ -241,15 +229,6 @@
             </tbody>
           </table>
         </div>
-
-        <p
-          class="mt-4 text-sm"
-          :class="draftError ? 'text-alert-danger' : 'text-muted'"
-          aria-live="polite"
-          data-testid="usage-limits-note"
-        >
-          {{ note }}
-        </p>
       </template>
     </section>
   </div>
