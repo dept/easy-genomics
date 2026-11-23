@@ -927,6 +927,10 @@ export class LaboratorySampleService extends DynamoDBService {
       const ref = encodeS3ObjectRef(bucket, key);
       const mapSk = skSampleFile(setId, ref);
 
+      // The retention sweep reads sample links from the file row, so that write goes first: a
+      // failure in between leaves the file kept, and a retry (link row already present) repairs it.
+      await this.addSampleIdToFileRow(laboratoryId, ref, bucket, key, setId);
+
       try {
         await this.putItem({
           TableName: TABLE_NAME,
@@ -947,7 +951,6 @@ export class LaboratorySampleService extends DynamoDBService {
           ExpressionAttributeNames: { '#sk': 'Sk' },
         });
         addedKeys.push(key);
-        await this.addSampleIdToFileRow(laboratoryId, ref, bucket, key, setId);
       } catch (e: unknown) {
         if (!isConditionalCheckFailed(e)) throw e;
       }

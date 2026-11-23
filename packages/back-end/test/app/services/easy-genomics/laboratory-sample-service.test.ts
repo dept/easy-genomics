@@ -900,6 +900,46 @@ describe('LaboratorySampleService.addFilesToSample', () => {
     ).rejects.toThrow(S3KeyOutOfPrefixError);
     expect(mockPutItem).not.toHaveBeenCalled();
   });
+
+  it('records the sample on the file before writing the link row', async () => {
+    jest.spyOn(svc, 'getSample').mockResolvedValue(sampleFixture());
+    const addSampleId = jest.spyOn(svc as never, 'addSampleIdToFileRow' as never);
+
+    await svc.addFilesToSample(labFixture(), 'user-1', 'my-bucket', 'sample-1', [
+      'org-1/lab-1/NA12878_R1_001.fastq.gz',
+    ]);
+
+    expect(addSampleId.mock.invocationCallOrder[0]).toBeLessThan(mockPutItem.mock.invocationCallOrder[0]);
+  });
+
+  it('still records the sample on the file when the link row already exists', async () => {
+    jest.spyOn(svc, 'getSample').mockResolvedValue(sampleFixture());
+    const addSampleId = jest.spyOn(svc as never, 'addSampleIdToFileRow' as never);
+    mockPutItem.mockRejectedValueOnce(new ConditionalCheckFailedException({ message: 'c', $metadata: {} }));
+
+    await svc.addFilesToSample(labFixture(), 'user-1', 'my-bucket', 'sample-1', [
+      'org-1/lab-1/NA12878_R1_001.fastq.gz',
+    ]);
+
+    expect(addSampleId).toHaveBeenCalledWith(
+      expect.any(String),
+      encodeS3ObjectRef('my-bucket', 'org-1/lab-1/NA12878_R1_001.fastq.gz'),
+      'my-bucket',
+      'org-1/lab-1/NA12878_R1_001.fastq.gz',
+      'sample-1',
+    );
+  });
+
+  it('leaves the file protected when the link-row write fails', async () => {
+    jest.spyOn(svc, 'getSample').mockResolvedValue(sampleFixture());
+    const addSampleId = jest.spyOn(svc as never, 'addSampleIdToFileRow' as never);
+    mockPutItem.mockRejectedValueOnce(new Error('ProvisionedThroughputExceededException'));
+
+    await expect(
+      svc.addFilesToSample(labFixture(), 'user-1', 'my-bucket', 'sample-1', ['org-1/lab-1/NA12878_R1_001.fastq.gz']),
+    ).rejects.toThrow('ProvisionedThroughputExceededException');
+    expect(addSampleId).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('LaboratorySampleService.createOrExtendSample regex expansion', () => {
