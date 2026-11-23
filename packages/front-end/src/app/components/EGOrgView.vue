@@ -453,11 +453,15 @@
   />
 
   <EGPageHeader
-    :title="activeTabKey === 'storage' ? 'Storage' : org.Name"
+    :title="
+      activeTabKey === 'storage' ? 'Storage' : activeTabKey === 'usage-limits' ? 'Usage limits' : org.Name
+    "
     :description="
       activeTabKey === 'storage'
         ? 'Every lab in this organization and what it is holding. Read-only here. Open a lab to change its policy or clear anything.'
-        : org.Description
+        : activeTabKey === 'usage-limits'
+          ? 'Warn or block runs before they start, by estimated cost or number of samples. Leave a limit blank if a lab doesn\'t need it.'
+          : org.Description
     "
     :back-action="() => $router.push('/orgs')"
     :show-back="true"

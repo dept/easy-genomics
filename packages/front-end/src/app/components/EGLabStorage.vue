@@ -396,7 +396,7 @@
         class="border-stroke-light rounded-2xl border bg-white p-4"
       >
         <h2 id="lab-storage-retention-heading" class="sr-only">Edit automatic retention</h2>
-        <div class="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:items-start">
+        <div class="grid gap-6 md:grid-cols-2 md:items-start lg:grid-cols-4">
           <EGFormGroup
             label="Clear run outputs and sample sheets after"
             name="RunRetentionMonths"
@@ -417,7 +417,7 @@
               Counted from when the run finished. Enter 0 to keep them forever. Protected runs are always skipped.
             </p>
           </EGFormGroup>
-          <div class="space-y-3 md:pt-8">
+          <div class="space-y-3 md:pt-8 lg:col-span-3">
             <UCheckbox
               v-model="includePrePolicyData"
               :disabled="isSavingRetention"
