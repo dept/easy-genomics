@@ -84,6 +84,6 @@ describe('formatRunLimit', () => {
   it('formats amounts', () => {
     expect(formatRunLimit(1500, 'usd')).toBe('US$1,500');
     expect(formatRunLimit(1000, 'count')).toBe('1,000');
-    expect(formatRunLimit(undefined, 'usd')).toBe('Not set');
+    expect(formatRunLimit(undefined, 'usd')).toBe('—');
   });
 });

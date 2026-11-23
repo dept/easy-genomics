@@ -460,7 +460,7 @@
       activeTabKey === 'storage'
         ? 'Every lab in this organization and what it is holding. Read-only here. Open a lab to change its policy or clear anything.'
         : activeTabKey === 'usage-limits'
-          ? 'Set cost and sample limits per lab. Runs over a limit are warned or blocked before they start.'
+          ? 'Warn or block runs before they start, by estimated cost or number of samples. Leave a limit blank if a lab doesn\'t need it.'
           : org.Description
     "
     :back-action="() => $router.push('/orgs')"
