@@ -310,11 +310,7 @@ export class LaboratoryStorageService {
       }
     }
 
-    const sampleLinkedKeys = new Set(
-      fileRows.rows.filter((row) => row.ObjectKey && (row.SampleIds || []).length > 0).map((row) => row.ObjectKey),
-    );
-
-    return { bucket, runCount: runs.length, entries, fileRows, sampleLinkedKeys, claimants };
+    return { bucket, runCount: runs.length, entries, fileRows, sampleLinkedKeys: fileRows.sampleLinkedKeys, claimants };
   }
 
   private async listObjects(bucket: string, prefix: string, budgetMs?: number): Promise<StoredObject[]> {
