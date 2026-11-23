@@ -1,38 +1,35 @@
 import { canDeletePrivateOmicsWorkflow } from '../../../src/app/utils/omics-workflow-ownership';
 
 describe('canDeletePrivateOmicsWorkflow', () => {
-  const ownedWorkflow = {
+  const privateWorkflow = {
     id: 'wf-1',
     source: 'PRIVATE' as const,
-    tags: { UserId: 'user-1' },
+    tags: { UserId: 'user-1', Application: 'easy-genomics' },
   };
 
-  it('allows a private workflow created by the current user', () => {
+  it('allows an org admin to delete a private workflow they did not create', () => {
     expect(
       canDeletePrivateOmicsWorkflow({
-        workflow: ownedWorkflow,
-        canCreateOmicsWorkflows: true,
-        userIds: ['user-1', 'internal-1'],
+        workflow: privateWorkflow,
+        isOrgAdmin: true,
       }),
     ).toBe(true);
   });
 
-  it('matches either current user id', () => {
+  it('allows when creator tags are missing (API enforces Easy Genomics ownership)', () => {
     expect(
       canDeletePrivateOmicsWorkflow({
-        workflow: ownedWorkflow,
-        canCreateOmicsWorkflows: true,
-        userIds: ['other', 'user-1'],
+        workflow: { id: 'wf-1', source: 'PRIVATE' },
+        isOrgAdmin: true,
       }),
     ).toBe(true);
   });
 
-  it('denies when the caller cannot create workflows', () => {
+  it('denies when the caller is not an org admin', () => {
     expect(
       canDeletePrivateOmicsWorkflow({
-        workflow: ownedWorkflow,
-        canCreateOmicsWorkflows: false,
-        userIds: ['user-1'],
+        workflow: privateWorkflow,
+        isOrgAdmin: false,
       }),
     ).toBe(false);
   });
@@ -40,9 +37,8 @@ describe('canDeletePrivateOmicsWorkflow', () => {
   it('denies shared workflows', () => {
     expect(
       canDeletePrivateOmicsWorkflow({
-        workflow: { ...ownedWorkflow, source: 'SHARED' },
-        canCreateOmicsWorkflows: true,
-        userIds: ['user-1'],
+        workflow: { ...privateWorkflow, source: 'SHARED' },
+        isOrgAdmin: true,
       }),
     ).toBe(false);
   });
@@ -50,39 +46,17 @@ describe('canDeletePrivateOmicsWorkflow', () => {
   it('denies when the workflow id is missing', () => {
     expect(
       canDeletePrivateOmicsWorkflow({
-        workflow: { ...ownedWorkflow, id: undefined },
-        canCreateOmicsWorkflows: true,
-        userIds: ['user-1'],
+        workflow: { ...privateWorkflow, id: undefined },
+        isOrgAdmin: true,
       }),
     ).toBe(false);
   });
 
-  it('fails closed when tags are missing (console-created or unenriched list item)', () => {
+  it('denies when tags show the workflow was not created via Easy Genomics', () => {
     expect(
       canDeletePrivateOmicsWorkflow({
-        workflow: { id: 'wf-1', source: 'PRIVATE' },
-        canCreateOmicsWorkflows: true,
-        userIds: ['user-1'],
-      }),
-    ).toBe(false);
-  });
-
-  it('fails closed when UserId is missing from tags', () => {
-    expect(
-      canDeletePrivateOmicsWorkflow({
-        workflow: { id: 'wf-1', source: 'PRIVATE', tags: { LaboratoryId: 'lab-1' } },
-        canCreateOmicsWorkflows: true,
-        userIds: ['user-1'],
-      }),
-    ).toBe(false);
-  });
-
-  it('denies when UserId belongs to another user', () => {
-    expect(
-      canDeletePrivateOmicsWorkflow({
-        workflow: ownedWorkflow,
-        canCreateOmicsWorkflows: true,
-        userIds: ['someone-else'],
+        workflow: { id: 'wf-1', source: 'PRIVATE', tags: { Application: 'aws-console' } },
+        isOrgAdmin: true,
       }),
     ).toBe(false);
   });

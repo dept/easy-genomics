@@ -564,8 +564,7 @@
   function canDeleteOmicsWorkflow(workflow: LabOmicsWorkflow): boolean {
     return canDeletePrivateOmicsWorkflow({
       workflow,
-      canCreateOmicsWorkflows: userStore.isOrgAdmin(),
-      userIds: [userStore.currentUserDetails.id, userStore.currentUserDetails.internalId],
+      isOrgAdmin: userStore.isOrgAdmin(),
     });
   }
 
