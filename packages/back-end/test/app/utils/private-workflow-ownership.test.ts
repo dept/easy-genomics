@@ -1,63 +1,56 @@
-import {
-  canDeleteOwnedPrivateWorkflow,
-  creatorIdsFromAuthorizerClaims,
-} from '../../../src/app/utils/private-workflow-ownership-utils';
+import { canDeleteOwnedPrivateWorkflow } from '../../../src/app/utils/private-workflow-ownership-utils';
 
 describe('private-workflow-ownership-utils', () => {
   const laboratoryId = 'lab-1';
   const organizationId = 'org-1';
-  const creatorIds = new Set(['user-1', 'user-sub']);
 
-  const ownedTags = {
+  const labTags = {
     Application: 'easy-genomics',
     LaboratoryId: laboratoryId,
     OrganizationId: organizationId,
     UserId: 'user-1',
   };
 
-  it('collects sub, cognito username, and custom UserId claims', () => {
-    expect(
-      creatorIdsFromAuthorizerClaims({
-        'sub': 'sub-1',
-        'cognito:username': 'username-1',
-        'UserId': 'internal-1',
-      }),
-    ).toEqual(new Set(['sub-1', 'username-1', 'internal-1']));
-  });
-
-  it('ignores blank claim values', () => {
-    expect(creatorIdsFromAuthorizerClaims({ sub: 'sub-1', UserId: '  ' })).toEqual(new Set(['sub-1']));
-  });
-
-  it('allows a workflow created in-app by the caller in the current lab', () => {
+  it('allows an Easy Genomics private workflow tagged to the laboratory', () => {
     expect(
       canDeleteOwnedPrivateWorkflow({
-        tags: ownedTags,
+        tags: labTags,
         laboratoryId,
         organizationId,
-        creatorIds,
       }),
     ).toBe(true);
   });
 
-  it('denies when UserId does not match the caller', () => {
+  it('allows when UserId belongs to another user (org admin may delete any lab workflow)', () => {
     expect(
       canDeleteOwnedPrivateWorkflow({
-        tags: { ...ownedTags, UserId: 'someone-else' },
+        tags: { ...labTags, UserId: 'someone-else' },
         laboratoryId,
         organizationId,
-        creatorIds,
       }),
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it('allows when UserId is omitted', () => {
+    expect(
+      canDeleteOwnedPrivateWorkflow({
+        tags: {
+          Application: 'easy-genomics',
+          LaboratoryId: laboratoryId,
+          OrganizationId: organizationId,
+        },
+        laboratoryId,
+        organizationId,
+      }),
+    ).toBe(true);
   });
 
   it('denies when the laboratory tag does not match', () => {
     expect(
       canDeleteOwnedPrivateWorkflow({
-        tags: { ...ownedTags, LaboratoryId: 'other-lab' },
+        tags: { ...labTags, LaboratoryId: 'other-lab' },
         laboratoryId,
         organizationId,
-        creatorIds,
       }),
     ).toBe(false);
   });
@@ -65,10 +58,9 @@ describe('private-workflow-ownership-utils', () => {
   it('denies when the organization tag does not match', () => {
     expect(
       canDeleteOwnedPrivateWorkflow({
-        tags: { ...ownedTags, OrganizationId: 'other-org' },
+        tags: { ...labTags, OrganizationId: 'other-org' },
         laboratoryId,
         organizationId,
-        creatorIds,
       }),
     ).toBe(false);
   });
@@ -79,22 +71,16 @@ describe('private-workflow-ownership-utils', () => {
         tags: undefined,
         laboratoryId,
         organizationId,
-        creatorIds,
       }),
     ).toBe(false);
   });
 
-  it('denies tags that omit UserId', () => {
+  it('denies when Application is not easy-genomics', () => {
     expect(
       canDeleteOwnedPrivateWorkflow({
-        tags: {
-          Application: 'easy-genomics',
-          LaboratoryId: laboratoryId,
-          OrganizationId: organizationId,
-        },
+        tags: { ...labTags, Application: 'aws-console' },
         laboratoryId,
         organizationId,
-        creatorIds,
       }),
     ).toBe(false);
   });
