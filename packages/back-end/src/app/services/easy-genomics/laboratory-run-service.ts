@@ -7,7 +7,11 @@ import {
   UpdateItemCommandOutput,
 } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
-import { LaboratoryRunSchema } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run';
+import {
+  LaboratoryRunSchema,
+  RUN_COST_CAPTURE_ERROR_MAX_LENGTH,
+} from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run';
+import { RunCostOutcome } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import {
   LaboratoryRunAlreadyExistsError,
@@ -516,6 +520,92 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
       if (err?.name === 'ConditionalCheckFailedException') {
         return { published: false, run: await this.get(input.LaboratoryId, input.RunId) };
       }
+      throw err;
+    }
+  }
+
+  /**
+   * Writes a run's captured cost only if it has none yet, touching no other run attribute, so
+   * a retried or duplicate capture can neither overwrite a recorded cost nor a concurrent
+   * status change. Returns `false` when the run already had a captured cost.
+   */
+  public async recordRunCostOutcome(input: {
+    LaboratoryId: string;
+    RunId: string;
+    RunCostOutcome: RunCostOutcome;
+    ModifiedBy: string;
+  }): Promise<boolean> {
+    try {
+      await this.updateItem({
+        TableName: this.LABORATORY_RUN_TABLE_NAME,
+        Key: {
+          LaboratoryId: { S: input.LaboratoryId },
+          RunId: { S: input.RunId },
+        },
+        UpdateExpression:
+          'SET #RunCostOutcome = :o, #ModifiedAt = :ma, #ModifiedBy = :mb ' +
+          'REMOVE #RunCostCaptureFailedAt, #RunCostCaptureError',
+        ConditionExpression: 'attribute_not_exists(#RunCostOutcome.#CostCapturedAt)',
+        ExpressionAttributeNames: {
+          '#RunCostOutcome': 'RunCostOutcome',
+          '#CostCapturedAt': 'CostCapturedAt',
+          '#ModifiedAt': 'ModifiedAt',
+          '#ModifiedBy': 'ModifiedBy',
+          '#RunCostCaptureFailedAt': 'RunCostCaptureFailedAt',
+          '#RunCostCaptureError': 'RunCostCaptureError',
+        },
+        ExpressionAttributeValues: marshall(
+          {
+            ':o': input.RunCostOutcome,
+            ':ma': new Date().toISOString(),
+            ':mb': input.ModifiedBy,
+          },
+          { removeUndefinedValues: true },
+        ),
+      });
+      return true;
+    } catch (err) {
+      if (isConditionalCheckFailed(err)) return false;
+      throw err;
+    }
+  }
+
+  /**
+   * Marks a run whose cost capture gave up, so the status check stops re-sending it. Conditional
+   * on no captured cost, so it never overwrites a capture that won the race, and on the run
+   * existing, since UpdateItem would otherwise create a row for a deleted run. Returns false
+   * when either condition fails. `recordRunCostOutcome` removes the marker, so a later
+   * successful capture still lands.
+   */
+  public async recordRunCostCaptureFailure(input: {
+    LaboratoryId: string;
+    RunId: string;
+    Error: string;
+  }): Promise<boolean> {
+    try {
+      await this.updateItem({
+        TableName: this.LABORATORY_RUN_TABLE_NAME,
+        Key: {
+          LaboratoryId: { S: input.LaboratoryId },
+          RunId: { S: input.RunId },
+        },
+        UpdateExpression: 'SET #RunCostCaptureFailedAt = :fa, #RunCostCaptureError = :e',
+        ConditionExpression: 'attribute_exists(#RunId) AND attribute_not_exists(#RunCostOutcome.#CostCapturedAt)',
+        ExpressionAttributeNames: {
+          '#RunId': 'RunId',
+          '#RunCostCaptureFailedAt': 'RunCostCaptureFailedAt',
+          '#RunCostCaptureError': 'RunCostCaptureError',
+          '#RunCostOutcome': 'RunCostOutcome',
+          '#CostCapturedAt': 'CostCapturedAt',
+        },
+        ExpressionAttributeValues: marshall({
+          ':fa': new Date().toISOString(),
+          ':e': input.Error.slice(0, RUN_COST_CAPTURE_ERROR_MAX_LENGTH),
+        }),
+      });
+      return true;
+    } catch (err) {
+      if (isConditionalCheckFailed(err)) return false;
       throw err;
     }
   }

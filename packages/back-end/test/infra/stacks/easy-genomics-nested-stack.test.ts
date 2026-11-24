@@ -1,5 +1,6 @@
 import { App, Stack } from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
+import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import { IamConstruct } from '../../../src/infra/constructs/iam-construct';
 import { LambdaConstruct } from '../../../src/infra/constructs/lambda-construct';
 import { SesConstruct } from '../../../src/infra/constructs/ses-construct';
@@ -196,6 +197,30 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
     expect(notificationQueueConfig.deadLetterQueue.maxReceiveCount).toBe(3);
   });
 
+  it('gives the run status update queue a FIFO dead-letter queue and reports batch item failures', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    const nestedStack = new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const sqsProps = (SqsConstruct as unknown as jest.Mock).mock.calls[0][2];
+    const updateQueueConfig = sqsProps.queues['laboratory-run-update-queue'];
+    expect(updateQueueConfig.deadLetterQueue.maxReceiveCount).toBe(3);
+    expect(updateQueueConfig.deadLetterQueue.queue).toBe(nestedStack.laboratoryRunUpdateDlq);
+    Template.fromStack(nestedStack).hasResourceProperties('AWS::SQS::Queue', {
+      QueueName: 'easy-genomics-laboratory-run-update-dlq.fifo',
+      FifoQueue: true,
+      MessageRetentionPeriod: 14 * 24 * 60 * 60,
+    });
+
+    const updateQueue = (SqsConstruct as unknown as jest.Mock).mock.results[0].value.sqsQueues.get(
+      'laboratory-run-update-queue',
+    );
+    const updateQueueEventSources = (SqsEventSource as unknown as jest.Mock).mock.calls.filter(
+      ([queue]) => queue === updateQueue,
+    );
+    expect(updateQueueEventSources).toEqual([[updateQueue, { batchSize: 5, reportBatchItemFailures: true }]]);
+  });
+
   it('wires the new notification queue URL into the existing process-update-laboratory-run lambda', () => {
     const app = new App();
     const parentStack = new Stack(app, 'parent-stack');
@@ -207,6 +232,26 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
       lambdaProps.lambdaFunctionsResources['/easy-genomics/laboratory/run/process-update-laboratory-run'];
 
     expect(triggerConfig.environment.SQS_LABORATORY_RUN_NOTIFICATION_QUEUE_URL).toBe('https://sqs/run-notify');
+  });
+
+  it.each([
+    [undefined, 'true'],
+    [{ enabled: true }, 'true'],
+    [{ enabled: false }, 'false'],
+  ])('tells cost capture whether the rate refresh is on (%j)', (healthomicsRatesRefresh, expected) => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', {
+      ...createProps(),
+      healthomicsRatesRefresh,
+    });
+
+    const lambdaConstructMock = LambdaConstruct as unknown as jest.Mock;
+    const lambdaProps = lambdaConstructMock.mock.calls[lambdaConstructMock.mock.calls.length - 1][2];
+    const captureConfig =
+      lambdaProps.lambdaFunctionsResources['/easy-genomics/laboratory/run/process-update-laboratory-run'];
+
+    expect(captureConfig.environment.HEALTHOMICS_RATES_REFRESH_ENABLED).toBe(expected);
   });
 
   it('wires the run-export queue into the request and process lambdas', () => {
@@ -259,6 +304,47 @@ describe('EasyGenomicsNestedStack environment wiring', () => {
         }),
       ]),
     );
+  });
+
+  it('lets the run status update read the stored HealthOmics rates', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const iamInstance = (IamConstruct as unknown as jest.Mock).mock.results[0].value;
+    const statements = iamInstance
+      .getPolicyStatements('/easy-genomics/laboratory/run/process-update-laboratory-run')
+      .map((statement: any) => statement.toStatementJson());
+
+    expect(statements).toContainEqual({
+      Effect: 'Allow',
+      Action: 'ssm:GetParameter',
+      Resource: 'arn:aws:ssm:us-west-2:123456789012:parameter/easy-genomics/healthomics-rates/current',
+    });
+  });
+
+  it('lets the status update publish to the run-cost capture queue in the usage stack', () => {
+    const app = new App();
+    const parentStack = new Stack(app, 'parent-stack');
+    new EasyGenomicsNestedStack(parentStack, 'easy-genomics-test-stack', createProps());
+
+    const lambdaConstructMock = LambdaConstruct as unknown as jest.Mock;
+    const lambdaProps = lambdaConstructMock.mock.calls[0][2];
+    const updateConfig =
+      lambdaProps.lambdaFunctionsResources['/easy-genomics/laboratory/run/process-update-laboratory-run'];
+    expect(updateConfig.environment.SQS_RUN_COST_CAPTURE_QUEUE_URL).toBe(
+      'https://sqs.us-west-2.amazonaws.com/123456789012/easy-genomics-run-cost-capture-queue.fifo',
+    );
+
+    const iamInstance = (IamConstruct as unknown as jest.Mock).mock.results[0].value;
+    const statements = iamInstance
+      .getPolicyStatements('/easy-genomics/laboratory/run/process-update-laboratory-run')
+      .map((statement: any) => statement.toStatementJson());
+    expect(statements).toContainEqual({
+      Effect: 'Allow',
+      Action: 'sqs:SendMessage',
+      Resource: 'arn:aws:sqs:us-west-2:123456789012:easy-genomics-run-cost-capture-queue.fifo',
+    });
   });
 
   it('adds IAM policy statements for run-export routes', async () => {

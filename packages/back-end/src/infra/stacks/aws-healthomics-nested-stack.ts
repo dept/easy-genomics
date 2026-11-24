@@ -867,6 +867,14 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         actions: ['s3:GetObject', 's3:HeadObject', 's3:ListBucket'],
         effect: Effect.ALLOW,
       }),
+      // Counts warned and blocked launches in the daily usage totals.
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-usage-daily-total-table`,
+        ],
+        actions: ['dynamodb:UpdateItem'],
+        effect: Effect.ALLOW,
+      }),
       workflowAccessQuery(),
       new PolicyStatement({
         resources: [

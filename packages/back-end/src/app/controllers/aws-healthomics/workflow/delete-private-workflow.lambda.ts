@@ -17,9 +17,8 @@ import { validateOrganizationAdminAccess, validateSystemAdminAccess } from '@BE/
 import { resolveSharedWorkflowOwnerId } from '@BE/utils/omics-shared-workflow-utils';
 import { deletePrivateOmicsWorkflow } from '@BE/utils/private-workflow-delete-utils';
 import {
-  PRIVATE_WORKFLOW_OWNERSHIP_DENIED_MESSAGE,
+  PRIVATE_WORKFLOW_DELETE_DENIED_MESSAGE,
   canDeleteOwnedPrivateWorkflow,
-  creatorIdsFromAuthorizerClaims,
 } from '@BE/utils/private-workflow-ownership-utils';
 
 const laboratoryService = new LaboratoryService();
@@ -28,8 +27,8 @@ const laboratoryWorkflowAccessService = new LaboratoryWorkflowAccessService();
 /**
  * DELETE /aws-healthomics/workflow/delete-private-workflow/{id}?laboratoryId={LaboratoryId}
  *
- * Deletes a private HealthOmics workflow that the caller created through Easy Genomics.
- * Organisation admins and system admins only. The caller must still be the creator.
+ * Deletes a private HealthOmics workflow created through Easy Genomics in the laboratory.
+ * Organisation admins (for the lab's org) and system admins only.
  */
 export const handler: Handler = async (
   event: APIGatewayProxyWithCognitoAuthorizerEvent,
@@ -45,9 +44,7 @@ export const handler: Handler = async (
     const laboratory: Laboratory = await laboratoryService.queryByLaboratoryId(laboratoryId);
     if (!laboratory) throw new LaboratoryNotFoundError();
 
-    if (
-      !(validateSystemAdminAccess(event) || validateOrganizationAdminAccess(event, laboratory.OrganizationId))
-    ) {
+    if (!(validateSystemAdminAccess(event) || validateOrganizationAdminAccess(event, laboratory.OrganizationId))) {
       throw new UnauthorizedAccessError();
     }
 
@@ -59,11 +56,7 @@ export const handler: Handler = async (
       event.requestContext.authorizer.claims['cognito:username'] ??
       event.requestContext.authorizer.claims.sub ??
       'unknown-user';
-    const omicsService = await createOmicsServiceForLab(
-      laboratory.LaboratoryId,
-      laboratory.OrganizationId,
-      userId,
-    );
+    const omicsService = await createOmicsServiceForLab(laboratory.LaboratoryId, laboratory.OrganizationId, userId);
 
     const sharedOwnerId = await resolveSharedWorkflowOwnerId(omicsService, id);
     if (sharedOwnerId) {
@@ -87,10 +80,9 @@ export const handler: Handler = async (
         tags: workflow.tags,
         laboratoryId: laboratory.LaboratoryId,
         organizationId: laboratory.OrganizationId,
-        creatorIds: creatorIdsFromAuthorizerClaims(event.requestContext.authorizer?.claims),
       })
     ) {
-      throw new UnauthorizedAccessError(PRIVATE_WORKFLOW_OWNERSHIP_DENIED_MESSAGE);
+      throw new UnauthorizedAccessError(PRIVATE_WORKFLOW_DELETE_DENIED_MESSAGE);
     }
 
     await deletePrivateOmicsWorkflow(omicsService, id);

@@ -183,6 +183,12 @@ export interface LaboratoryRun extends BaseAttributes {
    */
   NotifiedAt?: string;
 
+  /**
+   * ISO timestamp set exactly once, in the same transaction that adds the run's captured cost
+   * to the daily usage totals, so a retried capture or a rerun back-fill can't count it twice.
+   */
+  RunCostCountedAt?: string;
+
   /** Pre-run input features for historical cost similarity matching. */
   RunInputProfile?: {
     SampleCount: number;
@@ -218,6 +224,15 @@ export interface LaboratoryRun extends BaseAttributes {
     SyncedAt: string;
     ByService?: Record<string, number>;
   };
+
+  /**
+   * ISO timestamp set when cost capture gave up on its last attempt. The status check stops
+   * re-sending a run that carries it; a later successful capture removes it.
+   */
+  RunCostCaptureFailedAt?: string;
+
+  /** Why the last cost capture attempt failed, at most 500 characters. */
+  RunCostCaptureError?: string;
 
   /**
    * Approximate task completion percentage derived from HealthOmics ListRunTasks

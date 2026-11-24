@@ -22,7 +22,7 @@ export const SAMPLES_BLOCK_NOT_ABOVE_WARN = 'The samples block amount needs to b
 export const AMOUNT_NOT_POSITIVE = 'Amounts need to be more than 0.';
 export const SAMPLES_NOT_WHOLE = 'Sample amounts need to be whole numbers.';
 
-const NOT_SET = 'Not set';
+const NOT_SET = '—';
 const SAMPLE_FIELDS: RunLimitField[] = ['SamplesWarnAbove', 'SamplesBlockAbove'];
 
 export function runLimitsToDraft(limits: UpdateLaboratoryRunLimits | undefined): RunLimitsDraft {
@@ -84,10 +84,4 @@ export function formatRunLimit(value: number | undefined, kind: 'usd' | 'count')
   if (value === undefined) return NOT_SET;
   const amount = value.toLocaleString('en-US');
   return kind === 'usd' ? `US$${amount}` : amount;
-}
-
-export function usageLimitsNote(editingLabName: string | null, error: RunLimitsDraftError | null): string {
-  if (error) return error.message;
-  if (editingLabName !== null) return `Editing ${editingLabName}. Leave an amount blank to skip it.`;
-  return 'Runs already going are never stopped by a change here.';
 }

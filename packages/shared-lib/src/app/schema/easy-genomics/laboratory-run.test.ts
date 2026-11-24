@@ -53,4 +53,23 @@ describe('LaboratoryRunSchema analysis fields', () => {
   it('rejects an unknown MicroreactStatus', () => {
     expect(LaboratoryRunSchema.safeParse({ ...base, MicroreactStatus: 'Sent' }).success).toBe(false);
   });
+
+  it('accepts a run cost capture failure marker', () => {
+    const parsed = LaboratoryRunSchema.safeParse({
+      ...base,
+      Status: 'COMPLETED',
+      RunCostCaptureFailedAt: '2026-11-11T10:00:00.000Z',
+      RunCostCaptureError: 'run not found on the platform',
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('rejects a run cost capture error longer than 500 characters', () => {
+    const parsed = LaboratoryRunSchema.safeParse({ ...base, RunCostCaptureError: 'x'.repeat(501) });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('accepts the count-once marker a run gets when its cost is added to the daily totals', () => {
+    expect(LaboratoryRunSchema.safeParse({ ...base, RunCostCountedAt: '2026-11-10T00:00:00.000Z' }).success).toBe(true);
+  });
 });
