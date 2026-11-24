@@ -18,6 +18,7 @@ import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import type { LaboratorySample } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/samples';
 import {
+  NotFoundError,
   S3BucketAccessDeniedError,
   S3KeyOutOfPrefixError,
   SequenceCollectionNotFoundError,
@@ -447,6 +448,123 @@ describe('LaboratorySampleService.generateSequenceCollectionSampleSheet', () => 
     expect(result.InputFileKeys).toHaveLength(501);
     expect(result.InputFileKeys).toContain('org-1/lab-1/sample_extra.fastq.gz');
   });
+
+  describe('with validateS3FilesExist', () => {
+    const collectionId = 'sc-1';
+    const sheetOpts = {
+      platform: 'AWS HealthOmics' as const,
+      transactionId: 'txn-1',
+      sampleSheetName: 'sheet.csv',
+      validateS3FilesExist: true,
+    };
+
+    beforeEach(() => {
+      mockListByLaboratoryId.mockResolvedValue([
+        { LaboratoryId: 'lab-1', BucketName: 'my-bucket', OrganizationId: 'org-1' },
+      ]);
+    });
+
+    function stubSamples(
+      samples: { id: string; name: string; fileKey: string }[],
+      {
+        layout = 'single_end',
+        readRole = 'read1',
+      }: { layout?: 'single_end' | 'long_reads'; readRole?: 'read1' | 'reads' } = {},
+    ) {
+      jest.spyOn(svc, 'getSequenceCollection').mockResolvedValue({
+        SequenceCollectionId: collectionId,
+        Name: 'Run collection',
+        Columns: [
+          { columnName: 'sample', role: 'sample_id', required: true },
+          { columnName: 'fastq_1', role: readRole, required: true },
+        ],
+        SampleCount: samples.length,
+      });
+      jest.spyOn(svc, 'listSequenceCollectionSampleIds' as never).mockResolvedValue(samples.map((s) => s.id) as never);
+      jest.spyOn(svc, 'getSample').mockImplementation(async (_labId: string, id: string) => {
+        const sample = samples.find((s) => s.id === id)!;
+        return { SampleId: id, Name: sample.name, Layout: layout, FileCount: 1 };
+      });
+      listSampleFilesSpy.mockImplementation((async (_labId: string, id: string) => {
+        const sample = samples.find((s) => s.id === id)!;
+        return { Files: [{ Bucket: 'my-bucket', Key: sample.fileKey }] };
+      }) as never);
+    }
+
+    it('names every sample with missing files instead of stopping at the first key', async () => {
+      stubSamples([
+        { id: 's-a', name: 'SampleA', fileKey: 'org-1/lab-1/a_R1.fastq.gz' },
+        { id: 's-b', name: 'SampleB', fileKey: 'org-1/lab-1/b_R1.fastq.gz' },
+        { id: 's-c', name: 'SampleC', fileKey: 'org-1/lab-1/c_R1.fastq.gz' },
+      ]);
+      mockDoesObjectExist.mockImplementation(async ({ Key }: { Key: string }) => Key.includes('c_R1'));
+
+      const failure = await svc
+        .generateSequenceCollectionSampleSheet(labFixture(), 'my-bucket', collectionId, sheetOpts)
+        .catch((err: unknown) => err);
+
+      expect(failure).toBeInstanceOf(NotFoundError);
+      expect((failure as Error).message).toContain(
+        '2 samples in this collection reference files that no longer exist: SampleA, SampleB. ' +
+          'Remove them from the collection or re-import their files.',
+      );
+      expect(mockDoesObjectExist).toHaveBeenCalledTimes(3);
+      expect(mockPutObject).not.toHaveBeenCalled();
+    });
+
+    it('uses singular copy when one sample is affected', async () => {
+      stubSamples([{ id: 's-a', name: 'SampleA', fileKey: 'org-1/lab-1/a_R1.fastq.gz' }]);
+      mockDoesObjectExist.mockResolvedValue(false);
+
+      await expect(
+        svc.generateSequenceCollectionSampleSheet(labFixture(), 'my-bucket', collectionId, sheetOpts),
+      ).rejects.toThrow(
+        '1 sample in this collection references files that no longer exist: SampleA. ' +
+          'Remove it from the collection or re-import its files.',
+      );
+    });
+
+    it('lists each affected sample once when two samples share a missing file', async () => {
+      // single_end derives sample_id from the file name, so a shared file would collide before
+      // the existence check; long_reads takes sample_id from the sample name.
+      stubSamples(
+        [
+          { id: 's-a', name: 'SampleA', fileKey: 'org-1/lab-1/shared.fastq.gz' },
+          { id: 's-b', name: 'SampleB', fileKey: 'org-1/lab-1/shared.fastq.gz' },
+        ],
+        { layout: 'long_reads', readRole: 'reads' },
+      );
+      mockDoesObjectExist.mockResolvedValue(false);
+
+      await expect(
+        svc.generateSequenceCollectionSampleSheet(labFixture(), 'my-bucket', collectionId, sheetOpts),
+      ).rejects.toThrow(/2 samples in this collection reference .*: SampleA, SampleB\./);
+    });
+
+    it('truncates the sample list after 10 names', async () => {
+      stubSamples(
+        Array.from({ length: 12 }, (_, i) => ({
+          id: `s-${i + 1}`,
+          name: `Sample${i + 1}`,
+          fileKey: `org-1/lab-1/sample${i + 1}_R1.fastq.gz`,
+        })),
+      );
+      mockDoesObjectExist.mockResolvedValue(false);
+
+      await expect(
+        svc.generateSequenceCollectionSampleSheet(labFixture(), 'my-bucket', collectionId, sheetOpts),
+      ).rejects.toThrow(/12 samples .*Sample10 and 2 more\. Remove them/);
+    });
+
+    it('falls back to the sample id when the name is empty', async () => {
+      stubSamples([{ id: 's-a', name: '', fileKey: 'org-1/lab-1/a_R1.fastq.gz' }]);
+      mockDoesObjectExist.mockResolvedValue(false);
+
+      await expect(
+        svc.generateSequenceCollectionSampleSheet(labFixture(), 'my-bucket', collectionId, sheetOpts),
+      ).rejects.toThrow(/exist: s-a\./);
+    });
+  });
 });
 
 describe('LaboratorySampleService.addSampleIdToFileRow', () => {
@@ -757,6 +875,20 @@ describe('LaboratorySampleService.addFilesToSample', () => {
     expect(update.UpdateExpression).toContain('REMOVE ContentsSummary');
   });
 
+  it('does not rewrite file tags when the sample is permanent', async () => {
+    jest.spyOn(svc, 'getSample').mockResolvedValue(sampleFixture({ IsPermanent: true }));
+    const applyFiles = jest.spyOn(
+      (svc as unknown as { taggingService: { applyTagsToFiles: () => Promise<void> } }).taggingService,
+      'applyTagsToFiles',
+    );
+
+    await svc.addFilesToSample(labFixture(), 'user-1', 'my-bucket', 'sample-1', [
+      'org-1/lab-1/NA12878_R2_001.fastq.gz',
+    ]);
+
+    expect(applyFiles).not.toHaveBeenCalled();
+  });
+
   it('rejects the whole request before writing when any key is outside the lab folder', async () => {
     jest.spyOn(svc, 'getSample').mockResolvedValue(sampleFixture());
 
@@ -767,6 +899,46 @@ describe('LaboratorySampleService.addFilesToSample', () => {
       ]),
     ).rejects.toThrow(S3KeyOutOfPrefixError);
     expect(mockPutItem).not.toHaveBeenCalled();
+  });
+
+  it('records the sample on the file before writing the link row', async () => {
+    jest.spyOn(svc, 'getSample').mockResolvedValue(sampleFixture());
+    const addSampleId = jest.spyOn(svc as never, 'addSampleIdToFileRow' as never);
+
+    await svc.addFilesToSample(labFixture(), 'user-1', 'my-bucket', 'sample-1', [
+      'org-1/lab-1/NA12878_R1_001.fastq.gz',
+    ]);
+
+    expect(addSampleId.mock.invocationCallOrder[0]).toBeLessThan(mockPutItem.mock.invocationCallOrder[0]);
+  });
+
+  it('still records the sample on the file when the link row already exists', async () => {
+    jest.spyOn(svc, 'getSample').mockResolvedValue(sampleFixture());
+    const addSampleId = jest.spyOn(svc as never, 'addSampleIdToFileRow' as never);
+    mockPutItem.mockRejectedValueOnce(new ConditionalCheckFailedException({ message: 'c', $metadata: {} }));
+
+    await svc.addFilesToSample(labFixture(), 'user-1', 'my-bucket', 'sample-1', [
+      'org-1/lab-1/NA12878_R1_001.fastq.gz',
+    ]);
+
+    expect(addSampleId).toHaveBeenCalledWith(
+      expect.any(String),
+      encodeS3ObjectRef('my-bucket', 'org-1/lab-1/NA12878_R1_001.fastq.gz'),
+      'my-bucket',
+      'org-1/lab-1/NA12878_R1_001.fastq.gz',
+      'sample-1',
+    );
+  });
+
+  it('leaves the file protected when the link-row write fails', async () => {
+    jest.spyOn(svc, 'getSample').mockResolvedValue(sampleFixture());
+    const addSampleId = jest.spyOn(svc as never, 'addSampleIdToFileRow' as never);
+    mockPutItem.mockRejectedValueOnce(new Error('ProvisionedThroughputExceededException'));
+
+    await expect(
+      svc.addFilesToSample(labFixture(), 'user-1', 'my-bucket', 'sample-1', ['org-1/lab-1/NA12878_R1_001.fastq.gz']),
+    ).rejects.toThrow('ProvisionedThroughputExceededException');
+    expect(addSampleId).toHaveBeenCalledTimes(1);
   });
 });
 

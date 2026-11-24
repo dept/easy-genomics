@@ -1,11 +1,13 @@
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import {
+  encodeS3ObjectRef,
   ExpiredRunOutput,
   LaboratoryDataTaggingService,
   permanentTagIdForLaboratory,
 } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
+import { LaboratorySampleService } from '@BE/services/easy-genomics/laboratory-sample-service';
 import { S3Service } from '@BE/services/s3-service';
 import {
   calculateExpiresAtEpochSeconds,
@@ -39,7 +41,7 @@ const MAX_RUN_FOLDER_DEPTH = 2;
  * let the reconciliation pass schedule a user's in-progress upload for deletion. This is a
  * correctness invariant of that pass rather than an operational dial, so it is not configurable.
  */
-const ORPHAN_SCAN_MIN_AGE_DAYS = 30;
+export const ORPHAN_SCAN_MIN_AGE_DAYS = 30;
 
 function orphanQuietCutoff(nowMs: number = Date.now()): Date {
   return new Date(nowMs - ORPHAN_SCAN_MIN_AGE_DAYS * 24 * 60 * 60 * 1000);
@@ -111,6 +113,7 @@ export type RetentionSweepStats = {
   eligible: number;
   deleted: number;
   permanentProtected: number;
+  sampleLinkedProtected: number;
   outputPrefixesDeleted: number;
   outputObjectsDeleted: number;
   outputObjectsProtected: number;
@@ -128,6 +131,7 @@ export function emptyRetentionSweepStats(): RetentionSweepStats {
     eligible: 0,
     deleted: 0,
     permanentProtected: 0,
+    sampleLinkedProtected: 0,
     outputPrefixesDeleted: 0,
     outputObjectsDeleted: 0,
     outputObjectsProtected: 0,
@@ -150,12 +154,40 @@ type LiveRunReferences = {
 };
 
 /** FILE#-row state for a lab, loaded once and shared by all three phases. */
-type FileRowIndex = {
+export type FileRowIndex = {
   rows: Awaited<ReturnType<LaboratoryDataTaggingService['listAllFileRowsForLab']>>;
   trackedKeys: Set<string>;
   permanentKeys: Set<string>;
+  sampleLinkedKeys: Set<string>;
   refByKey: Map<string, string>;
 };
+
+/** `permanentKeys` is every file with the Permanent tag or a link to a sample that still has it. */
+export async function loadFileRowIndex(
+  taggingService: LaboratoryDataTaggingService,
+  laboratory: Laboratory,
+): Promise<FileRowIndex> {
+  const rows = await taggingService.listAllFileRowsForLab(laboratory.LaboratoryId);
+  const permanentTagId = permanentTagIdForLaboratory(laboratory.LaboratoryId);
+  const permanentSampleIds = await taggingService.listPermanentSampleIds(laboratory.LaboratoryId);
+
+  const trackedKeys = new Set<string>();
+  const permanentKeys = new Set<string>();
+  const sampleLinkedKeys = new Set<string>();
+  const refByKey = new Map<string, string>();
+
+  for (const row of rows) {
+    if (!row.ObjectKey) continue;
+    trackedKeys.add(row.ObjectKey);
+    refByKey.set(row.ObjectKey, row.Ref);
+    if ((row.SampleIds || []).length > 0) sampleLinkedKeys.add(row.ObjectKey);
+    const taggedPermanent = (row.TagIds || []).includes(permanentTagId);
+    const samplePermanent = (row.SampleIds || []).some((id) => permanentSampleIds.has(id));
+    if (taggedPermanent || samplePermanent) permanentKeys.add(row.ObjectKey);
+  }
+
+  return { rows, trackedKeys, permanentKeys, sampleLinkedKeys, refByKey };
+}
 
 /**
  * Owns the S3 deletion half of the run-retention cascade. Extracted from the scheduled Lambda so
@@ -167,15 +199,18 @@ export class LaboratoryDataRetentionService {
   private readonly s3Service: S3Service;
   private readonly taggingService: LaboratoryDataTaggingService;
   private readonly runService: LaboratoryRunService;
+  private readonly sampleService: LaboratorySampleService;
 
   public constructor(deps?: {
     s3Service?: S3Service;
     taggingService?: LaboratoryDataTaggingService;
     runService?: LaboratoryRunService;
+    sampleService?: LaboratorySampleService;
   }) {
     this.s3Service = deps?.s3Service ?? new S3Service();
     this.taggingService = deps?.taggingService ?? new LaboratoryDataTaggingService();
     this.runService = deps?.runService ?? new LaboratoryRunService();
+    this.sampleService = deps?.sampleService ?? new LaboratorySampleService();
   }
 
   /**
@@ -197,6 +232,7 @@ export class LaboratoryDataRetentionService {
         totals.eligible += stats.eligible;
         totals.deleted += stats.deleted;
         totals.permanentProtected += stats.permanentProtected;
+        totals.sampleLinkedProtected += stats.sampleLinkedProtected;
         totals.outputPrefixesDeleted += stats.outputPrefixesDeleted;
         totals.outputObjectsDeleted += stats.outputObjectsDeleted;
         totals.outputObjectsProtected += stats.outputObjectsProtected;
@@ -240,20 +276,25 @@ export class LaboratoryDataRetentionService {
       }
     }
 
-    const fileRows = await this.loadFileRowIndex(laboratory);
+    const fileRows = await loadFileRowIndex(this.taggingService, laboratory);
     // The stamp above can take the whole write slice. Reload so a run created in that window is
     // visible before any input is classified as stale.
     const runs = runsForStamp ? await this.loadRunsForSweep(laboratory.LaboratoryId, stats) : undefined;
-    await this.sweepInputFiles(laboratory, options, fileRows, stats, runs);
+    const keepInputData = laboratory.RetentionKeepInputData === true;
+    if (!keepInputData) {
+      await this.sweepInputFiles(laboratory, options, fileRows, stats, runs);
+    }
     if (stats.stoppedForDeadline) return stats;
 
-    if (runs && (options.outputDeletionEnabled || options.orphanReconciliationEnabled)) {
+    const orphanReconciliationEnabled =
+      options.orphanReconciliationEnabled && laboratory.RetentionIncludePrePolicyData !== false;
+    if (runs && (options.outputDeletionEnabled || orphanReconciliationEnabled)) {
       const liveReferences = this.liveRunReferencesFrom(runs);
-      if (options.orphanReconciliationEnabled) {
-        await this.reconcileOrphanedRunFolders(laboratory, options, liveReferences, fileRows, stats);
+      if (orphanReconciliationEnabled) {
+        await this.reconcileOrphanedRunFolders(laboratory, options, liveReferences, fileRows, stats, keepInputData);
       }
       if (!stats.stoppedForDeadline && options.outputDeletionEnabled) {
-        await this.sweepRunOutputs(laboratory, options, liveReferences, fileRows, stats);
+        await this.sweepRunOutputs(laboratory, options, liveReferences, fileRows, stats, keepInputData);
       }
     }
 
@@ -416,31 +457,15 @@ export class LaboratoryDataRetentionService {
     );
   }
 
-  private async loadFileRowIndex(laboratory: Laboratory): Promise<FileRowIndex> {
-    const rows = await this.taggingService.listAllFileRowsForLab(laboratory.LaboratoryId);
-    const permanentTagId = permanentTagIdForLaboratory(laboratory.LaboratoryId);
-
-    const trackedKeys = new Set<string>();
-    const permanentKeys = new Set<string>();
-    const refByKey = new Map<string, string>();
-
-    for (const row of rows) {
-      if (!row.ObjectKey) continue;
-      trackedKeys.add(row.ObjectKey);
-      refByKey.set(row.ObjectKey, row.Ref);
-      if ((row.TagIds || []).includes(permanentTagId)) permanentKeys.add(row.ObjectKey);
-    }
-
-    return { rows, trackedKeys, permanentKeys, refByKey };
-  }
-
   /**
    * Input files are shared between runs and tracked per-file. A file is deleted when no
    * surviving run lists it in `InputFileKeys`, it has no usage whose run row still exists, and
-   * it is not marked Permanent. A workflow tag or a stale usage is enough. So is a row with no
+   * it is not in `permanentKeys` or `sampleLinkedKeys`. A workflow tag or a stale usage is enough. So is a row with no
    * tags of any kind and no usages: nothing claims it.
    *
-   * A file with any non-permanent tag and no usage is kept. An object with no FILE# row is not
+   * `permanentKeys` is every file with the Permanent tag or a link to a sample that still has it.
+   * `sampleLinkedKeys` is every file linked to any sample; those are always kept.
+   * A file with any other tag and no usage is kept. An object with no FILE# row is not
    * visible here; the orphan pass records those FASTQs once the folder is 30 days old.
    */
   private async sweepInputFiles(
@@ -450,7 +475,6 @@ export class LaboratoryDataRetentionService {
     stats: RetentionSweepStats,
     runs: LaboratoryRun[] | undefined,
   ): Promise<void> {
-    const permanentTagId = permanentTagIdForLaboratory(laboratory.LaboratoryId);
     const workflowTagIds = await this.loadWorkflowTagIds(laboratory.LaboratoryId);
     // `undefined` runs means the load failed: treat every usage as live so we cannot delete a
     // file that a surviving run still needs.
@@ -477,7 +501,12 @@ export class LaboratoryDataRetentionService {
       if (key && liveInputKeys.has(key)) continue;
       if (liveUsages > 0) {
         if (!options.dryRun && liveRunIds && bucket && key) {
-          await this.dropStaleUsages(laboratory, bucket, key, usageIds.filter((id) => !liveRunIds.has(id)));
+          await this.dropStaleUsages(
+            laboratory,
+            bucket,
+            key,
+            usageIds.filter((id) => !liveRunIds.has(id)),
+          );
         }
         continue;
       }
@@ -487,11 +516,16 @@ export class LaboratoryDataRetentionService {
       const untaggedAndUnowned = liveRunIds != null && !hasAnyTag && usageIds.length === 0;
       if (!belongedToExpiredRun && !untaggedAndUnowned) continue;
 
-      if (tagIds.has(permanentTagId)) {
+      if (key && fileRows.permanentKeys.has(key)) {
         stats.permanentProtected++;
         if (!options.dryRun && liveRunIds && bucket && key) {
           await this.dropStaleUsages(laboratory, bucket, key, usageIds);
         }
+        continue;
+      }
+
+      if (key && fileRows.sampleLinkedKeys.has(key)) {
+        stats.sampleLinkedProtected++;
         continue;
       }
 
@@ -539,7 +573,7 @@ export class LaboratoryDataRetentionService {
     }
 
     console.log(
-      `Lab ${laboratory.LaboratoryId} sweep complete: eligible=${stats.eligible} deleted=${stats.deleted} permanentProtected=${stats.permanentProtected} errors=${stats.errors}`,
+      `Lab ${laboratory.LaboratoryId} sweep complete: eligible=${stats.eligible} deleted=${stats.deleted} permanentProtected=${stats.permanentProtected} sampleLinkedProtected=${stats.sampleLinkedProtected} errors=${stats.errors}`,
     );
   }
 
@@ -553,19 +587,40 @@ export class LaboratoryDataRetentionService {
     return workflowTagIds;
   }
 
-  /** A run launched after the list was loaded records its usage before we delete. */
+  /** A run launched or a sample linked after the list was loaded is re-checked before we delete. */
   private async inputBecameLive(laboratoryId: string, ref: string, liveInputKeys: Set<string>): Promise<boolean> {
     const fresh = await this.taggingService.getFileRow(laboratoryId, ref);
     if (!fresh) return true;
     if (fresh.ObjectKey && liveInputKeys.has(fresh.ObjectKey)) return true;
+    if ((fresh.SampleIds || []).length > 0) return true;
     for (const runId of Object.keys(fresh.LaboratoryRunUsages || {})) {
       if (await this.runService.runRowExists(laboratoryId, runId)) return true;
     }
     return false;
   }
 
+  /**
+   * Keys in `keys` whose file row lists a sample right now, read fresh rather than from the sweep's
+   * snapshot. The ref is built from this bucket, the same way adding a file to a sample writes it.
+   */
+  private async findKeysLinkedToSamples(laboratoryId: string, bucket: string, keys: string[]): Promise<Set<string>> {
+    const keyByRef = new Map(keys.map((key) => [encodeS3ObjectRef(bucket, key), key]));
+    const sampleIdsByRef = await this.sampleService.getSampleIdsForFileRefs(laboratoryId, [...keyByRef.keys()]);
+    const linked = new Set<string>();
+    for (const [ref, sampleIds] of sampleIdsByRef) {
+      const key = keyByRef.get(ref);
+      if (key && sampleIds.length > 0) linked.add(key);
+    }
+    return linked;
+  }
+
   /** Removes usages whose runs are gone from a file this sweep is keeping. */
-  private async dropStaleUsages(laboratory: Laboratory, bucket: string, key: string, staleRunIds: string[]): Promise<void> {
+  private async dropStaleUsages(
+    laboratory: Laboratory,
+    bucket: string,
+    key: string,
+    staleRunIds: string[],
+  ): Promise<void> {
     if (!staleRunIds.length) return;
     const runIdToInputKeys: Record<string, string[]> = {};
     for (const runId of staleRunIds) runIdToInputKeys[runId] = [key];
@@ -627,6 +682,7 @@ export class LaboratoryDataRetentionService {
     live: LiveRunReferences,
     fileRows: FileRowIndex,
     stats: RetentionSweepStats,
+    keepInputData: boolean,
   ): Promise<void> {
     const bucket = laboratory.S3Bucket!;
     if (options.maxOrphanFoldersPerLab === 0) return;
@@ -674,18 +730,21 @@ export class LaboratoryDataRetentionService {
               isSampleSheetKey(key, runFolder) && !fileRows.trackedKeys.has(key) && !live.sampleSheetKeys.has(key),
           );
 
-        const untaggedInputKeys = objects
-          .map((o) => o.Key)
-          .filter(
-            (key) =>
-              isRunFolderFastqKey(key, laboratory, runId) &&
-              !fileRows.trackedKeys.has(key) &&
-              !fileRows.permanentKeys.has(key) &&
-              !live.inputKeys.has(key),
-          );
+        const untaggedInputKeys = keepInputData
+          ? []
+          : objects
+              .map((o) => o.Key)
+              .filter(
+                (key) =>
+                  isRunFolderFastqKey(key, laboratory, runId) &&
+                  !fileRows.trackedKeys.has(key) &&
+                  !fileRows.permanentKeys.has(key) &&
+                  !live.inputKeys.has(key),
+              );
 
         const protectedKeys = new Set<string>([
           ...fileRows.permanentKeys,
+          ...fileRows.sampleLinkedKeys,
           ...live.inputKeys,
           ...live.sampleSheetKeys,
         ]);
@@ -695,7 +754,10 @@ export class LaboratoryDataRetentionService {
         const looksLikeRun =
           resultsObjects.length > 0 || objects.some((object) => isSampleSheetKey(object.Key, runFolder));
         const folderHasDeletableObject = objects.some(
-          (object) => !protectedKeys.has(object.Key) && !this.isPrefixStillInUse(object.Key, live.outputPrefixes),
+          (object) =>
+            !protectedKeys.has(object.Key) &&
+            !(keepInputData && isRunFolderFastqKey(object.Key, laboratory, runId)) &&
+            !this.isPrefixStillInUse(object.Key, live.outputPrefixes),
         );
         const hasPerFileWork = !!outputPrefix || sampleSheetKeys.length > 0 || untaggedInputKeys.length > 0;
         const hasWork = looksLikeRun ? folderHasDeletableObject : hasPerFileWork;
@@ -738,11 +800,11 @@ export class LaboratoryDataRetentionService {
   }
 
   /**
-   * Deletes every object under a run folder except Permanent objects and objects a surviving run
-   * still lists. A marker stays pending until `FolderCleanedAt` is set.
+   * Deletes every object under a run folder except Permanent objects, objects linked to a sample, and
+   * objects a surviving run still lists. A marker stays pending until `FolderCleanedAt` is set.
    *
    * The stamp is written only once everything deletable is gone, so a sweep that stops on the
-   * delete budget resumes next time. A remaining Permanent object does not block the stamp.
+   * delete budget resumes next time. A remaining Permanent or sample-linked object does not block the stamp.
    */
   private async sweepRunOutputs(
     laboratory: Laboratory,
@@ -750,6 +812,7 @@ export class LaboratoryDataRetentionService {
     live: LiveRunReferences,
     fileRows: FileRowIndex,
     stats: RetentionSweepStats,
+    keepInputData: boolean,
   ): Promise<void> {
     const pending = (await this.taggingService.listExpiredRunOutputsForLab(laboratory.LaboratoryId)).filter(
       (row) => !row.CompletedAt || !row.FolderCleanedAt,
@@ -770,9 +833,7 @@ export class LaboratoryDataRetentionService {
       try {
         await this.taggingService.assertLaboratoryHasS3BucketAccess(laboratory, bucket);
         if (row.RunFolderPrefix && !this.isExactRunFolder(row.RunFolderPrefix, laboratory, row.RunId)) {
-          throw new Error(
-            `RunFolderPrefix '${row.RunFolderPrefix}' is not {org}/{lab}/{platform}/${row.RunId}/`,
-          );
+          throw new Error(`RunFolderPrefix '${row.RunFolderPrefix}' is not {org}/{lab}/{platform}/${row.RunId}/`);
         }
         if (row.OutputPrefix && !isBelowRunFolderRoot(row.OutputPrefix, laboratory, row.RunId)) {
           throw new Error(`OutputPrefix '${row.OutputPrefix}' is not a subdirectory of run ${row.RunId}'s folder`);
@@ -827,18 +888,23 @@ export class LaboratoryDataRetentionService {
           stats.outputPrefixesSkippedInUse += (row.SampleSheetKeys || []).length - sheetKeys.length;
         }
         const untaggedInputKeys =
-          runFolder || row.CompletedAt
-            ? []
-            : (row.UntaggedInputKeys || []).filter((key) => !live.inputKeys.has(key));
+          runFolder || row.CompletedAt ? [] : (row.UntaggedInputKeys || []).filter((key) => !live.inputKeys.has(key));
 
+        // Files under the run folder are taggable, and a linked permanent sample protects them too.
+        // permanentKeys and sampleLinkedKeys are the same sets the FILE#-row sweep uses.
+        // RetentionKeepInputData also keeps FASTQs under the run folder — otherwise listing the whole folder would delete them.
         const candidates = [...new Set([...listed, ...sheetKeys, ...untaggedInputKeys])].filter(
           (key) =>
             !live.inputKeys.has(key) &&
             !live.sampleSheetKeys.has(key) &&
             !this.isPrefixStillInUse(key, live.outputPrefixes),
         );
-        // Permanent covers a FASTQ the user chose to keep, and any other object carrying the tag.
-        const keys = candidates.filter((key) => !fileRows.permanentKeys.has(key));
+        const keys = candidates.filter(
+          (key) =>
+            !fileRows.permanentKeys.has(key) &&
+            !fileRows.sampleLinkedKeys.has(key) &&
+            !(keepInputData && isRunFolderFastqKey(key, laboratory, row.RunId)),
+        );
         stats.outputObjectsProtected += candidates.length - keys.length;
 
         if (!keys.length) {
@@ -856,21 +922,27 @@ export class LaboratoryDataRetentionService {
         const batch = keys.slice(0, remaining);
         if (batch.length < keys.length) stats.hitDeleteCap = true;
 
-        const removed = await this.deleteKeysInBatches(bucket, batch);
+        // The file-row snapshot predates this delete; a key added to a sample since then must survive.
+        // A failed re-check throws into the catch below, so nothing in the batch is deleted.
+        const newlyLinked = await this.findKeysLinkedToSamples(laboratory.LaboratoryId, bucket, batch);
+        const deletable = batch.filter((key) => !newlyLinked.has(key));
+        stats.outputObjectsProtected += newlyLinked.size;
+
+        const removed = await this.deleteKeysInBatches(bucket, deletable);
         remaining -= removed;
         stats.outputObjectsDeleted += removed;
-        stats.sampleSheetsDeleted += sheetKeys.filter((k) => batch.includes(k)).length;
+        stats.sampleSheetsDeleted += sheetKeys.filter((k) => deletable.includes(k)).length;
 
         // Drop FILE# rows for any deleted object that had one, so the tagging table does not keep
         // pointing at objects that no longer exist.
-        for (const key of batch) {
+        for (const key of deletable) {
           const ref = fileRows.refByKey.get(key);
           if (ref) await this.taggingService.deleteFileRowAndAssociations(laboratory.LaboratoryId, ref);
         }
 
         // Only retire the marker when everything deletable drained; otherwise the next sweep
-        // resumes. Permanent-protected keys are intentionally retained and do not block this.
-        if (removed === keys.length) {
+        // resumes. Permanent-protected and sample-linked keys are intentionally retained and do not block this.
+        if (removed + newlyLinked.size === keys.length) {
           if (row.OutputPrefix) stats.outputPrefixesDeleted++;
           await this.retireRunOutput(laboratory.LaboratoryId, row);
         }

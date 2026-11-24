@@ -4,7 +4,11 @@ import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomic
 
 jest.mock('../../../../src/app/services/s3-service');
 
-import { buildRunInputProfile } from '../../../../src/app/services/easy-genomics/run-input-profile-service';
+import {
+  buildRunInputProfile,
+  readSampleSheet,
+  sumObjectBytes,
+} from '../../../../src/app/services/easy-genomics/run-input-profile-service';
 import { S3Service } from '../../../../src/app/services/s3-service';
 
 describe('buildRunInputProfile', () => {
@@ -79,5 +83,97 @@ describe('buildRunInputProfile', () => {
     expect(mockHeadObject).not.toHaveBeenCalled();
     expect(profile.SampleCount).toBe(0);
     expect(profile.InputBytesTotal).toBe(0);
+  });
+});
+
+describe('readSampleSheet', () => {
+  const lab = {
+    LaboratoryId: 'lab-1',
+    OrganizationId: 'org-1',
+    S3Bucket: 'lab-bucket',
+  } as Laboratory;
+
+  let mockGetObject: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetObject = jest.fn();
+    (S3Service as jest.MockedClass<typeof S3Service>).prototype.getObject = mockGetObject;
+  });
+
+  it.each([undefined, ''])('reports no sample sheet for %p without reading S3', async (url) => {
+    await expect(readSampleSheet(lab, url)).resolves.toEqual({ outcome: 'notRead', reason: 'noSampleSheet' });
+    expect(mockGetObject).not.toHaveBeenCalled();
+  });
+
+  it('refuses a sample sheet outside the laboratory bucket without reading S3', async () => {
+    await expect(readSampleSheet(lab, 's3://other-bucket/x.csv')).resolves.toEqual({
+      outcome: 'notRead',
+      reason: 'notInLaboratoryBucket',
+    });
+    expect(mockGetObject).not.toHaveBeenCalled();
+  });
+
+  it('reports an unparseable sample sheet URL as unreadable', async () => {
+    await expect(readSampleSheet(lab, 'not-a-url')).resolves.toEqual({ outcome: 'notRead', reason: 'unreadable' });
+    expect(mockGetObject).not.toHaveBeenCalled();
+  });
+
+  it('reports a sample sheet S3 refuses to return as unreadable', async () => {
+    mockGetObject.mockRejectedValue(Object.assign(new Error('Access Denied'), { name: 'AccessDenied' }));
+
+    await expect(readSampleSheet(lab, 's3://lab-bucket/sheet.csv')).resolves.toEqual({
+      outcome: 'notRead',
+      reason: 'unreadable',
+    });
+  });
+
+  it('counts samples and keeps only deduplicated data files in the laboratory bucket', async () => {
+    mockGetObject.mockResolvedValue({
+      Body:
+        'sample,fastq_1,fastq_2\n' +
+        's1,s3://lab-bucket/a_R1.fq.gz,s3://lab-bucket/a_R2.fq.gz\n' +
+        's2,s3://other/b.fq.gz,\n' +
+        's3, s3://lab-bucket/a_R1.fq.gz ,\n',
+    });
+
+    await expect(readSampleSheet(lab, 's3://lab-bucket/sheet.csv')).resolves.toEqual({
+      outcome: 'read',
+      sampleCount: 3,
+      dataFileKeys: ['a_R1.fq.gz', 'a_R2.fq.gz'],
+    });
+    expect(mockGetObject).toHaveBeenCalledWith({ Bucket: 'lab-bucket', Key: 'sheet.csv' });
+  });
+
+  it('reads a header-only sample sheet as zero samples', async () => {
+    mockGetObject.mockResolvedValue({ Body: 'sample,fastq_1,fastq_2\n' });
+
+    await expect(readSampleSheet(lab, 's3://lab-bucket/sheet.csv')).resolves.toEqual({
+      outcome: 'read',
+      sampleCount: 0,
+      dataFileKeys: [],
+    });
+  });
+});
+
+describe('sumObjectBytes', () => {
+  let mockHeadObject: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockHeadObject = jest.fn();
+    (S3Service as jest.MockedClass<typeof S3Service>).prototype.headObject = mockHeadObject;
+  });
+
+  it('is zero for no keys without calling S3', async () => {
+    await expect(sumObjectBytes('lab-bucket', [])).resolves.toBe(0);
+    expect(mockHeadObject).not.toHaveBeenCalled();
+  });
+
+  it('sums the sizes it can read and skips a failed head', async () => {
+    mockHeadObject.mockResolvedValueOnce({ ContentLength: 120 }).mockRejectedValueOnce(new Error('missing'));
+
+    await expect(sumObjectBytes('lab-bucket', ['a.fq.gz', 'b.fq.gz'])).resolves.toBe(120);
+    expect(mockHeadObject).toHaveBeenCalledWith({ Bucket: 'lab-bucket', Key: 'a.fq.gz' });
   });
 });

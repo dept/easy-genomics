@@ -46,3 +46,14 @@ export function buildSourceRootOptions(allowedPrefix: string, allowsWholeBucket:
   }
   return options;
 }
+
+/** Folder tooltip footer: where typed paths start for the current Search in choice. */
+export function folderSearchScopeNote(searchesWholeBucket: boolean, selectedAllowedFolder: string): string {
+  if (searchesWholeBucket) {
+    return 'Paths start at the bucket root.';
+  }
+  if (selectedAllowedFolder) {
+    return `Paths start inside ${selectedAllowedFolder}. Leave it blank to search the whole allowed folder.`;
+  }
+  return "Paths start inside this lab's folder in the bucket, so you don't need to type the lab or organization IDs.";
+}

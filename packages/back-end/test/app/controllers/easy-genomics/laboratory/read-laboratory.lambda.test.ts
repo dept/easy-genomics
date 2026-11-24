@@ -105,6 +105,25 @@ describe('read-laboratory.lambda', () => {
     expect(mockValidateOrgAccess).toHaveBeenCalledWith(expect.anything(), ORG_ID, LAB_ID);
   });
 
+  it('reports whether a Microreact access token is stored without returning it', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      Name: 'Lab 1',
+    });
+    (mockSsmService.prototype.getParameter as jest.Mock).mockImplementation(async ({ Name }) => {
+      if (Name.endsWith('/microreact-access-token')) return { $metadata: {}, Parameter: { Value: 'mr-secret' } };
+      throw new Error('ParameterNotFound');
+    });
+
+    const result = await handler(createEvent(LAB_ID), createContext(), () => {});
+    const body = JSON.parse(result.body);
+
+    expect(body.HasMicroreactAccessToken).toBe(true);
+    expect(body.HasGitHubAccessToken).toBe(false);
+    expect(result.body).not.toContain('mr-secret');
+  });
+
   it('allows a system admin to read any laboratory regardless of ownership', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
       OrganizationId: ORG_ID,

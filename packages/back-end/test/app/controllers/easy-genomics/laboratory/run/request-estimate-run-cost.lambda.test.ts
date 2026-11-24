@@ -1,6 +1,8 @@
+import { RunSamplesNotCountedError } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 
 const mockEstimate = jest.fn();
+const mockCheckRunLimits = jest.fn();
 const mockQueryByLaboratoryId = jest.fn();
 const mockValidateOrgAdmin = jest.fn();
 const mockValidateLabManager = jest.fn();
@@ -14,6 +16,11 @@ jest.mock('../../../../../../src/app/services/easy-genomics/laboratory-service',
 jest.mock('../../../../../../src/app/services/easy-genomics/run-cost-estimation-service', () => ({
   RunCostEstimationService: jest.fn().mockImplementation(() => ({
     estimate: (...args: unknown[]) => mockEstimate(...args),
+  })),
+}));
+jest.mock('../../../../../../src/app/services/easy-genomics/run-limit-check-service', () => ({
+  RunLimitCheckService: jest.fn().mockImplementation(() => ({
+    checkRunLimits: (...args: unknown[]) => mockCheckRunLimits(...args),
   })),
 }));
 jest.mock('../../../../../../src/app/utils/auth-utils', () => ({
@@ -93,6 +100,7 @@ describe('request-estimate-run-cost.lambda', () => {
     mockValidateOrgAdmin.mockReturnValue(true);
     mockValidateLabManager.mockReturnValue(false);
     mockValidateLabTechnician.mockReturnValue(false);
+    mockCheckRunLimits.mockReset().mockResolvedValue(undefined);
   });
 
   it('returns 404 when laboratoryId is missing', async () => {
@@ -127,6 +135,7 @@ describe('request-estimate-run-cost.lambda', () => {
     const result = await handler(createEvent(validBody), createContext(), () => {});
     expect(result.statusCode).toBe(403);
     expect(mockEstimate).not.toHaveBeenCalled();
+    expect(mockCheckRunLimits).not.toHaveBeenCalled();
   });
 
   it('returns estimate on happy path', async () => {
@@ -141,5 +150,64 @@ describe('request-estimate-run-cost.lambda', () => {
     expect(body.estimateAvailable).toBe(true);
     expect(body.computeCostUsd.median).toBe(2);
     expect(mockEstimate).toHaveBeenCalled();
+  });
+
+  describe('run limit verdict', () => {
+    const laboratory = { LaboratoryId: LAB_ID, OrganizationId: 'org-1', RunLimits: { CostWarnAboveUsd: 150 } };
+    const reviewRequest = {
+      platform: 'AWS HealthOmics',
+      workflowExternalId: 'wf-1',
+      workflowVersionName: 'v2',
+      sampleSheetS3Url: 's3://lab-bucket/run/samplesheet.csv',
+      settings: { input: 's3://lab-bucket/run/samplesheet.csv' },
+    };
+
+    beforeEach(() => {
+      mockQueryByLaboratoryId.mockResolvedValue(laboratory);
+    });
+
+    it('returns exactly the estimate when the lab has no limits', async () => {
+      const result = await handler(createEvent(reviewRequest), createContext(), () => {});
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body).toEqual(await mockEstimate.mock.results[0].value);
+      expect(body).not.toHaveProperty('limitVerdict');
+    });
+
+    it('adds the verdict to the estimate', async () => {
+      const verdict = {
+        outcome: 'warn',
+        hits: [{ limit: 'cost', level: 'warn', amount: 150, runValue: 182.5 }],
+        costEstimate: 'available',
+        sampleCount: 96,
+      };
+      mockCheckRunLimits.mockResolvedValue(verdict);
+
+      const result = await handler(createEvent(reviewRequest), createContext(), () => {});
+
+      const body = JSON.parse(result.body);
+      expect(body.computeCostUsd.median).toBe(2);
+      expect(body.limitVerdict).toEqual(verdict);
+    });
+
+    it('checks the run from server-derivable fields only, ignoring client-sent sizes', async () => {
+      await handler(
+        createEvent({ ...reviewRequest, sampleCount: 1, inputBytesTotal: 1, inputFileKeys: ['x'] }),
+        createContext(),
+        () => {},
+      );
+
+      expect(mockCheckRunLimits).toHaveBeenCalledWith(laboratory, reviewRequest);
+    });
+
+    it('returns the samples-not-counted error when the check cannot count the samples', async () => {
+      mockCheckRunLimits.mockRejectedValue(new RunSamplesNotCountedError());
+
+      const result = await handler(createEvent(reviewRequest), createContext(), () => {});
+
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).ErrorCode).toBe('EG-341');
+    });
   });
 });

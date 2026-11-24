@@ -97,4 +97,18 @@ describe('AwsHealthOmicsNestedStack cross-account shared workflow IAM access', (
     const stack = createStack();
     expect(resourcesFor(stack, policyName, 'omics:ListShares')).toContain(sharesResourceArn);
   });
+
+  // The launch limit check reads the lab's sample sheet and the run history, like the review-step estimate.
+  it.each([
+    ['dynamodb:Query', `arn:aws:dynamodb:${region}:${account}:table/test-laboratory-run-table/index/*`],
+    ['s3:GetObject', `arn:aws:s3:::${account}-test-lab-bucket/*`],
+  ])('grants create-run-execution %s on %s for the launch limit check', (action, resource) => {
+    const stack = createStack();
+    const grantedResources = stack.iam
+      .getPolicyStatements('/aws-healthomics/run/create-run-execution')
+      .map((statement) => statement.toStatementJson())
+      .filter((json) => [json.Action].flat().includes(action))
+      .flatMap((json) => [json.Resource].flat());
+    expect(grantedResources).toContain(resource);
+  });
 });

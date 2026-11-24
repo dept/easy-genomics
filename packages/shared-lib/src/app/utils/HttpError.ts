@@ -312,6 +312,70 @@ export class LaboratoryFailureAnalysisDisabledError extends HttpError {
 }
 
 /**
+ * The run's estimated cost is above the laboratory's cost block amount
+ *
+ * @param estimateUsd
+ * @param blockAboveUsd
+ */
+export class RunCostLimitExceededError extends HttpError {
+  constructor(estimateUsd: number, blockAboveUsd: number) {
+    super(
+      `Estimated run cost of $${estimateUsd.toFixed(2)} is above this laboratory's block amount of $${blockAboveUsd.toFixed(2)}. Split the samples into smaller runs, or ask an organization admin to change the limit.`,
+      400,
+      'EG-339',
+    );
+  }
+}
+
+/**
+ * The run's sample count is above the laboratory's sample block amount
+ *
+ * @param sampleCount
+ * @param blockAbove
+ */
+export class RunSampleLimitExceededError extends HttpError {
+  constructor(sampleCount: number, blockAbove: number) {
+    super(
+      `This run has ${sampleCount} samples, above this laboratory's limit of ${blockAbove}. Split the samples into smaller runs, or ask an organization admin to change the limit.`,
+      400,
+      'EG-340',
+    );
+  }
+}
+
+/**
+ * The run's samples could not be counted while the laboratory has a sample limit
+ *
+ * @param messageOpt - optional additional message
+ */
+export class RunSamplesNotCountedError extends HttpError {
+  constructor(messageOpt?: string) {
+    super(
+      'The samples in this run could not be counted, and this laboratory has a sample limit. Check the sample sheet and try again.',
+      400,
+      'EG-341',
+      messageOpt,
+    );
+  }
+}
+
+/**
+ * The run cost estimate failed while the laboratory has a cost limit
+ *
+ * @param messageOpt - optional additional message
+ */
+export class RunCostEstimateFailedError extends HttpError {
+  constructor(messageOpt?: string) {
+    super(
+      'The run cost estimate failed, and this laboratory has a cost limit, so the run was not started. Try again shortly.',
+      500,
+      'EG-342',
+      messageOpt,
+    );
+  }
+}
+
+/**
  * Laboratory HealthOmics VPC Configuration not found
  *
  * @param configurationName

@@ -67,6 +67,15 @@
 
   const selectedSampleIds = ref<string[]>([]);
   const selectedFileKeys = ref<string[]>([]);
+  const fileKeyToIsPermanent = computed(
+    () => dataCollectionsStore.fileRetentionByLab[props.labId]?.permanentByKey ?? {},
+  );
+  const fileKeyToRunUsages = computed(
+    () => dataCollectionsStore.fileRetentionByLab[props.labId]?.runUsagesByKey ?? {},
+  );
+  const filePermanentBusy = ref(false);
+
+  const permanentTag = computed(() => tags.value.find((t) => t.Kind === 'permanent'));
 
   const showBuildSampleModal = ref(false);
   const showAddToSampleModal = ref(false);
@@ -151,6 +160,21 @@
     dataCollectionsStore.clearUnlinkedScan(labId);
   }
 
+  async function setSelectedFilesPermanent(keep: boolean): Promise<void> {
+    const tagId = permanentTag.value?.TagId;
+    const keys = [...selectedFileKeys.value];
+    if (!tagId || !keys.length) return;
+    filePermanentBusy.value = true;
+    uiStore.setRequestPending('dataCollectionsMutate');
+    try {
+      const saved = await dataCollectionsStore.setUnlinkedFilesPermanent(props.labId, keys, keep, tagId);
+      if (saved) toast.success(keep ? 'Files will be kept permanently' : 'Permanent protection removed');
+    } finally {
+      filePermanentBusy.value = false;
+      uiStore.setRequestComplete('dataCollectionsMutate');
+    }
+  }
+
   async function ensureLabDetailsLoaded(labId: string = props.labId): Promise<void> {
     await labsStore.loadLab(labId);
   }
@@ -170,6 +194,7 @@
     }
 
     await dataCollectionsStore.loadUnlinkedScan(labId, opts);
+    if (labId === props.labId) await dataCollectionsStore.loadUnlinkedFileTags(labId);
   }
 
   async function refreshAll(): Promise<void> {
@@ -433,7 +458,12 @@
           :resolved-prefix="unlinkedMeta.resolvedPrefix"
           :last-scan-label="unlinkedMeta.lastScanLabel"
           :has-samples="samples.length > 0"
+          :key-to-is-permanent="fileKeyToIsPermanent"
+          :key-to-run-usages="fileKeyToRunUsages"
+          :can-set-permanent="!!permanentTag"
+          :permanent-busy="filePermanentBusy"
           @update:selected-keys="selectedFileKeys = $event"
+          @set-permanent="setSelectedFilesPermanent"
           @update:search="fileSearch = $event"
           @rescan="loadUnlinkedFiles({ force: true })"
           @open-settings="openLabSettings"

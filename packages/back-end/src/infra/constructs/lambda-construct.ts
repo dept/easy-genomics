@@ -26,6 +26,8 @@ export const LAMBDA_FUNCTION_ROOT_DIR = 'src/app/controllers'; // DO NOT CHANGE
 export interface LambdaConstructProps extends CommonApiNestedStackProps {
   lambdaFunctionsDir: string;
   lambdaFunctionsNamespace: string;
+  // Folders, relative to lambdaFunctionsDir, whose handlers another stack builds (e.g. 'usage').
+  excludeDirs?: string[];
   lambdaFunctionsResources: {
     [key: string]: LambdaFunctionsResources;
   };
@@ -84,7 +86,9 @@ export class LambdaConstruct extends Construct {
     this.props = props;
 
     // Find all existing Lambda Functions within specified lambdaFunctionsDir, build each, and wire event triggers
-    this.getLambdaFunctions(path.join(__dirname, `../../../${this.props.lambdaFunctionsDir}`)).forEach(
+    const lambdaFunctionsRootDir = path.join(__dirname, `../../../${this.props.lambdaFunctionsDir}`);
+    const excludedDirs = (this.props.excludeDirs ?? []).map((dir) => path.join(lambdaFunctionsRootDir, dir));
+    this.getLambdaFunctions(lambdaFunctionsRootDir, excludedDirs).forEach(
       (lambdaFunction: AssociativeArray<string>) => {
         this.registerLambdaFunction(lambdaFunction);
       },
@@ -204,17 +208,21 @@ export class LambdaConstruct extends Construct {
    * and ends with '.lambda.ts'.
    *
    * @param directory
+   * @param excludedDirs absolute paths of folders to skip
    * @param lambdaFunctions
    */
   private getLambdaFunctions = (
     directory: string,
+    excludedDirs: string[],
     lambdaFunctions: AssociativeArray<string>[] = [],
   ): AssociativeArray<string>[] => {
     const filesInDirectory: string[] = fs.readdirSync(directory);
     for (const file of filesInDirectory) {
       const absolutePath: string = path.join(directory, file);
       if (fs.statSync(absolutePath).isDirectory()) {
-        this.getLambdaFunctions(absolutePath, lambdaFunctions);
+        if (!excludedDirs.includes(absolutePath)) {
+          this.getLambdaFunctions(absolutePath, excludedDirs, lambdaFunctions);
+        }
       } else {
         if (file.endsWith('.lambda.ts')) {
           const lambdaRestApiCommand: string = file.split('-', 1).pop()!;

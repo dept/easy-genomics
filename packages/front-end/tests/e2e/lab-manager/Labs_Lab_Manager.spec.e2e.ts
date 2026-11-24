@@ -515,7 +515,7 @@ test('12 - Check HealthOmics Run Details', async ({ page, baseURL }) => {
   }
 });
 
-test('13 - Check HealthOmics Run File Manager if files exist', async ({ page, baseURL }) => {
+test('13 - Check HealthOmics Run All files if files exist', async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/labs`);
   await page.waitForLoadState('networkidle');
 
@@ -535,17 +535,41 @@ test('13 - Check HealthOmics Run File Manager if files exist', async ({ page, ba
     await page.getByRole('tab', { name: 'Pipeline Runs' }).click();
     await page.waitForLoadState('networkidle');
 
-    // Go to File Manager
+    // Go to All files (HealthOmics run overview pills)
     await page
       .getByRole('row', { name: omicsRunNameVar })
       .filter({ has: page.locator('button') })
       .locator('button')
       .click();
     await page.getByRole('menuitem', { name: 'View Details' }).click();
-    await page.getByRole('tab', { name: 'File Manager' }).click();
+    await expect(page.getByRole('tab', { name: /Overview/i })).toBeVisible();
+    const selectedResultsTab = page.getByRole('tab', { name: /Selected results/i });
+    await expect(selectedResultsTab).toBeVisible();
+    const selectedTabText = (await selectedResultsTab.innerText()).replace(/\s+/g, ' ');
+    const selectedCountMatch = selectedTabText.match(/(\d+)/);
+    const existingSelectedCount = selectedCountMatch ? Number(selectedCountMatch[1]) : 0;
+
+    await page.getByRole('tab', { name: /All files/i }).click();
     await page.waitForTimeout(5 * 2000);
 
-    // Check for few filenames
+    // Mark results must seed existing roles — wait for the control, then assert the draft count.
+    const markResults = page.getByRole('button', { name: 'Mark results' });
+    await markResults.waitFor({ state: 'visible', timeout: 30_000 });
+    await markResults.click();
+    await expect(page.getByText(/Marking results\. Tick a file or folder/i)).toBeVisible();
+    await expect(
+      page.getByText(
+        existingSelectedCount === 1
+          ? '1 selected result in total'
+          : `${existingSelectedCount} selected results in total`,
+      ),
+    ).toBeVisible();
+    await expect(page.getByText(/No changes yet/i)).toBeVisible();
+    // Cancel without saving — existing selected results stay untouched.
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('button', { name: 'Mark results' })).toBeVisible();
+
+    // Check for few filenames (download icons on tree rows)
     await page.getByRole('row', { name: fileName1 }).locator('button').click();
     await page.waitForTimeout(2000);
     await expect(page.getByText('Your files have begun downloading').nth(0)).toBeVisible();

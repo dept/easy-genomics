@@ -1,9 +1,11 @@
 import { createPinia, setActivePinia } from 'pinia';
-import useDataCollectionsStore, { UNLINKED_SCAN_TTL_MS } from '../../../src/app/stores/dataCollections';
+import useDataCollectionsStore, { FILE_KEYS_CHUNK, UNLINKED_SCAN_TTL_MS } from '../../../src/app/stores/dataCollections';
 
 const mockRequestUnlinkedBucketObjects = jest.fn();
 const mockAddFilesToSample = jest.fn();
 const mockRequestLaboratoryBucketObjects = jest.fn();
+const mockRequestListFileTags = jest.fn();
+const mockAddTagsToFiles = jest.fn();
 const mockToastError = jest.fn();
 
 (global as { useNuxtApp?: () => unknown }).useNuxtApp = () => ({
@@ -12,6 +14,8 @@ const mockToastError = jest.fn();
       requestUnlinkedBucketObjects: mockRequestUnlinkedBucketObjects,
       addFilesToSample: mockAddFilesToSample,
       requestLaboratoryBucketObjects: mockRequestLaboratoryBucketObjects,
+      requestListFileTags: mockRequestListFileTags,
+      addTagsToFiles: mockAddTagsToFiles,
     },
   },
 });
@@ -40,6 +44,8 @@ describe('dataCollections store unlinked scan cache', () => {
     setActivePinia(createPinia());
     useDataCollectionsStore().reset();
     mockRequestUnlinkedBucketObjects.mockReset();
+    mockRequestListFileTags.mockReset();
+    mockAddTagsToFiles.mockReset();
     mockToastError.mockReset();
   });
 
@@ -187,6 +193,69 @@ describe('dataCollections store addFilesToSample', () => {
 
     expect(mockToastError).toHaveBeenCalledWith('Sample not found');
     expect(store.unlinkedScan('lab-1')).not.toBeNull();
+  });
+});
+
+describe('dataCollections store file retention', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    useDataCollectionsStore().reset();
+    mockRequestListFileTags.mockReset();
+    mockAddTagsToFiles.mockReset();
+    mockToastError.mockReset();
+  });
+
+  it('loads file tags in FILE_KEYS_CHUNK batches', async () => {
+    const store = useDataCollectionsStore();
+    const files = Array.from({ length: FILE_KEYS_CHUNK + 1 }, (_, index) => ({ Key: `k${index}` }));
+    store.setUnlinkedScan('lab-1', {
+      Contents: files,
+      IsTruncated: false,
+      S3Bucket: 'bucket',
+      ResolvedPrefix: 'org/lab/',
+    });
+    mockRequestListFileTags.mockImplementation(async ({ Keys }: { Keys: string[] }) => ({
+      Files: Keys.map((Key) => ({ Key, IsPermanent: Key === 'k0' })),
+    }));
+
+    await store.loadUnlinkedFileTags('lab-1');
+
+    expect(mockRequestListFileTags).toHaveBeenCalledTimes(2);
+    expect(mockRequestListFileTags.mock.calls[0][0].Keys).toHaveLength(FILE_KEYS_CHUNK);
+    expect(mockRequestListFileTags.mock.calls[1][0].Keys).toEqual(['k100']);
+    expect(store.fileRetentionByLab['lab-1']?.permanentByKey.k0).toBe(true);
+  });
+
+  it('ignores a file-tag response that arrives after the scan was cleared', async () => {
+    const store = useDataCollectionsStore();
+    store.setUnlinkedScan('lab-1', scanResponse('a.fq.gz'));
+    let release: (value: { Files: { Key: string; IsPermanent: boolean }[] }) => void = () => undefined;
+    mockRequestListFileTags.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    const pending = store.loadUnlinkedFileTags('lab-1');
+    store.clearUnlinkedScan('lab-1');
+    release({ Files: [{ Key: 'a.fq.gz', IsPermanent: true }] });
+    await pending;
+
+    expect(store.fileRetentionByLab['lab-1']).toBeUndefined();
+  });
+
+  it('reloads file tags after a permanent write fails', async () => {
+    const store = useDataCollectionsStore();
+    store.setUnlinkedScan('lab-1', scanResponse('a.fq.gz'));
+    mockAddTagsToFiles.mockRejectedValueOnce(new Error('nope'));
+    mockRequestListFileTags.mockResolvedValue({ Files: [] });
+
+    const saved = await store.setUnlinkedFilesPermanent('lab-1', ['a.fq.gz'], true, 'perm-tag');
+
+    expect(saved).toBe(false);
+    expect(mockToastError).toHaveBeenCalledWith('nope');
+    expect(mockRequestListFileTags).toHaveBeenCalledTimes(1);
+    expect(store.fileRetentionByLab['lab-1']?.permanentByKey['a.fq.gz']).toBeUndefined();
   });
 });
 

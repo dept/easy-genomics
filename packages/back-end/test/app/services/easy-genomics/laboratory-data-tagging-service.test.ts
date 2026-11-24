@@ -198,6 +198,65 @@ describe('LaboratoryDataTaggingService.applyTagsToFiles', () => {
     expect(fileRow.TagIds).toContain(tagId);
   });
 
+  it('keeps SampleIds on a linked file when a tag is added and when the last tag is removed', async () => {
+    const lab = labFixture();
+    const bucket = lab.S3Bucket!;
+    const key = 'org-1/lab-1/linked.fq.gz';
+    const tagId = 'tag-uuid-2';
+    const extraId = 'tag-uuid-3';
+    const ref = encodeS3ObjectRef(bucket, key);
+
+    mockGetItem.mockImplementation(async (input: { Key?: Record<string, AttributeValue> }) => {
+      const k = unmarshall(input.Key as Record<string, AttributeValue>) as { Sk?: string };
+      if (k.Sk === `TAG#${tagId}` || k.Sk === `TAG#${extraId}`) {
+        return {
+          Item: marshall({
+            LaboratoryId: lab.LaboratoryId,
+            Sk: k.Sk,
+            TagId: k.Sk?.slice('TAG#'.length),
+            Name: 'Beta',
+            ColorHex: '#AABBCC',
+            FileCount: 1,
+          }),
+        };
+      }
+      if (k.Sk === `FILE#${ref}`) {
+        return {
+          Item: marshall({
+            LaboratoryId: lab.LaboratoryId,
+            Sk: k.Sk,
+            S3Bucket: bucket,
+            ObjectKey: key,
+            TagIds: [tagId],
+            SampleIds: ['sample-1'],
+          }),
+        };
+      }
+      return {};
+    });
+
+    await svc.applyTagsToFiles(lab, 'user-1', bucket, [key], [extraId], []);
+    const filePutsAfterAdd = mockPutItem.mock.calls
+      .map((c) => (c[0]?.Item ? (unmarshall(c[0].Item) as { Sk?: string }) : undefined))
+      .filter((row) => row?.Sk?.startsWith('FILE#'));
+    expect(filePutsAfterAdd).toHaveLength(0);
+    const addedUpdate = mockUpdateItem.mock.calls
+      .map((c) => c[0])
+      .find((input) => String(unmarshall(input.Key).Sk).startsWith('FILE#'));
+    expect(addedUpdate?.UpdateExpression).toBe('SET TagIds = :tids, ModifiedAt = :ma, ModifiedBy = :mb');
+    expect(unmarshall(addedUpdate.ExpressionAttributeValues)[':tids']).toEqual([tagId, extraId]);
+
+    mockUpdateItem.mockClear();
+    mockDeleteItem.mockClear();
+    await svc.applyTagsToFiles(lab, 'user-1', bucket, [key], [], [tagId]);
+
+    expect(mockDeleteItem.mock.calls.some((c) => String(unmarshall(c[0].Key).Sk).startsWith('FILE#'))).toBe(false);
+    const removedUpdate = mockUpdateItem.mock.calls
+      .map((c) => c[0])
+      .find((input) => String(unmarshall(input.Key).Sk).startsWith('FILE#'));
+    expect(unmarshall(removedUpdate.ExpressionAttributeValues)[':tids']).toEqual([]);
+  });
+
   it('rejects adding more than one batch tag in a single request', async () => {
     const lab = labFixture();
     const bucket = lab.S3Bucket!;
@@ -703,7 +762,7 @@ describe('LaboratoryDataTaggingService preserves FILE rows when run usage histor
     (svc as unknown as { updateItem: typeof mockUpdateItem }).updateItem = mockUpdateItem;
   });
 
-  it('rewrites the FILE row with empty TagIds when all tags are removed but usages remain', async () => {
+  it('keeps the FILE row when all tags are removed but usages remain', async () => {
     const lab = labFixture();
     const bucket = lab.S3Bucket!;
     const key = 'org-1/lab-1/preserved.fq.gz';
@@ -756,12 +815,15 @@ describe('LaboratoryDataTaggingService preserves FILE rows when run usage histor
       }),
     ).toBe(false);
 
-    const filePut = mockPutItem.mock.calls
-      .map((c) => unmarshall(c[0].Item) as { Sk?: string; TagIds?: string[]; LaboratoryRunUsages?: unknown })
-      .find((row) => row.Sk === `FILE#${ref}`);
-    expect(filePut).toBeDefined();
-    expect(filePut!.TagIds).toEqual([]);
-    expect(filePut!.LaboratoryRunUsages).toBeDefined();
+    const filePuts = mockPutItem.mock.calls
+      .map((c) => (c[0]?.Item ? (unmarshall(c[0].Item) as { Sk?: string }) : undefined))
+      .filter((row) => row?.Sk === `FILE#${ref}`);
+    expect(filePuts).toHaveLength(0);
+    const update = mockUpdateItem.mock.calls
+      .map((c) => c[0])
+      .find((input) => unmarshall(input.Key).Sk === `FILE#${ref}`);
+    expect(update?.UpdateExpression).toBe('SET TagIds = :tids, ModifiedAt = :ma, ModifiedBy = :mb');
+    expect(unmarshall(update.ExpressionAttributeValues)[':tids']).toEqual([]);
   });
 });
 
@@ -1238,15 +1300,209 @@ describe('LaboratoryDataTaggingService.applyTagsToSamples', () => {
     );
   });
 
-  it('rejects system-managed permanent tags', async () => {
+  it('stores Permanent on the sample and does not rewrite file rows', async () => {
+    const permanentId = svc.getPermanentTagId('lab-1');
     (svc as unknown as { getTagRow: jest.Mock }).getTagRow = jest.fn().mockResolvedValue({
-      TagId: 'perm-1',
+      TagId: permanentId,
       Kind: 'permanent',
       Name: 'Permanent',
     });
-    await expect(svc.applyTagsToSamples(labFixture(), 'user-1', ['set-1'], ['perm-1'], [])).rejects.toThrow(
-      'Permanent tags are system-managed',
+    mockGetItem.mockResolvedValue({
+      Item: marshall({ LaboratoryId: 'lab-1', Sk: 'SAMPLE#set-1', SampleId: 'set-1', TagIds: [] }),
+    });
+    const applyFiles = jest.spyOn(svc, 'applyTagsToFiles');
+
+    await svc.applyTagsToSamples(labFixture(), 'user-1', ['set-1'], [permanentId], []);
+
+    expect(applyFiles).not.toHaveBeenCalled();
+    expect((svc as unknown as { putSequenceSetMapRow: jest.Mock }).putSequenceSetMapRow).not.toHaveBeenCalled();
+    expect((svc as unknown as { adjustTagFileCount: jest.Mock }).adjustTagFileCount).not.toHaveBeenCalled();
+    const sampleUpdate = mockUpdateItem.mock.calls
+      .map((c) => c[0])
+      .find((input) => String(unmarshall(input.Key).Sk) === 'SAMPLE#set-1');
+    expect(unmarshall(sampleUpdate.ExpressionAttributeValues)[':tids']).toEqual([permanentId]);
+  });
+
+  it('counts a standard tag added alongside Permanent and still skips the permanent tag', async () => {
+    const permanentId = svc.getPermanentTagId('lab-1');
+    (svc as unknown as { getTagRow: jest.Mock }).getTagRow = jest.fn(async (_labId: string, tagId: string) =>
+      tagId === permanentId
+        ? { TagId: permanentId, Kind: 'permanent', Name: 'Permanent' }
+        : { TagId: tagId, Kind: 'standard', Name: 'Batch note' },
     );
+    mockGetItem.mockResolvedValue({
+      Item: marshall({ LaboratoryId: 'lab-1', Sk: 'SAMPLE#set-1', SampleId: 'set-1', TagIds: [] }),
+    });
+
+    await svc.applyTagsToSamples(labFixture(), 'user-1', ['set-1'], [permanentId, 'tag-1'], []);
+
+    const adjust = (svc as unknown as { adjustTagFileCount: jest.Mock }).adjustTagFileCount;
+    const putMap = (svc as unknown as { putSequenceSetMapRow: jest.Mock }).putSequenceSetMapRow;
+    expect(adjust).toHaveBeenCalledTimes(1);
+    expect(adjust).toHaveBeenCalledWith('lab-1', 'tag-1', 1);
+    expect(putMap).toHaveBeenCalledTimes(1);
+    expect(putMap).toHaveBeenCalledWith('lab-1', 'tag-1', 'set-1');
+  });
+
+  it('removes Permanent from the sample without rewriting file rows', async () => {
+    const permanentId = svc.getPermanentTagId('lab-1');
+    (svc as unknown as { getTagRow: jest.Mock }).getTagRow = jest.fn().mockResolvedValue({
+      TagId: permanentId,
+      Kind: 'permanent',
+      Name: 'Permanent',
+    });
+    mockGetItem.mockResolvedValue({
+      Item: marshall({
+        LaboratoryId: 'lab-1',
+        Sk: 'SAMPLE#set-1',
+        SampleId: 'set-1',
+        TagIds: [permanentId],
+      }),
+    });
+    const applyFiles = jest.spyOn(svc, 'applyTagsToFiles');
+
+    await svc.applyTagsToSamples(labFixture(), 'user-1', ['set-1'], [], [permanentId]);
+
+    expect(applyFiles).not.toHaveBeenCalled();
+    expect((svc as unknown as { adjustTagFileCount: jest.Mock }).adjustTagFileCount).not.toHaveBeenCalled();
+    expect(
+      (svc as unknown as { deleteSequenceSetMapIfExists: jest.Mock }).deleteSequenceSetMapIfExists,
+    ).not.toHaveBeenCalled();
+    const sampleUpdate = mockUpdateItem.mock.calls
+      .map((c) => c[0])
+      .find((input) => String(unmarshall(input.Key).Sk) === 'SAMPLE#set-1');
+    expect(unmarshall(sampleUpdate.ExpressionAttributeValues)[':tids']).toEqual([]);
+  });
+});
+
+describe('LaboratoryDataTaggingService.listPermanentSampleIds', () => {
+  it('returns only samples whose row carries the permanent tag id', async () => {
+    const svc = new LaboratoryDataTaggingService();
+    const permanentId = svc.getPermanentTagId('lab-1');
+    (svc as unknown as { queryItems: jest.Mock }).queryItems = jest.fn().mockResolvedValue({
+      Items: [
+        marshall({ Sk: 'SAMPLE#keep', SampleId: 'keep', TagIds: [permanentId] }),
+        marshall({ Sk: 'SAMPLE#plain', SampleId: 'plain', TagIds: ['other'] }),
+      ],
+    });
+
+    const ids = await svc.listPermanentSampleIds('lab-1');
+
+    expect([...ids]).toEqual(['keep']);
+  });
+
+  it('follows the page cursor and reads a sample id from the sort key', async () => {
+    const svc = new LaboratoryDataTaggingService();
+    const permanentId = svc.getPermanentTagId('lab-1');
+    const queryItems = jest
+      .fn()
+      .mockResolvedValueOnce({
+        Items: [marshall({ Sk: 'SAMPLE#keep', SampleId: 'keep', TagIds: [permanentId] })],
+        LastEvaluatedKey: { LaboratoryId: { S: 'lab-1' }, Sk: { S: 'SAMPLE#keep' } },
+      })
+      .mockResolvedValueOnce({
+        Items: [marshall({ Sk: 'SAMPLE#from-sk', TagIds: [permanentId] })],
+      });
+    (svc as unknown as { queryItems: jest.Mock }).queryItems = queryItems;
+
+    const ids = await svc.listPermanentSampleIds('lab-1');
+
+    expect([...ids].sort()).toEqual(['from-sk', 'keep']);
+    expect(queryItems.mock.calls[1][0].ExclusiveStartKey).toEqual({
+      LaboratoryId: { S: 'lab-1' },
+      Sk: { S: 'SAMPLE#keep' },
+    });
+  });
+});
+
+describe('LaboratoryDataTaggingService.listAllFileRowsForLab', () => {
+  it('returns SampleIds and leaves the field undefined when the row has none', async () => {
+    const svc = new LaboratoryDataTaggingService();
+    (svc as unknown as { queryItems: jest.Mock }).queryItems = jest.fn().mockResolvedValue({
+      Items: [
+        marshall({
+          Sk: 'FILE#ref-linked',
+          S3Bucket: 'my-bucket',
+          ObjectKey: 'org-1/lab-1/linked.fq.gz',
+          TagIds: [],
+          SampleIds: ['sample-1'],
+        }),
+        marshall({
+          Sk: 'FILE#ref-plain',
+          S3Bucket: 'my-bucket',
+          ObjectKey: 'org-1/lab-1/plain.fq.gz',
+          TagIds: [],
+        }),
+      ],
+    });
+
+    const rows = await svc.listAllFileRowsForLab('lab-1');
+
+    expect(rows.find((row) => row.Ref === 'ref-linked')?.SampleIds).toEqual(['sample-1']);
+    expect(rows.find((row) => row.Ref === 'ref-plain')?.SampleIds).toBeUndefined();
+  });
+});
+
+describe('LaboratoryDataTaggingService.deleteTag and setBatchForFiles keep sample links', () => {
+  const lab = labFixture();
+  const bucket = lab.S3Bucket!;
+  const key = 'org-1/lab-1/linked.fq.gz';
+  const ref = encodeS3ObjectRef(bucket, key);
+
+  it('deleteTag updates TagIds in place and keeps a file that is still linked to a sample', async () => {
+    const svc = new LaboratoryDataTaggingService();
+    const updateItem = jest.fn().mockResolvedValue({});
+    const deleteItem = jest.fn().mockResolvedValue({});
+    (svc as unknown as { getTagRow: jest.Mock }).getTagRow = jest
+      .fn()
+      .mockResolvedValue({ TagId: 'tag-1', Kind: 'standard', Name: 'Alpha' });
+    (svc as unknown as { queryItems: jest.Mock }).queryItems = jest.fn().mockResolvedValue({
+      Items: [marshall({ Sk: `MAP#tag-1#${ref}`, Gsi1Sk: ref })],
+    });
+    (svc as unknown as { deleteItem: jest.Mock }).deleteItem = deleteItem;
+    (svc as unknown as { updateItem: jest.Mock }).updateItem = updateItem;
+    (svc as unknown as { getFileRow: jest.Mock }).getFileRow = jest.fn().mockResolvedValue({
+      TagIds: ['tag-1'],
+      S3Bucket: bucket,
+      ObjectKey: key,
+      SampleIds: ['sample-1'],
+    });
+
+    await svc.deleteTag(lab.LaboratoryId, 'tag-1');
+
+    expect(updateItem).toHaveBeenCalledTimes(1);
+    expect(updateItem.mock.calls[0][0].UpdateExpression).toBe('SET TagIds = :tids, ModifiedAt = :ma');
+    expect(unmarshall(updateItem.mock.calls[0][0].ExpressionAttributeValues)[':tids']).toEqual([]);
+    expect(deleteItem.mock.calls.map((call) => String(unmarshall(call[0].Key).Sk))).not.toContain(`FILE#${ref}`);
+  });
+
+  it('setBatchForFiles updates TagIds in place and keeps a file that is still linked to a sample', async () => {
+    const svc = new LaboratoryDataTaggingService();
+    const updateItem = jest.fn().mockResolvedValue({});
+    const deleteItem = jest.fn().mockResolvedValue({});
+    (svc as unknown as { assertLaboratoryHasS3BucketAccess: jest.Mock }).assertLaboratoryHasS3BucketAccess = jest
+      .fn()
+      .mockResolvedValue([]);
+    (svc as unknown as { assertKeyUnderLabPrefix: jest.Mock }).assertKeyUnderLabPrefix = jest.fn();
+    (svc as unknown as { getBatchTagIdSet: jest.Mock }).getBatchTagIdSet = jest
+      .fn()
+      .mockResolvedValue(new Set(['batch-1']));
+    (svc as unknown as { deleteMapIfExists: jest.Mock }).deleteMapIfExists = jest.fn().mockResolvedValue(undefined);
+    (svc as unknown as { adjustTagFileCount: jest.Mock }).adjustTagFileCount = jest.fn().mockResolvedValue(undefined);
+    (svc as unknown as { getFileRow: jest.Mock }).getFileRow = jest.fn().mockResolvedValue({
+      TagIds: ['batch-1'],
+      S3Bucket: bucket,
+      ObjectKey: key,
+      SampleIds: ['sample-1'],
+    });
+    (svc as unknown as { updateItem: jest.Mock }).updateItem = updateItem;
+    (svc as unknown as { deleteItem: jest.Mock }).deleteItem = deleteItem;
+
+    await svc.setBatchForFiles(lab, 'user-1', bucket, [key], { type: 'clear' });
+
+    expect(deleteItem).not.toHaveBeenCalled();
+    expect(updateItem).toHaveBeenCalledTimes(1);
+    expect(unmarshall(updateItem.mock.calls[0][0].ExpressionAttributeValues)[':tids']).toEqual([]);
   });
 });
 

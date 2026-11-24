@@ -9,7 +9,16 @@
   import EGSampleTagSidebar from '@FE/components/EGSampleTagSidebar.vue';
   import { useToastStore, useUiStore } from '@FE/stores';
   import { SAMPLE_LAYOUT_LABELS } from '@FE/utils/data-collections-selection';
-  import { filterSamplesBySearch } from '@FE/utils/data-collections-filters';
+  import {
+    countPermanentInSelection,
+    filterSamplesBySearch,
+    formatRetentionExpiryLabel,
+    SAMPLE_DRAG_MIME,
+    sampleIdsForDrag,
+    sampleIdsMissingTag,
+    sampleMatchesTagIds,
+    sidebarTagsForSamples,
+  } from '@FE/utils/data-collections-filters';
   import { exceedsTagNameMaxLength } from '@FE/utils/data-collections-name-validation';
 
   const props = withDefaults(
@@ -83,6 +92,8 @@
   const presetColors = TAG_PRESET_COLORS;
 
   const standardTags = computed(() => props.tags.filter((t) => (t.Kind ?? 'standard') === 'standard'));
+  const permanentTag = computed(() => props.tags.find((t) => t.Kind === 'permanent'));
+  const assignableTags = computed(() => sidebarTagsForSamples(props.tags));
   const batchTags = computed(() => props.tags.filter((t) => t.Kind === 'batch'));
 
   type SampleSection = {
@@ -110,8 +121,9 @@
     if (props.tagsFilterUntagged) {
       list = list.filter((s) => !standardTagIdsForSet(s.SampleId).length);
     } else if (props.tagsFilterTagIds.length > 0) {
-      const selected = new Set(props.tagsFilterTagIds);
-      list = list.filter((s) => standardTagIdsForSet(s.SampleId).some((tid) => selected.has(tid)));
+      list = list.filter((s) =>
+        sampleMatchesTagIds(s, standardTagIdsForSet(s.SampleId), props.tagsFilterTagIds, permanentTag.value?.TagId),
+      );
     }
     return list;
   });
@@ -159,6 +171,9 @@
         counts.set(tid, (counts.get(tid) || 0) + 1);
       }
     }
+    const permanentId = permanentTag.value?.TagId;
+    const permanentCount = permanentId ? countPermanentInSelection(props.samples, sel) : 0;
+    if (permanentId && permanentCount > 0) counts.set(permanentId, permanentCount);
     return [...counts.entries()]
       .map(([tagId, count]) => ({ tagId, count }))
       .sort((a, b) => {
@@ -263,6 +278,8 @@
   function isSelected(setId: string): boolean {
     return props.selectedIds.includes(setId);
   }
+
+  const selectionHasPermanent = computed(() => props.samples.some((s) => s.IsPermanent && isSelected(s.SampleId)));
 
   function contentsLabel(s: LaboratorySample): string {
     if (s.ContentsSummary) return s.ContentsSummary;
@@ -483,6 +500,65 @@
     }
   }
 
+  function expiryLabel(sample: LaboratorySample): string {
+    return formatRetentionExpiryLabel(!!sample.IsPermanent, runUsagesForSample(sample.SampleId));
+  }
+
+  function shownExpiryLabel(sample: LaboratorySample): string | undefined {
+    const label = expiryLabel(sample);
+    return label === '—' ? undefined : label;
+  }
+
+  async function setSelectionPermanent(keep: boolean): Promise<void> {
+    const tagId = permanentTag.value?.TagId;
+    if (!tagId || !props.selectedIds.length) return;
+    uiStore.setRequestPending('dataCollectionsMutate');
+    try {
+      await addTagsToSamplesInChunks(props.selectedIds, keep ? [tagId] : [], keep ? [] : [tagId]);
+      toast.success(keep ? 'Samples will be kept permanently' : 'Permanent protection removed');
+      emit('tags-updated');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      uiStore.setRequestComplete('dataCollectionsMutate');
+    }
+  }
+
+  function onSampleDragStart(event: DragEvent, sampleId: string): void {
+    const ids = sampleIdsForDrag(sampleId, props.selectedIds);
+    event.dataTransfer?.setData(SAMPLE_DRAG_MIME, JSON.stringify(ids));
+    event.dataTransfer?.setData('text/plain', 'samples');
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+  }
+
+  async function onSamplesDropped(tagId: string, sampleIds: string[]): Promise<void> {
+    const permanentSampleIds = new Set(props.samples.filter((s) => s.IsPermanent).map((s) => s.SampleId));
+    const missing = sampleIdsMissingTag(
+      sampleIds,
+      tagId,
+      props.sampleIdToTagIds,
+      permanentTag.value?.TagId,
+      permanentSampleIds,
+    );
+    if (!missing.length) {
+      toast.info(
+        sampleIds.length === 1 ? 'Tag already applied to that sample.' : 'Tag already applied to those samples.',
+      );
+      return;
+    }
+    uiStore.setRequestPending('dataCollectionsMutate');
+    try {
+      await addTagsToSamplesInChunks(missing, [tagId], []);
+      toast.success('Tags updated');
+      emit('update:selectedIds', []);
+      emit('tags-updated');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      uiStore.setRequestComplete('dataCollectionsMutate');
+    }
+  }
+
   async function applyBulkChanges(): Promise<void> {
     if (!props.selectedIds.length) return;
     const setIds = [...props.selectedIds];
@@ -526,6 +602,7 @@
         @update:tags-filter-tag-ids="emit('update:tagsFilterTagIds', $event)"
         @tag-created="emit('tag-created')"
         @tag-deleted="emit('tag-deleted', $event)"
+        @samples-dropped="onSamplesDropped($event.tagId, $event.sampleIds)"
       />
 
       <div class="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -708,7 +785,9 @@
                     'z-[80]': analysisPopoverOpenKey === s.SampleId,
                   }"
                   :aria-selected="isSelected(s.SampleId)"
-                  :aria-label="`${s.Name}, ${contentsLabel(s)}`"
+                  :aria-label="`${s.Name}, ${contentsLabel(s)}${s.IsPermanent ? ', kept permanently' : ''}`"
+                  draggable="true"
+                  @dragstart="onSampleDragStart($event, s.SampleId)"
                   @click="toggle(s.SampleId)"
                   @keydown="onSampleItemKeydown($event, s.SampleId)"
                 >
@@ -725,7 +804,8 @@
                       @update:open="onAnalysisPopoverOpen(s.SampleId, $event)"
                     />
                   </div>
-                  <div class="absolute right-2 top-2" @mousedown.stop @click.stop>
+                  <div class="absolute right-2 top-2 flex items-center gap-1.5" @mousedown.stop @click.stop>
+                    <EGPermanentLockIcon v-if="s.IsPermanent" noun="sample" />
                     <UCheckbox
                       :model-value="isSelected(s.SampleId)"
                       :label="`Select sample ${s.Name}`"
@@ -740,6 +820,9 @@
                       {{ s.Name }}
                     </div>
                     <div class="text-muted mt-1 text-xs">{{ contentsLabel(s) }}</div>
+                    <div v-if="shownExpiryLabel(s)" class="text-muted mt-0.5 text-xs tabular-nums">
+                      {{ shownExpiryLabel(s) }}
+                    </div>
                   </div>
                   <div class="mt-2 flex min-h-[1.25rem] min-w-0 max-w-full flex-wrap gap-1">
                     <span
@@ -778,13 +861,14 @@
                   <th class="text-muted p-3 text-left text-xs uppercase">Sample ID</th>
                   <th class="text-muted p-3 text-left text-xs uppercase">Contents</th>
                   <th class="text-muted p-3 text-left text-xs uppercase">Tags</th>
+                  <th class="text-muted p-3 text-left text-xs uppercase">Expires</th>
                   <th class="text-muted p-3 text-left text-xs uppercase">Run Status</th>
                 </tr>
               </thead>
               <tbody>
                 <template v-for="sec in sampleSections" :key="sec.batchId ?? 'unbatched-table'">
                   <tr class="bg-gray-50/95">
-                    <td colspan="5" class="border-t border-gray-100 px-3 py-2.5" scope="colgroup">
+                    <td colspan="6" class="border-t border-gray-100 px-3 py-2.5" scope="colgroup">
                       <div class="flex w-full min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-2">
                         <span class="text-muted min-w-0 flex-1 text-xs font-normal leading-snug tracking-wide">
                           <span class="inline-flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -841,6 +925,8 @@
                       'relative z-[80]': analysisPopoverOpenKey === s.SampleId,
                     }"
                     :aria-selected="isSelected(s.SampleId)"
+                    draggable="true"
+                    @dragstart="onSampleDragStart($event, s.SampleId)"
                     @click="toggle(s.SampleId)"
                     @keydown="onSampleItemKeydown($event, s.SampleId)"
                   >
@@ -852,7 +938,12 @@
                         @update:model-value="toggle(s.SampleId)"
                       />
                     </td>
-                    <td class="p-3 font-medium">{{ s.Name }}</td>
+                    <td class="p-3 font-medium">
+                      <span class="inline-flex items-center gap-1.5">
+                        <EGPermanentLockIcon v-if="s.IsPermanent" noun="sample" />
+                        {{ s.Name }}
+                      </span>
+                    </td>
                     <td class="text-muted p-3">{{ contentsLabel(s) }}</td>
                     <td class="p-3">
                       <div class="flex min-w-0 max-w-full flex-wrap gap-1">
@@ -880,6 +971,7 @@
                         </template>
                       </div>
                     </td>
+                    <td class="text-muted p-3 tabular-nums">{{ expiryLabel(s) }}</td>
                     <td class="px-3 py-2 align-middle">
                       <span class="inline-flex w-fit max-w-full align-middle" @mousedown.stop @click.stop>
                         <EGFileAnalysisHistoryTooltip
@@ -917,6 +1009,22 @@
         <span v-else class="text-muted text-xs">Select samples to add or remove tags in bulk.</span>
         <div v-if="hasSelection" class="ml-auto flex flex-wrap items-center gap-2">
           <UIcon v-if="bulkPanelBusy" name="i-heroicons-arrow-path" class="text-muted h-5 w-5 shrink-0 animate-spin" />
+          <UButton
+            size="sm"
+            variant="outline"
+            :disabled="bulkPanelBusy || !permanentTag"
+            @click="setSelectionPermanent(true)"
+          >
+            Keep permanently
+          </UButton>
+          <UButton
+            size="sm"
+            variant="outline"
+            :disabled="bulkPanelBusy || !permanentTag || !selectionHasPermanent"
+            @click="setSelectionPermanent(false)"
+          >
+            Remove permanent
+          </UButton>
           <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openAddBulkPanel">Add Tags</UButton>
           <UButton size="sm" variant="outline" :disabled="bulkPanelBusy" @click="openRemoveBulkPanel">
             Remove Tags
@@ -961,7 +1069,15 @@
                   class="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
                   :style="{ background: tagById(row.tagId)?.ColorHex || '#ccc' }"
                 />
-                <span class="truncate font-medium">{{ tagById(row.tagId)?.Name ?? row.tagId }}</span>
+                <span class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span class="truncate font-medium">{{ tagById(row.tagId)?.Name ?? row.tagId }}</span>
+                  <span
+                    v-if="tagById(row.tagId)?.Kind === 'permanent'"
+                    class="text-muted shrink-0 text-[10px] font-normal"
+                  >
+                    Protect from expiry
+                  </span>
+                </span>
               </span>
               <span class="text-muted shrink-0 text-xs tabular-nums">{{ row.count }} / {{ selectedIds.length }}</span>
             </li>
@@ -972,7 +1088,7 @@
           <h3 class="text-muted mb-3 text-xs font-semibold uppercase tracking-wide">Add Tags</h3>
           <ul class="max-h-56 space-y-2 overflow-y-auto pr-1 text-sm">
             <li
-              v-for="t in standardTags"
+              v-for="t in assignableTags"
               :key="'add-' + t.TagId"
               class="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 hover:bg-gray-50"
             >
@@ -983,7 +1099,12 @@
                 @update:model-value="toggleBulkAddTag(t.TagId)"
               />
               <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: t.ColorHex }" />
-              <span class="truncate">{{ t.Name }}</span>
+              <span class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span class="truncate">{{ t.Name }}</span>
+                <span v-if="t.Kind === 'permanent'" class="text-muted shrink-0 text-[10px] font-normal">
+                  Protect from expiry
+                </span>
+              </span>
             </li>
           </ul>
           <div class="mt-3 border-t border-gray-100 pt-3">
@@ -1046,7 +1167,12 @@
                 class="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
                 :style="{ background: tagById(tid)?.ColorHex || '#ccc' }"
               />
-              <span class="truncate">{{ tagById(tid)?.Name ?? tid }}</span>
+              <span class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span class="truncate">{{ tagById(tid)?.Name ?? tid }}</span>
+                <span v-if="tagById(tid)?.Kind === 'permanent'" class="text-muted shrink-0 text-[10px] font-normal">
+                  Protect from expiry
+                </span>
+              </span>
             </li>
           </ul>
         </div>

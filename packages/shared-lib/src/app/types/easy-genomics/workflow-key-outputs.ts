@@ -13,7 +13,7 @@
  *   WorkflowName?: <string>,
  *   Platform?: <string>,
  *   SourceRunId?: <string>,
- *   KeyOutputs: [{ KeyOutputId, Label, Pattern, ExamplePath? }],
+ *   KeyOutputs: [{ KeyOutputId, Label, Description?, Pattern, ExamplePath? }],
  *   CreatedAt?, CreatedBy?, ModifiedAt?, ModifiedBy?
  * }
  */
@@ -24,6 +24,8 @@ export const WORKFLOW_KEY_OUTPUTS_LIMIT = 50;
 
 export const WORKFLOW_KEY_OUTPUT_LABEL_MAX_LENGTH = 80;
 
+export const WORKFLOW_KEY_OUTPUT_DESCRIPTION_MAX_LENGTH = 200;
+
 export const WORKFLOW_KEY_OUTPUT_PATTERN_MAX_LENGTH = 1024;
 
 /**
@@ -33,18 +35,43 @@ export const WORKFLOW_KEY_OUTPUT_PATTERN_MAX_LENGTH = 1024;
 export interface WorkflowKeyOutput {
   KeyOutputId: string;
   Label: string;
+  /** Optional short blurb shown under the label on Selected results. */
+  Description?: string;
   Pattern: string;
   /** Relative path of the file the user ticked when this role was inferred. */
   ExamplePath?: string;
 }
 
+/** Cap on Newick trees sent to one Microreact project. */
+export const MICROREACT_TREE_KEY_OUTPUTS_LIMIT = 10;
+
 /**
- * Where to copy this workflow's key outputs after a run completes successfully.
- * One destination for now: an external `s3://bucket/prefix` the lab manager sets.
+ * Sends a completed run's key outputs to Microreact as a new private project,
+ * using the lab's Microreact access token. `MetadataKeyOutputId` names the
+ * CSV/TSV key output whose first column is the sample ID; each tree key output
+ * is a Newick file whose leaf labels match that ID.
+ */
+export interface WorkflowKeyOutputMicroreactDelivery {
+  Enabled: boolean;
+  MetadataKeyOutputId?: string;
+  TreeKeyOutputIds?: string[];
+}
+
+/**
+ * Where to deliver this workflow's key outputs after a run completes successfully:
+ * an external `s3://bucket/prefix` copy, a Microreact project, or both.
  */
 export interface WorkflowKeyOutputDelivery {
   Enabled: boolean;
   DestinationUri?: string;
+  Microreact?: WorkflowKeyOutputMicroreactDelivery;
+}
+
+export type MicroreactExportStatus = 'Queued' | 'Succeeded' | 'Failed';
+
+export interface RequestRunMicroreactExportResponse {
+  RunId: string;
+  MicroreactStatus: MicroreactExportStatus;
 }
 
 export interface WorkflowKeyOutputs extends BaseAttributes {

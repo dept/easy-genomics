@@ -11,6 +11,7 @@ import {
   validateOrganizationAdminAccess,
   validateSystemAdminAccess,
 } from '@BE/utils/auth-utils';
+import { microreactAccessTokenParameterName } from '@BE/utils/microreact-project';
 
 const laboratoryService = new LaboratoryService();
 const ssmService = new SsmService();
@@ -66,6 +67,10 @@ export const handler: Handler = async (
       })
       .then((value: GetParameterCommandOutput) => !!value.Parameter)
       .catch(() => false);
+    const hasMicroreactAccessToken: boolean = await ssmService
+      .getParameter({ Name: microreactAccessTokenParameterName(existing.OrganizationId, existing.LaboratoryId) })
+      .then((value: GetParameterCommandOutput) => !!value.Parameter)
+      .catch(() => false);
 
     // Return Laboratory details with boolean indicators in place of any secret values.
     const response: ReadLaboratory = {
@@ -74,6 +79,7 @@ export const handler: Handler = async (
       HasGitHubAccessToken: hasGitHubAccessToken,
       HasHealthOmicsLlmApiKey: hasHealthOmicsLlmApiKey,
       HasSeqeraLlmApiKey: hasSeqeraLlmApiKey,
+      HasMicroreactAccessToken: hasMicroreactAccessToken,
     };
     return buildResponse(200, JSON.stringify(response), event);
   } catch (err: any) {
