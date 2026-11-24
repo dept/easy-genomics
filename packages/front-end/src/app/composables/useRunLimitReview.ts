@@ -2,6 +2,7 @@ import type {
   EstimateRunCostRequest,
   EstimateRunCostResponse,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-cost';
+import { workflowRunLimitsKeyForRun } from '@easy-genomics/shared-lib/src/app/utils/workflow-run-limits';
 import { deriveRunLimitReview, runLimitErrorMessage } from '@FE/utils/run-limit-review';
 
 /**
@@ -20,6 +21,10 @@ export function useRunLimitReview(labId: string, buildRequest: () => EstimateRun
   const estimateFailed = ref(false);
   const serverBlockMessage = ref<string | null>(null);
 
+  // The review step's workflow doesn't change, so its key is worked out once rather than on every render.
+  const { platform, workflowExternalId } = buildRequest();
+  const workflowKey = workflowRunLimitsKeyForRun(platform, workflowExternalId);
+
   const review = computed(() =>
     deriveRunLimitReview({
       verdict: costEstimate.value?.limitVerdict,
@@ -29,6 +34,7 @@ export function useRunLimitReview(labId: string, buildRequest: () => EstimateRun
       serverBlockMessage: serverBlockMessage.value,
       runLimits: labsStore.labs[labId]?.RunLimits,
       runLimitsLoading: runLimitsLoading.value,
+      workflowCostLimits: labsStore.labs[labId]?.WorkflowRunLimits?.[workflowKey],
     }),
   );
 
