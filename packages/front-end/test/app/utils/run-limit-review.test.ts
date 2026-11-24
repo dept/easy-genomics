@@ -18,6 +18,7 @@ import {
 const BLOCK_TITLE = "This run can't be launched";
 const BLOCK_ADVICE = 'Split the samples into smaller runs, or ask an organization admin to change the limit.';
 const WARN_ADVICE = 'Check the samples and parameters before you launch.';
+const COST_NOT_ESTIMATED = "There aren't enough past runs of this workflow in this lab to estimate this run's cost,";
 
 function estimate(overrides: Partial<EstimateRunCostResponse> = {}): EstimateRunCostResponse {
   return {
@@ -150,10 +151,58 @@ describe('deriveRunLimitReview', () => {
     expect(review).toEqual({
       samplesRow: { countText: '96', limitText: 'Limit: 500 per run' },
       notEnoughHistoryText: '1 past run of this workflow in this lab',
-      message: null,
+      message: {
+        tone: 'warn',
+        role: 'status',
+        title: 'Cost not estimated',
+        body: `${COST_NOT_ESTIMATED} so it isn't checked against this lab's US$150 cost warning amount. It could cost more than that.`,
+      },
       launchDisabled: false,
       launchAnyway: false,
     });
+  });
+
+  it('names the block amount when the cost of a run under a cost limit cannot be estimated', () => {
+    const review = deriveRunLimitReview(
+      input({
+        verdict: verdict({ costEstimate: 'notEnoughHistory' }),
+        estimate: estimate({ estimateAvailable: false, comparableRunCount: 0, computeCostUsd: undefined }),
+        runLimits: { CostWarnAboveUsd: 150, CostBlockAboveUsd: 400 },
+      }),
+    );
+
+    expect(review.message).toEqual({
+      tone: 'warn',
+      role: 'status',
+      title: 'Cost not estimated',
+      body: `${COST_NOT_ESTIMATED} so it isn't checked against this lab's US$400 cost limit. It could cost more than that.`,
+    });
+    expect(review.launchDisabled).toBe(false);
+  });
+
+  it('adds the cost notice to a sample warning when the cost cannot be estimated', () => {
+    const review = deriveRunLimitReview(
+      input({
+        verdict: verdict({
+          outcome: 'warn',
+          hits: [hit('samples', 'warn', 50, 96)],
+          costEstimate: 'notEnoughHistory',
+        }),
+        estimate: estimate({ estimateAvailable: false, comparableRunCount: 2, computeCostUsd: undefined }),
+        runLimits: { SamplesWarnAbove: 50, CostBlockAboveUsd: 400 },
+      }),
+    );
+
+    expect(review.message).toEqual({
+      tone: 'warn',
+      role: 'status',
+      title: 'Sample warning',
+      body:
+        "This run has 96 samples, over this lab's warning amount of 50 per run. " +
+        `${COST_NOT_ESTIMATED} so it isn't checked against this lab's US$400 cost limit. It could cost more than that. ` +
+        WARN_ADVICE,
+    });
+    expect(review.launchAnyway).toBe(true);
   });
 
   it('prints cents when the rounded estimate would equal the amount', () => {

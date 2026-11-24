@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { LaboratoryRunLimitsSchema } from './laboratory-run-limits';
+import { LaboratoryRunLimitsSchema, WorkflowRunLimitsSchema } from './laboratory-run-limits';
 
 export const LaboratorySchema = z
   .object({
@@ -76,6 +76,8 @@ export const LaboratorySchema = z
     HealthOmicsRunCacheId: z.string().optional(),
     /** Saved only through update-laboratory-run-limits, never through Create / Update. */
     RunLimits: LaboratoryRunLimitsSchema.optional(),
+    /** Saved only through update-laboratory-workflow-run-limits, never through Create / Update. */
+    WorkflowRunLimits: WorkflowRunLimitsSchema.optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),
@@ -168,6 +170,8 @@ export const ReadLaboratorySchema = z
     HealthOmicsRunCacheId: z.string().optional(),
     /** Saved only through update-laboratory-run-limits, never through Create / Update. */
     RunLimits: LaboratoryRunLimitsSchema.optional(),
+    /** Saved only through update-laboratory-workflow-run-limits, never through Create / Update. */
+    WorkflowRunLimits: WorkflowRunLimitsSchema.optional(),
     CreatedAt: z.string().optional(),
     CreatedBy: z.string().optional(),
     ModifiedAt: z.string().optional(),

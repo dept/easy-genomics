@@ -13,6 +13,7 @@ import { OrgEmailAssetsBucketConstruct } from '../constructs/org-email-assets-bu
 import { SesConstruct } from '../constructs/ses-construct';
 import { QueueDetails, Queues, SqsConstruct } from '../constructs/sqs-construct';
 import { EasyGenomicsNestedStackProps } from '../types/back-end-stack';
+import { runCostCaptureQueueArn, runCostCaptureQueueUrl } from '../utils/run-cost-capture-queue';
 
 /**
  * Easy Genomics nested stack: lambdas, SQS, SES, IAM.
@@ -61,6 +62,8 @@ export class EasyGenomicsNestedStack extends NestedStack {
    * the full retention window on a lab-scoped FIFO group and blocks every later mutation for that lab.
    */
   laboratoryStorageDlq!: Queue;
+  /** DLQ for run status updates that keep failing. */
+  laboratoryRunUpdateDlq!: Queue;
 
   constructor(scope: Construct, id: string, props: EasyGenomicsNestedStackProps) {
     super(scope, id);
@@ -110,6 +113,15 @@ export class EasyGenomicsNestedStack extends NestedStack {
       enforceSSL: true,
     });
 
+    // A run whose status can never be read (deleted on the platform, revoked token) is retried
+    // three times and then parked here, instead of being retried until it expires.
+    this.laboratoryRunUpdateDlq = new Queue(this, `${this.props.namePrefix}-laboratory-run-update-dlq`, {
+      queueName: `${this.props.namePrefix}-laboratory-run-update-dlq.fifo`,
+      fifo: true,
+      retentionPeriod: Duration.days(14),
+      enforceSSL: true,
+    });
+
     this.sqs = new SqsConstruct(this, `${this.props.constructNamespace}-sqs`, {
       namePrefix: this.props.namePrefix,
       envType: this.props.envType,
@@ -137,6 +149,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
           retentionPeriod: Duration.days(1),
           visibilityTimeout: Duration.minutes(15),
           enforceSSL: true,
+          deadLetterQueue: { queue: this.laboratoryRunUpdateDlq, maxReceiveCount: 3 },
         },
         // Failure classification consumer. Visibility timeout is generous (5 min) to
         // accommodate Bedrock invocation latency and occasional throttling without
@@ -371,7 +384,12 @@ export class EasyGenomicsNestedStack extends NestedStack {
           },
         },
         '/easy-genomics/laboratory/run/process-update-laboratory-run': {
-          events: [new SqsEventSource(this.sqs.sqsQueues.get('laboratory-run-update-queue')!, { batchSize: 5 })],
+          events: [
+            new SqsEventSource(this.sqs.sqsQueues.get('laboratory-run-update-queue')!, {
+              batchSize: 5,
+              reportBatchItemFailures: true,
+            }),
+          ],
           environment: {
             SEQERA_API_BASE_URL: this.props.seqeraApiBaseUrl,
             SQS_LABORATORY_RUN_FAILURE_CLASSIFICATION_QUEUE_URL:
@@ -379,6 +397,9 @@ export class EasyGenomicsNestedStack extends NestedStack {
             SQS_LABORATORY_RUN_NOTIFICATION_QUEUE_URL:
               this.sqs.sqsQueues.get('laboratory-run-notification-queue')?.queueUrl || '',
             SQS_KEY_OUTPUT_DELIVERY_QUEUE_URL: this.sqs.sqsQueues.get('key-output-delivery-queue')?.queueUrl || '',
+            HEALTHOMICS_RATES_REFRESH_ENABLED: String(this.props.healthomicsRatesRefresh?.enabled !== false),
+            // Created by the usage nested stack, which this stack is deployed after.
+            SQS_RUN_COST_CAPTURE_QUEUE_URL: runCostCaptureQueueUrl(this.runCostCaptureQueueLocation()),
           },
         },
         // Async classifier consumer for FAILED runs. Idempotent (skips runs that already
@@ -624,6 +645,12 @@ export class EasyGenomicsNestedStack extends NestedStack {
   ];
 
   // Easy Genomics specific IAM policies
+  private runCostCaptureQueueLocation = () => ({
+    namePrefix: this.props.namePrefix,
+    region: this.props.env.region!,
+    account: this.props.env.account!,
+  });
+
   private setupIamPolicies = () => {
     // /easy-genomics/organization/create-organization
     this.iam.addPolicyStatements('/easy-genomics/organization/create-organization', [
@@ -1658,6 +1685,14 @@ export class EasyGenomicsNestedStack extends NestedStack {
         actions: ['ssm:GetParameter'],
         effect: Effect.ALLOW,
       }),
+      // Run cost capture prices HealthOmics runs with the rates process-refresh-healthomics-rates stores.
+      new PolicyStatement({
+        resources: [
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/${this.props.namePrefix}/healthomics-rates/current`,
+        ],
+        actions: ['ssm:GetParameter'],
+        effect: Effect.ALLOW,
+      }),
       new PolicyStatement({
         resources: [`${this.sqs.sqsQueues.get('laboratory-run-update-queue')?.queueArn || ''}`],
         actions: ['sqs:SendMessage'],
@@ -1675,6 +1710,11 @@ export class EasyGenomicsNestedStack extends NestedStack {
       }),
       new PolicyStatement({
         resources: [`${this.sqs.sqsQueues.get('key-output-delivery-queue')?.queueArn || ''}`],
+        actions: ['sqs:SendMessage'],
+        effect: Effect.ALLOW,
+      }),
+      new PolicyStatement({
+        resources: [runCostCaptureQueueArn(this.runCostCaptureQueueLocation())],
         actions: ['sqs:SendMessage'],
         effect: Effect.ALLOW,
       }),

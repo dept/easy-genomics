@@ -12,7 +12,17 @@ import {
   LaboratorySchema,
   UpdateLaboratoryRetention,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory';
-import { Laboratory, LaboratoryRunLimits } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import { UpdateLaboratoryWorkflowRunLimits } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-limits';
+import {
+  Laboratory,
+  LaboratoryRunLimits,
+  WorkflowCostLimits,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import {
+  costLimitsOrderError,
+  resolveCostLimits,
+  workflowRunLimitsKey,
+} from '@easy-genomics/shared-lib/src/app/utils/workflow-run-limits';
 import { Service } from '../../types/service';
 import { DynamoDBService } from '../dynamodb-service';
 
@@ -174,9 +184,9 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
   };
 
   /**
-   * Updates the lab's attributes in place rather than replacing the item, and never writes RunLimits. Run limits are
-   * saved only by updateRunLimits; a full-item put here would write back the RunLimits read at the start of this
-   * request and undo a limits save made in the meantime.
+   * Updates the lab's attributes in place rather than replacing the item, and never writes RunLimits or
+   * WorkflowRunLimits. They are saved only by updateRunLimits and updateWorkflowRunLimits; a full-item put here would
+   * write back the limits read at the start of this request and undo a limits save made in the meantime.
    */
   public update = async (laboratory: Laboratory, existing: Laboratory): Promise<Laboratory> => {
     const logRequestMessage = `Update Laboratory OrganizationId=${laboratory.OrganizationId}, LaboratoryId=${laboratory.LaboratoryId}, Name=${laboratory.Name} request`;
@@ -297,6 +307,11 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
     const logRequestMessage = `Update Laboratory Run Limits OrganizationId=${laboratory.OrganizationId}, LaboratoryId=${laboratory.LaboratoryId} request`;
     console.info(logRequestMessage);
 
+    // A workflow's blank amount falls back to the lab's, so a lab change can put that workflow out of order.
+    for (const workflowLimits of Object.values(laboratory.WorkflowRunLimits ?? {})) {
+      assertCostLimitsInOrder(runLimits, workflowLimits, workflowLimits.WorkflowName);
+    }
+
     const marshalledRunLimits = marshall(runLimits, { removeUndefinedValues: true });
     const hasRunLimits = Object.keys(marshalledRunLimits).length > 0;
     const setModified = 'SET #ModifiedAt = :modifiedAt, #ModifiedBy = :modifiedBy';
@@ -315,6 +330,91 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
       },
       ExpressionAttributeValues: {
         ...(hasRunLimits ? { ':runLimits': { M: marshalledRunLimits } } : {}),
+        ':modifiedAt': { S: new Date().toISOString() },
+        ':modifiedBy': { S: modifiedBy },
+      },
+      // The LaboratoryId index is eventually consistent, so reading the lab back through it could miss this write.
+      ReturnValues: 'ALL_NEW',
+    });
+
+    if (response.$metadata.httpStatusCode === 200 && response.Attributes) {
+      return <Laboratory>unmarshall(response.Attributes);
+    } else {
+      throw new Error(`${logRequestMessage} unsuccessful: HTTP Status Code=${response.$metadata.httpStatusCode}`);
+    }
+  };
+
+  /**
+   * Saves one workflow's cost limits as requested. Omitting both amounts removes the workflow's entry, so the lab's
+   * amounts apply again.
+   */
+  public saveWorkflowRunLimits = async (
+    laboratory: Laboratory,
+    request: UpdateLaboratoryWorkflowRunLimits,
+    modifiedBy: string,
+  ): Promise<Laboratory> => {
+    const { Platform, WorkflowId, WorkflowName, CostWarnAboveUsd, CostBlockAboveUsd } = request;
+
+    // A blank amount falls back to the lab's, so the order is checked on the amounts that will actually apply.
+    assertCostLimitsInOrder(laboratory.RunLimits, { CostWarnAboveUsd, CostBlockAboveUsd }, WorkflowName);
+
+    const hasAmounts = CostWarnAboveUsd !== undefined || CostBlockAboveUsd !== undefined;
+    const limits: WorkflowCostLimits | undefined = hasAmounts
+      ? {
+          WorkflowName,
+          ...(CostWarnAboveUsd !== undefined ? { CostWarnAboveUsd } : {}),
+          ...(CostBlockAboveUsd !== undefined ? { CostBlockAboveUsd } : {}),
+        }
+      : undefined;
+
+    return this.updateWorkflowRunLimits(laboratory, workflowRunLimitsKey(Platform, WorkflowId), limits, modifiedBy);
+  };
+
+  /**
+   * Writes only one workflow's entry in WorkflowRunLimits, so saves for different workflows never overwrite each
+   * other and never touch the lab's own settings. `undefined` limits remove the entry.
+   */
+  public updateWorkflowRunLimits = async (
+    laboratory: Laboratory,
+    workflowKey: string,
+    limits: WorkflowCostLimits | undefined,
+    modifiedBy: string,
+  ): Promise<Laboratory> => {
+    const logRequestMessage = `Update Laboratory Workflow Run Limits OrganizationId=${laboratory.OrganizationId}, LaboratoryId=${laboratory.LaboratoryId}, WorkflowKey=${workflowKey} request`;
+    console.info(logRequestMessage);
+
+    const key = marshall({ OrganizationId: laboratory.OrganizationId, LaboratoryId: laboratory.LaboratoryId });
+    const conditionExpression = 'attribute_exists(#OrganizationId) AND attribute_exists(#LaboratoryId)';
+    const keyNames = { '#OrganizationId': 'OrganizationId', '#LaboratoryId': 'LaboratoryId' };
+
+    // DynamoDB rejects a nested SET or REMOVE when the parent map is missing, so create it first; a no-op otherwise.
+    await this.updateItem({
+      TableName: this.LABORATORY_TABLE_NAME,
+      Key: key,
+      ConditionExpression: conditionExpression,
+      UpdateExpression: 'SET #WorkflowRunLimits = if_not_exists(#WorkflowRunLimits, :emptyMap)',
+      ExpressionAttributeNames: { ...keyNames, '#WorkflowRunLimits': 'WorkflowRunLimits' },
+      ExpressionAttributeValues: { ':emptyMap': { M: {} } },
+    });
+
+    const setModified = '#ModifiedAt = :modifiedAt, #ModifiedBy = :modifiedBy';
+    const response: UpdateItemCommandOutput = await this.updateItem({
+      TableName: this.LABORATORY_TABLE_NAME,
+      Key: key,
+      ConditionExpression: conditionExpression,
+      UpdateExpression: limits
+        ? `SET #WorkflowRunLimits.#workflowKey = :limits, ${setModified}`
+        : `REMOVE #WorkflowRunLimits.#workflowKey SET ${setModified}`,
+      ExpressionAttributeNames: {
+        ...keyNames,
+        '#WorkflowRunLimits': 'WorkflowRunLimits',
+        // The key holds a '#', so it only ever goes in as an attribute name, never into the expression text.
+        '#workflowKey': workflowKey,
+        '#ModifiedAt': 'ModifiedAt',
+        '#ModifiedBy': 'ModifiedBy',
+      },
+      ExpressionAttributeValues: {
+        ...(limits ? { ':limits': { M: marshall(limits, { removeUndefinedValues: true }) } } : {}),
         ':modifiedAt': { S: new Date().toISOString() },
         ':modifiedBy': { S: modifiedBy },
       },
@@ -364,9 +464,18 @@ export class LaboratoryService extends DynamoDBService implements Service<Labora
   };
 }
 
+function assertCostLimitsInOrder(
+  labLimits: LaboratoryRunLimits | undefined,
+  workflowLimits: Pick<WorkflowCostLimits, 'CostWarnAboveUsd' | 'CostBlockAboveUsd'>,
+  workflowName: string,
+): void {
+  const orderError = costLimitsOrderError(resolveCostLimits(labLimits, workflowLimits), workflowName);
+  if (orderError) throw new InvalidRequestError(orderError);
+}
+
 const KEY_ATTRIBUTES = ['OrganizationId', 'LaboratoryId'];
 // Attributes with a dedicated writer, which a general lab update must leave untouched.
-const SEPARATELY_WRITTEN_ATTRIBUTES = ['RunLimits'];
+const SEPARATELY_WRITTEN_ATTRIBUTES = ['RunLimits', 'WorkflowRunLimits'];
 
 /**
  * SETs every attribute `laboratory` has and REMOVEs the ones only `existing` has, matching what replacing the item

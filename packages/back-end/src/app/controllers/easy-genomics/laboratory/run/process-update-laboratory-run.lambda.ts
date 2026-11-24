@@ -1,7 +1,7 @@
 import { GetRunCommandInput } from '@aws-sdk/client-omics';
 import { GetParameterCommandOutput, ParameterNotFound } from '@aws-sdk/client-ssm';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { LaboratoryAccessTokenUnavailableError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
+import { RunCostCaptureMessage } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/run-cost-capture-message';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
 import {
@@ -12,13 +12,12 @@ import {
   DescribeWorkflowResponse,
   WorkflowProgressResponse,
 } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
-import { APIGatewayProxyResult, Handler, SQSRecord } from 'aws-lambda';
+import { Handler, SQSBatchResponse, SQSRecord } from 'aws-lambda';
 import { SQSEvent } from 'aws-lambda/trigger/sqs';
 import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryDataTaggingService } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { captureRunCostOutcome } from '@BE/services/easy-genomics/run-cost-capture-service';
 import { WorkflowKeyOutputsService } from '@BE/services/easy-genomics/workflow-key-outputs-service';
 import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import { SqsService } from '@BE/services/sqs-service';
@@ -42,40 +41,6 @@ const workflowKeyOutputsService = new WorkflowKeyOutputsService();
 const laboratoryDataTaggingService = new LaboratoryDataTaggingService();
 const sqsService = new SqsService();
 const ssmService = new SsmService();
-
-/**
- * Best-effort platform cost capture. Must never break the status-check pipeline.
- *
- * HealthOmics cost uses paginated ListRunTasks; large runs can take well over the
- * Lambda timeout (observed: 5k+ tasks / ~2min). Cap wait time so status/notify
- * writes always complete; uncaptured cost can be healed by process-sync-run-costs.
- * A timed-out capture leaves its ListRunTasks requests in flight; the Node.js 24
- * Lambda runtime does not wait for them once the handler returns.
- */
-const COST_CAPTURE_BUDGET_MS = 8_000;
-
-async function safeCaptureRunCost(run: LaboratoryRun): Promise<LaboratoryRun['RunCostOutcome'] | undefined> {
-  if (run.RunCostOutcome?.CostCapturedAt) return run.RunCostOutcome;
-  try {
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const result = await Promise.race([
-      captureRunCostOutcome(run),
-      new Promise<undefined>((resolve) => {
-        timeoutId = setTimeout(() => {
-          console.warn(
-            `Cost capture timed out after ${COST_CAPTURE_BUDGET_MS}ms for RunId=${run.RunId} (continuing without cost)`,
-          );
-          resolve(undefined);
-        }, COST_CAPTURE_BUDGET_MS);
-      }),
-    ]);
-    if (timeoutId) clearTimeout(timeoutId);
-    return result;
-  } catch (err) {
-    console.warn(`Failed to capture run cost for RunId=${run.RunId} (continuing):`, err);
-    return undefined;
-  }
-}
 
 /**
  * Best-effort SQS publish that hands off a freshly-failed run to the
@@ -191,6 +156,35 @@ async function enqueueKeyOutputDelivery(run: LaboratoryRun): Promise<void> {
   }
 }
 
+/**
+ * Hands a finished run to the run-cost capture queue. Capture runs in its own consumer,
+ * process-capture-run-cost, because large HealthOmics runs need minutes of ListRunTasks paging.
+ * The consumer gets three attempts, then the message moves to the run-cost capture dead-letter
+ * queue. A failed send must not block the status update or the notification, so it is logged and
+ * the run keeps no cost until scripts/backfill-run-cost-outcomes.ts is run.
+ */
+async function enqueueRunCostCapture(run: LaboratoryRun): Promise<void> {
+  const queueUrl = process.env.SQS_RUN_COST_CAPTURE_QUEUE_URL;
+  if (!queueUrl) {
+    console.warn(`SQS_RUN_COST_CAPTURE_QUEUE_URL not configured, skipping cost capture for RunId=${run.RunId}`);
+    return;
+  }
+  try {
+    const message: RunCostCaptureMessage = { LaboratoryId: run.LaboratoryId, RunId: run.RunId };
+    // One group per run: a FIFO group holds every later message behind one that is being retried, so a per-lab group
+    // let a run whose cost can never be read (deleted on the platform, revoked token) hold up capture for its whole lab.
+    // Captures need no ordering; the totals are added atomically.
+    await sqsService.sendMessage({
+      QueueUrl: queueUrl,
+      MessageBody: JSON.stringify(message),
+      MessageGroupId: `run-cost-${run.RunId}`,
+      MessageDeduplicationId: `run-cost-${run.RunId}`,
+    });
+  } catch (err) {
+    console.warn(`Failed to enqueue run cost capture for RunId=${run.RunId} (status update continues):`, err);
+  }
+}
+
 async function publishForNotificationWithCompensation(run: LaboratoryRun): Promise<void> {
   const published = await safePublishForNotification(run);
   if (!published) {
@@ -224,28 +218,38 @@ async function safePropagateExpiresAt(
   }
 }
 
-export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxyResult> => {
+/**
+ * Reports failures per record so one run that can't be read no longer drops the rest of the batch.
+ * The queue is FIFO, so processing stops at the first failure and that record plus every record
+ * after it are returned for retry; reporting only the failed one would let later messages in the
+ * same group overtake it. Records before the failure are left out, so SQS deletes them.
+ */
+export const handler: Handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
   console.log('EVENT: \n' + JSON.stringify(event, null, 2));
-  try {
-    const sqsRecords: SQSRecord[] = event.Records;
-    for (const sqsRecord of sqsRecords) {
+  const sqsRecords: SQSRecord[] = event.Records;
+  for (let index = 0; index < sqsRecords.length; index++) {
+    const sqsRecord = sqsRecords[index];
+    let runId: string | undefined;
+    try {
       const snsEvent: SnsProcessingEvent = parseSqsJsonBody<SnsProcessingEvent>(sqsRecord.body);
 
       switch (snsEvent.Type) {
         case 'LaboratoryRun':
           const laboratoryRun: LaboratoryRun = <LaboratoryRun>JSON.parse(JSON.stringify(snsEvent.Record));
+          runId = laboratoryRun.RunId;
           await processStatusCheckEvent(snsEvent.Operation, laboratoryRun);
           break;
         default:
           console.error(`Unsupported SNS Processing Event Type: ${snsEvent.Type}`);
       }
+    } catch (err: any) {
+      console.error(`Failed to process status update for RunId=${runId} (messageId=${sqsRecord.messageId}):`, err);
+      const remainingRecords = sqsRecords.slice(index);
+      return { batchItemFailures: remainingRecords.map((record) => ({ itemIdentifier: record.messageId })) };
     }
-
-    return buildResponse(200, JSON.stringify({ Status: 'Success' }));
-  } catch (err: any) {
-    console.error(err);
-    return buildErrorResponse(err);
   }
+
+  return { batchItemFailures: [] };
 };
 
 /**
@@ -349,7 +353,10 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
     // so that branch never runs again and the run would otherwise never get notified. The
     // poller's routine re-enqueue of this already-terminal-but-unnotified run lands here
     // instead, giving notification another chance.
-    const missingCost = existingRun.RunCostOutcome?.CostCapturedAt == null;
+    // A run whose cost capture gave up is not re-sent: it would fail the same way and land in the
+    // capture dead-letter queue again.
+    const missingCost =
+      existingRun.RunCostOutcome?.CostCapturedAt == null && existingRun.RunCostCaptureFailedAt == null;
     if (
       isAlreadyTerminal &&
       (missingTerminalAt || missingExpiresAt || missingDuration || missingCost || missingNotification)
@@ -372,8 +379,6 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         ? calculateExpiresAtEpochSeconds(new Date(terminalAtIso), retentionMonths)
         : undefined;
 
-      // Persist terminal metadata / duration before cost capture so a slow
-      // ListRunTasks cannot block notification or leave ExpiresAt unset.
       const updated = await laboratoryRunService.update({
         ...existingRun,
         ...(missingTerminalAt ? { TerminalAt: terminalAtIso } : {}),
@@ -400,15 +405,7 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
       }
 
       if (missingCost) {
-        const costOutcome = await safeCaptureRunCost(updated);
-        if (costOutcome) {
-          await laboratoryRunService.update({
-            ...updated,
-            RunCostOutcome: costOutcome,
-            ModifiedAt: new Date().toISOString(),
-            ModifiedBy: 'Status Check',
-          });
-        }
+        await enqueueRunCostCapture(updated);
       }
 
       return true;
@@ -448,9 +445,6 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
         nextStatusTerminal,
       );
 
-      // Write status (and terminal metadata) before cost capture. Large Omics runs
-      // can spend minutes in ListRunTasks; blocking here left Status stuck at RUNNING
-      // until the Lambda timed out and SQS retried forever.
       laboratoryRun = await laboratoryRunService.updateWithAttributeRemoval(
         {
           ...progressUpdate,
@@ -489,15 +483,7 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
       }
 
       if (nextStatusTerminal && existingRun.RunCostOutcome?.CostCapturedAt == null) {
-        const costOutcome = await safeCaptureRunCost(laboratoryRun);
-        if (costOutcome) {
-          laboratoryRun = await laboratoryRunService.update({
-            ...laboratoryRun,
-            RunCostOutcome: costOutcome,
-            ModifiedAt: new Date().toISOString(),
-            ModifiedBy: 'Status Check',
-          });
-        }
+        await enqueueRunCostCapture(laboratoryRun);
       }
     } else if (
       (snapshot.durationSeconds != null && existingRun.RunDurationSeconds == null) ||

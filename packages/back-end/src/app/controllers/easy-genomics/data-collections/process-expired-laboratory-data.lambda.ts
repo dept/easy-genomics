@@ -107,6 +107,7 @@ export const handler: Handler<ScheduledEvent, void> = async (
     Eligible: totals.eligible,
     Deleted: totals.deleted,
     PermanentProtected: totals.permanentProtected,
+    SampleLinkedProtected: totals.sampleLinkedProtected,
     OutputPrefixesDeleted: totals.outputPrefixesDeleted,
     OutputObjectsDeleted: totals.outputObjectsDeleted,
     OutputObjectsProtected: totals.outputObjectsProtected,

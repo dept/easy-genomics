@@ -199,6 +199,7 @@ export type SampleSheetResponse = {
 // ─── Laboratory: update-laboratory-run-limits ───────────────────────────────
 
 export type UpdateLaboratoryRunLimits = components['schemas']['UpdateLaboratoryRunLimitsRequest'];
+export type UpdateLaboratoryWorkflowRunLimits = components['schemas']['UpdateLaboratoryWorkflowRunLimitsRequest'];
 
 // ─── Laboratory run: export result set ───────────────────────────────────────
 // Request/response shapes live on the Zod schemas so the FE can validate without

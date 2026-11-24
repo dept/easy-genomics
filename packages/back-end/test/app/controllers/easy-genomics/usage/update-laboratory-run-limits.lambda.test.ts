@@ -1,3 +1,4 @@
+import { InvalidRequestError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { APIGatewayProxyWithCognitoAuthorizerEvent, Context } from 'aws-lambda';
 import { handler } from '../../../../../src/app/controllers/easy-genomics/usage/update-laboratory-run-limits.lambda';
 
@@ -82,6 +83,17 @@ describe('update-laboratory-run-limits.lambda', () => {
     expect(result.statusCode).toBe(400);
     expect(JSON.parse(result.body).Error).toContain('higher than');
     expect(mockLabService.prototype.updateRunLimits).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 with the message when a workflow's amounts would be out of order", async () => {
+    const message =
+      "For nf-core/rnaseq, block above (US$600, the workflow's) must be higher than warn above (US$700, the lab's) for estimated cost per run.";
+    mockLabService.prototype.updateRunLimits = jest.fn().mockRejectedValue(new InvalidRequestError(message));
+
+    const result = await invoke(LAB_ID, JSON.stringify({ CostWarnAboveUsd: 700, CostBlockAboveUsd: 900 }));
+
+    expect(result.statusCode).toBe(400);
+    expect(JSON.parse(result.body).Error).toBe(`Invalid request: ${message}`);
   });
 
   it.each([
