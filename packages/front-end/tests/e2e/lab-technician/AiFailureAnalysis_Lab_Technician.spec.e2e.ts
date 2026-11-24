@@ -1,4 +1,5 @@
 import { test, expect } from 'playwright/test';
+import { openLab } from '../helpers/labs';
 
 /*
  * Test preconditions:
@@ -27,8 +28,7 @@ test('01 - A failed run with no AI provider configured offers no analysis button
   }
 
   if (hasTestLab) {
-    await page.getByRole('row', { name: labName }).locator('button').click();
-    await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+    await openLab(page, labName);
     await page.waitForLoadState('networkidle');
     await page.getByRole('tab', { name: 'Pipeline Runs' }).click();
     await page.waitForLoadState('networkidle');
@@ -67,8 +67,7 @@ test('02 - A failed run in an AI-configured lab offers the analysis button', asy
   }
 
   if (hasUpdatedTestLab) {
-    await page.getByRole('row', { name: labNameUpdated }).locator('button').click();
-    await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+    await openLab(page, labNameUpdated);
     await page.waitForLoadState('networkidle');
     await page.getByRole('tab', { name: 'Pipeline Runs' }).click();
     await page.waitForLoadState('networkidle');

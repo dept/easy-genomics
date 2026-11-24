@@ -14,13 +14,12 @@ const labName = 'Playwright test lab';
 const LIMIT_INPUTS = ['Cost warn above', 'Cost block above', 'Samples warn above', 'Samples block above'];
 
 async function openUsageLimitsTab(page: Page, baseURL: string | undefined): Promise<void> {
-  await page.goto(`${baseURL}/orgs`);
+  await page.goto(`${baseURL}/labs`);
   await page.waitForLoadState('networkidle');
 
-  const orgRow = page.getByRole('row', { name: orgName });
-  test.skip(!(await orgRow.isVisible().catch(() => false)), `${orgName} not found`);
-  await orgRow.getByLabel('Actions').click();
-  await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+  const orgSettings = page.getByRole('button', { name: `Settings for ${orgName}` });
+  test.skip(!(await orgSettings.isVisible().catch(() => false)), `${orgName} not found`);
+  await orgSettings.click();
   await page.waitForLoadState('networkidle');
   await selectLimitsTab(page);
 }

@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from 'playwright/test';
+import { openLab } from '../helpers/labs';
 
 const labName = 'Automated Lab - Updated';
 
@@ -15,8 +16,7 @@ async function openSamplesTab(page: Page, baseURL: string): Promise<boolean> {
     return false;
   }
 
-  await page.getByRole('row', { name: labName }).locator('button').click();
-  await page.getByRole('menuitem', { name: 'View / Edit' }).click();
+  await openLab(page, labName);
   await page.waitForLoadState('networkidle');
   await page.getByRole('tab', { name: 'Data Collections' }).click();
   await page.waitForLoadState('networkidle');

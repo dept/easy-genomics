@@ -52,7 +52,8 @@ const useLabsStore = defineStore('labsStore', {
       }
     },
 
-    async loadLabsForOrg(orgId: string): Promise<void> {
+    /** Resolves false when the load failed; the labs from an earlier load (persisted) are kept. */
+    async loadLabsForOrg(orgId: string): Promise<boolean> {
       const { $api } = useNuxtApp();
 
       try {
@@ -63,11 +64,13 @@ const useLabsStore = defineStore('labsStore', {
           this.labs[lab.LaboratoryId] = lab;
           this.labIdsByOrg[orgId].push(lab.LaboratoryId);
         }
+        return true;
       } catch (error) {
         console.error('Failed to load labs:', error);
         if (!(await shouldSuppressLabLoadErrorToast())) {
           useToastStore().error('Failed to load labs. Please refresh.');
         }
+        return false;
       }
     },
 
