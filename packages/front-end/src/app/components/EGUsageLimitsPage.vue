@@ -78,7 +78,8 @@
 
 <template>
   <div :aria-busy="isLoading || isSaving" class="flex flex-col gap-6">
-    <EGText :id="props.headingId" tag="h2" class="sr-only">Usage limits</EGText>
+    <EGText :id="props.headingId" tag="h3" class="sr-only">Usage limits</EGText>
+
 
     <section class="border-background-dark-grey rounded-xl border bg-white p-6" aria-label="Limits by lab">
       <div v-if="isLoading" class="flex justify-center py-10">
