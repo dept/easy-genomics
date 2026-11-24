@@ -243,7 +243,7 @@ importers:
         version: 1.5.1
       cdk-nag:
         specifier: ^2.35.67
-        version: 2.35.67(aws-cdk-lib@2.277.0(constructs@10.8.1))(constructs@10.8.1)
+        version: 2.38.2(aws-cdk-lib@2.277.0(constructs@10.8.1))(constructs@10.8.1)
       constructs:
         specifier: ^10.0.5
         version: 10.8.1
@@ -400,7 +400,7 @@ importers:
         version: 1.21.1
       cdk-nag:
         specifier: ^2.35.67
-        version: 2.35.67(aws-cdk-lib@2.277.0(constructs@10.8.1))(constructs@10.8.1)
+        version: 2.38.2(aws-cdk-lib@2.277.0(constructs@10.8.1))(constructs@10.8.1)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -5739,11 +5739,12 @@ packages:
   capital-case@1.0.4:
     resolution: {integrity: sha512-ds37W8CytHgwnhGGTi88pcPyR15qoNkOpYwmMMfnWqqWgESapLqvDx6huFjQ5vqWSn2Z06173XNA7LtMOeUh1A==}
 
-  cdk-nag@2.35.67:
-    resolution: {integrity: sha512-5KnQNNNdTm82bK4kg3hOKfzqA96r2C+19urPO7LmwWnsAGL7GbM8DQVWmZfrznKbmMZ6M/MV5GLOPt5FU3VrbA==}
+  cdk-nag@2.38.2:
+    resolution: {integrity: sha512-Ddim1r8IwAPQn95KB2owbHoU4YHveHg4PfM+k7TdcANqfVmoHem6cTFMpcIuoDM16BkQQ+xshxYxZgcAoeVKGw==}
+    engines: {node: '>= 18.12.0'}
     peerDependencies:
-      aws-cdk-lib: ^2.156.0
-      constructs: ^10.0.5
+      aws-cdk-lib: ^2.176.0
+      constructs: ^10.5.1
 
   chalk@2.4.2:
     resolution: {integrity: sha512-Mti+f9lpJNcwF4tWV8/OrTTtF1gZi+f8FqlyAdouralcFWFQWF2+NgCHShjkCb+IFBLq9buZwE1xckQU4peSuQ==}
@@ -19839,7 +19840,7 @@ snapshots:
       upper-case-first: 2.0.2
     optional: true
 
-  cdk-nag@2.35.67(aws-cdk-lib@2.277.0(constructs@10.8.1))(constructs@10.8.1):
+  cdk-nag@2.38.2(aws-cdk-lib@2.277.0(constructs@10.8.1))(constructs@10.8.1):
     dependencies:
       aws-cdk-lib: 2.277.0(constructs@10.8.1)
       constructs: 10.8.1
