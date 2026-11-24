@@ -1,6 +1,5 @@
 import { GetRunCommandInput } from '@aws-sdk/client-omics';
 import { GetParameterCommandOutput, ParameterNotFound } from '@aws-sdk/client-ssm';
-import { buildErrorResponse, buildResponse } from '@easy-genomics/shared-lib/lib/app/utils/common';
 import { LaboratoryAccessTokenUnavailableError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import { RunCostCaptureMessage } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/run-cost-capture-message';
 import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
@@ -13,7 +12,7 @@ import {
   DescribeWorkflowResponse,
   WorkflowProgressResponse,
 } from '@easy-genomics/shared-lib/src/app/types/nf-tower/nextflow-tower-api';
-import { APIGatewayProxyResult, Handler, SQSRecord } from 'aws-lambda';
+import { Handler, SQSBatchResponse, SQSRecord } from 'aws-lambda';
 import { SQSEvent } from 'aws-lambda/trigger/sqs';
 import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryDataTaggingService } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
@@ -219,28 +218,38 @@ async function safePropagateExpiresAt(
   }
 }
 
-export const handler: Handler = async (event: SQSEvent): Promise<APIGatewayProxyResult> => {
+/**
+ * Reports failures per record so one run that can't be read no longer drops the rest of the batch.
+ * The queue is FIFO, so processing stops at the first failure and that record plus every record
+ * after it are returned for retry; reporting only the failed one would let later messages in the
+ * same group overtake it. Records before the failure are left out, so SQS deletes them.
+ */
+export const handler: Handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
   console.log('EVENT: \n' + JSON.stringify(event, null, 2));
-  try {
-    const sqsRecords: SQSRecord[] = event.Records;
-    for (const sqsRecord of sqsRecords) {
+  const sqsRecords: SQSRecord[] = event.Records;
+  for (let index = 0; index < sqsRecords.length; index++) {
+    const sqsRecord = sqsRecords[index];
+    let runId: string | undefined;
+    try {
       const snsEvent: SnsProcessingEvent = parseSqsJsonBody<SnsProcessingEvent>(sqsRecord.body);
 
       switch (snsEvent.Type) {
         case 'LaboratoryRun':
           const laboratoryRun: LaboratoryRun = <LaboratoryRun>JSON.parse(JSON.stringify(snsEvent.Record));
+          runId = laboratoryRun.RunId;
           await processStatusCheckEvent(snsEvent.Operation, laboratoryRun);
           break;
         default:
           console.error(`Unsupported SNS Processing Event Type: ${snsEvent.Type}`);
       }
+    } catch (err: any) {
+      console.error(`Failed to process status update for RunId=${runId} (messageId=${sqsRecord.messageId}):`, err);
+      const remainingRecords = sqsRecords.slice(index);
+      return { batchItemFailures: remainingRecords.map((record) => ({ itemIdentifier: record.messageId })) };
     }
-
-    return buildResponse(200, JSON.stringify({ Status: 'Success' }));
-  } catch (err: any) {
-    console.error(err);
-    return buildErrorResponse(err);
   }
+
+  return { batchItemFailures: [] };
 };
 
 /**
@@ -344,7 +353,10 @@ export async function processStatusCheckEvent(operation: SnsProcessingOperation,
     // so that branch never runs again and the run would otherwise never get notified. The
     // poller's routine re-enqueue of this already-terminal-but-unnotified run lands here
     // instead, giving notification another chance.
-    const missingCost = existingRun.RunCostOutcome?.CostCapturedAt == null;
+    // A run whose cost capture gave up is not re-sent: it would fail the same way and land in the
+    // capture dead-letter queue again.
+    const missingCost =
+      existingRun.RunCostOutcome?.CostCapturedAt == null && existingRun.RunCostCaptureFailedAt == null;
     if (
       isAlreadyTerminal &&
       (missingTerminalAt || missingExpiresAt || missingDuration || missingCost || missingNotification)

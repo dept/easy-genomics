@@ -1574,6 +1574,13 @@ export interface components {
         ByService?: Record<string, never>;
       };
       /**
+       * @description ISO timestamp set when cost capture gave up on its last attempt. The status check stops
+       * re-sending a run that carries it; a later successful capture removes it.
+       */
+      RunCostCaptureFailedAt?: string;
+      /** @description Why the last cost capture attempt failed. */
+      RunCostCaptureError?: string;
+      /**
        * @description State of the latest Microreact export for this run. Absent means it was never sent.
        * @enum {string}
        */
@@ -1685,6 +1692,13 @@ export interface components {
         SyncedAt: string;
         ByService?: Record<string, never>;
       };
+      /**
+       * @description ISO timestamp set when cost capture gave up on its last attempt. The status check stops
+       * re-sending a run that carries it; a later successful capture removes it.
+       */
+      RunCostCaptureFailedAt?: string;
+      /** @description Why the last cost capture attempt failed. */
+      RunCostCaptureError?: string;
       /**
        * @description State of the latest Microreact export for this run. Absent means it was never sent.
        * @enum {string}
