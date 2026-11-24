@@ -3,10 +3,12 @@ import { Context, SQSEvent } from 'aws-lambda';
 
 jest.mock('../../../../../src/app/services/easy-genomics/laboratory-run-service');
 jest.mock('../../../../../src/app/services/easy-genomics/run-cost-capture-service');
+jest.mock('../../../../../src/app/services/easy-genomics/usage-totals-service');
 
 import { handler } from '../../../../../src/app/controllers/easy-genomics/usage/process-capture-run-cost.lambda';
 import { LaboratoryRunService } from '../../../../../src/app/services/easy-genomics/laboratory-run-service';
 import { captureRunCostOutcome } from '../../../../../src/app/services/easy-genomics/run-cost-capture-service';
+import { UsageTotalsService } from '../../../../../src/app/services/easy-genomics/usage-totals-service';
 import { RUN_COST_CAPTURE_MAX_RECEIVE_COUNT } from '../../../../../src/infra/utils/run-cost-capture-queue';
 
 const LAB_ID = 'lab-1';
@@ -45,9 +47,11 @@ describe('process-capture-run-cost Lambda', () => {
   let mockQueryByRunId: jest.Mock;
   let mockRecordRunCostOutcome: jest.Mock;
   let mockRecordRunCostCaptureFailure: jest.Mock;
+  let mockAddRunCost: jest.Mock;
   const mockCapture = captureRunCostOutcome as jest.Mock;
   const laboratoryRunService = (LaboratoryRunService as jest.MockedClass<typeof LaboratoryRunService>).mock
     .instances[0];
+  const usageTotalsService = (UsageTotalsService as jest.MockedClass<typeof UsageTotalsService>).mock.instances[0];
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -60,6 +64,8 @@ describe('process-capture-run-cost Lambda', () => {
     laboratoryRunService.recordRunCostOutcome = mockRecordRunCostOutcome;
     mockRecordRunCostCaptureFailure = jest.fn().mockResolvedValue(true);
     laboratoryRunService.recordRunCostCaptureFailure = mockRecordRunCostCaptureFailure;
+    mockAddRunCost = jest.fn().mockResolvedValue('counted');
+    usageTotalsService.addRunCost = mockAddRunCost;
     mockCapture.mockResolvedValue(capturedOutcome);
   });
 
@@ -76,12 +82,44 @@ describe('process-capture-run-cost Lambda', () => {
     });
   });
 
-  it('does not write again when the run already has a captured cost', async () => {
-    mockQueryByRunId.mockResolvedValue(finishedRun({ RunCostOutcome: capturedOutcome }));
+  it('adds a recorded outcome to the daily totals once', async () => {
+    await invoke(event({ LaboratoryId: LAB_ID, RunId: RUN_ID }));
+
+    expect(mockAddRunCost).toHaveBeenCalledTimes(1);
+    expect(mockAddRunCost).toHaveBeenCalledWith(finishedRun({ RunCostOutcome: capturedOutcome }));
+  });
+
+  it('does not record again when the run already has a captured cost, but still offers it to the totals', async () => {
+    const recordedRun = finishedRun({ RunCostOutcome: capturedOutcome });
+    mockQueryByRunId.mockResolvedValue(recordedRun);
+    mockAddRunCost.mockResolvedValue('already-counted');
 
     await invoke(event({ LaboratoryId: LAB_ID, RunId: RUN_ID }));
 
+    expect(mockCapture).not.toHaveBeenCalled();
     expect(mockRecordRunCostOutcome).not.toHaveBeenCalled();
+    expect(mockAddRunCost).toHaveBeenCalledTimes(1);
+    expect(mockAddRunCost).toHaveBeenCalledWith(recordedRun);
+  });
+
+  it('offers the stored run to the totals when a concurrent capture recorded first', async () => {
+    const storedOutcome = { ...capturedOutcome, ActualComputeCostUsd: 41.9 };
+    const storedRun = finishedRun({ RunCostOutcome: storedOutcome });
+    mockQueryByRunId.mockResolvedValueOnce(finishedRun()).mockResolvedValueOnce(storedRun);
+    mockRecordRunCostOutcome.mockResolvedValue(false);
+
+    await invoke(event({ LaboratoryId: LAB_ID, RunId: RUN_ID }));
+
+    expect(mockQueryByRunId).toHaveBeenCalledTimes(2);
+    expect(mockAddRunCost).toHaveBeenCalledTimes(1);
+    expect(mockAddRunCost).toHaveBeenCalledWith(storedRun);
+  });
+
+  it('throws when adding to the totals fails so SQS retries the message', async () => {
+    const conflict = new Error('TransactionConflict');
+    mockAddRunCost.mockRejectedValue(conflict);
+
+    await expect(invoke(event({ LaboratoryId: LAB_ID, RunId: RUN_ID }))).rejects.toBe(conflict);
   });
 
   it('acknowledges a run with no cost to record instead of retrying it', async () => {
@@ -90,6 +128,7 @@ describe('process-capture-run-cost Lambda', () => {
     await expect(invoke(event({ LaboratoryId: LAB_ID, RunId: RUN_ID }))).resolves.toBeDefined();
 
     expect(mockRecordRunCostOutcome).not.toHaveBeenCalled();
+    expect(mockAddRunCost).not.toHaveBeenCalled();
     expect(console.info).toHaveBeenCalledWith(expect.stringContaining(`RunId=${RUN_ID}`));
   });
 

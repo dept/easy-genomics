@@ -68,4 +68,8 @@ describe('LaboratoryRunSchema analysis fields', () => {
     const parsed = LaboratoryRunSchema.safeParse({ ...base, RunCostCaptureError: 'x'.repeat(501) });
     expect(parsed.success).toBe(false);
   });
+
+  it('accepts the count-once marker a run gets when its cost is added to the daily totals', () => {
+    expect(LaboratoryRunSchema.safeParse({ ...base, RunCostCountedAt: '2026-11-10T00:00:00.000Z' }).success).toBe(true);
+  });
 });
