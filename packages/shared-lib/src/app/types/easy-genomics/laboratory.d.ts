@@ -25,6 +25,7 @@
  *   EnableNewWorkflowsByDefault?: <boolean>,
  *   EnableNewBucketsByDefault?: <boolean>,
  *   RunLimits?: <LaboratoryRunLimits>,
+ *   WorkflowRunLimits?: <Record<string, WorkflowCostLimits>>,
  *   CreatedAt?: <string>,
  *   CreatedBy?: <string>,
  *   ModifiedAt?: <string>,
@@ -41,6 +42,15 @@ export interface LaboratoryRunLimits {
   CostBlockAboveUsd?: number;
   SamplesWarnAbove?: number;
   SamplesBlockAbove?: number;
+}
+
+/**
+ * One workflow's own cost amounts within a lab. A missing amount uses the lab's amount for that field.
+ */
+export interface WorkflowCostLimits {
+  WorkflowName: string;
+  CostWarnAboveUsd?: number;
+  CostBlockAboveUsd?: number;
 }
 
 export interface Laboratory extends BaseAttributes {
@@ -154,4 +164,10 @@ export interface Laboratory extends BaseAttributes {
 
   /** Saved only through update-laboratory-run-limits. Missing means the lab has no limits. */
   RunLimits?: LaboratoryRunLimits;
+
+  /**
+   * Saved only through update-laboratory-workflow-run-limits, never through Create / Update.
+   * Keyed `${Platform}#${WorkflowId}`. Missing or empty means no workflow has its own limits.
+   */
+  WorkflowRunLimits?: Record<string, WorkflowCostLimits>;
 }
