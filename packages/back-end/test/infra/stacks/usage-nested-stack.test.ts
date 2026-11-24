@@ -1,8 +1,13 @@
 import { App, Stack } from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
+import { Match, Template } from 'aws-cdk-lib/assertions';
 import { Code, Function, Runtime } from 'aws-cdk-lib/aws-lambda';
+import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import { LambdaConstruct } from '../../../src/infra/constructs/lambda-construct';
 import { UsageNestedStack } from '../../../src/infra/stacks/usage-nested-stack';
+
+jest.mock('aws-cdk-lib/aws-lambda-event-sources', () => ({
+  SqsEventSource: jest.fn().mockImplementation(() => ({})),
+}));
 
 jest.mock('../../../src/infra/constructs/lambda-construct', () => ({
   LambdaConstruct: jest.fn().mockImplementation(() => ({
@@ -117,5 +122,72 @@ describe('UsageNestedStack', () => {
 
   it('fails synth on a schedule that is not a cron() or rate() expression, naming the setting', () => {
     expect(() => createStack({ schedule: 'weekly' })).toThrow('healthomics-rates-refresh.schedule');
+  });
+
+  describe('run-cost capture', () => {
+    const consumer = '/easy-genomics/usage/process-capture-run-cost';
+    const runTableArn = `arn:aws:dynamodb:${region}:${account}:table/test-laboratory-run-table`;
+
+    it('creates the capture queue and its dead-letter queue as FIFO queues', () => {
+      const template = Template.fromStack(createStack());
+
+      template.hasResourceProperties('AWS::SQS::Queue', {
+        QueueName: 'test-run-cost-capture-dlq.fifo',
+        FifoQueue: true,
+        MessageRetentionPeriod: 1209600,
+      });
+      template.hasResourceProperties('AWS::SQS::Queue', {
+        QueueName: 'test-run-cost-capture-queue.fifo',
+        FifoQueue: true,
+        VisibilityTimeout: 900,
+        RedrivePolicy: Match.objectLike({ maxReceiveCount: 3 }),
+      });
+    });
+
+    it('consumes the capture queue one message at a time within a 15-minute timeout', () => {
+      const stack = createStack();
+
+      const lambdaProps = (LambdaConstruct as unknown as jest.Mock).mock.calls[0][2];
+      const consumerConfig = lambdaProps.lambdaFunctionsResources[consumer];
+      expect(consumerConfig.timeoutSeconds).toBe(900);
+      expect(consumerConfig.environment).toEqual({
+        SEQERA_API_BASE_URL: 'https://seqera.example.com',
+        HEALTHOMICS_RATES_REFRESH_ENABLED: 'true',
+      });
+      expect(consumerConfig.events).toHaveLength(1);
+      expect(SqsEventSource).toHaveBeenCalledWith(stack.runCostCaptureQueue, { batchSize: 1 });
+    });
+
+    it('grants the consumer only what capture needs', () => {
+      const stack = createStack();
+
+      const statements = stack.iam.getPolicyStatements(consumer).map((statement) => statement.toStatementJson());
+
+      expect(statements).toEqual([
+        { Effect: 'Allow', Action: 'dynamodb:Query', Resource: [runTableArn, `${runTableArn}/index/*`] },
+        { Effect: 'Allow', Action: 'dynamodb:UpdateItem', Resource: runTableArn },
+        {
+          Effect: 'Allow',
+          Action: 'dynamodb:Query',
+          Resource: [laboratoryTableArn, `${laboratoryTableArn}/index/*`],
+        },
+        {
+          Effect: 'Allow',
+          Action: 'ssm:GetParameter',
+          Resource: `arn:aws:ssm:${region}:${account}:parameter/easy-genomics/organization/*/laboratory/*/nf-access-token`,
+        },
+        {
+          Effect: 'Allow',
+          Action: ['sts:AssumeRole', 'sts:TagSession'],
+          Resource: `arn:aws:iam::${account}:role/test-easy-genomics-omics-access-role`,
+        },
+        {
+          Effect: 'Allow',
+          Action: ['omics:GetRun', 'omics:ListRunTasks'],
+          Resource: `arn:aws:omics:${region}:${account}:run/*`,
+        },
+        { Effect: 'Allow', Action: 'ssm:GetParameter', Resource: ratesParameterArn },
+      ]);
+    });
   });
 });
