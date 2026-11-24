@@ -163,6 +163,7 @@
       label: 'Data Collections',
       icon: 'i-heroicons-rectangle-stack',
     };
+    const storageTab = { key: 'storage', label: 'Storage', icon: 'i-heroicons-circle-stack' };
     const usersTab = { key: 'users', label: 'Users', icon: 'i-heroicons-users' };
     const detailsTab = { key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth' };
 
@@ -179,6 +180,8 @@
     }
     items.push(dataCollectionsTab);
     items.push({ ...usersTab, dividerBefore: items.length > 0 });
+    // Lab managers, org admins, and system admins (superuser lab view from Manage).
+    if (props.superuser || userStore.canEditLabUsers(props.labId)) items.push(storageTab);
     if (!userStore.isSuperuser && userStore.canEditLabDetails()) items.push(detailsTab);
 
     return items;
@@ -206,6 +209,9 @@
     if (activeTabKey.value === 'details') {
       return 'Lab settings';
     }
+    if (activeTabKey.value === 'storage') {
+      return 'Storage';
+    }
     return labName.value;
   });
 
@@ -221,10 +227,13 @@
       runs: 'View your pipeline runs',
       seqeraPipelines: 'View your Seqera pipelines',
       omicsWorkflows: 'View your HealthOmics workflows',
+      storage: 'What this lab is keeping in its bucket, grouped by run.',
       users: 'View your lab users',
     };
     return descriptions[activeTabKey.value] || '';
   });
+
+  const storageScannedAt = computed(() => useStorageStore().labStorage[props.labId]?.ScannedAt);
 
   function setTabIndex() {
     const requestedTab = (props.initialTab ?? '').trim().toLowerCase();
@@ -234,6 +243,7 @@
       runs: ['pipeline runs', 'lab runs', 'runs'],
       seqeraPipelines: ['seqera pipelines', 'seqera workflows'],
       omicsWorkflows: ['healthomics workflows'],
+      storage: ['storage'],
       users: ['users', 'lab users'],
       details: ['settings'],
     };
@@ -441,7 +451,7 @@
     ];
 
     if (canSetKeyOutputsForRun(run)) {
-      buttons.push([{ label: 'Set key outputs', click: () => viewSetKeyOutputsForRun(run) }]);
+      buttons.push([{ label: 'Mark selected results', click: () => viewSetKeyOutputsForRun(run) }]);
     }
 
     if (['SUBMITTED', 'STARTING', 'RUNNING'].includes(run.Status)) {
@@ -465,7 +475,7 @@
   function viewSetKeyOutputsForRun(run: LaboratoryRun): void {
     $router.push({
       path: `/labs/${props.labId}/run/${run.RunId}`,
-      query: { tab: 'Files', declareKeyOutputs: '1' },
+      query: { tab: 'All files', declareKeyOutputs: '1' },
     });
   }
 
@@ -554,8 +564,7 @@
   function canDeleteOmicsWorkflow(workflow: LabOmicsWorkflow): boolean {
     return canDeletePrivateOmicsWorkflow({
       workflow,
-      canCreateOmicsWorkflows: userStore.isOrgAdmin(),
-      userIds: [userStore.currentUserDetails.id, userStore.currentUserDetails.internalId],
+      isOrgAdmin: userStore.isOrgAdmin(),
     });
   }
 
@@ -572,23 +581,23 @@
 
   function omicsWorkflowsActionItems(workflow: LabOmicsWorkflow) {
     const items: object[][] = [];
-    const primaryItems: object[] = [
-      {
-        label: 'Output files',
-        description: 'Choose which result files matter.',
-        icon: 'i-heroicons-document-check',
-        click: () => viewSetKeyOutputs(workflow),
-      },
-    ];
+    const primaryItems: object[] = [];
 
     if (canManageWorkflowIntegrations.value) {
       primaryItems.push({
         label: 'Integrations',
-        description: 'Copy to S3, send to Microreact.',
+        description: 'Copy to S3, send to Microreact',
         icon: 'i-heroicons-link',
         click: () => viewDeliverKeyOutputs(workflow),
       });
     }
+
+    primaryItems.push({
+      label: 'Selected results',
+      description: 'Rename or remove marked output files',
+      icon: 'i-heroicons-flag',
+      click: () => viewSetKeyOutputs(workflow),
+    });
 
     items.push(primaryItems);
 
@@ -625,7 +634,7 @@
     $router.push({
       path: `/labs/${props.labId}/deliver-key-outputs/${encodeURIComponent(workflow.id)}`,
       query: {
-        tab: 'output-files',
+        tab: 'selected-results',
         ...(workflow.name ? { workflowName: workflow.name } : {}),
       },
     });
@@ -1063,6 +1072,7 @@
       :class="{ 'shrink-0': activeTabKey === 'dataCollections' }"
       :title="pageTitle"
       :description="pageDescription"
+      :description-class="activeTabKey === 'storage' ? 'max-w-xl text-sm' : undefined"
       :back-action="() => (superuser ? $router.push(`/orgs/${orgId || ''}`) : $router.push('/labs'))"
       :show-back="true"
       show-org-breadcrumb
@@ -1075,6 +1085,19 @@
         variant="secondary"
         @click="$router.push(`/labs/${labId}/create-workflow`)"
       />
+      <div v-if="activeTabKey === 'storage' && orgId" class="flex shrink-0 items-center gap-3">
+        <span v-if="storageScannedAt" class="text-muted whitespace-nowrap text-xs leading-none">
+          Scanned {{ formatStorageScannedAt(storageScannedAt) }}
+        </span>
+        <EGButton
+          label="Rescan"
+          variant="secondary"
+          icon="i-heroicons-arrow-path"
+          :loading="uiStore.isRequestPending('rescanLabStorage')"
+          :disabled="uiStore.isRequestPending('rescanLabStorage') || uiStore.isRequestPending('editLabStorage')"
+          @click="useStorageStore().rescanLabStorage(orgId, labId)"
+        />
+      </div>
       <EGButton
         v-if="!superuser && activeTabKey === 'users'"
         u-button-type="button"
@@ -1119,6 +1142,17 @@
         @update:explorer-tab="dataCollectionsExplorerTab = $event"
         @open-settings="openLabSettingsFromDataCollections"
       />
+    </div>
+
+    <div
+      v-if="activeTabKey === 'storage' && orgId"
+      role="tabpanel"
+      id="panel-storage"
+      aria-labelledby="tab-storage"
+      tabindex="0"
+      class="mt-4"
+    >
+      <EGLabStorage :org-id="orgId" :lab-id="labId" />
     </div>
   </div>
 

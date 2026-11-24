@@ -34,6 +34,7 @@ import { RequestTopLevelBucketObjectsSchema } from '../schema/easy-genomics/file
 import {
   CreateLaboratorySchema,
   UpdateLaboratorySchema,
+  UpdateLaboratoryRetentionSchema,
   RequestLaboratorySchema,
 } from '../schema/easy-genomics/laboratory';
 import { AddLaboratoryRunSchema, EditLaboratoryRunSchema } from '../schema/easy-genomics/laboratory-run';
@@ -45,6 +46,10 @@ import {
 import { EstimateRunCostRequestSchema } from '../schema/easy-genomics/laboratory-run-cost';
 import { UpdateLaboratoryRunLimitsSchema } from '../schema/easy-genomics/laboratory-run-limits';
 import { BatchUpdateLaboratoryS3AccessRequestSchema } from '../schema/easy-genomics/laboratory-s3-access';
+import {
+  EditLaboratoryStorageProtectionSchema,
+  RemoveLaboratoryStorageItemsSchema,
+} from '../schema/easy-genomics/laboratory-storage';
 import {
   AddBulkLaboratoryUsersSchema,
   AddLaboratoryUserSchema,
@@ -185,6 +190,12 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
     query: [{ name: 'organizationId', required: false, description: 'Filter by organization' }],
   },
 
+  // ── easy-genomics/organization/storage/ ──────────────────────────────────────
+
+  'GET /easy-genomics/organization/storage/list-organization-storage': {
+    query: [{ name: 'organizationId', required: true, description: 'Organization UUID' }],
+  },
+
   // ── easy-genomics/organization/s3-access/ ─────────────────────────────────────
 
   'POST /easy-genomics/organization/s3-access/edit-s3-access-batch': {
@@ -217,6 +228,10 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
   },
   'PUT /easy-genomics/laboratory/update-laboratory/{id}': {
     request: UpdateLaboratorySchema,
+    response: 'Laboratory',
+  },
+  'PUT /easy-genomics/laboratory/update-laboratory-retention/{id}': {
+    request: UpdateLaboratoryRetentionSchema,
     response: 'Laboratory',
   },
   'PUT /easy-genomics/usage/update-laboratory-run-limits/{id}': {
@@ -305,6 +320,24 @@ export const ROUTE_SCHEMAS: Record<string, RouteSchema> = {
   },
   'POST /easy-genomics/laboratory/run/request-run-export-job-status': {
     request: RequestRunExportJobStatusSchema,
+  },
+
+  // ── easy-genomics/laboratory/storage/ ───────────────────────────────────────
+
+  'GET /easy-genomics/laboratory/storage/list-laboratory-storage': {
+    query: [
+      { name: 'organizationId', required: true, description: 'Organization UUID' },
+      { name: 'laboratoryId', required: true, description: 'Laboratory UUID' },
+    ],
+  },
+  'POST /easy-genomics/laboratory/storage/request-laboratory-storage-scan': {
+    request: RequestLaboratorySchema,
+  },
+  'POST /easy-genomics/laboratory/storage/edit-laboratory-storage-protection': {
+    request: EditLaboratoryStorageProtectionSchema,
+  },
+  'POST /easy-genomics/laboratory/storage/remove-laboratory-storage-items': {
+    request: RemoveLaboratoryStorageItemsSchema,
   },
 
   // ── easy-genomics/data-collections/ ─────────────────────────────────────────

@@ -128,15 +128,10 @@
         </div>
       </div>
 
-      <div
-        class="flex items-center gap-3"
-        :class="{ 'ml-2 gap-4': !iconsOnly }"
-        role="group"
-        aria-label="URL Actions"
-      >
+      <div class="flex items-center gap-3" :class="{ 'ml-2 gap-4': !iconsOnly }" role="group" aria-label="URL Actions">
         <button
           type="button"
-          class="focus-visible:outline-primary-500 text-primary cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+          class="focus-visible:outline-primary-500 text-primary hover:bg-background-light-grey inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           :class="{ 'opacity-50': !url }"
           aria-label="Copy sample sheet URL to clipboard"
           :disabled="isClicked || !url || disabled"
@@ -147,7 +142,7 @@
 
         <button
           type="button"
-          class="focus-visible:outline-primary-500 text-primary cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+          class="focus-visible:outline-primary-500 text-primary hover:bg-background-light-grey inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           :class="{ 'opacity-50': !url }"
           aria-label="Open sample sheet in new tab"
           :disabled="isClicked || !url || disabled"
@@ -158,7 +153,7 @@
 
         <button
           type="button"
-          class="focus-visible:outline-primary-500 text-primary cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+          class="focus-visible:outline-primary-500 text-primary hover:bg-background-light-grey inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           :class="{ 'opacity-50': !url }"
           aria-label="Download sample sheet"
           :disabled="isClicked || !url || disabled"

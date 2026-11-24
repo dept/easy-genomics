@@ -16,6 +16,8 @@
       title: string;
       titleId?: string;
       description?: string;
+      /** Extra classes for the description line (e.g. max-width so it wraps earlier). */
+      descriptionClass?: string;
       showBack: boolean;
       backButtonLabel?: string;
       backAction?: () => void;
@@ -33,6 +35,7 @@
       isLoading: false,
       backAction: () => {},
       description: '',
+      descriptionClass: '',
     },
   );
 
@@ -111,7 +114,9 @@
             <!-- Optional status/badge rendered inline with the title; renders nothing when unused. -->
             <slot name="titleSuffix" />
           </div>
-          <EGText v-if="description" tag="p" class="text-muted mt-4 rounded">{{ description }}</EGText>
+          <EGText v-if="description" tag="p" class="text-muted mt-4 rounded" :class="descriptionClass">
+            {{ description }}
+          </EGText>
         </template>
       </div>
       <div class="relative flex flex-col items-end">

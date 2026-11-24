@@ -111,6 +111,19 @@ export class LaboratoryRunService extends DynamoDBService implements Service<Lab
     }
   };
 
+  /** Consistent read used by the retention sweep immediately before it deletes an input. */
+  public runRowExists = async (laboratoryId: string, runId: string): Promise<boolean> => {
+    const response: GetItemCommandOutput = await this.getItem({
+      TableName: this.LABORATORY_RUN_TABLE_NAME,
+      Key: {
+        LaboratoryId: { S: laboratoryId },
+        RunId: { S: runId },
+      },
+      ConsistentRead: true,
+    });
+    return !!response.Item;
+  };
+
   public get = async (laboratoryId: string, runId: string): Promise<LaboratoryRun> => {
     const logRequestMessage = `Get LaboratoryRun LaboratoryId=${laboratoryId}, RunId=${runId} request`;
     console.info(logRequestMessage);

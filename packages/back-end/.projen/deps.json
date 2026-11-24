@@ -118,14 +118,6 @@
       "type": "runtime"
     },
     {
-      "name": "@aws-crypto/decrypt-node",
-      "type": "runtime"
-    },
-    {
-      "name": "@aws-crypto/encrypt-node",
-      "type": "runtime"
-    },
-    {
       "name": "@aws-sdk/client-bedrock-runtime",
       "version": "3.782.0",
       "type": "runtime"
@@ -156,6 +148,11 @@
     {
       "name": "@aws-sdk/client-omics",
       "version": "^3.1090.0",
+      "type": "runtime"
+    },
+    {
+      "name": "@aws-sdk/client-pricing",
+      "version": "3.782.0",
       "type": "runtime"
     },
     {

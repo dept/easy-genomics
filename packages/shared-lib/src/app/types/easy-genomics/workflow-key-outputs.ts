@@ -13,7 +13,7 @@
  *   WorkflowName?: <string>,
  *   Platform?: <string>,
  *   SourceRunId?: <string>,
- *   KeyOutputs: [{ KeyOutputId, Label, Pattern, ExamplePath? }],
+ *   KeyOutputs: [{ KeyOutputId, Label, Description?, Pattern, ExamplePath? }],
  *   CreatedAt?, CreatedBy?, ModifiedAt?, ModifiedBy?
  * }
  */
@@ -24,6 +24,8 @@ export const WORKFLOW_KEY_OUTPUTS_LIMIT = 50;
 
 export const WORKFLOW_KEY_OUTPUT_LABEL_MAX_LENGTH = 80;
 
+export const WORKFLOW_KEY_OUTPUT_DESCRIPTION_MAX_LENGTH = 200;
+
 export const WORKFLOW_KEY_OUTPUT_PATTERN_MAX_LENGTH = 1024;
 
 /**
@@ -33,6 +35,8 @@ export const WORKFLOW_KEY_OUTPUT_PATTERN_MAX_LENGTH = 1024;
 export interface WorkflowKeyOutput {
   KeyOutputId: string;
   Label: string;
+  /** Optional short blurb shown under the label on Selected results. */
+  Description?: string;
   Pattern: string;
   /** Relative path of the file the user ticked when this role was inferred. */
   ExamplePath?: string;

@@ -4,7 +4,10 @@ import {
   EditWorkflowKeyOutputs,
   EditWorkflowKeyOutputsSchema,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/workflow-key-outputs';
-import { WorkflowKeyOutput, WorkflowKeyOutputs } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
+import {
+  WorkflowKeyOutput,
+  WorkflowKeyOutputs,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
 import { APIGatewayProxyResult, APIGatewayProxyWithCognitoAuthorizerEvent, Handler } from 'aws-lambda';
 import { v4 as uuidv4 } from 'uuid';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
@@ -53,9 +56,11 @@ export const handler: Handler = async (
     );
     const keyOutputs: WorkflowKeyOutput[] = request.KeyOutputs.map((item) => {
       const pattern = item.Pattern.trim();
+      const description = item.Description?.trim();
       return {
         KeyOutputId: item.KeyOutputId || existingIdByPattern.get(pattern) || uuidv4(),
         Label: item.Label.trim(),
+        ...(description ? { Description: description } : {}),
         Pattern: pattern,
         ExamplePath: item.ExamplePath,
       };

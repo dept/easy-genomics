@@ -2,10 +2,17 @@ process.env.NAME_PREFIX = 'unit-test';
 
 const mockListByLaboratoryId = jest.fn();
 const mockIsDataTaggedS3Bucket = jest.fn();
+const mockListRunsForUsageFilter = jest.fn();
 
 jest.mock('../../../../src/app/services/easy-genomics/laboratory-s3-access-service', () => ({
   LaboratoryS3AccessService: jest.fn().mockImplementation(() => ({
     listByLaboratoryId: mockListByLaboratoryId,
+  })),
+}));
+
+jest.mock('../../../../src/app/services/easy-genomics/laboratory-run-service', () => ({
+  LaboratoryRunService: jest.fn().mockImplementation(() => ({
+    listAllRunsForLaboratory: (...args: unknown[]) => mockListRunsForUsageFilter(...args),
   })),
 }));
 
@@ -368,6 +375,7 @@ describe('LaboratoryDataTaggingService.listFileTags', () => {
     mockBatchGetItem = jest.fn();
     (svc as unknown as { queryItems: typeof mockQueryItems }).queryItems = mockQueryItems;
     (svc as unknown as { batchGetItem: typeof mockBatchGetItem }).batchGetItem = mockBatchGetItem;
+    mockListRunsForUsageFilter.mockReset().mockRejectedValue(new Error('runs unavailable'));
   });
 
   it('classifies workflow tag ids via BatchGetItem when listTags returns no workflow rows yet', async () => {
@@ -490,6 +498,42 @@ describe('LaboratoryDataTaggingService.listFileTags', () => {
     expect(usages.map((u) => u.RunId)).toEqual(['run-newer', 'run-older']);
     expect(usages[0].WorkflowName).toBe('nf-core/rnaseq');
     expect(usages[1].InputFileCount).toBe(1);
+  });
+
+  it('omits a usage whose run row is gone', async () => {
+    const lab = labFixture();
+    const bucket = lab.S3Bucket!;
+    const key = 'org-1/lab-1/sample.fq.gz';
+    const ref = encodeS3ObjectRef(bucket, key);
+    mockQueryItems.mockResolvedValue({ Items: [] });
+    mockListRunsForUsageFilter.mockResolvedValue([{ RunId: 'run-newer', LaboratoryId: lab.LaboratoryId }]);
+    mockBatchGetItem.mockImplementation(async (cmd: { RequestItems?: Record<string, { Keys?: unknown[] }> }) => {
+      const keys = (cmd.RequestItems?.[tableName]?.Keys || []) as Record<string, AttributeValue>[];
+      const rows: Record<string, AttributeValue>[] = [];
+      for (const k of keys) {
+        const row = unmarshall(k) as { Sk: string };
+        if (row.Sk === `FILE#${ref}`) {
+          rows.push(
+            marshall({
+              LaboratoryId: lab.LaboratoryId,
+              Sk: row.Sk,
+              S3Bucket: bucket,
+              ObjectKey: key,
+              TagIds: [],
+              LaboratoryRunUsages: {
+                'run-older': { RunId: 'run-older', RunCreatedAt: '2026-01-02T00:00:00.000Z' },
+                'run-newer': { RunId: 'run-newer', RunCreatedAt: '2026-02-03T00:00:00.000Z' },
+              },
+            }),
+          );
+        }
+      }
+      return { Responses: { [tableName]: rows } };
+    });
+
+    const assignments = await svc.listFileTags(lab.LaboratoryId, bucket, [key]);
+
+    expect(assignments[0].LaboratoryRunUsages?.map((usage) => usage.RunId)).toEqual(['run-newer']);
   });
 });
 
@@ -1219,36 +1263,6 @@ describe('LaboratoryDataTaggingService.deleteFileRowAndAssociations', () => {
   });
 });
 
-describe('LaboratoryDataTaggingService.removeLaboratoryRunUsageForRunIds preserveEmptyFileRow', () => {
-  let svc: LaboratoryDataTaggingService;
-  let mockGetItem: jest.Mock;
-  let mockDeleteItem: jest.Mock;
-  let mockUpdateItem: jest.Mock;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    svc = new LaboratoryDataTaggingService();
-    mockGetItem = jest.fn().mockResolvedValue({});
-    mockDeleteItem = jest.fn().mockResolvedValue({});
-    mockUpdateItem = jest.fn().mockResolvedValue({});
-    (svc as unknown as { getItem: typeof mockGetItem }).getItem = mockGetItem;
-    (svc as unknown as { deleteItem: typeof mockDeleteItem }).deleteItem = mockDeleteItem;
-    (svc as unknown as { updateItem: typeof mockUpdateItem }).updateItem = mockUpdateItem;
-  });
-
-  it('with preserveEmptyFileRow=true never deletes the FILE# row even when it ends up empty', async () => {
-    const lab = labFixture();
-    const bucket = lab.S3Bucket!;
-    const key = 'org-1/lab-1/last-usage.fq.gz';
-
-    await svc.removeLaboratoryRunUsageForRunIds(lab, bucket, { 'run-1': [key] }, { preserveEmptyFileRow: true });
-
-    expect(mockUpdateItem).toHaveBeenCalledTimes(1);
-    expect(mockGetItem).not.toHaveBeenCalled();
-    expect(mockDeleteItem).not.toHaveBeenCalled();
-  });
-});
-
 describe('LaboratoryDataTaggingService.applyTagsToSamples', () => {
   let svc: LaboratoryDataTaggingService;
   let mockGetItem: jest.Mock;
@@ -1351,7 +1365,9 @@ describe('LaboratoryDataTaggingService.applyTagsToSamples', () => {
 
     expect(applyFiles).not.toHaveBeenCalled();
     expect((svc as unknown as { adjustTagFileCount: jest.Mock }).adjustTagFileCount).not.toHaveBeenCalled();
-    expect((svc as unknown as { deleteSequenceSetMapIfExists: jest.Mock }).deleteSequenceSetMapIfExists).not.toHaveBeenCalled();
+    expect(
+      (svc as unknown as { deleteSequenceSetMapIfExists: jest.Mock }).deleteSequenceSetMapIfExists,
+    ).not.toHaveBeenCalled();
     const sampleUpdate = mockUpdateItem.mock.calls
       .map((c) => c[0])
       .find((input) => String(unmarshall(input.Key).Sk) === 'SAMPLE#set-1');
@@ -1468,7 +1484,9 @@ describe('LaboratoryDataTaggingService.deleteTag and setBatchForFiles keep sampl
       .fn()
       .mockResolvedValue([]);
     (svc as unknown as { assertKeyUnderLabPrefix: jest.Mock }).assertKeyUnderLabPrefix = jest.fn();
-    (svc as unknown as { getBatchTagIdSet: jest.Mock }).getBatchTagIdSet = jest.fn().mockResolvedValue(new Set(['batch-1']));
+    (svc as unknown as { getBatchTagIdSet: jest.Mock }).getBatchTagIdSet = jest
+      .fn()
+      .mockResolvedValue(new Set(['batch-1']));
     (svc as unknown as { deleteMapIfExists: jest.Mock }).deleteMapIfExists = jest.fn().mockResolvedValue(undefined);
     (svc as unknown as { adjustTagFileCount: jest.Mock }).adjustTagFileCount = jest.fn().mockResolvedValue(undefined);
     (svc as unknown as { getFileRow: jest.Mock }).getFileRow = jest.fn().mockResolvedValue({
@@ -1680,8 +1698,11 @@ describe('LaboratoryDataTaggingService expired run output markers', () => {
         S3Bucket: 'my-bucket',
         OutputPrefix: undefined,
         SampleSheetKeys: ['good.csv'],
+        UntaggedInputKeys: undefined,
+        RunFolderPrefix: undefined,
         RecordedAt: '',
         CompletedAt: undefined,
+        FolderCleanedAt: undefined,
       });
     });
   });
@@ -1697,6 +1718,18 @@ describe('LaboratoryDataTaggingService expired run output markers', () => {
       expect(input.UpdateExpression).toBe('SET #completedAt = :completedAt');
       expect(unmarshall(input.Key)).toEqual({ LaboratoryId: 'lab-1', Sk: `RUNOUTPUT#${runId}` });
       expect(unmarshall(input.ExpressionAttributeValues)[':completedAt']).toEqual(expect.any(String));
+    });
+  });
+
+  describe('markRunFolderCleaned', () => {
+    it('stamps FolderCleanedAt without clearing CompletedAt', async () => {
+      await svc.markRunFolderCleaned('lab-1', runId);
+
+      expect(mockUpdateItem).toHaveBeenCalledTimes(1);
+      const input = mockUpdateItem.mock.calls[0][0];
+      expect(input.UpdateExpression).toBe('SET #folderCleanedAt = :folderCleanedAt');
+      expect(unmarshall(input.Key)).toEqual({ LaboratoryId: 'lab-1', Sk: `RUNOUTPUT#${runId}` });
+      expect(unmarshall(input.ExpressionAttributeValues)[':folderCleanedAt']).toEqual(expect.any(String));
     });
   });
 });

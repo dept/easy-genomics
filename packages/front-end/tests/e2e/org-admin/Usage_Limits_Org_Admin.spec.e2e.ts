@@ -30,7 +30,7 @@ function labRow(page: Page): Locator {
 }
 
 async function expectNoLimits(row: Locator): Promise<void> {
-  await expect(row.getByText('Not set', { exact: true })).toHaveCount(4);
+  await expect(row.getByText('—', { exact: true })).toHaveCount(4);
 }
 
 async function clearLimits(page: Page, row: Locator): Promise<void> {
@@ -77,7 +77,7 @@ test("01 - Set, reload and clear a lab's usage limits", async ({ page, baseURL }
     await expectNoLimits(labRow(page));
   } finally {
     const finalRow = labRow(page);
-    const notSetCount = await finalRow.getByText('Not set', { exact: true }).count();
+    const notSetCount = await finalRow.getByText('—', { exact: true }).count();
     if (notSetCount !== 4) {
       const cancel = finalRow.getByRole('button', { name: 'Cancel' });
       if (await cancel.isVisible().catch(() => false)) {

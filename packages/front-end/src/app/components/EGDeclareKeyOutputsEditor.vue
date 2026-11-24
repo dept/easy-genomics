@@ -87,6 +87,7 @@
     return JSON.stringify(
       items.map((item) => ({
         Label: item.Label.trim(),
+        Description: item.Description?.trim() ?? '',
         Pattern: item.Pattern.trim(),
         ExamplePath: item.ExamplePath ?? '',
       })),
@@ -224,6 +225,7 @@
       draft.value = (runData?.KeyOutputs ?? []).map((item) => ({
         KeyOutputId: item.KeyOutputId,
         Label: item.Label,
+        Description: item.Description,
         Pattern: item.Pattern,
         ExamplePath: item.ExamplePath,
         MatchCount: item.MatchCount,
@@ -260,6 +262,7 @@
       parsed.outputs.map((item) => ({
         KeyOutputId: draftIdByPattern.get(item.Pattern.trim()),
         Label: item.Label.trim(),
+        Description: item.Description?.trim() || undefined,
         Pattern: item.Pattern.trim(),
         ExamplePath: item.ExamplePath,
       })),
