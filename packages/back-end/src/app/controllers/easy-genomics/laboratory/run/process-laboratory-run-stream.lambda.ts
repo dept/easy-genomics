@@ -6,7 +6,13 @@ import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-geno
 import { DynamoDBRecord, DynamoDBStreamEvent, Handler } from 'aws-lambda';
 import { LaboratoryDataTaggingService } from '@BE/services/easy-genomics/laboratory-data-tagging-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
-import { isBelowRunFolderRoot, isWithinRunFolder, normalizeS3Prefix, parseS3ObjectUri } from '@BE/utils/s3-uri-utils';
+import {
+  isBelowRunFolderRoot,
+  isWithinRunFolder,
+  normalizeS3Prefix,
+  parseS3ObjectUri,
+  runFolderPrefixFrom,
+} from '@BE/utils/s3-uri-utils';
 
 const laboratoryService = new LaboratoryService();
 const laboratoryDataTaggingService = new LaboratoryDataTaggingService();
@@ -17,22 +23,21 @@ const laboratoryDataTaggingService = new LaboratoryDataTaggingService();
  * cascade described in the "Permanent tag and S3 expiry" plan:
  *
  *   1. Unmarshal the OLD image of the removed run row.
- *   2. Remove the run id from every input file's `LaboratoryRunUsages` map in the data
- *      tagging table (via `removeLaboratoryRunUsageForRunIds`).
+ *   2. Leave each input file's `LaboratoryRunUsages` entry in place until the sweep deletes the
+ *      file. A usage whose run row is gone is how the sweep recognises an expired input that
+ *      never received a workflow tag.
  *   3. Record the run's output directory and generated sample sheet as a RUNOUTPUT# row
  *      (via `recordExpiredRunOutput`). The run record is the only place those locations are
  *      stored, so they must be captured here before the OLD image is discarded.
- *   4. The scheduled `process-expired-laboratory-data` Lambda later picks up FILE# rows
- *      that have been left with no remaining usages and deletes the underlying S3 object
- *      (skipping anything marked Permanent), then deletes the recorded output prefixes.
+ *   4. The scheduled `process-expired-laboratory-data` Lambda deletes eligible FILE# rows and
+ *      the recorded output prefixes, skipping anything marked Permanent.
  *
  * Distinguishing TTL vs manual delete: TTL removals are recorded with
  * `userIdentity.principalId === 'dynamodb.amazonaws.com'`. We log the source but treat both
  * the same way — the bookkeeping is identical.
  *
- * Idempotent and safe to retry: `removeLaboratoryRunUsageForRunIds` is conditional and silently
- * no-ops when the run id is already absent. The Lambda is wired with a DLQ at the event source
- * so poison records don't block the stream.
+ * Idempotent and safe to retry. The Lambda is wired with a DLQ at the event source so poison
+ * records don't block the stream.
  */
 export const handler: Handler<DynamoDBStreamEvent, void> = async (event: DynamoDBStreamEvent): Promise<void> => {
   for (const record of event.Records || []) {
@@ -103,33 +108,16 @@ async function processRecord(record: DynamoDBRecord): Promise<void> {
     return;
   }
 
-  if (inputFileKeys.length) {
-    await laboratoryDataTaggingService.removeLaboratoryRunUsageForRunIds(
-      laboratory,
-      laboratory.S3Bucket,
-      {
-        [runId]: inputFileKeys.filter((k): k is string => typeof k === 'string' && k.length > 0),
-      },
-      // Keep the FILE# row even when it ends up with no usages and no tags. The scheduled
-      // cleanup Lambda needs the row (S3Bucket + ObjectKey) to issue the s3:DeleteObject; we
-      // can't reconstruct it once both tables forget the file.
-      { preserveEmptyFileRow: true },
-    );
-  }
-
+  // Usages are intentionally not removed. The sweep is what deletes the file, and it needs the
+  // usage (or a workflow tag) to tell a run input from a never-used upload.
   await recordRunOutputsForCleanup(laboratory, runId, run);
 }
 
 /**
- * Hands the run's output directory and generated sample sheet to the scheduled sweep. Unlike
- * input files — which are shared between runs and tracked per-file in the tagging table — these
- * live inside the run's own `{org}/{lab}/{platform}/{runId}/` folder and are owned solely by it,
- * so they can be removed wholesale once the run expires.
- *
- * Locations are validated against the run's own folder before being recorded; a custom `outdir`
- * pointing elsewhere is skipped rather than scheduled for deletion. `outdir` is a user-editable
- * workflow parameter, so it must also point strictly *below* the run folder root: the root is
- * where the run's input files live, and prefix deletion is recursive.
+ * Hands the run folder to the scheduled sweep. The sweep deletes every object under
+ * `{org}/{lab}/{platform}/{runId}/` except ones marked Permanent. `OutputPrefix` is still only
+ * a subdirectory: `outdir` is a user-editable workflow parameter, and storing the run folder
+ * root (or anything outside it) as that prefix would let a bad value widen the delete.
  */
 async function recordRunOutputsForCleanup(
   laboratory: Laboratory,
@@ -163,13 +151,21 @@ async function recordRunOutputsForCleanup(
     }
   }
 
-  if (!outputPrefix && !sampleSheetKey) return;
+  const parsedInput = parseS3ObjectUri(run.InputS3Url);
+  const folder = runFolderPrefixFrom(
+    [outputPrefix, sampleSheetKey, parsedInput?.bucket === bucket ? parsedInput.prefix : undefined],
+    laboratory,
+    runId,
+  );
+
+  if (!outputPrefix && !sampleSheetKey && !folder) return;
 
   await laboratoryDataTaggingService.recordExpiredRunOutput(laboratory.LaboratoryId, {
     RunId: runId,
     S3Bucket: bucket,
     ...(outputPrefix ? { OutputPrefix: outputPrefix } : {}),
     ...(sampleSheetKey ? { SampleSheetKeys: [sampleSheetKey] } : {}),
+    ...(folder ? { RunFolderPrefix: folder } : {}),
     RecordedAt: new Date().toISOString(),
   });
 }

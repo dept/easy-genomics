@@ -5,7 +5,6 @@
     formatRunLimit,
     runLimitsDraftError,
     runLimitsToDraft,
-    usageLimitsNote,
     type RunLimitField,
     type RunLimitsDraft,
   } from '@FE/utils/usage-limits-form';
@@ -38,11 +37,7 @@
   const labs = computed<Laboratory[]>(() =>
     [...labsStore.labsForOrg(props.orgId)].sort((labA, labB) => labA.Name.localeCompare(labB.Name)),
   );
-  const editingLabName = computed<string | null>(
-    () => labs.value.find((lab) => lab.LaboratoryId === editingLabId.value)?.Name ?? null,
-  );
   const draftError = computed(() => (editingLabId.value ? runLimitsDraftError(draft.value) : null));
-  const note = computed(() => usageLimitsNote(editingLabName.value, draftError.value));
 
   // The store is persisted, so always fetch: a stale localStorage copy must not be what the admin edits.
   onMounted(async () => {
@@ -83,21 +78,9 @@
 
 <template>
   <div :aria-busy="isLoading || isSaving" class="flex flex-col gap-6">
-    <div>
-      <EGText :id="props.headingId" tag="h2" class="mb-2">Usage limits</EGText>
-      <p class="text-muted max-w-3xl text-sm">
-        Set how much a single run can cost, and how many samples it can include, for each lab. If a run goes over,
-        technicians are warned or stopped on the review step before it starts. Only organization admins can change
-        these, and any amount can be left blank.
-      </p>
-    </div>
+    <EGText :id="props.headingId" tag="h2" class="sr-only">Usage limits</EGText>
 
-    <section class="border-background-dark-grey rounded-xl border bg-white p-6" aria-labelledby="usage-limits-by-lab">
-      <EGText id="usage-limits-by-lab" tag="h3" class="mb-1">Limits by lab</EGText>
-      <p class="text-muted mb-4 text-sm">
-        Set a cost limit, a sample limit, or both. Leave the ones a lab doesn't need blank.
-      </p>
-
+    <section class="border-background-dark-grey rounded-xl border bg-white p-6" aria-label="Limits by lab">
       <div v-if="isLoading" class="flex justify-center py-10">
         <EGLoadingSpinner />
       </div>
@@ -106,11 +89,19 @@
 
       <template v-else>
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-sm">
+          <table class="w-full table-fixed text-sm">
+            <colgroup>
+              <col class="w-[28%]" />
+              <col class="w-[12%]" />
+              <col class="w-[12%]" />
+              <col class="w-[12%]" />
+              <col class="w-[12%]" />
+              <col class="w-[16%]" />
+            </colgroup>
             <thead class="text-muted text-xs">
               <tr>
-                <th scope="col" rowspan="2" class="px-3 py-2 font-semibold">Lab</th>
-                <th scope="colgroup" colspan="2" class="px-3 pt-2 font-semibold">
+                <th scope="col" rowspan="2" class="px-3 py-2 text-left font-semibold">Lab</th>
+                <th scope="colgroup" colspan="2" class="px-3 pt-2 text-left font-semibold">
                   <span class="inline-flex items-center gap-1">
                     Estimated cost per run
                     <UTooltip :delay-duration="0" :ui="{ base: 'h-auto w-auto max-w-sm whitespace-normal text-left' }">
@@ -126,44 +117,20 @@
                     </UTooltip>
                   </span>
                 </th>
-                <th scope="colgroup" colspan="2" class="px-3 pt-2 font-semibold">Samples per run</th>
+                <th scope="colgroup" colspan="2" class="px-3 pt-2 text-left font-semibold">Samples per run</th>
                 <th scope="col" rowspan="2" class="px-3 py-2"><span class="sr-only">Actions</span></th>
               </tr>
               <tr>
-                <th scope="col" class="px-3 pb-2 font-normal">
-                  <span class="inline-flex items-center gap-1">
-                    Warn above
-                    <UTooltip :delay-duration="0" :ui="{ base: 'h-auto w-auto max-w-sm whitespace-normal text-left' }">
-                      <template #text>
-                        <p>Technicians see a warning on the review step and can still launch.</p>
-                      </template>
-                      <button type="button" aria-label="About warn" class="inline-flex">
-                        <UIcon name="i-heroicons-information-circle" class="text-muted h-4 w-4 shrink-0" />
-                      </button>
-                    </UTooltip>
-                  </span>
-                </th>
-                <th scope="col" class="px-3 pb-2 font-normal">
-                  <span class="inline-flex items-center gap-1">
-                    Block above
-                    <UTooltip :delay-duration="0" :ui="{ base: 'h-auto w-auto max-w-sm whitespace-normal text-left' }">
-                      <template #text>
-                        <p>The run can't be launched. Runs already going are never stopped.</p>
-                      </template>
-                      <button type="button" aria-label="About block" class="inline-flex">
-                        <UIcon name="i-heroicons-information-circle" class="text-muted h-4 w-4 shrink-0" />
-                      </button>
-                    </UTooltip>
-                  </span>
-                </th>
-                <th scope="col" class="px-3 pb-2 font-normal">Warn above</th>
-                <th scope="col" class="px-3 pb-2 font-normal">Block above</th>
+                <th scope="col" class="px-3 pb-2 text-left font-normal">Warn above</th>
+                <th scope="col" class="px-3 pb-2 text-left font-normal">Block above</th>
+                <th scope="col" class="px-3 pb-2 text-left font-normal">Warn above</th>
+                <th scope="col" class="px-3 pb-2 text-left font-normal">Block above</th>
               </tr>
             </thead>
 
             <tbody>
               <tr v-for="lab in labs" :key="lab.LaboratoryId" class="border-background-dark-grey border-t">
-                <th scope="row" class="px-3 py-3 font-medium">
+                <th scope="row" class="px-3 py-3 text-left font-medium">
                   <span class="inline-flex items-center gap-2">
                     {{ lab.Name }}
                     <span
@@ -178,6 +145,7 @@
                 <template v-if="editingLabId === lab.LaboratoryId">
                   <td v-for="column in LIMIT_COLUMNS" :key="column.field" class="px-3 py-2">
                     <UInput
+                      class="w-full min-w-0"
                       type="number"
                       min="0"
                       :step="column.kind === 'usd' ? '0.01' : '1'"
@@ -192,7 +160,7 @@
                       </template>
                     </UInput>
                   </td>
-                  <td class="px-3 py-2">
+                  <td class="whitespace-nowrap px-3 py-2">
                     <div class="flex justify-end gap-2">
                       <EGButton
                         u-button-type="button"
@@ -218,7 +186,7 @@
                   <td
                     v-for="column in LIMIT_COLUMNS"
                     :key="column.field"
-                    class="px-3 py-3"
+                    class="px-3 py-3 text-left"
                     :class="{ 'text-muted': lab.RunLimits?.[column.field] === undefined }"
                   >
                     {{ formatRunLimit(lab.RunLimits?.[column.field], column.kind) }}
@@ -241,15 +209,6 @@
             </tbody>
           </table>
         </div>
-
-        <p
-          class="mt-4 text-sm"
-          :class="draftError ? 'text-alert-danger' : 'text-muted'"
-          aria-live="polite"
-          data-testid="usage-limits-note"
-        >
-          {{ note }}
-        </p>
       </template>
     </section>
   </div>

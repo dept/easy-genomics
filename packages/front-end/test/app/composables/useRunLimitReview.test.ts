@@ -7,7 +7,8 @@ import {
   RunSampleLimitExceededError,
   RunSamplesNotCountedError,
 } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
-// eslint-disable-next-line import/no-extraneous-dependencies -- vue ships with nuxt; the composable uses the auto-imported ref and computed
+// vue is provided by Nuxt, not declared in this package's package.json
+// eslint-disable-next-line import/no-extraneous-dependencies
 import { computed, ref } from 'vue';
 
 import { useRunLimitReview } from '../../../src/app/composables/useRunLimitReview';

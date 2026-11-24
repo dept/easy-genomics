@@ -6,11 +6,13 @@ import {
   inferKeyOutputsFromSelection,
   groupKeyOutputExamples,
   listKeyOutputMatches,
+  isWholeFolderPattern,
   matchKeyOutputPattern,
   parseKeyOutputsJson,
   scoreKeyOutputPatterns,
 } from './workflow-key-output-patterns';
 import { WorkflowKeyOutputSchema } from '../schema/easy-genomics/workflow-key-outputs';
+import { WORKFLOW_KEY_OUTPUT_DESCRIPTION_MAX_LENGTH } from '../types/easy-genomics/workflow-key-outputs';
 
 const consensusFiles = Array.from({ length: 48 }, (_unused, index) => {
   const sample = `sample${String(index + 1).padStart(2, '0')}`;
@@ -39,8 +41,25 @@ describe('matchKeyOutputPattern', () => {
     ).toBe(true);
   });
 
-  it('does not let * cross a directory boundary', () => {
+  it('does not let * cross a directory boundary for sample globs', () => {
     expect(matchKeyOutputPattern('variants/*.fa', 'variants/ivar/file.fa')).toBe(false);
+  });
+
+  it('lets whole-folder roles match nested files under the prefix', () => {
+    expect(matchKeyOutputPattern('nextclade/*', 'nextclade/sample01.csv')).toBe(true);
+    expect(matchKeyOutputPattern('nextclade/*', 'nextclade/qc/sample01.json')).toBe(true);
+    expect(matchKeyOutputPattern('nextclade/*', 'pangolin/sample01.csv')).toBe(false);
+    expect(isWholeFolderPattern('nextclade/*')).toBe(true);
+    expect(isWholeFolderPattern('nextclade/*.csv')).toBe(false);
+  });
+
+  it('keeps multi-level globs as one-segment matches, not whole-folder roles', () => {
+    expect(isWholeFolderPattern('*/*')).toBe(false);
+    expect(isWholeFolderPattern('results/*/*')).toBe(false);
+    expect(matchKeyOutputPattern('*/*', 'nextclade/sample01.csv')).toBe(true);
+    expect(matchKeyOutputPattern('*/*', 'nextclade/qc/sample01.json')).toBe(false);
+    expect(matchKeyOutputPattern('results/*/*', 'results/a/file.bam')).toBe(true);
+    expect(matchKeyOutputPattern('results/*/*', 'results/a/b/file.bam')).toBe(false);
   });
 
   it('treats ? as a literal character', () => {
@@ -227,5 +246,31 @@ describe('parseKeyOutputsJson', () => {
       ok: true,
       outputs: [{ Label: 'QC report', Pattern: 'multiqc/multiqc_report.html' }],
     });
+  });
+
+  it('keeps an optional description and drops whitespace-only ones', () => {
+    const withDescription = parseKeyOutputsJson(
+      '[{"label":"QC report","pattern":"multiqc/multiqc_report.html","description":"Quality summary"}]',
+    );
+    expect(withDescription).toEqual({
+      ok: true,
+      outputs: [{ Label: 'QC report', Pattern: 'multiqc/multiqc_report.html', Description: 'Quality summary' }],
+    });
+
+    const whitespaceOnly = parseKeyOutputsJson(
+      '[{"label":"QC report","pattern":"multiqc/multiqc_report.html","description":"   "}]',
+    );
+    expect(whitespaceOnly).toEqual({
+      ok: true,
+      outputs: [{ Label: 'QC report', Pattern: 'multiqc/multiqc_report.html' }],
+    });
+  });
+
+  it('rejects descriptions longer than the max length', () => {
+    const tooLong = 'x'.repeat(WORKFLOW_KEY_OUTPUT_DESCRIPTION_MAX_LENGTH + 1);
+    const result = parseKeyOutputsJson(
+      JSON.stringify([{ label: 'QC report', pattern: 'multiqc/multiqc_report.html', description: tooLong }]),
+    );
+    expect(result.ok).toBe(false);
   });
 });

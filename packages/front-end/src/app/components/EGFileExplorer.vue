@@ -6,7 +6,6 @@
     S3Response,
     S3TopLevelResponse,
     S3Prefix,
-    RequestTopLevelBucketObjects,
     RequestSearchBucketObjects,
     S3SearchResponse,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
@@ -60,8 +59,12 @@
 
   const { handleS3Download, downloadFolder, openHtmlFromS3, isFolderZipInProgress } = useFileDownload();
   const { $api } = useNuxtApp();
-
   const uiStore = useUiStore();
+  const listing = useS3BucketListing({
+    labId: () => props.labId,
+    s3Bucket: () => props.s3Bucket,
+    runId: () => props.runId,
+  });
 
   const ROOT_LABEL = 'Run folder';
   const currentPath = ref<FileTreeNode[]>([{ name: ROOT_LABEL, children: [] as FileTreeNode[] }]);
@@ -102,14 +105,8 @@
   const hasOpenedStartPath = ref(false);
 
   const isRootLoading = ref(true);
-
-  // Cache for loaded directory contents to avoid re-fetching
   const loadedDirectories = ref<Map<string, FileTreeNode[]>>(new Map());
 
-  /**
-   * Transform a raw S3 API response into FileTreeNode children.
-   * Kept separate so pre-fetch calls can use it without triggering further pre-fetches.
-   */
   const transformS3Response = (response: S3TopLevelResponse): FileTreeNode[] => {
     const children: FileTreeNode[] = [];
 
@@ -141,62 +138,36 @@
     return children;
   };
 
-  /**
-   * Fire-and-forget pre-fetch for the next level of all subdirectories in `children`.
-   * Called every time a directory's contents become visible so navigation is always instant.
-   */
   const prefetchNextLevel = (children: FileTreeNode[], prefixPath: string): void => {
-    children
+    const prefixes = children
       .filter((child) => child.type === 'directory')
-      .forEach((child) => {
-        const childPrefix = `${prefixPath}${child.name}/`;
-        const childCacheKey = `${s3Bucket}::${childPrefix}`;
-        if (!loadedDirectories.value.has(childCacheKey)) {
-          $api.file
-            .requestTopLevelBucketObjects({
-              LaboratoryId: props.labId,
-              RunId: props.runId,
-              S3Bucket: s3Bucket,
-              S3Prefix: childPrefix,
-            } as RequestTopLevelBucketObjects)
-            .then((childResponse: S3TopLevelResponse) => {
-              loadedDirectories.value.set(childCacheKey, transformS3Response(childResponse));
-            })
-            .catch((error) => console.error('Pre-fetch failed for', childPrefix, error));
-        }
+      .map((child) => `${prefixPath}${child.name}/`);
+    listing.prefetchTopLevel(prefixes);
+    for (const childPrefix of prefixes) {
+      const childCacheKey = `${s3Bucket}::${childPrefix}`;
+      if (loadedDirectories.value.has(childCacheKey)) continue;
+      void listing.fetchTopLevel(childPrefix).then((childResponse) => {
+        if (loadedDirectories.value.has(childCacheKey)) return;
+        const next = new Map(loadedDirectories.value);
+        next.set(childCacheKey, transformS3Response(childResponse));
+        loadedDirectories.value = next;
       });
+    }
   };
 
-  /**
-   * Load children for a given prefix, with caching.
-   */
   const loadDirectoryChildren = async (prefixPath: string): Promise<FileTreeNode[]> => {
     const cacheKey = `${s3Bucket}::${prefixPath}`;
     if (loadedDirectories.value.has(cacheKey)) {
       return loadedDirectories.value.get(cacheKey)!;
     }
 
-    try {
-      const response: S3TopLevelResponse = await $api.file.requestTopLevelBucketObjects({
-        LaboratoryId: props.labId,
-        RunId: props.runId,
-        S3Bucket: s3Bucket,
-        S3Prefix: prefixPath,
-      } as RequestTopLevelBucketObjects);
-
-      const children = transformS3Response(response);
-      loadedDirectories.value.set(cacheKey, children);
-      prefetchNextLevel(children, prefixPath);
-      return children;
-    } catch (error) {
-      console.error('Error loading directory children:', error);
-      useToastStore().error(
-        isS3BucketAccessDeniedError(error)
-          ? 'Access to this S3 bucket was revoked. Ask an organization admin to grant access, or set a new default bucket in lab settings.'
-          : 'Failed to load folder contents',
-      );
-      return [];
-    }
+    const response = await listing.fetchTopLevel(prefixPath);
+    const children = transformS3Response(response);
+    const next = new Map(loadedDirectories.value);
+    next.set(cacheKey, children);
+    loadedDirectories.value = next;
+    prefetchNextLevel(children, prefixPath);
+    return children;
   };
 
   /**
@@ -260,7 +231,8 @@
     async () => {
       hasOpenedStartPath.value = false;
       currentPath.value = [{ name: ROOT_LABEL, children: [] as FileTreeNode[] }];
-      loadedDirectories.value.clear();
+      loadedDirectories.value = new Map();
+      listing.clearCache();
       searchQuery.value = '';
       searchResults.value = [];
       fileFilter.value = 'all';
@@ -330,9 +302,7 @@
         type: 'file',
         name,
         s3Key: file.Key,
-        directoryPath: file.RelativePath.includes('/')
-          ? file.RelativePath.split('/').slice(0, -1).join('/')
-          : '',
+        directoryPath: file.RelativePath.includes('/') ? file.RelativePath.split('/').slice(0, -1).join('/') : '',
         size: undefined,
         outputLabel: file.Label,
       };
@@ -787,11 +757,7 @@
         placeholder="Search files in this run."
         @input-event="(event: string) => (searchQuery = event)"
       />
-      <div
-        class="inline-flex rounded-lg border border-neutral-200 p-0.5"
-        role="group"
-        aria-label="File filter"
-      >
+      <div class="inline-flex rounded-lg border border-neutral-200 p-0.5" role="group" aria-label="File filter">
         <button
           type="button"
           class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
@@ -822,10 +788,7 @@
 
     <p class="sr-only" aria-live="polite" aria-atomic="true">{{ searchStatusMessage }}</p>
 
-    <div
-      v-if="fileFilter === 'all'"
-      class="mb-4 flex flex-wrap items-center justify-between gap-3"
-    >
+    <div v-if="fileFilter === 'all'" class="mb-4 flex flex-wrap items-center justify-between gap-3">
       <nav class="min-h-[24px]" aria-label="Folder path">
         <ol class="flex flex-wrap items-center gap-0">
           <li v-for="(crumb, index) in breadcrumbs" :key="index" class="flex items-center text-sm">
@@ -905,10 +868,7 @@
         <div v-if="row.isSearchResult && row.directoryPath" class="text-muted ml-6 text-xs">
           {{ row.directoryPath }}/
         </div>
-        <div
-          v-else-if="fileFilter === 'outputs' && row.directoryPath"
-          class="text-muted ml-6 font-mono text-xs"
-        >
+        <div v-else-if="fileFilter === 'outputs' && row.directoryPath" class="text-muted ml-6 font-mono text-xs">
           {{ row.directoryPath }}/{{ row.name }}
         </div>
       </template>
@@ -919,7 +879,10 @@
         <span v-if="row.type !== 'up'">{{ formatFileSize(row.size) }}</span>
       </template>
       <template #actions-data="{ row }">
-        <div v-if="row.type !== 'up' && !(row.isSearchResult && row.type === 'directory')" class="flex justify-end gap-1">
+        <div
+          v-if="row.type !== 'up' && !(row.isSearchResult && row.type === 'directory')"
+          class="flex justify-end gap-1"
+        >
           <button
             v-if="isHtmlFile(row)"
             type="button"

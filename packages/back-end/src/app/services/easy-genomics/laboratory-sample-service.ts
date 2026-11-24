@@ -50,6 +50,18 @@ import { isInsideLaboratoryReadablePrefix, resolveLaboratoryListingPrefix } from
 const TABLE_NAME = `${process.env.NAME_PREFIX}-laboratory-data-tagging-table`;
 const GSI1_NAME = 'Gsi1Pk_Index';
 const FILE_SK_PREFIX = 'FILE#';
+const S3_EXISTENCE_CHECK_CONCURRENCY = 10;
+const MAX_NAMED_SAMPLES = 10;
+
+function describeSamplesWithMissingFiles(sampleNames: string[]): string {
+  const namedSamples = sampleNames.slice(0, MAX_NAMED_SAMPLES).join(', ');
+  const hiddenCount = sampleNames.length - MAX_NAMED_SAMPLES;
+  const nameList = hiddenCount > 0 ? `${namedSamples} and ${hiddenCount} more` : namedSamples;
+  if (sampleNames.length === 1) {
+    return `1 sample in this collection references files that no longer exist: ${nameList}. Remove it from the collection or re-import its files.`;
+  }
+  return `${sampleNames.length} samples in this collection reference files that no longer exist: ${nameList}. Remove them from the collection or re-import their files.`;
+}
 
 function skSampleFile(setId: string, ref: string): string {
   return `SAMPLEFILE#${setId}#${ref}`;
@@ -579,6 +591,20 @@ export class LaboratorySampleService extends DynamoDBService {
     return updated!;
   }
 
+  private async findMissingS3Keys(bucket: string, keys: string[]): Promise<Set<string>> {
+    const missingKeys = new Set<string>();
+    for (let start = 0; start < keys.length; start += S3_EXISTENCE_CHECK_CONCURRENCY) {
+      const chunk = keys.slice(start, start + S3_EXISTENCE_CHECK_CONCURRENCY);
+      const results = await Promise.all(
+        chunk.map((key) => this.s3Service.doesObjectExist({ Bucket: bucket, Key: key })),
+      );
+      chunk.forEach((key, index) => {
+        if (!results[index]) missingKeys.add(key);
+      });
+    }
+    return missingKeys;
+  }
+
   public async generateSequenceCollectionSampleSheet(
     laboratory: Laboratory,
     bucket: string,
@@ -617,9 +643,15 @@ export class LaboratorySampleService extends DynamoDBService {
     if (!built.ok) throw new InvalidRequestError(built.message);
 
     if (opts.validateS3FilesExist) {
-      for (const key of built.inputFileKeys) {
-        const exists = await this.s3Service.doesObjectExist({ Bucket: bucket, Key: key });
-        if (!exists) throw new NotFoundError(`S3 object not found: ${key}`);
+      const missingKeys = await this.findMissingS3Keys(bucket, built.inputFileKeys);
+      const affectedSampleNames = samples
+        .filter((sample) => sample.FileKeys.some((key) => missingKeys.has(key)))
+        .map((sample) => sample.Name || sample.SampleId);
+      if (affectedSampleNames.length) {
+        throw new NotFoundError(describeSamplesWithMissingFiles([...new Set(affectedSampleNames)]));
+      }
+      if (missingKeys.size) {
+        throw new NotFoundError(`${missingKeys.size} input file(s) in this collection no longer exist.`);
       }
     }
 
@@ -895,6 +927,10 @@ export class LaboratorySampleService extends DynamoDBService {
       const ref = encodeS3ObjectRef(bucket, key);
       const mapSk = skSampleFile(setId, ref);
 
+      // The retention sweep reads sample links from the file row, so that write goes first: a
+      // failure in between leaves the file kept, and a retry (link row already present) repairs it.
+      await this.addSampleIdToFileRow(laboratoryId, ref, bucket, key, setId);
+
       try {
         await this.putItem({
           TableName: TABLE_NAME,
@@ -915,7 +951,6 @@ export class LaboratorySampleService extends DynamoDBService {
           ExpressionAttributeNames: { '#sk': 'Sk' },
         });
         addedKeys.push(key);
-        await this.addSampleIdToFileRow(laboratoryId, ref, bucket, key, setId);
       } catch (e: unknown) {
         if (!isConditionalCheckFailed(e)) throw e;
       }
@@ -1036,6 +1071,7 @@ export class LaboratorySampleService extends DynamoDBService {
     const data = unmarshall(row.Item) as Record<string, unknown>;
     const ids = ((data.SampleIds as string[]) || []).filter((id) => id !== setId);
     const tagIds = (data.TagIds as string[]) || [];
+    // Stale usages stay on the row until the sweep deletes the object.
     const hasUsages = data.LaboratoryRunUsages && Object.keys(data.LaboratoryRunUsages as object).length > 0;
 
     if (ids.length === 0 && tagIds.length === 0 && !hasUsages) {

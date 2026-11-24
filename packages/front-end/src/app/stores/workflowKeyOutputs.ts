@@ -110,7 +110,13 @@ const useWorkflowKeyOutputsStore = defineStore('workflowKeyOutputsStore', {
     async save(
       laboratoryId: string,
       workflowId: string,
-      keyOutputs: Array<Pick<WorkflowKeyOutput, 'Label' | 'Pattern'> & { KeyOutputId?: string; ExamplePath?: string }>,
+      keyOutputs: Array<
+        Pick<WorkflowKeyOutput, 'Label' | 'Pattern'> & {
+          KeyOutputId?: string;
+          Description?: string;
+          ExamplePath?: string;
+        }
+      >,
       extras?: { WorkflowName?: string; Platform?: string; SourceRunId?: string },
     ): Promise<boolean> {
       const { $api } = useNuxtApp();
@@ -211,6 +217,7 @@ const useWorkflowKeyOutputsStore = defineStore('workflowKeyOutputsStore', {
           KeyOutputs: request.KeyOutputs?.map((item) => ({
             KeyOutputId: item.KeyOutputId,
             Label: item.Label,
+            Description: item.Description,
             Pattern: item.Pattern,
             ExamplePath: item.ExamplePath,
           })),

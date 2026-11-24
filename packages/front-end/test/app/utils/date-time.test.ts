@@ -1,4 +1,10 @@
-import { getDate, formatCompactDateTime, formatRelativeDateTime, getTime } from '../../../src/app/utils/date-time';
+import {
+  getDate,
+  formatCompactDateTime,
+  formatRelativeDateTime,
+  formatStorageScannedAt,
+  getTime,
+} from '../../../src/app/utils/date-time';
 
 describe('formatCompactDateTime', () => {
   it('formats a valid ISO date as d MMM yyyy, h:mm aaa in local time', () => {
@@ -35,6 +41,27 @@ describe('getTime', () => {
     expect(getTime(null)).toBeNull();
     expect(getTime(undefined)).toBeNull();
     expect(getTime('')).toBeNull();
+  });
+});
+
+describe('formatStorageScannedAt', () => {
+  const NOW = new Date(2026, 7, 7, 12, 0, 0);
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('formats a scan from today as "today at h:mm am/pm"', () => {
+    expect(formatStorageScannedAt(new Date(2026, 7, 7, 11, 10, 0).toISOString())).toBe('today at 11:10 am');
+  });
+
+  it('falls back to relative copy for older scans', () => {
+    expect(formatStorageScannedAt(new Date(2026, 7, 6, 11, 10, 0).toISOString())).toBe('Yesterday');
   });
 });
 

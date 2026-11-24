@@ -89,6 +89,71 @@ describe('edit-workflow-key-outputs Lambda', () => {
     expect(body.CreatedBy).toEqual('original-user');
   });
 
+  it('persists an optional Description on each key output', async () => {
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        KeyOutputs: [
+          {
+            Label: 'MultiQC report',
+            Description: 'Quality summary for the whole run',
+            Pattern: 'multiqc/multiqc_report.html',
+          },
+        ],
+      }),
+      createMockContext(),
+      () => {},
+    );
+    const body = JSON.parse(result.body);
+
+    expect(result.statusCode).toEqual(200);
+    expect(body.KeyOutputs[0].Description).toEqual('Quality summary for the whole run');
+  });
+
+  it('omits a whitespace-only Description', async () => {
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        KeyOutputs: [
+          {
+            Label: 'MultiQC report',
+            Description: '   ',
+            Pattern: 'multiqc/multiqc_report.html',
+          },
+        ],
+      }),
+      createMockContext(),
+      () => {},
+    );
+    const body = JSON.parse(result.body);
+
+    expect(result.statusCode).toEqual(200);
+    expect(body.KeyOutputs[0].Description).toBeUndefined();
+  });
+
+  it('rejects a Description longer than 200 characters', async () => {
+    const result = await handler(
+      createMockEvent({
+        LaboratoryId: LAB_ID,
+        WorkflowId: WORKFLOW_ID,
+        KeyOutputs: [
+          {
+            Label: 'MultiQC report',
+            Description: 'x'.repeat(201),
+            Pattern: 'multiqc/multiqc_report.html',
+          },
+        ],
+      }),
+      createMockContext(),
+      () => {},
+    );
+
+    expect(result.statusCode).toEqual(400);
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
   it('allows a technician to clear declared key outputs when delivery is off', async () => {
     const result = await handler(
       createMockEvent({

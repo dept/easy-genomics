@@ -7,14 +7,17 @@
     disabled?: boolean;
   }
 
-  withDefaults(
+  const props = withDefaults(
     defineProps<{
       items: DetailTabItem[];
       modelValue: number;
       ariaLabel?: string;
+      /** underline = legacy detail pages; pills = HealthOmics run overview redesign. */
+      variant?: 'underline' | 'pills';
     }>(),
     {
       ariaLabel: 'Page sections',
+      variant: 'underline',
     },
   );
 
@@ -22,8 +25,9 @@
     'update:modelValue': [index: number];
   }>();
 
-  // The sliding marker is Nuxt UI's pill highlight. Hide it; the active tab's bottom border is the indicator.
-  const EGTabsStyles = {
+  // Underline styles must live in this SFC so Tailwind includes the utility classes.
+  // Hide Nuxt UI's sliding marker; the active tab's bottom border is the indicator.
+  const underlineTabsStyles = {
     base: 'focus-visible:outline-none',
     list: {
       base: '!flex gap-6 rounded-none mb-6 mt-0',
@@ -54,6 +58,8 @@
     },
   };
 
+  const selectedItem = computed(() => props.items[props.modelValue] ?? props.items[0]);
+
   function panelId(key: string) {
     return `detail-panel-${key}`;
   }
@@ -61,12 +67,70 @@
   function tabId(key: string) {
     return `detail-tab-${key}`;
   }
+
+  function selectTab(index: number) {
+    if (props.items[index]?.disabled) return;
+    emit('update:modelValue', index);
+  }
 </script>
 
 <template>
+  <!--
+    Pills use a custom segmented control. Nuxt UI's UTabs marker/background merge
+    left the active pill white-on-white; this matches the run-overview design.
+  -->
+  <div v-if="variant === 'pills'">
+    <div
+      class="stroke-light mb-6 inline-flex w-fit flex-wrap gap-1 rounded-xl border border-solid bg-white p-1"
+      role="tablist"
+      :aria-label="ariaLabel"
+    >
+      <button
+        v-for="(item, index) in items"
+        :id="tabId(item.key)"
+        :key="item.key"
+        type="button"
+        role="tab"
+        class="focus-visible:ring-primary-500 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        :class="
+          modelValue === index
+            ? 'bg-primary text-white'
+            : 'text-text-body hover:bg-background-light-grey bg-transparent'
+        "
+        :aria-selected="modelValue === index"
+        :aria-controls="panelId(item.key)"
+        :disabled="item.disabled"
+        :tabindex="modelValue === index ? 0 : -1"
+        @click="selectTab(index)"
+      >
+        <span class="whitespace-nowrap">{{ item.label }}</span>
+        <span
+          v-if="item.count != null"
+          class="inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-xs tabular-nums"
+          :class="modelValue === index ? 'bg-primary-400/50 text-white' : 'bg-background-light-grey text-text-body'"
+        >
+          {{ item.count.toLocaleString() }}
+        </span>
+        <span v-if="modelValue === index" class="sr-only">, current tab</span>
+      </button>
+    </div>
+
+    <div
+      v-if="selectedItem"
+      role="tabpanel"
+      :id="panelId(selectedItem.key)"
+      :aria-labelledby="tabId(selectedItem.key)"
+      tabindex="0"
+      class="outline-none focus:outline-none"
+    >
+      <slot :item="selectedItem" />
+    </div>
+  </div>
+
   <UTabs
+    v-else
     :items="items"
-    :ui="EGTabsStyles"
+    :ui="underlineTabsStyles"
     :model-value="modelValue"
     :aria-label="ariaLabel"
     @update:model-value="emit('update:modelValue', $event)"

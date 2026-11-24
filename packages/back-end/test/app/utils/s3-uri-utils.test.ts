@@ -1,6 +1,7 @@
 import { UnauthorizedAccessError } from '@easy-genomics/shared-lib/lib/app/utils/HttpError';
 import {
   isBelowRunFolderRoot,
+  runFolderPrefix,
   isInsideLaboratoryReadablePrefix,
   isRunFolderName,
   isSampleSheetKey,
@@ -87,6 +88,23 @@ describe('isWithinRunFolder', () => {
     expect(isWithinRunFolder(`org-2/lab-9/aws-healthomics/${RUN_ID}/x`, laboratory, RUN_ID)).toBe(false);
     expect(isWithinRunFolder('org-1/lab-1/aws-healthomics/other-run/x', laboratory, RUN_ID)).toBe(false);
     expect(isWithinRunFolder(`${runFolder}x`, laboratory, '')).toBe(false);
+  });
+});
+
+describe('runFolderPrefix', () => {
+  it('returns {org}/{lab}/{platform}/{runId}/ from a key or a prefix', () => {
+    expect(runFolderPrefix(`${runFolder}results/`, laboratory, RUN_ID)).toBe(runFolder);
+    expect(runFolderPrefix(`${runFolder}reads_R1.fastq.gz`, laboratory, RUN_ID)).toBe(runFolder);
+    expect(runFolderPrefix(runFolder.slice(0, -1), laboratory, RUN_ID)).toBe(runFolder);
+    expect(runFolderPrefix('org-1/lab-1/other/', laboratory, RUN_ID)).toBeUndefined();
+  });
+
+  it('does not cut at the laboratory id when the run id equals it', () => {
+    const lab = { OrganizationId: 'org-1', LaboratoryId: 'lab-1' };
+    expect(runFolderPrefix('org-1/lab-1/', lab, 'lab-1')).toBeUndefined();
+    expect(runFolderPrefix('org-1/lab-1/aws-healthomics/lab-1/results/', lab, 'lab-1')).toBe(
+      'org-1/lab-1/aws-healthomics/lab-1/',
+    );
   });
 });
 

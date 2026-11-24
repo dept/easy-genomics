@@ -1,24 +1,12 @@
 <script setup lang="ts">
-  import { FOLDER_DOWNLOAD_OBJECT_KEYS_LIMIT } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/file/request-folder-download-job';
-  import {
-    canZipAllKeyOutputs,
-    isKeyOutputRoleTruncated,
-    uniqueKeyOutputObjectKeys,
-  } from '@easy-genomics/shared-lib/src/app/utils/workflow-key-output-download';
   import type { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
   import type {
     RunWorkflowKeyOutput,
-    RunWorkflowKeyOutputMatch,
     RunWorkflowKeyOutputsResponse,
     WorkflowKeyOutputDelivery,
   } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/workflow-key-outputs';
-  import {
-    basenameRelative,
-    dirnameRelative,
-  } from '@easy-genomics/shared-lib/src/app/utils/workflow-key-output-patterns';
   import { ButtonSizeEnum, ButtonVariantEnum } from '@FE/types/buttons';
   import { formatFileSize } from '@FE/utils/file-size';
-  import { useToastStore, useUiStore } from '@FE/stores';
 
   const props = defineProps<{
     labId: string;
@@ -34,20 +22,25 @@
     edit: [];
   }>();
 
-  const { handleS3Download, downloadFolder, openHtmlFromS3, isFolderZipInProgress } = useFileDownload();
-  const uiStore = useUiStore();
-  const toast = useToastStore();
-
-  /** Multi-file roles start expanded so grouped outputs are visible without an extra click. */
-  const expandedRoles = ref<string[]>(
-    props.matches.KeyOutputs.filter((role) => role.MatchCount > 1).map((role) => role.KeyOutputId),
+  const {
+    downloadingKey,
+    isFolderZipInProgress,
+    uniqueMatchedKeys,
+    isExpanded,
+    toggleExpanded,
+    fileName,
+    isRoleTruncated,
+    isHtmlFile,
+    downloadFile,
+    openHtml,
+    zipAll: zipAllShared,
+    uiStore,
+  } = useRunKeyOutputMatches(
+    () => props.labId,
+    () => props.matches,
   );
-  const downloadingKey = ref<string | null>(null);
 
   const headingId = useId();
-  const runRootUri = computed(() => `s3://${props.matches.S3Bucket}/${props.matches.S3Prefix}`);
-
-  const uniqueMatchedKeys = computed(() => uniqueKeyOutputObjectKeys(props.matches.KeyOutputs));
 
   const downloadAllLabel = computed(() => {
     const count = props.matches.MatchedFileCount;
@@ -56,12 +49,8 @@
     return sizeLabel ? `Download all · ${countLabel}, ${sizeLabel}` : `Download all · ${countLabel}`;
   });
 
-  const showS3Delivery = computed(
-    () => !!props.delivery?.Enabled && !!props.delivery.DestinationUri?.trim(),
-  );
-  const showMicroreact = computed(
-    () => Boolean(props.run && props.delivery?.Microreact?.MetadataKeyOutputId),
-  );
+  const showS3Delivery = computed(() => !!props.delivery?.Enabled && !!props.delivery.DestinationUri?.trim());
+  const showMicroreact = computed(() => Boolean(props.run && props.delivery?.Microreact?.MetadataKeyOutputId));
   const showDelivery = computed(() => showS3Delivery.value || showMicroreact.value);
 
   function roleMeta(role: RunWorkflowKeyOutput): string {
@@ -70,78 +59,12 @@
     return sizeLabel ? `${countLabel} · ${sizeLabel}` : countLabel;
   }
 
-  function isExpanded(roleId: string): boolean {
-    return expandedRoles.value.includes(roleId);
-  }
-
-  function toggleExpanded(roleId: string): void {
-    expandedRoles.value = isExpanded(roleId)
-      ? expandedRoles.value.filter((id) => id !== roleId)
-      : [...expandedRoles.value, roleId];
-  }
-
-  function fileName(file: RunWorkflowKeyOutputMatch): string {
-    return basenameRelative(file.RelativePath);
-  }
-
-  function isRoleTruncated(role: RunWorkflowKeyOutput): boolean {
-    return isKeyOutputRoleTruncated(role);
-  }
-
-  function isHtmlFile(file: RunWorkflowKeyOutputMatch): boolean {
-    return fileName(file).toLowerCase().endsWith('.html');
-  }
-
-  function directoryUri(file: RunWorkflowKeyOutputMatch): string {
-    const parent = dirnameRelative(file.Key);
-    return parent ? `s3://${props.matches.S3Bucket}/${parent}` : `s3://${props.matches.S3Bucket}`;
-  }
-
-  function objectUri(file: RunWorkflowKeyOutputMatch): string {
-    return `s3://${props.matches.S3Bucket}/${file.Key}`;
-  }
-
-  async function downloadFile(file: RunWorkflowKeyOutputMatch): Promise<void> {
-    downloadingKey.value = file.Key;
-    try {
-      await handleS3Download(props.labId, fileName(file), directoryUri(file));
-    } finally {
-      downloadingKey.value = null;
-    }
-  }
-
-  async function openHtml(file: RunWorkflowKeyOutputMatch): Promise<void> {
-    const requestId = `openKeyOutput-${file.Key}`;
-    uiStore.setRequestPending(requestId);
-    try {
-      await openHtmlFromS3(props.labId, objectUri(file));
-    } catch (error) {
-      console.error(error);
-      toast.error('Failed to open HTML file');
-    } finally {
-      uiStore.setRequestComplete(requestId);
-    }
-  }
-
-  async function zipKeys(keys: string[], archiveName: string, progressId: string): Promise<void> {
-    if (keys.length === 0) {
-      toast.error('No matching files to download on this run.');
-      return;
-    }
-    downloadingKey.value = progressId;
-    try {
-      await downloadFolder(props.labId, runRootUri.value, undefined, { objectKeys: keys, archiveName });
-    } finally {
-      downloadingKey.value = null;
-    }
-  }
-
   function zipAll(): void {
-    if (!canZipAllKeyOutputs(props.matches.KeyOutputs, FOLDER_DOWNLOAD_OBJECT_KEYS_LIMIT)) {
-      toast.error('Too many matching files to zip all key outputs. Download a single role or individual files.');
-      return;
-    }
-    void zipKeys(uniqueMatchedKeys.value, 'key-outputs', 'all-key-outputs');
+    zipAllShared(
+      'key-outputs',
+      'all-key-outputs',
+      'Too many matching files to zip all key outputs. Download a single role or individual files.',
+    );
   }
 </script>
 
@@ -208,9 +131,7 @@
               >
                 <UIcon
                   :name="
-                    downloadingKey === role.Matches[0].Key
-                      ? 'i-heroicons-arrow-path'
-                      : 'i-heroicons-arrow-down-tray'
+                    downloadingKey === role.Matches[0].Key ? 'i-heroicons-arrow-path' : 'i-heroicons-arrow-down-tray'
                   "
                   class="h-4 w-4"
                   :class="{ 'animate-spin': downloadingKey === role.Matches[0].Key }"
@@ -249,7 +170,11 @@
             </div>
           </div>
 
-          <ul v-if="isExpanded(role.KeyOutputId)" class="mt-3 list-none space-y-2 border-l border-gray-100 pl-4" role="list">
+          <ul
+            v-if="isExpanded(role.KeyOutputId)"
+            class="mt-3 list-none space-y-2 border-l border-gray-100 pl-4"
+            role="list"
+          >
             <li
               v-for="file in role.Matches"
               :key="file.Key"

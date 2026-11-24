@@ -4,15 +4,15 @@ export function canDeletePrivateOmicsWorkflow(params: {
     source?: 'PRIVATE' | 'SHARED';
     tags?: Record<string, string>;
   };
-  canCreateOmicsWorkflows: boolean;
-  userIds: Array<string | null | undefined>;
+  isOrgAdmin: boolean;
 }): boolean {
-  if (!params.canCreateOmicsWorkflows || params.workflow.source === 'SHARED' || !params.workflow.id) {
+  if (!params.isOrgAdmin || params.workflow.source === 'SHARED' || !params.workflow.id) {
     return false;
   }
-  const createdBy = params.workflow.tags?.UserId;
-  if (!createdBy) {
+  // Fail closed when list tags show the workflow was not created via Easy Genomics.
+  const application = params.workflow.tags?.Application;
+  if (application && application !== 'easy-genomics') {
     return false;
   }
-  return params.userIds.some((id) => Boolean(id) && id === createdBy);
+  return true;
 }
