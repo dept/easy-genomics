@@ -313,6 +313,26 @@ describe('create-run-execution.lambda', () => {
     );
   });
 
+  it('finishes recording the warned launch before it responds', async () => {
+    (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
+      OrganizationId: ORG_ID,
+      LaboratoryId: LAB_ID,
+      AwsHealthOmicsEnabled: true,
+    });
+    mockAssertLaunchWithinLimits.mockResolvedValue({ outcome: 'warn', hits: [], costEstimate: 'available' });
+    (mockOmicsService.prototype.startRun as jest.Mock).mockResolvedValue({ id: 'run-123' });
+    let recorded = false;
+    mockLogWarnedLaunch.mockImplementation(async () => {
+      await new Promise((resolve) => setImmediate(resolve));
+      recorded = true;
+    });
+
+    const result = await handler(createEvent(baseRequest), createContext(), () => {});
+
+    expect(result.statusCode).toBe(200);
+    expect(recorded).toBe(true);
+  });
+
   it('logs nothing when HealthOmics does not start the run', async () => {
     (mockLabService.prototype.queryByLaboratoryId as jest.Mock).mockResolvedValue({
       OrganizationId: ORG_ID,
