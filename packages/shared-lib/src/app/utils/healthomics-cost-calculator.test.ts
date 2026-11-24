@@ -1,4 +1,5 @@
 import { calculateHealthOmicsComputeCostUsd, calculateHealthOmicsStorageCostUsd } from './healthomics-cost-calculator';
+import { HealthOmicsRegionRates } from './healthomics-price-list';
 import { HEALTHOMICS_RATES_BY_REGION } from './healthomics-rates.generated';
 
 // Rates are read from the generated table, never typed in, so a price refresh never breaks these tests.
@@ -9,6 +10,13 @@ const storageRate = (region: string, type: 'STATIC' | 'DYNAMIC') =>
 
 const START = '2026-01-01T00:00:00Z';
 const ONE_HOUR_LATER = '2026-01-01T01:00:00Z';
+
+const REFRESHED_RATES: HealthOmicsRegionRates = {
+  publicationDate: '2026-12-01T00:00:00Z',
+  sourceUrl: 'https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonOmics/current/us-west-2/index.json',
+  instanceHourlyUsd: { 'omics.c.large': 10 },
+  runStorageGbHourUsd: { STATIC: 0.01, DYNAMIC: 0.02 },
+};
 
 const task = (overrides: Record<string, unknown> = {}) => ({
   instanceType: 'omics.c.large',
@@ -84,6 +92,11 @@ describe('calculateHealthOmicsComputeCostUsd', () => {
     expect(warn.mock.calls[0][0]).toEqual(expect.stringContaining('3 tasks'));
     expect(warn.mock.calls[0][0]).toEqual(expect.stringContaining('run-123'));
   });
+
+  it('prices from rates passed in, not from the region in the generated table', () => {
+    expect(calculateHealthOmicsComputeCostUsd([task()], 'us-west-2', 'run-123', REFRESHED_RATES)).toBeCloseTo(10, 4);
+    expect(warn).not.toHaveBeenCalled();
+  });
 });
 
 describe('calculateHealthOmicsStorageCostUsd', () => {
@@ -120,5 +133,13 @@ describe('calculateHealthOmicsStorageCostUsd', () => {
     expect(cost).toBeCloseTo(1200 * 10 * storageRate('us-east-1', 'STATIC'), 4);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toEqual(expect.stringContaining('mars-north-1'));
+  });
+
+  it('prices from rates passed in, not from the region in the generated table', () => {
+    expect(calculateHealthOmicsStorageCostUsd(run('STATIC'), 'mars-north-1', 'run-123', REFRESHED_RATES)).toBeCloseTo(
+      1200 * 10 * 0.01,
+      4,
+    );
+    expect(warn).not.toHaveBeenCalled();
   });
 });

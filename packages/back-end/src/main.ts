@@ -44,6 +44,7 @@ let githubPatSecretName: string | undefined;
 let vpcPeering: VpcPeering | undefined;
 let analyticsEnabled: boolean = false;
 let costExplorerEnabled: boolean = false;
+let healthomicsRatesRefresh: { enabled?: boolean; schedule?: string } = {};
 
 // Optional: shared public API domain wiring. When both `apiDomainName` and
 // `awsApiCertificateArn` are provided AND `awsHostedZoneId` is available, we
@@ -87,6 +88,10 @@ if (process.env.CI_CD === 'true') {
   githubPatSecretName = process.env.GITHUB_PAT_SECRET_NAME;
   analyticsEnabled = process.env.ANALYTICS_ENABLED === 'true';
   costExplorerEnabled = process.env.COST_EXPLORER_ENABLED === 'true';
+  healthomicsRatesRefresh = {
+    enabled: process.env.HEALTHOMICS_RATES_REFRESH_ENABLED !== 'false',
+    schedule: process.env.HEALTHOMICS_RATES_REFRESH_SCHEDULE || undefined,
+  };
   apiDomainName = process.env.API_DOMAIN_NAME;
   awsApiCertificateArn = process.env.AWS_API_CERTIFICATE_ARN;
 
@@ -197,6 +202,10 @@ if (process.env.CI_CD === 'true') {
   githubPatSecretName = configSettings['back-end']['github-pat-secret-name'] || undefined;
   analyticsEnabled = configSettings.analytics?.enabled === true;
   costExplorerEnabled = configSettings['cost-explorer']?.enabled === true;
+  healthomicsRatesRefresh = {
+    enabled: configSettings['healthomics-rates-refresh']?.enabled !== false,
+    schedule: configSettings['healthomics-rates-refresh']?.schedule || undefined,
+  };
 
   const vpcPeeringSettings = configSettings['back-end']['vpc-peering'];
   if (vpcPeeringSettings) {
@@ -326,6 +335,7 @@ const sharedStackProps = {
   logoutUrls,
   analyticsEnabled,
   costExplorerEnabled,
+  healthomicsRatesRefresh,
 };
 
 // Shared platform stack: VPC, KMS, Auth, AWS HealthOmics and NF-Tower (sharing one API Gateway).

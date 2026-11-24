@@ -379,6 +379,7 @@ export class EasyGenomicsNestedStack extends NestedStack {
             SQS_LABORATORY_RUN_NOTIFICATION_QUEUE_URL:
               this.sqs.sqsQueues.get('laboratory-run-notification-queue')?.queueUrl || '',
             SQS_KEY_OUTPUT_DELIVERY_QUEUE_URL: this.sqs.sqsQueues.get('key-output-delivery-queue')?.queueUrl || '',
+            HEALTHOMICS_RATES_REFRESH_ENABLED: String(this.props.healthomicsRatesRefresh?.enabled !== false),
           },
         },
         // Async classifier consumer for FAILED runs. Idempotent (skips runs that already
@@ -1654,6 +1655,14 @@ export class EasyGenomicsNestedStack extends NestedStack {
       new PolicyStatement({
         resources: [
           `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/easy-genomics/organization/*/laboratory/*/nf-access-token`,
+        ],
+        actions: ['ssm:GetParameter'],
+        effect: Effect.ALLOW,
+      }),
+      // Run cost capture prices HealthOmics runs with the rates process-refresh-healthomics-rates stores.
+      new PolicyStatement({
+        resources: [
+          `arn:aws:ssm:${this.props.env.region!}:${this.props.env.account!}:parameter/${this.props.namePrefix}/healthomics-rates/current`,
         ],
         actions: ['ssm:GetParameter'],
         effect: Effect.ALLOW,
