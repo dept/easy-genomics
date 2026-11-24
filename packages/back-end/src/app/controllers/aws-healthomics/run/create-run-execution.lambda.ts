@@ -241,7 +241,7 @@ export const handler: Handler = async (
       },
     });
 
-    runLimitCheckService.logWarnedLaunch(laboratory, runLimitInput, runLimitUserId, runLimitVerdict, response.id);
+    await runLimitCheckService.logWarnedLaunch(laboratory, runLimitInput, runLimitUserId, runLimitVerdict, response.id);
 
     return buildResponse(200, JSON.stringify(response), event);
   } catch (err: any) {

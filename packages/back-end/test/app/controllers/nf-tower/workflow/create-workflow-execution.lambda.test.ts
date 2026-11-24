@@ -112,6 +112,20 @@ describe('create-workflow-execution.lambda', () => {
     );
   });
 
+  it('finishes recording the warned launch before it responds', async () => {
+    mockAssertLaunchWithinLimits.mockResolvedValue({ outcome: 'warn', hits: [], costEstimate: 'available' });
+    let recorded = false;
+    mockLogWarnedLaunch.mockImplementation(async () => {
+      await new Promise((resolve) => setImmediate(resolve));
+      recorded = true;
+    });
+
+    const result = await handler(createEvent({ launch: { paramsText } }), context, () => {});
+
+    expect(result.statusCode).toBe(200);
+    expect(recorded).toBe(true);
+  });
+
   it('logs nothing when Seqera does not start the run', async () => {
     mockAssertLaunchWithinLimits.mockResolvedValue({ outcome: 'warn', hits: [], costEstimate: 'available' });
     (httpRequest as jest.Mock).mockRejectedValue(new Error('Seqera unavailable'));

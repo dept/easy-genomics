@@ -22,7 +22,12 @@ async function openUsageLimitsTab(page: Page, baseURL: string | undefined): Prom
   await orgRow.getByLabel('Actions').click();
   await page.getByRole('menuitem', { name: 'View / Edit' }).click();
   await page.waitForLoadState('networkidle');
-  await page.getByRole('tab', { name: 'Usage limits' }).click();
+  await selectLimitsTab(page);
+}
+
+async function selectLimitsTab(page: Page): Promise<void> {
+  await page.getByRole('tab', { name: 'Usage', exact: true }).click();
+  await page.getByRole('tab', { name: /^Limits/ }).click();
 }
 
 function labRow(page: Page): Locator {
@@ -30,7 +35,7 @@ function labRow(page: Page): Locator {
 }
 
 async function expectNoLimits(row: Locator): Promise<void> {
-  await expect(row.getByText('Not set', { exact: true })).toHaveCount(4);
+  await expect(row.getByText('—', { exact: true })).toHaveCount(4);
 }
 
 async function clearLimits(page: Page, row: Locator): Promise<void> {
@@ -65,7 +70,7 @@ test("01 - Set, reload and clear a lab's usage limits", async ({ page, baseURL }
 
     await page.reload();
     await page.waitForLoadState('networkidle');
-    await page.getByRole('tab', { name: 'Usage limits' }).click();
+    await selectLimitsTab(page);
     for (const shown of ['US$100,000', 'US$200,000', '9,000', '10,000']) {
       await expect(labRow(page).getByText(shown, { exact: true })).toBeVisible();
     }
@@ -73,11 +78,11 @@ test("01 - Set, reload and clear a lab's usage limits", async ({ page, baseURL }
     await clearLimits(page, labRow(page));
     await page.reload();
     await page.waitForLoadState('networkidle');
-    await page.getByRole('tab', { name: 'Usage limits' }).click();
+    await selectLimitsTab(page);
     await expectNoLimits(labRow(page));
   } finally {
     const finalRow = labRow(page);
-    const notSetCount = await finalRow.getByText('Not set', { exact: true }).count();
+    const notSetCount = await finalRow.getByText('—', { exact: true }).count();
     if (notSetCount !== 4) {
       const cancel = finalRow.getByRole('button', { name: 'Cancel' });
       if (await cancel.isVisible().catch(() => false)) {
