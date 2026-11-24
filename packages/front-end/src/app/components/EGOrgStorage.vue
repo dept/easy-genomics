@@ -44,6 +44,19 @@
     return `${parseFloat(value)} ${unit}`;
   }
 
+  /** Bytes × regional S3 Standard list price; undefined when unscanned or Pricing API had no answer. */
+  function labMonthlyCostUsd(lab: OrganizationStorageLab): number | undefined {
+    const storage = lab.Storage;
+    if (!storage?.PricePerGbMonthUsd) return undefined;
+    return (storage.TotalBytes / BYTES_PER_GB) * storage.PricePerGbMonthUsd;
+  }
+
+  function formatLabMonthlyCost(lab: OrganizationStorageLab): string {
+    const cost = labMonthlyCostUsd(lab);
+    if (cost == null) return '—';
+    return `US$${cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
   const totals = computed(() => {
     let totalBytes = 0;
     let noRunRecordBytes = 0;
@@ -59,9 +72,8 @@
       labsWithStorage += 1;
       totalBytes += storage.TotalBytes;
       noRunRecordBytes += storage.NoRunRecordBytes;
-      if (storage.PricePerGbMonthUsd) {
-        estimatedMonthlyUsd += (storage.TotalBytes / BYTES_PER_GB) * storage.PricePerGbMonthUsd;
-      }
+      const cost = labMonthlyCostUsd(lab);
+      if (cost != null) estimatedMonthlyUsd += cost;
     }
 
     return { totalBytes, noRunRecordBytes, estimatedMonthlyUsd, labsWithNoRetention, labsWithStorage };
@@ -105,6 +117,7 @@
   const columns = [
     { key: 'Name', label: 'Lab', sortable: true },
     { key: 'Stored', label: 'Stored', sortable: true, class: 'w-28', rowClass: 'w-28' },
+    { key: 'EstCost', label: 'Est. monthly cost', class: 'w-36', rowClass: 'w-36' },
     { key: 'NotLinked', label: 'Not linked to a run', sortable: true, class: 'w-44', rowClass: 'w-44' },
     { key: 'Runs', label: 'Runs', class: 'w-20', rowClass: 'w-20' },
     { key: 'Retention', label: 'Retention', class: 'w-32', rowClass: 'w-32' },
@@ -180,6 +193,9 @@
           {{ row.Storage ? compactSize(row.Storage.TotalBytes) : '—' }}
         </span>
       </template>
+      <template #EstCost-data="{ row }">
+        <span class="text-body text-sm">{{ formatLabMonthlyCost(row) }}</span>
+      </template>
       <template #NotLinked-data="{ row }">
         <span class="text-body text-sm">{{ noRunRecordCell(row) }}</span>
       </template>
@@ -194,8 +210,8 @@
     </EGTable>
 
     <div class="text-muted my-6 text-center text-xs" role="note">
-      Retention is set per lab. This organization can only be removed by contacting your System administrator at:
-      [System admin email]
+      Costs are estimates at S3 Standard list prices and are only shown to org admins. Retention is set by each lab's
+      managers. To remove this organization, contact your system administrator.
     </div>
   </section>
 </template>
