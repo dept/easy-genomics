@@ -11,6 +11,7 @@ import {
 } from '@easy-genomics/shared-lib/src/app/utils/HttpError';
 import { RunCostEstimationService } from '@BE/services/easy-genomics/run-cost-estimation-service';
 import { readSampleSheet, sumObjectBytes } from '@BE/services/easy-genomics/run-input-profile-service';
+import { LaunchCount, UsageTotalsService } from '@BE/services/easy-genomics/usage-totals-service';
 
 /** A server-only description of a run. Nothing the client sends about the run's size is part of it. */
 export type RunLimitInput = {
@@ -30,6 +31,7 @@ const SAMPLES_NOT_COUNTED_FOR_COST_LIMIT =
   "The samples in this run could not be counted, so its cost could not be checked against this laboratory's cost limit. Check the sample sheet and try again.";
 
 const runCostEstimationService = new RunCostEstimationService();
+const usageTotalsService = new UsageTotalsService();
 
 function isAmountSet(amount?: number): boolean {
   return amount !== undefined;
@@ -114,13 +116,13 @@ export class RunLimitCheckService {
       checked = await this.checkRun(laboratory, input);
     } catch (err) {
       const reason = blockReasonOf(err);
-      if (reason) this.logBlockedLaunch(laboratory, input, userId, reason, []);
+      if (reason) await this.logBlockedLaunch(laboratory, input, userId, reason, []);
       throw err;
     }
     if (checked?.verdict.outcome !== 'block') return checked?.verdict;
 
     const { verdict, costEstimateUsd } = checked;
-    this.logBlockedLaunch(
+    await this.logBlockedLaunch(
       laboratory,
       input,
       userId,
@@ -138,16 +140,17 @@ export class RunLimitCheckService {
   }
 
   /**
-   * Logs a launch that went ahead over a warn amount, once the platform has started the run. It is logged here, from
-   * the verdict the launch was checked with, because a later request about the run can't be trusted to describe it.
+   * Logs and counts a launch that went ahead over a warn amount, once the platform has started the run. It is recorded
+   * here, from the verdict the launch was checked with, because a later request about the run can't be trusted to
+   * describe it. Never throws: the run has already started.
    */
-  public logWarnedLaunch(
+  public async logWarnedLaunch(
     laboratory: Laboratory,
     input: RunLimitInput,
     userId: string | undefined,
     verdict: RunLimitVerdict | undefined,
     externalRunId: string | undefined,
-  ): void {
+  ): Promise<void> {
     if (verdict?.outcome !== 'warn') return;
     console.warn(
       JSON.stringify({
@@ -163,6 +166,7 @@ export class RunLimitCheckService {
         sampleCount: verdict.sampleCount,
       }),
     );
+    await this.countLaunch(laboratory, input, 'warned', 'RUN_LIMIT_WARNED');
   }
 
   private async checkRun(laboratory: Laboratory, input: RunLimitInput): Promise<CheckedRun | undefined> {
@@ -224,7 +228,32 @@ export class RunLimitCheckService {
     }
   }
 
-  private logBlockedLaunch(
+  /** Never throws: a lost count must not turn a block into a pass, or fail a launch that already started. */
+  private async countLaunch(
+    laboratory: Laboratory,
+    input: RunLimitInput,
+    kind: LaunchCount['Kind'],
+    event: 'RUN_LIMIT_WARNED' | 'RUN_LIMIT_BLOCKED',
+  ): Promise<void> {
+    try {
+      await usageTotalsService.addLaunchCount({
+        OrganizationId: laboratory.OrganizationId,
+        LaboratoryId: laboratory.LaboratoryId,
+        Platform: input.platform,
+        WorkflowExternalId: input.workflowExternalId,
+        Day: new Date().toISOString().slice(0, 10),
+        Kind: kind,
+      });
+    } catch (err) {
+      console.error(
+        `Failed to add the ${event} launch to the usage totals for OrganizationId=${laboratory.OrganizationId} ` +
+          `LaboratoryId=${laboratory.LaboratoryId} WorkflowExternalId=${input.workflowExternalId}:`,
+        err,
+      );
+    }
+  }
+
+  private async logBlockedLaunch(
     laboratory: Laboratory,
     input: RunLimitInput,
     userId: string | undefined,
@@ -232,7 +261,7 @@ export class RunLimitCheckService {
     hits: RunLimitHit[],
     sampleCount?: number,
     costEstimateUsd?: number,
-  ): void {
+  ): Promise<void> {
     console.warn(
       JSON.stringify({
         event: 'RUN_LIMIT_BLOCKED',
@@ -248,5 +277,6 @@ export class RunLimitCheckService {
         costEstimateUsd,
       }),
     );
+    await this.countLaunch(laboratory, input, 'blocked', 'RUN_LIMIT_BLOCKED');
   }
 }

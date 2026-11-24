@@ -326,6 +326,7 @@ sharedLib.addScripts({
   ['lint']: "eslint 'src/**/*.{js,ts}' --fix",
 });
 sharedLib.addTask('generate:openapi', { exec: 'tsx src/app/openapi/generate-openapi.ts' });
+sharedLib.addTask('generate:healthomics-rates', { exec: 'tsx src/app/utils/generate-healthomics-rates.ts' });
 sharedLib.addTask('lint:openapi', { exec: 'redocly lint src/app/openapi/easy-genomics-api.yaml' });
 sharedLib.addTask('generate:api-types', {
   exec: 'openapi-typescript src/app/openapi/easy-genomics-api.yaml -o src/app/types/easy-genomics/generated.d.ts',
@@ -505,6 +506,8 @@ backEndApp.addScripts({
   ['backfill-workflow-run-history-and-usages']: 'tsx scripts/backfill-workflow-run-history-and-usages.ts',
   ['backfill-workflow-run-history-and-usages:dry-run']:
     'tsx scripts/backfill-workflow-run-history-and-usages.ts --dry-run',
+  ['backfill-usage-daily-totals']: 'tsx scripts/backfill-usage-daily-totals.ts',
+  ['backfill-usage-daily-totals:dry-run']: 'tsx scripts/backfill-usage-daily-totals.ts --dry-run',
   ['seed-workflow-tagging-test-runs']: 'tsx scripts/seed-workflow-tagging-test-runs.ts',
   ['seed-workflow-tagging-test-runs:dry-run']: 'tsx scripts/seed-workflow-tagging-test-runs.ts --dry-run',
   ['seed-dev-environment']: 'tsx scripts/seed-dev-environment.ts',

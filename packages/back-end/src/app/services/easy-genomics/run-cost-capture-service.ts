@@ -7,18 +7,20 @@ import {
   calculateHealthOmicsComputeCostUsd,
   calculateHealthOmicsStorageCostUsd,
 } from '@easy-genomics/shared-lib/src/app/utils/healthomics-cost-calculator';
+import { HealthOmicsRatesService } from '@BE/services/aws-healthomics/healthomics-rates-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { createOmicsServiceForLab } from '@BE/services/omics-lab-factory';
 import { SsmService } from '@BE/services/ssm-service';
 import { getNextFlowApiQueryParameters, httpRequest, REST_API_METHOD } from '@BE/utils/rest-api-utils';
 
+const healthOmicsRatesService = new HealthOmicsRatesService();
 const laboratoryService = new LaboratoryService();
 const ssmService = new SsmService();
 
 /**
  * Capture platform compute (and optional Omics storage) cost once a run reaches
- * a terminal state. Best-effort: callers should swallow failures so status sync
- * is never blocked by cost instrumentation.
+ * a terminal state. Throws on a platform error so the process-capture-run-cost
+ * consumer can retry; returns undefined when there is no cost to record.
  */
 export async function captureRunCostOutcome(laboratoryRun: LaboratoryRun): Promise<RunCostOutcome | undefined> {
   if (laboratoryRun.RunCostOutcome?.CostCapturedAt) {
@@ -45,12 +47,13 @@ async function captureHealthOmicsCost(laboratoryRun: LaboratoryRun): Promise<Run
   );
 
   const region = process.env.REGION || process.env.AWS_REGION || 'us-east-1';
-  const [tasks, run] = await Promise.all([
+  const [tasks, run, rates] = await Promise.all([
     omicsService.listAllRunTasks(laboratoryRun.ExternalRunId),
     omicsService.getRun({ id: laboratoryRun.ExternalRunId }),
+    healthOmicsRatesService.getRates(region),
   ]);
 
-  const ActualComputeCostUsd = calculateHealthOmicsComputeCostUsd(tasks, region);
+  const ActualComputeCostUsd = calculateHealthOmicsComputeCostUsd(tasks, region, laboratoryRun.RunId, rates);
   const ActualStorageCostUsd = calculateHealthOmicsStorageCostUsd(
     {
       storageType: run.storageType,
@@ -59,6 +62,8 @@ async function captureHealthOmicsCost(laboratoryRun: LaboratoryRun): Promise<Run
       stopTime: run.stopTime,
     },
     region,
+    laboratoryRun.RunId,
+    rates,
   );
 
   return {

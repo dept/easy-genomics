@@ -136,19 +136,16 @@ describe('delete-private-workflow.lambda', () => {
     expect(omicsService.deleteWorkflow).not.toHaveBeenCalled();
   });
 
-  it('matches ownership using the custom UserId claim', async () => {
+  it('deletes a private workflow created by another user in the laboratory', async () => {
     omicsService.getWorkflow.mockResolvedValue({
       id: WF_ID,
-      tags: { ...ownerTags, UserId: 'internal-user-id' },
+      tags: { ...ownerTags, UserId: 'someone-else' },
     });
 
-    const result = await handler(
-      createEvent(WF_ID, { laboratoryId: LAB_ID }, { 'cognito:username': USER_SUB, 'UserId': 'internal-user-id' }),
-      createContext(),
-      () => {},
-    );
+    const result = await handler(createEvent(WF_ID, { laboratoryId: LAB_ID }), createContext(), () => {});
 
     expect(result.statusCode).toBe(200);
+    expect(omicsService.deleteWorkflow).toHaveBeenCalledWith({ id: WF_ID });
   });
 
   it('deletes workflow versions then retries when the initial delete conflicts because of versions', async () => {
@@ -182,18 +179,6 @@ describe('delete-private-workflow.lambda', () => {
     expect(result.statusCode).toBe(400);
     expect(JSON.parse(result.body).Error).toContain('cannot be deleted while a run is using it');
     expect(omicsService.deleteWorkflowVersion).not.toHaveBeenCalled();
-  });
-
-  it('returns 403 when the caller did not create the workflow', async () => {
-    omicsService.getWorkflow.mockResolvedValue({
-      id: WF_ID,
-      tags: { ...ownerTags, UserId: 'someone-else' },
-    });
-
-    const result = await handler(createEvent(WF_ID, { laboratoryId: LAB_ID }), createContext(), () => {});
-
-    expect(result.statusCode).toBe(403);
-    expect(omicsService.deleteWorkflow).not.toHaveBeenCalled();
   });
 
   it('returns 403 for a shared workflow', async () => {

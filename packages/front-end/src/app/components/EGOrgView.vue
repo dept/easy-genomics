@@ -47,7 +47,7 @@
   const showWorkflowAccessTab = computed(() => props.superuser || props.orgAdmin);
   const showS3AccessTab = computed(() => props.superuser || props.orgAdmin);
   const showStorageTab = computed(() => props.superuser || props.orgAdmin);
-  const showUsageLimitsTab = computed(() => props.superuser || props.orgAdmin);
+  const showUsageTab = computed(() => props.superuser || props.orgAdmin);
 
   const tabItems = computed<{ key: string; label: string; icon: string }[]>(() => {
     const items: { key: string; label: string; icon: string }[] = [];
@@ -64,8 +64,8 @@
     if (showStorageTab.value) {
       items.push({ key: 'storage', label: 'Storage', icon: 'i-heroicons-archive-box' });
     }
-    if (showUsageLimitsTab.value) {
-      items.push({ key: 'usage-limits', label: 'Usage limits', icon: 'i-heroicons-adjustments-horizontal' });
+    if (showUsageTab.value) {
+      items.push({ key: 'usage', label: 'Usage', icon: 'i-heroicons-chart-bar' });
     }
     items.push({ key: 'details', label: 'Settings', icon: 'i-heroicons-cog-6-tooth' });
     items.push({ key: 'email-branding', label: 'Email Branding', icon: 'i-heroicons-envelope' });
@@ -76,7 +76,8 @@
   const workflowAccessPanelMounted = ref(false);
   const s3AccessPanelMounted = ref(false);
   const storagePanelMounted = ref(false);
-  const usageLimitsPanelMounted = ref(false);
+  const usagePanelMounted = ref(false);
+  const usageSubTab = computed(() => String(route.query.usage ?? 'limits'));
   const tabIndex = ref(0);
 
   function syncAdminTabsFromQuery() {
@@ -102,6 +103,14 @@
       if (idx >= 0) {
         tabIndex.value = idx;
         storagePanelMounted.value = true;
+      }
+      return;
+    }
+    if (tab === 'usage' && showUsageTab.value) {
+      const idx = tabItems.value.findIndex((t) => t.key === 'usage');
+      if (idx >= 0) {
+        tabIndex.value = idx;
+        usagePanelMounted.value = true;
       }
     }
   }
@@ -129,8 +138,8 @@
     if (item?.key === 'storage') {
       storagePanelMounted.value = true;
     }
-    if (item?.key === 'usage-limits') {
-      usageLimitsPanelMounted.value = true;
+    if (item?.key === 'usage') {
+      usagePanelMounted.value = true;
     }
   });
 
@@ -343,6 +352,7 @@
   const usersHeadingId = 'org-users-heading';
   const workflowAccessHeadingId = 'org-workflow-access-heading';
   const s3AccessHeadingId = 'org-s3-access-heading';
+  const usageHeadingId = 'org-usage-heading';
 
   usePageTitle(() => (org.value.Name ? `${org.value.Name}` : 'Organization'));
 
@@ -453,11 +463,15 @@
   />
 
   <EGPageHeader
-    :title="activeTabKey === 'storage' ? 'Storage' : org.Name"
+    :title="
+      activeTabKey === 'storage' ? 'Storage' : activeTabKey === 'usage' ? 'Usage' : org.Name
+    "
     :description="
       activeTabKey === 'storage'
         ? 'Every lab in this organization and what it is holding. Read-only here. Open a lab to change its policy or clear anything.'
-        : org.Description
+        : activeTabKey === 'usage'
+          ? 'Set run limits for each lab and see what runs have cost, by lab and workflow.'
+          : org.Description
     "
     :back-action="() => $router.push('/orgs')"
     :show-back="true"
@@ -566,14 +580,20 @@
   </div>
 
   <div
-    v-if="activeTabKey === 'usage-limits' && showUsageLimitsTab"
+    v-if="activeTabKey === 'usage' && showUsageTab"
     role="tabpanel"
-    id="panel-usage-limits"
-    aria-labelledby="tab-usage-limits"
+    id="panel-usage"
+    aria-labelledby="tab-usage"
     tabindex="0"
     class="outline-none focus:outline-none"
   >
-    <EGUsageLimitsPage v-if="usageLimitsPanelMounted" :org-id="props.orgId" />
+    <EGUsagePage
+      v-if="usagePanelMounted"
+      :org-id="props.orgId"
+      :org-name="org.Name ?? ''"
+      :heading-id="usageHeadingId"
+      :initial-tab="usageSubTab"
+    />
   </div>
 
   <!-- All users tab -->
