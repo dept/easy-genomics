@@ -180,6 +180,53 @@ describe('deriveRunLimitReview', () => {
     expect(review.launchDisabled).toBe(false);
   });
 
+  it("names the workflow's own block amount, not the lab's, when the cost cannot be estimated", () => {
+    const review = deriveRunLimitReview(
+      input({
+        verdict: verdict({ costEstimate: 'notEnoughHistory' }),
+        estimate: estimate({ estimateAvailable: false, comparableRunCount: 0, computeCostUsd: undefined }),
+        runLimits: { CostBlockAboveUsd: 400 },
+        workflowCostLimits: { WorkflowName: 'rnaseq', CostBlockAboveUsd: 800 },
+      }),
+    );
+
+    expect(review.message?.body).toBe(
+      `${COST_NOT_ESTIMATED} so it isn't checked against this workflow's US$800 cost limit. It could cost more than that.`,
+    );
+  });
+
+  it('shows the cost notice when only the workflow has a cost amount', () => {
+    const review = deriveRunLimitReview(
+      input({
+        verdict: verdict({ costEstimate: 'notEnoughHistory' }),
+        estimate: estimate({ estimateAvailable: false, comparableRunCount: 0, computeCostUsd: undefined }),
+        workflowCostLimits: { WorkflowName: 'rnaseq', CostWarnAboveUsd: 300 },
+      }),
+    );
+
+    expect(review.message).toEqual({
+      tone: 'warn',
+      role: 'status',
+      title: 'Cost not estimated',
+      body: `${COST_NOT_ESTIMATED} so it isn't checked against this workflow's US$300 cost warning amount. It could cost more than that.`,
+    });
+  });
+
+  it("keeps the lab's block amount when the workflow only sets a warn amount", () => {
+    const review = deriveRunLimitReview(
+      input({
+        verdict: verdict({ costEstimate: 'notEnoughHistory' }),
+        estimate: estimate({ estimateAvailable: false, comparableRunCount: 0, computeCostUsd: undefined }),
+        runLimits: { CostBlockAboveUsd: 400 },
+        workflowCostLimits: { WorkflowName: 'rnaseq', CostWarnAboveUsd: 300 },
+      }),
+    );
+
+    expect(review.message?.body).toBe(
+      `${COST_NOT_ESTIMATED} so it isn't checked against this lab's US$400 cost limit. It could cost more than that.`,
+    );
+  });
+
   it('adds the cost notice to a sample warning when the cost cannot be estimated', () => {
     const review = deriveRunLimitReview(
       input({
@@ -297,7 +344,7 @@ describe('deriveRunLimitReview', () => {
       tone: 'warn',
       role: 'status',
       title: 'Limits not checked',
-      body: "This run couldn't be checked against this lab's limits. They're checked again when you launch.",
+      body: "This run couldn't be checked against its limits. They're checked again when you launch.",
     });
     expect(withLimits.launchDisabled).toBe(false);
     expect(withoutLimits.message).toBeNull();
@@ -432,17 +479,20 @@ describe('deriveRunLimitReview', () => {
 });
 
 describe('runLimitErrorMessage', () => {
-  const costOnlyNotCounted =
-    "The samples in this run could not be counted, so its cost could not be checked against this laboratory's cost limit. Check the sample sheet and try again.";
-
   it.each([
     ['EG-339', new RunCostLimitExceededError(470, 400)],
     ['EG-340', new RunSampleLimitExceededError(2, 1)],
     ['EG-341', new RunSamplesNotCountedError()],
-    ['EG-341 cost-only', new RunSamplesNotCountedError(costOnlyNotCounted)],
+    ['EG-341 cost-only', new RunSamplesNotCountedError('cost')],
     ['EG-342', new RunCostEstimateFailedError()],
   ])('returns the server text for %s', (_code, serverError) => {
     expect(runLimitErrorMessage(new Error('Request error: ' + serverError.message))).toBe(serverError.message);
+  });
+
+  it("still recognizes EG-342's earlier wording from a back-end deployed behind the front end", () => {
+    const earlier =
+      'The run cost estimate failed, and this laboratory has a cost limit, so the run was not started. Try again shortly.';
+    expect(runLimitErrorMessage(new Error('Request error: ' + earlier))).toBe(earlier);
   });
 
   it('returns null for any other error', () => {

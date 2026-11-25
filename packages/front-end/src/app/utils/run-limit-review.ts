@@ -7,6 +7,7 @@ import type {
   LaboratoryRunLimits,
   WorkflowCostLimits,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import { type CostLimitSource, resolveCostLimits } from '@easy-genomics/shared-lib/src/app/utils/workflow-run-limits';
 
 export type RunLimitReviewInput = {
   /** The response's verdict; undefined means no limits apply and the review step looks as it always has. */
@@ -46,7 +47,9 @@ const REQUEST_ERROR_PREFIX = 'Request error: ';
 const LIMIT_ERROR_FRAGMENTS = [
   'Split the samples into smaller runs, or ask an organization admin to change the limit.', // EG-339, EG-340
   'The samples in this run could not be counted', // EG-341
-  'this laboratory has a cost limit, so the run was not started', // EG-342
+  // Matches EG-342's wording before and after it stopped naming the laboratory, so a back-end deployed
+  // ahead of or behind the front end is still recognized.
+  'so the run was not started', // EG-342
 ];
 
 /** The server's limit message when `error` is a run limit error (EG-339 to EG-342), otherwise null. */
@@ -122,18 +125,21 @@ function hasAnyLimit(runLimits?: LaboratoryRunLimits, workflowCostLimits?: Workf
   );
 }
 
-/** Set when the lab has a cost amount this run can't be checked against because the lab has too few past runs. */
+/**
+ * Set when a cost amount applies that this run can't be checked against because the lab has too few past runs.
+ * Each amount is the workflow's own where set, otherwise the lab's, as in the launch check.
+ */
 function costNotEstimatedSentence(input: RunLimitReviewInput): string | null {
   if (input.verdict?.costEstimate !== 'notEnoughHistory') {
     return null;
   }
-  const blockAbove = input.runLimits?.CostBlockAboveUsd;
-  const warnAbove = input.runLimits?.CostWarnAboveUsd;
+  const { blockAbove, warnAbove } = resolveCostLimits(input.runLimits, input.workflowCostLimits);
+  const ownerOf = (source: CostLimitSource) => (source === 'workflow' ? "this workflow's" : "this lab's");
   let amountText: string;
-  if (blockAbove !== undefined) {
-    amountText = `this lab's US$${formatAmountUsd(blockAbove)} cost limit`;
-  } else if (warnAbove !== undefined) {
-    amountText = `this lab's US$${formatAmountUsd(warnAbove)} cost warning amount`;
+  if (blockAbove) {
+    amountText = `${ownerOf(blockAbove.source)} US$${formatAmountUsd(blockAbove.amount)} cost limit`;
+  } else if (warnAbove) {
+    amountText = `${ownerOf(warnAbove.source)} US$${formatAmountUsd(warnAbove.amount)} cost warning amount`;
   } else {
     return null;
   }
@@ -165,7 +171,7 @@ function deriveMessage(input: RunLimitReviewInput, labHasLimits: boolean): RunLi
       tone: 'warn',
       role: 'status',
       title: 'Limits not checked',
-      body: "This run couldn't be checked against this lab's limits. They're checked again when you launch.",
+      body: "This run couldn't be checked against its limits. They're checked again when you launch.",
     };
   }
   return null;
