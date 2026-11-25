@@ -1,5 +1,11 @@
-import type { UpdateLaboratoryRunLimits } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
-import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import type {
+  UpdateLaboratoryRunLimits,
+  UpdateLaboratoryWorkflowRunLimits,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/easy-genomics-api';
+import {
+  Laboratory,
+  LaboratoryWorkflowCostRow,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import { defineStore } from 'pinia';
 import { extractApiErrorMessage } from '@FE/utils/api-utils';
 
@@ -8,11 +14,14 @@ interface LabsStoreState {
   labs: Record<string, Laboratory>;
   // ordered lists for labs by org
   labIdsByOrg: Record<string, string[]>;
+  // indexed by labId; filled when a lab is expanded on the Usage limits page
+  workflowCostRows: Record<string, LaboratoryWorkflowCostRow[]>;
 }
 
 const initialState = (): LabsStoreState => ({
   labs: {},
   labIdsByOrg: {},
+  workflowCostRows: {},
 });
 
 async function shouldSuppressLabLoadErrorToast(): Promise<boolean> {
@@ -87,6 +96,37 @@ const useLabsStore = defineStore('labsStore', {
         useToastStore().error(extractApiErrorMessage(error) ?? 'Failed to save usage limits. Please try again.');
         return false;
       }
+    },
+
+    /** A failed load keeps any rows already stored, so the caller decides what to show. */
+    async loadWorkflowCostRows(labId: string): Promise<boolean> {
+      const { $api } = useNuxtApp();
+
+      try {
+        this.workflowCostRows[labId] = await $api.labs.listWorkflowRunLimits(labId);
+        return true;
+      } catch (error) {
+        console.error('Failed to load lab workflow run limits:', error);
+        useToastStore().error("Couldn't load this lab's workflows.");
+        return false;
+      }
+    },
+
+    /** Reloads the lab's workflow rows after a save, since the server returns only the lab. */
+    async updateWorkflowRunLimits(labId: string, body: UpdateLaboratoryWorkflowRunLimits): Promise<boolean> {
+      const { $api } = useNuxtApp();
+
+      try {
+        const lab = await $api.labs.updateWorkflowRunLimits(labId, body);
+        this.labs[lab.LaboratoryId] = lab;
+      } catch (error) {
+        console.error('Failed to save workflow run limits:', error);
+        useToastStore().error(extractApiErrorMessage(error) ?? 'Failed to save usage limits. Please try again.');
+        return false;
+      }
+
+      await this.loadWorkflowCostRows(labId);
+      return true;
     },
 
     /** Dry run of a new retention period: how many runs expire now vs. get a new expiry date. */
