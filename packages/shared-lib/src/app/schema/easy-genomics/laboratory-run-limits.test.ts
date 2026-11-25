@@ -225,10 +225,16 @@ describe('run limit errors', () => {
       'The samples in this run could not be counted, and this laboratory has a sample limit. Check the sample sheet and try again.',
     ],
     [
+      new RunSamplesNotCountedError('cost'),
+      400,
+      'EG-341',
+      'The samples in this run could not be counted, so its cost could not be checked against its cost limit. Check the sample sheet and try again.',
+    ],
+    [
       new RunCostEstimateFailedError(),
       500,
       'EG-342',
-      'The run cost estimate failed, and this laboratory has a cost limit, so the run was not started. Try again shortly.',
+      'The run cost estimate failed, and a cost limit applies to this run, so the run was not started. Try again shortly.',
     ],
   ])('%p has the expected status, code and message', (error, statusCode, errorCode, message) => {
     expect(error.statusCode).toBe(statusCode);

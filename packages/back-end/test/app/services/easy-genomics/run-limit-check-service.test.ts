@@ -261,7 +261,10 @@ describe('RunLimitCheckService', () => {
         const rejection = service.checkRunLimits(withLimits({ CostWarnAboveUsd: 150 }), input);
 
         await expect(rejection).rejects.toBeInstanceOf(RunSamplesNotCountedError);
-        await expect(rejection).rejects.toThrow(/cost limit/);
+        await expect(rejection).rejects.toHaveProperty(
+          'message',
+          'The samples in this run could not be counted, so its cost could not be checked against its cost limit. Check the sample sheet and try again.',
+        );
         expect(mockEstimate).not.toHaveBeenCalled();
       },
     );

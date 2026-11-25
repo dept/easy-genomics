@@ -31,9 +31,6 @@ type CheckedRun = { verdict: RunLimitVerdict; costEstimateUsd?: number };
 
 type BlockReason = 'limitExceeded' | 'samplesNotCounted' | 'costEstimateFailed';
 
-const SAMPLES_NOT_COUNTED_FOR_COST_LIMIT =
-  "The samples in this run could not be counted, so its cost could not be checked against this laboratory's cost limit. Check the sample sheet and try again.";
-
 const runCostEstimationService = new RunCostEstimationService();
 const usageTotalsService = new UsageTotalsService();
 
@@ -219,7 +216,7 @@ export class RunLimitCheckService {
     } else {
       // A cost limit needs the sample count too: an unscaled whole-run estimate would price a 1,000-sample run at its
       // 96-sample cost. That includes a run with no sample sheet, or leaving the sheet out would skip the limit.
-      throw new RunSamplesNotCountedError(SAMPLES_NOT_COUNTED_FOR_COST_LIMIT);
+      throw new RunSamplesNotCountedError('cost');
     }
 
     if (!hasCostLimit) {

@@ -345,30 +345,31 @@ export class RunSampleLimitExceededError extends HttpError {
 }
 
 /**
- * The run's samples could not be counted while the laboratory has a sample limit
+ * The run's samples could not be counted while a sample limit, or a cost limit, applies to it
  *
- * @param messageOpt - optional additional message
+ * @param limit - the limit that needed the count: the laboratory's sample limit, or a cost limit
  */
 export class RunSamplesNotCountedError extends HttpError {
-  constructor(messageOpt?: string) {
+  constructor(limit: 'samples' | 'cost' = 'samples') {
     super(
-      'The samples in this run could not be counted, and this laboratory has a sample limit. Check the sample sheet and try again.',
+      limit === 'cost'
+        ? 'The samples in this run could not be counted, so its cost could not be checked against its cost limit. Check the sample sheet and try again.'
+        : 'The samples in this run could not be counted, and this laboratory has a sample limit. Check the sample sheet and try again.',
       400,
       'EG-341',
-      messageOpt,
     );
   }
 }
 
 /**
- * The run cost estimate failed while the laboratory has a cost limit
+ * The run cost estimate failed while a cost limit applies to the run
  *
  * @param messageOpt - optional additional message
  */
 export class RunCostEstimateFailedError extends HttpError {
   constructor(messageOpt?: string) {
     super(
-      'The run cost estimate failed, and this laboratory has a cost limit, so the run was not started. Try again shortly.',
+      'The run cost estimate failed, and a cost limit applies to this run, so the run was not started. Try again shortly.',
       500,
       'EG-342',
       messageOpt,
