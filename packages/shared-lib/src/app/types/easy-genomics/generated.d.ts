@@ -422,6 +422,10 @@ export interface paths {
     /** Create File Upload Sample Sheet */
     post: operations["createFileUploadSampleSheet"];
   };
+  "/easy-genomics/usage/list-laboratory-workflow-run-limits": {
+    /** List Laboratory Workflow Run Limits */
+    get: operations["listLaboratoryWorkflowRunLimits"];
+  };
   "/easy-genomics/usage/list-run-costs": {
     /** List Run Costs */
     get: operations["listRunCosts"];
@@ -2169,6 +2173,21 @@ export interface components {
             Region: string;
           } | null, null]>;
         })[];
+    };
+    /** @enum {string} */
+    LaboratoryWorkflowAccessPlatform: "HEALTH_OMICS" | "SEQERA";
+    /** @description One workflow on the Usage limits page: its own cost amounts, if any, and its typical run cost in this lab. */
+    LaboratoryWorkflowCostRow: {
+      Platform: components["schemas"]["LaboratoryWorkflowAccessPlatform"];
+      WorkflowId: string;
+      WorkflowName: string;
+      LatestVersionName?: string;
+      /** @description The workflow's own amounts only, never the lab's. */
+      CostWarnAboveUsd?: number;
+      CostBlockAboveUsd?: number;
+      /** @description Absent, never 0, when fewer than MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE runs were counted. */
+      TypicalRunCostUsd?: number;
+      CountedRunCount: number;
     };
     RunCostsLabRow: {
       EstimatedCostUsd: number;
@@ -6561,6 +6580,28 @@ export interface operations {
       200: {
         content: {
           "application/json": unknown;
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      500: components["responses"]["InternalError"];
+    };
+  };
+  /** List Laboratory Workflow Run Limits */
+  listLaboratoryWorkflowRunLimits: {
+    parameters: {
+      query: {
+        /** @description Laboratory UUID */
+        laboratoryId: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": components["schemas"]["LaboratoryWorkflowCostRow"];
         };
       };
       400: components["responses"]["BadRequest"];

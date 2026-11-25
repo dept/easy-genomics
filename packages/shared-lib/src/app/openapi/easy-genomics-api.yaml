@@ -3805,6 +3805,38 @@ components:
         - Platform
         - UploadedFilePairs
       additionalProperties: false
+    LaboratoryWorkflowAccessPlatform:
+      enum:
+        - HEALTH_OMICS
+        - SEQERA
+      type: string
+    LaboratoryWorkflowCostRow:
+      description: 'One workflow on the Usage limits page: its own cost amounts, if any, and its typical run cost in this lab.'
+      type: object
+      properties:
+        Platform:
+          $ref: '#/components/schemas/LaboratoryWorkflowAccessPlatform'
+        WorkflowId:
+          type: string
+        WorkflowName:
+          type: string
+        LatestVersionName:
+          type: string
+        CostWarnAboveUsd:
+          description: The workflow's own amounts only, never the lab's.
+          type: number
+        CostBlockAboveUsd:
+          type: number
+        TypicalRunCostUsd:
+          description: Absent, never 0, when fewer than MIN_COMPARABLE_RUNS_FOR_COST_ESTIMATE runs were counted.
+          type: number
+        CountedRunCount:
+          type: number
+      required:
+        - CountedRunCount
+        - Platform
+        - WorkflowId
+        - WorkflowName
     RunCostsLabRow:
       allOf:
         - type: object
@@ -11491,6 +11523,34 @@ paths:
           content:
             application/json:
               schema: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /easy-genomics/usage/list-laboratory-workflow-run-limits:
+    get:
+      operationId: listLaboratoryWorkflowRunLimits
+      summary: List Laboratory Workflow Run Limits
+      parameters:
+        - name: laboratoryId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Laboratory UUID
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaboratoryWorkflowCostRow'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
