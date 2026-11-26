@@ -1242,6 +1242,21 @@
     },
   );
 
+  // Create mode hides the HealthOmics AI fields while HealthOmics is off, so a provider picked earlier would
+  // keep requiring a model and key nobody can see. Reset them to the untouched defaults instead.
+  watch(
+    () => state.value.AwsHealthOmicsEnabled,
+    (enabled) => {
+      if (!isCreateMode.value || enabled) {
+        return;
+      }
+      state.value.HealthOmicsLlmProvider = undefined;
+      state.value.HealthOmicsLlmModelId = '';
+      state.value.HealthOmicsLlmApiKey = '';
+      state.value.HealthOmicsLogEnrichmentEnabled = false;
+    },
+  );
+
   // The four per-user notification controls aren't part of `state`, so they need their own
   // trigger to re-run validation/dirty-checking when they change.
   watch(
