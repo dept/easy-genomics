@@ -112,7 +112,7 @@
               v-for="event in events"
               :key="event.EventKey"
               data-testid="run-limit-event-row"
-              class="border-background-dark-grey rounded-lg border p-3 text-sm"
+              class="border-background-dark-grey list-none rounded-lg border p-3 text-sm"
             >
               <div class="flex flex-wrap items-baseline justify-between gap-2">
                 <span class="font-medium">{{ event.UserDisplayName }}</span>
