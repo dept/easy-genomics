@@ -472,15 +472,19 @@ as the system-admin test user, in Influenza Genomics.
 
 ## Keep permanently on samples and files (EGV-387)
 
-Permanent protection on a sample stays on the sample row. The retention sweep treats a file as permanent when that file's `SampleIds` includes a permanent sample, so tagging, deleting a tag, or setting a batch must not drop those links. The Files tab lock and expiry come from the data-collections store.
+Permanent protection on a sample stays on the sample row. The retention sweep treats a file as permanent when that
+file's `SampleIds` includes a permanent sample, so tagging, deleting a tag, or setting a batch must not drop those
+links. The Files tab lock and expiry come from the data-collections store.
 
 Not yet verified by hand. No E2E test was added.
 
 ### Manual steps
 
-- [ ] **Sample on** — open Data Collections, Samples tab. Mark a sample **Keep permanently**. The sample shows the lock, and its expiry reads **Never**.
+- [ ] **Sample on** — open Data Collections, Samples tab. Mark a sample **Keep permanently**. The sample shows the lock,
+      and its expiry reads **Never**.
 - [ ] **Sample off** — choose **Remove permanent**. The lock goes away and the expiry is no longer **Never**.
-- [ ] **Files on** — open the Files tab. Select an unlinked file, choose **Keep permanently**. The row shows the lock and **Never**.
+- [ ] **Files on** — open the Files tab. Select an unlinked file, choose **Keep permanently**. The row shows the lock
+      and **Never**.
 - [ ] **Files off** — choose **Remove permanent**. The lock goes away and the expiry is no longer **Never**.
 - [ ] **Shared file** — a file that belongs to two samples stays protected after only one of those samples is unmarked.
 
@@ -526,12 +530,12 @@ prefix, including nested paths.
 
 ### Automated checks
 
-| Check | Result |
-| ----- | ------ |
-| `pnpm test` (shared-lib) | Description / parseKeyOutputsJson edge cases; whole-folder nested match |
-| `pnpm test` (back-end key-outputs + toRunRelativePath) | Folder placeholders stay null; Description validation |
-| `pnpm test` (front-end `s3-folder-stats`) | Recursive folder count helper |
-| Lab Manager E2E test 13 | All files + Mark results seeds existing selected-result count |
+| Check                                                  | Result                                                                  |
+| ------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `pnpm test` (shared-lib)                               | Description / parseKeyOutputsJson edge cases; whole-folder nested match |
+| `pnpm test` (back-end key-outputs + toRunRelativePath) | Folder placeholders stay null; Description validation                   |
+| `pnpm test` (front-end `s3-folder-stats`)              | Recursive folder count helper                                           |
+| Lab Manager E2E test 13                                | All files + Mark results seeds existing selected-result count           |
 
 ### Manual steps
 
@@ -548,3 +552,33 @@ Environment: Date:
 - [ ] **Failed analysis UI** — open Overview on a failed HealthOmics run with a failed manual analysis. The analysis
       error text shows; stalled analysis still has **Check again**.
 
+---
+
+## Run costs — workflow names for warned and blocked launches (EGV-413)
+
+A daily totals row only got a workflow name when a finished run's cost was added, so a workflow with only warned or
+blocked launches in the period showed its ID on Run costs and in the launch lists. `RunCostsReportService` now names
+such a workflow from the lab's newest named run of it, then the lab's per-workflow cost limit, then the ID. It reads
+runs only for labs that still show a workflow by its ID.
+
+### Automated checks
+
+| Check                  | Result                                        |
+| ---------------------- | --------------------------------------------- |
+| `pnpm test` (back-end) | 1851 tests pass, including 7 new report tests |
+| `pnpm lint` (back-end) | Passes                                        |
+
+### Manual steps
+
+Run on 26 Nov 2026 on `dev-demo`, back end from this branch combined with the EGV-391 branches, Default Organization,
+Test Laboratory.
+
+- [x] **Before** — with limit Samples block above 1, the lab manager reached the review step for `nf-core/demo-1.0.1` on
+      the 2-sample collection `egv-372-sequence` and was blocked. The new totals row had no name, and `list-run-costs`
+      returned `5734690` as the workflow name.
+- [x] **After** — with this branch deployed, the same report returns `nf-core/demo-1.0.1`, named from the lab's latest
+      run of that workflow. The Blocked launches list shows the name too, and the `list-run-costs` log has no errors, so
+      the new run-table read is permitted.
+- [x] **Named rows untouched** — `k-florek/workshop-main`, already named by its totals row, kept its name.
+
+Test Laboratory's limits were cleared afterwards, as they were before the run.
