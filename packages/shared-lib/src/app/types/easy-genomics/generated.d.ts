@@ -1399,25 +1399,31 @@ export interface components {
       RunName: string;
       Status: string;
       OrganizationId: string;
-      UserId: string;
       /** @enum {string} */
       Platform: "AWS HealthOmics" | "Seqera Cloud";
+      UserId: string;
       Owner: string;
-      /** @description Optional user-authored note for this run; set at creation time. */
-      Description?: string;
       WorkflowName?: string;
-      CreatedAt?: string;
-      CreatedBy?: string;
-      ModifiedAt?: string;
-      ModifiedBy?: string;
-      PlatformApiBaseUrl?: string;
-      WorkflowVersionName?: string;
+      /**
+       * @description DynamoDB TTL epoch timestamp (in seconds).
+       * When enabled, DynamoDB will remove items after this timestamp.
+       */
+      ExpiresAt?: number;
       /**
        * @description Platform-side workflow identifier (HealthOmics workflowId or Seqera pipelineId).
        * Persisted at run-creation time so the data tagging system can associate inputs
        * with a stable workflow identity.
        */
       WorkflowExternalId?: string;
+      WorkflowVersionName?: string;
+      ExternalRunId?: string;
+      /** @description Optional user-authored note for this run; set at creation time. */
+      Description?: string;
+      CreatedAt?: string;
+      CreatedBy?: string;
+      ModifiedAt?: string;
+      ModifiedBy?: string;
+      PlatformApiBaseUrl?: string;
       /**
        * @description S3 object keys (within the laboratory bucket) that were used as inputs
        * for this run. Populated at run-creation time and consumed by the data
@@ -1426,7 +1432,6 @@ export interface components {
        * have this field.
        */
       InputFileKeys?: string[];
-      ExternalRunId?: string;
       InputS3Url?: string;
       OutputS3Url?: string;
       SampleSheetS3Url?: string;
@@ -1436,11 +1441,6 @@ export interface components {
        * Used as the anchor for retention/TTL recomputation.
        */
       TerminalAt?: string;
-      /**
-       * @description DynamoDB TTL epoch timestamp (in seconds).
-       * When enabled, DynamoDB will remove items after this timestamp.
-       */
-      ExpiresAt?: number;
       /**
        * @description Actual execution duration reported by the underlying platform, in seconds.
        * Populated by the status-check processor from Seqera `workflow.duration`
@@ -1622,28 +1622,28 @@ export interface components {
       RunName: string;
       Status: string;
       OrganizationId: string;
-      UserId: string;
       /** @enum {string} */
       Platform: "AWS HealthOmics" | "Seqera Cloud";
+      UserId: string;
       Owner: string;
+      WorkflowName?: string;
+      ExpiresAt?: number;
+      WorkflowExternalId?: string;
+      WorkflowVersionName?: string;
+      ExternalRunId?: string;
       /** @description Optional user-authored note for this run; set at creation time. */
       Description?: string;
-      WorkflowName?: string;
       CreatedAt?: string;
       CreatedBy?: string;
       ModifiedAt?: string;
       ModifiedBy?: string;
       PlatformApiBaseUrl?: string;
-      WorkflowVersionName?: string;
-      WorkflowExternalId?: string;
       InputFileKeys?: string[];
-      ExternalRunId?: string;
       InputS3Url?: string;
       OutputS3Url?: string;
       SampleSheetS3Url?: string;
       Settings?: Record<string, never> | string;
       TerminalAt?: string;
-      ExpiresAt?: number;
       RunDurationSeconds?: number;
       FailureReason?: string;
       FailureStatusMessage?: string;
@@ -2077,10 +2077,10 @@ export interface components {
       UserStatus: "Active" | "Inactive" | "Invited";
       /** @enum {string} */
       OrganizationUserStatus: "Active" | "Inactive" | "Invited";
+      UserEmail?: string;
       PreferredName?: string;
       FirstName?: string;
       LastName?: string;
-      UserEmail?: string;
       Title?: string;
       OrganizationAccess?: Record<string, never>;
     };
