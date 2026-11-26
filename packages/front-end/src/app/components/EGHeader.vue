@@ -165,6 +165,17 @@
     $router.push('/profile');
   }
 
+  const orgsAndLabsRow = computed(() =>
+    userStore.isSuperuser
+      ? { label: 'Organizations', to: orgsPath }
+      : { label: 'Organizations and labs', to: labsPath },
+  );
+
+  function goToOrgsAndLabs(): void {
+    closeAccountMenu();
+    $router.push(orgsAndLabsRow.value.to);
+  }
+
   function onSignOut(): void {
     closeAccountMenu();
     signOutAndRedirect();
@@ -244,7 +255,7 @@
               ref="accountMenuPanel"
               role="region"
               aria-label="Account menu"
-              class="account-menu-panel absolute right-0 top-full z-50 mt-1 w-80 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg"
+              class="account-menu-panel absolute right-0 top-full z-50 mt-1 w-80 overflow-hidden rounded-lg border border-gray-200 bg-white pb-2 shadow-lg"
               @keydown="onPanelKeydown"
             >
               <div class="bg-background-light-grey flex flex-col gap-1 p-4">
@@ -252,22 +263,52 @@
                 <span v-if="userStore.currentUserDetails.email" class="text-muted truncate text-sm">
                   {{ userStore.currentUserDetails.email }}
                 </span>
+                <EGRoleChip class="mt-1 self-start" />
               </div>
+
+              <div class="border-stroke-light mb-2 border-t" />
 
               <button
                 v-if="!userStore.isSuperuser"
                 type="button"
-                class="focus-visible:outline-primary-500 w-full border-t px-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                class="text-body hover:bg-primary-muted hover:text-primary-dark focus-visible:bg-primary-muted focus-visible:text-primary-dark group mx-2 flex min-h-11 w-[calc(100%-1rem)] items-center gap-3 rounded-lg px-3 text-left text-sm font-medium focus-visible:outline-none"
                 @click="goToProfile"
               >
-                Edit profile
+                <UIcon
+                  name="i-heroicons-user-circle"
+                  class="text-muted group-hover:text-primary group-focus-visible:text-primary h-[18px] w-[18px]"
+                  aria-hidden="true"
+                />
+                Your profile
+                <UIcon name="i-heroicons-chevron-right" class="text-muted ml-auto h-4 w-4" aria-hidden="true" />
               </button>
 
               <button
                 type="button"
-                class="text-primary focus-visible:outline-primary-500 w-full border-t px-4 py-3 text-left underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                class="text-body hover:bg-primary-muted hover:text-primary-dark focus-visible:bg-primary-muted focus-visible:text-primary-dark group mx-2 flex min-h-11 w-[calc(100%-1rem)] items-center gap-3 rounded-lg px-3 text-left text-sm font-medium focus-visible:outline-none"
+                @click="goToOrgsAndLabs"
+              >
+                <UIcon
+                  name="i-heroicons-building-office-2"
+                  class="text-muted group-hover:text-primary group-focus-visible:text-primary h-[18px] w-[18px]"
+                  aria-hidden="true"
+                />
+                {{ orgsAndLabsRow.label }}
+                <UIcon name="i-heroicons-chevron-right" class="text-muted ml-auto h-4 w-4" aria-hidden="true" />
+              </button>
+
+              <div class="border-stroke-light my-2 border-t" />
+
+              <button
+                type="button"
+                class="text-body hover:bg-alert-danger-muted hover:text-alert-danger-dark focus-visible:bg-alert-danger-muted focus-visible:text-alert-danger-dark group mx-2 flex min-h-11 w-[calc(100%-1rem)] items-center gap-3 rounded-lg px-3 text-left text-sm font-medium focus-visible:outline-none"
                 @click="onSignOut"
               >
+                <UIcon
+                  name="i-heroicons-arrow-right-start-on-rectangle"
+                  class="text-muted group-hover:text-alert-danger-dark group-focus-visible:text-alert-danger-dark h-[18px] w-[18px]"
+                  aria-hidden="true"
+                />
                 Sign out
               </button>
             </div>
