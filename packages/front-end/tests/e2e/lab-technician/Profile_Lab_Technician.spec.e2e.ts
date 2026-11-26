@@ -78,3 +78,17 @@ test('02 - Reset Password', async ({ page, baseURL }) => {
   await expect(page.getByRole('button', { name: 'Send again' })).toBeVisible();
   await expect(page).toHaveURL(`${baseURL}/profile`);
 });
+
+test('03 - Account menu opens the profile', async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/labs`);
+  await page.waitForLoadState('networkidle');
+
+  await page.getByRole('button', { name: 'Account menu' }).click();
+  const menu = page.getByRole('region', { name: 'Account menu' });
+  await expect(menu.getByText('Lab technician', { exact: true })).toBeVisible();
+  await expect(menu.getByRole('button', { name: 'Organizations and labs' })).toBeVisible();
+  await expect(menu.getByRole('button', { name: 'Sign out' })).toBeVisible();
+
+  await menu.getByRole('button', { name: 'Your profile' }).click();
+  await expect(page).toHaveURL(`${baseURL}/profile`);
+});

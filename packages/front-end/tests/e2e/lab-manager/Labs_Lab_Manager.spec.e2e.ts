@@ -335,8 +335,8 @@ test('10 - Check if Reset Password fails', async ({ page, baseURL }) => {
   await page.waitForLoadState('networkidle');
 
   // confirm button if enabled/visible
-  await page.getByRole('button', { name: 'LM' }).click();
-  await page.getByRole('menuitem', { name: 'Sign Out' }).click();
+  await page.getByRole('button', { name: 'Account menu' }).click();
+  await page.getByRole('region', { name: 'Account menu' }).getByRole('button', { name: 'Sign out' }).click();
   await page.waitForTimeout(2000);
 
   // check Sign out confirmation
