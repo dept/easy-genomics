@@ -472,15 +472,19 @@ as the system-admin test user, in Influenza Genomics.
 
 ## Keep permanently on samples and files (EGV-387)
 
-Permanent protection on a sample stays on the sample row. The retention sweep treats a file as permanent when that file's `SampleIds` includes a permanent sample, so tagging, deleting a tag, or setting a batch must not drop those links. The Files tab lock and expiry come from the data-collections store.
+Permanent protection on a sample stays on the sample row. The retention sweep treats a file as permanent when that
+file's `SampleIds` includes a permanent sample, so tagging, deleting a tag, or setting a batch must not drop those
+links. The Files tab lock and expiry come from the data-collections store.
 
 Not yet verified by hand. No E2E test was added.
 
 ### Manual steps
 
-- [ ] **Sample on** — open Data Collections, Samples tab. Mark a sample **Keep permanently**. The sample shows the lock, and its expiry reads **Never**.
+- [ ] **Sample on** — open Data Collections, Samples tab. Mark a sample **Keep permanently**. The sample shows the lock,
+      and its expiry reads **Never**.
 - [ ] **Sample off** — choose **Remove permanent**. The lock goes away and the expiry is no longer **Never**.
-- [ ] **Files on** — open the Files tab. Select an unlinked file, choose **Keep permanently**. The row shows the lock and **Never**.
+- [ ] **Files on** — open the Files tab. Select an unlinked file, choose **Keep permanently**. The row shows the lock
+      and **Never**.
 - [ ] **Files off** — choose **Remove permanent**. The lock goes away and the expiry is no longer **Never**.
 - [ ] **Shared file** — a file that belongs to two samples stays protected after only one of those samples is unmarked.
 
@@ -526,12 +530,12 @@ prefix, including nested paths.
 
 ### Automated checks
 
-| Check | Result |
-| ----- | ------ |
-| `pnpm test` (shared-lib) | Description / parseKeyOutputsJson edge cases; whole-folder nested match |
-| `pnpm test` (back-end key-outputs + toRunRelativePath) | Folder placeholders stay null; Description validation |
-| `pnpm test` (front-end `s3-folder-stats`) | Recursive folder count helper |
-| Lab Manager E2E test 13 | All files + Mark results seeds existing selected-result count |
+| Check                                                  | Result                                                                  |
+| ------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `pnpm test` (shared-lib)                               | Description / parseKeyOutputsJson edge cases; whole-folder nested match |
+| `pnpm test` (back-end key-outputs + toRunRelativePath) | Folder placeholders stay null; Description validation                   |
+| `pnpm test` (front-end `s3-folder-stats`)              | Recursive folder count helper                                           |
+| Lab Manager E2E test 13                                | All files + Mark results seeds existing selected-result count           |
 
 ### Manual steps
 
@@ -548,3 +552,38 @@ Environment: Date:
 - [ ] **Failed analysis UI** — open Overview on a failed HealthOmics run with a failed manual analysis. The analysis
       error text shows; stalled analysis still has **Check again**.
 
+---
+
+## Run limits — warned and blocked launches on Run costs (EGV-391)
+
+Organization admins open the Warned and Blocked cards on Usage › Run costs to list each launch behind them. The list
+comes from `list-run-limit-events`, which only organization and system admins may call. Events are recorded by the
+estimate and launch handlers into the `run-limit-event` table added in the first EGV-391 PR.
+
+### Automated checks
+
+| Check                    | Result                                            |
+| ------------------------ | ------------------------------------------------- |
+| `pnpm lint` (front-end)  | Passes                                            |
+| `pnpm test` (shared-lib) | 593 tests pass, including `openapi-guard.test.ts` |
+| `pnpm test` (front-end)  | 579 tests pass                                    |
+
+### Manual steps
+
+Run on 26 Nov 2026 with Playwright, against the branch's front-end and local back-end (`dev-demo` stack), Default
+Organization. The `run-limit-event` table is not deployed on `dev-demo` yet, so every list request fails there.
+
+- [x] **Open the list** — org admin, Usage › Run costs › 30 days. The cards show Warned 1 (from the daily counts) and
+      Blocked 0. Only the Warned card opens a list, and the slide-over is titled "Warned launches · Last 30 days".
+- [x] **Failed load** — with the table missing, the request returns an error. Found during this run: the panel then read
+      "None in this period." under a card showing 1. It now reads "Couldn't load these launches." with **Try again**,
+      next to the error toast, and Try again sends the request again.
+- [x] **Store registered** — found during this run: opening the slide-over threw
+      `useRunLimitEventsStore is not     defined`, because the store was missing from `stores/index.ts`, where Nuxt
+      auto-imports stores from. It is now registered there and cleared on sign-out.
+- [x] **Lab manager** — `GET /easy-genomics/usage/list-run-limit-events?organizationId=…&period=30d&kind=blocked` with
+      the lab-manager test user's token returns 403 EG-103.
+- [ ] **Events listed** — after the first EGV-391 PR is deployed: launch over a warn amount and get blocked once, then
+      check both lists show the launch with its user, lab, workflow, limit and (for the block) reason.
+- [ ] **Counts recorded before the table existed** — in the period around the deploy, a card can count launches that
+      have no event, so its list is shorter than the number. Confirm the wording is acceptable or follow up.
