@@ -51,6 +51,7 @@ export default <Partial<Config>>{
         'alert-blue-muted': '#E8F0FA',
         'alert-caution': '#BC9A15',
         'alert-caution-muted': '#FEF7D9',
+        'alert-caution-text': '#7A5F00',
         'alert': '#EF5C45',
         'alert-danger': '#EF5C45',
         'alert-danger-dark': '#CC2525',
