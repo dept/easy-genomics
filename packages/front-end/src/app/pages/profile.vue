@@ -184,19 +184,20 @@
         @submit="onSubmit"
         aria-label="Edit profile details"
       >
-        <div class="flex items-center gap-4 px-6 pt-6">
+        <div class="flex flex-wrap items-center gap-4 px-6 pt-6">
           <span
             class="bg-primary inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-medium text-white"
             aria-hidden="true"
           >
             {{ userStore.currentUserInitials }}
           </span>
-          <div class="min-w-0">
+          <div class="min-w-0 flex-[1_1_12rem]">
             <p class="text-heading font-serif text-lg font-medium leading-[22px]">
               {{ userStore.currentUserDisplayName }}
             </p>
             <p class="text-muted mt-1 text-sm [overflow-wrap:anywhere]">{{ userStore.currentUserDetails.email }}</p>
           </div>
+          <EGRoleChip />
         </div>
 
         <div class="px-6 pt-5">
