@@ -21,9 +21,10 @@ test('01 - Update names', async ({ page, baseURL }) => {
   await expect(firstNameField).toHaveValue(firstName);
   await expect(lastNameField).toHaveValue(lastName);
 
-  await expect(page.getByText(fullName)).toBeVisible();
+  await expect(page.getByText(fullName, { exact: true })).toBeVisible();
   await expect(page.getByText(email)).toBeVisible();
   await expect(page.getByText(initials, { exact: true })).toHaveCount(2); // in header dropdown button and identity row
+  await expect(page.getByText('Lab technician', { exact: true })).toBeVisible();
 
   await expect(saveButton).toBeDisabled();
 
@@ -58,7 +59,7 @@ test('01 - Update names', async ({ page, baseURL }) => {
   await expect(firstNameField).toHaveValue(firstName);
   await expect(lastNameField).toHaveValue(lastName);
 
-  await expect(page.getByText(fullName)).toBeVisible();
+  await expect(page.getByText(fullName, { exact: true })).toBeVisible();
   await expect(page.getByText(email)).toBeVisible();
   await expect(page.getByText(initials, { exact: true })).toHaveCount(2);
 

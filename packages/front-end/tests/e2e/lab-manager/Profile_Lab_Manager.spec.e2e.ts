@@ -7,6 +7,8 @@ test('01 - Reset Password', async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/profile`);
   await page.waitForLoadState('networkidle');
 
+  await expect(page.getByText('Lab manager', { exact: true })).toBeVisible();
+
   const sendResetLink = page.getByRole('button', { name: 'Send reset link' });
   await expect(sendResetLink).toBeVisible();
   await sendResetLink.click();
