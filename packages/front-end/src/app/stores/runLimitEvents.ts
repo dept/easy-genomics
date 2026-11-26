@@ -10,12 +10,15 @@ import { extractApiErrorMessage } from '@FE/utils/api-utils';
 interface RunLimitEventsStoreState {
   response: RunLimitEventsResponse | null;
   query: RunLimitEventsQuery | null;
+  /** The latest load's query when it failed, so the panel shows an error rather than an empty list. */
+  failedQuery: RunLimitEventsQuery | null;
   loading: boolean;
 }
 
 const initialState = (): RunLimitEventsStoreState => ({
   response: null,
   query: null,
+  failedQuery: null,
   loading: false,
 });
 
@@ -45,11 +48,13 @@ const useRunLimitEventsStore = defineStore('runLimitEventsStore', {
         }
         this.response = response;
         this.query = query;
+        this.failedQuery = null;
         return true;
       } catch (error) {
         if (requestId !== latestRequestId) {
           return false;
         }
+        this.failedQuery = query;
         console.error('Failed to load run limit events:', error);
         useToastStore().error(extractApiErrorMessage(error) ?? "Couldn't load the launches. Please try again.");
         return false;

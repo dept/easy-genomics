@@ -35,6 +35,10 @@
   const events = computed(() => (answersThisQuery.value ? (runLimitEventsStore.response?.Events ?? []) : []));
   const truncated = computed(() => answersThisQuery.value && runLimitEventsStore.response?.Truncated === true);
   const showLoading = computed(() => runLimitEventsStore.loading && !answersThisQuery.value);
+  // With no list for this query to fall back on, a failed load must not read as "None in this period".
+  const loadFailed = computed(
+    () => !answersThisQuery.value && JSON.stringify(runLimitEventsStore.failedQuery) === JSON.stringify(props.query),
+  );
 
   const laboratoryNames = computed(
     () => new Map((props.report?.Labs ?? []).map((lab) => [lab.LaboratoryId, lab.LaboratoryName])),
@@ -93,6 +97,11 @@
 
       <div :aria-busy="showLoading" class="flex flex-col gap-4">
         <USkeleton v-if="showLoading" class="h-48 w-full" data-testid="run-limit-events-loading" />
+
+        <div v-else-if="loadFailed" class="flex flex-col items-start gap-2 text-sm" role="alert">
+          <p class="m-0">Couldn't load these launches.</p>
+          <UButton size="xs" variant="outline" @click="runLimitEventsStore.load(query)">Try again</UButton>
+        </div>
 
         <p v-else-if="events.length === 0" class="text-muted text-sm" role="status">None in this period.</p>
 

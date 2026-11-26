@@ -71,13 +71,33 @@ describe('runLimitEvents store load', () => {
     expect(useRunLimitEventsStore().loading).toBe(false);
   });
 
+  it('records which query failed, so the panel can say so instead of showing an empty list', async () => {
+    listRunLimitEvents.mockRejectedValueOnce(new Error('boom'));
+
+    await useRunLimitEventsStore().load(warnedQuery);
+
+    expect(useRunLimitEventsStore().failedQuery).toEqual(warnedQuery);
+  });
+
+  it('clears the failed query once a load succeeds', async () => {
+    listRunLimitEvents.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(responseWithTruncated(false));
+    await useRunLimitEventsStore().load(warnedQuery);
+
+    await useRunLimitEventsStore().load(warnedQuery);
+
+    expect(useRunLimitEventsStore().failedQuery).toBeNull();
+  });
+
   it('forgets everything on reset', async () => {
     listRunLimitEvents.mockResolvedValue(responseWithTruncated(false));
     await useRunLimitEventsStore().load(blockedQuery);
+    listRunLimitEvents.mockRejectedValueOnce(new Error('boom'));
+    await useRunLimitEventsStore().load(warnedQuery);
 
     useRunLimitEventsStore().reset();
 
     expect(useRunLimitEventsStore().response).toBeNull();
     expect(useRunLimitEventsStore().query).toBeNull();
+    expect(useRunLimitEventsStore().failedQuery).toBeNull();
   });
 });
