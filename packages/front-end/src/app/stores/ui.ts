@@ -42,6 +42,7 @@ export type PendingRequest =
   | 'fetchS3Content'
   | 'loadRunReports'
   | 'editProfileDetails'
+  | 'profileResetLink'
   | 'toggleOrgAdmin'
   | 'loadLabRuns'
   | 'loadDashboardData'
