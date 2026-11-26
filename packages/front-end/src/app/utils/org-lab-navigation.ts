@@ -8,7 +8,6 @@ export type OrgPickerRow = {
   detail: string;
   isPreviewed: boolean;
   isCurrent: boolean;
-  canManage: boolean;
 };
 
 export type LabPickerRow = {
@@ -39,11 +38,10 @@ export function buildOrgPickerRows(
     .sort((a, b) => a.Name.localeCompare(b.Name))
     .map((org) => {
       const labCount = opts.labCountByOrg[org.OrganizationId];
-      const canManage = opts.isOrgAdmin(org.OrganizationId);
       const isCurrent = org.OrganizationId === opts.currentOrgId;
       const detailParts = [
         labCount === undefined ? '' : labCountText(labCount),
-        canManage ? 'Org admin' : '',
+        opts.isOrgAdmin(org.OrganizationId) ? 'Org admin' : '',
         isCurrent ? 'Current' : '',
       ];
 
@@ -53,7 +51,6 @@ export function buildOrgPickerRows(
         detail: detailParts.filter(Boolean).join(' · '),
         isPreviewed: org.OrganizationId === opts.previewOrgId,
         isCurrent,
-        canManage,
       };
     });
 }

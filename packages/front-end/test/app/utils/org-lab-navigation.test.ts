@@ -35,14 +35,12 @@ describe('buildOrgPickerRows', () => {
       detail: '1 lab',
       isPreviewed: true,
       isCurrent: false,
-      canManage: false,
     });
     expect(rows[1]).toMatchObject({
       orgId: 'o2',
       detail: '3 labs · Org admin · Current',
       isPreviewed: false,
       isCurrent: true,
-      canManage: true,
     });
   });
 

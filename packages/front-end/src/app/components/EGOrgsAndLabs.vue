@@ -159,7 +159,7 @@
     <nav aria-label="Organizations" class="w-full shrink-0 lg:w-80">
       <h2 class="text-muted mb-2 text-xs font-semibold uppercase tracking-wide">Organizations</h2>
       <ul class="flex list-none flex-col gap-1 p-0">
-        <li v-for="org in orgRows" :key="org.orgId" class="flex items-center gap-1">
+        <li v-for="org in orgRows" :key="org.orgId" class="flex">
           <button
             type="button"
             class="focus-visible:outline-primary-500 flex min-h-[52px] min-w-0 grow flex-col items-start justify-center rounded-lg px-3 py-2 text-left focus-visible:outline focus-visible:outline-2"
@@ -170,15 +170,6 @@
             <span class="w-full truncate font-semibold">{{ org.name }}</span>
             <span v-if="org.detail" class="text-muted text-xs">{{ org.detail }}</span>
           </button>
-          <UButton
-            v-if="org.canManage"
-            icon="i-heroicons-cog-6-tooth"
-            color="gray"
-            variant="ghost"
-            :aria-label="`Settings for ${org.name}`"
-            :disabled="isSwitching"
-            @click="openOrgSettings(org.orgId)"
-          />
         </li>
       </ul>
     </nav>
@@ -254,6 +245,7 @@
                   @click="openLabSettings(lab)"
                 />
                 <EGButton
+                  class="min-w-[7.5rem] justify-center"
                   :label="lab.actionLabel"
                   :variant="lab.isCurrent ? ButtonVariantEnum.enum.primary : ButtonVariantEnum.enum.secondary"
                   :size="ButtonSizeEnum.enum.sm"
