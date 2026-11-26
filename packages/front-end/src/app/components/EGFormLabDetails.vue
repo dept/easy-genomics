@@ -40,6 +40,7 @@
     DEFAULT_RUN_LIST_STATUS_POLL_INTERVAL_SECONDS,
   } from '@easy-genomics/shared-lib/src/app/utils/laboratory-run-progress-polling';
   import { fetchLabS3BucketOptions } from '@FE/utils/lab-s3-bucket-options';
+  import { createLabFooterMessage } from '@FE/utils/create-lab-footer';
   import {
     networkingMenuOptions,
     networkingMenuText,
@@ -88,6 +89,13 @@
   const canSubmit = ref(false);
 
   const isEditing = computed<boolean>(() => formMode.value !== LabDetailsFormModeEnum.enum.ReadOnly);
+  const isCreateMode = computed<boolean>(() => formMode.value === LabDetailsFormModeEnum.enum.Create);
+  const sectionLayout = computed(() => (isCreateMode.value ? 'grid' : 'collapsible'));
+
+  // Create mode only. The lab record has no Microreact flag, so the switch just decides whether a token is sent.
+  const isMicroreactEnabled = ref(false);
+  const hasTriedToCreate = ref(false);
+  const createValidationErrors = ref<FormError[]>([]);
 
   const defaultState: LabDetails = {
     Name: '',
@@ -272,6 +280,28 @@
     isEditingMicroreactAccessToken.value = false;
     state.value.MicroreactAccessToken = '';
     validate(state.value);
+  }
+
+  watch(isMicroreactEnabled, (enabled) => {
+    if (!enabled) {
+      state.value.MicroreactAccessToken = '';
+    }
+  });
+
+  const createFooterMessage = computed<string | null>(() => {
+    if (!hasTriedToCreate.value) return null;
+    const hasName = !!state.value.Name?.trim();
+    const hasBucket = !useUserStore().isOrgAdmin() || !!state.value.S3Bucket?.trim();
+    const otherErrorCount = createValidationErrors.value.filter(
+      (error) => !(error.path === 'Name' && !hasName) && !(error.path === 'S3Bucket' && !hasBucket),
+    ).length;
+    return createLabFooterMessage({ hasName, hasBucket, otherErrorCount });
+  });
+
+  function onFormValidationError() {
+    if (isCreateMode.value) {
+      hasTriedToCreate.value = true;
+    }
   }
 
   /**
@@ -1062,6 +1092,14 @@
       errors.push({ path: 'NotifyOnLabRunsAdditionalEmailsInput', message: additionalEmailsError.value });
     }
 
+    // Create lab is always clickable, so a missing bucket has to be a field error for UForm to mark it.
+    if (isCreateMode.value && useUserStore().isOrgAdmin() && !state.S3Bucket?.trim()) {
+      errors.push({ path: 'S3Bucket', message: 'Choose a bucket.' });
+    }
+    if (isCreateMode.value) {
+      createValidationErrors.value = errors;
+    }
+
     checkCanSubmitFormData(errors.length);
 
     return errors;
@@ -1204,6 +1242,21 @@
     },
   );
 
+  // Create mode hides the HealthOmics AI fields while HealthOmics is off, so a provider picked earlier would
+  // keep requiring a model and key nobody can see. Reset them to the untouched defaults instead.
+  watch(
+    () => state.value.AwsHealthOmicsEnabled,
+    (enabled) => {
+      if (!isCreateMode.value || enabled) {
+        return;
+      }
+      state.value.HealthOmicsLlmProvider = undefined;
+      state.value.HealthOmicsLlmModelId = '';
+      state.value.HealthOmicsLlmApiKey = '';
+      state.value.HealthOmicsLogEnrichmentEnabled = false;
+    },
+  );
+
   // The four per-user notification controls aren't part of `state`, so they need their own
   // trigger to re-run validation/dirty-checking when they change.
   watch(
@@ -1223,6 +1276,7 @@
     :aria-busy="isSubmittingFormData || isLoadingFormData"
     :aria-describedby="isLoadingFormData ? 'lab-settings-loading-status' : undefined"
     @submit="onSubmit"
+    @error="onFormValidationError"
   >
     <EGText v-if="formMode !== LabDetailsFormModeEnum.enum.Create" :id="settingsHeadingId" tag="h2" class="sr-only">
       Lab settings
@@ -1248,12 +1302,13 @@
       </button>
     </div>
 
-    <div class="flex flex-col gap-6">
+    <div class="flex flex-col" :class="isCreateMode ? 'border-stroke-light rounded-2xl border bg-white' : 'gap-6'">
       <!-- General: name + description only -->
-      <EGCollapsibleSection
+      <EGLabFormSection
+        :layout="sectionLayout"
         heading-id="lab-settings-general-heading"
         title="General"
-        description="How this lab appears to its members"
+        :description="isCreateMode ? 'How this lab appears to its members.' : 'How this lab appears to its members'"
         v-model:open="sectionOpen.general"
       >
         <div v-if="isLoadingFormData" class="flex flex-col" aria-hidden="true">
@@ -1267,7 +1322,13 @@
           </div>
         </div>
         <template v-else>
-          <EGFormGroup label="Lab name" name="Name" eager-validation required>
+          <EGFormGroup
+            label="Lab name"
+            name="Name"
+            eager-validation
+            required
+            :help="isCreateMode ? 'Must be unique in this organization.' : undefined"
+          >
             <EGInput
               v-model="state.Name"
               :disabled="!isEditing || isSubmittingFormData"
@@ -1284,13 +1345,18 @@
             />
           </EGFormGroup>
         </template>
-      </EGCollapsibleSection>
+      </EGLabFormSection>
 
       <!-- Storage and runs: S3, retention, poll intervals -->
-      <EGCollapsibleSection
+      <EGLabFormSection
+        :layout="sectionLayout"
         heading-id="lab-settings-storage-heading"
         title="Storage and runs"
-        description="Where this lab’s data lives and how often run status refreshes"
+        :description="
+          isCreateMode
+            ? 'Where this lab’s data lives, how long run records are kept and how often pages check for updates.'
+            : 'Where this lab’s data lives and how often run status refreshes'
+        "
         :summary="isLoadingFormData ? '' : storageAndRunsSummary"
         v-model:open="sectionOpen.storage"
       >
@@ -1302,12 +1368,20 @@
           </div>
         </div>
         <template v-else>
-          <EGFormGroup v-if="useUserStore().isOrgAdmin()" label="Default S3 bucket" name="S3Bucket" required>
+          <EGFormGroup
+            v-if="useUserStore().isOrgAdmin()"
+            label="Default S3 bucket"
+            name="S3Bucket"
+            required
+            :help="
+              isCreateMode ? 'Run inputs and results are stored under this lab’s folder in this bucket.' : undefined
+            "
+          >
             <EGSelect
               :options="s3Directories"
               v-model="selectedS3Bucket"
               :disabled="!isEditing || isSubmittingFormData"
-              placeholder="Please select an S3 bucket from the list below"
+              :placeholder="isCreateMode ? 'Choose a bucket' : 'Please select an S3 bucket from the list below'"
               searchable-placeholder="Search existing S3 buckets..."
             />
             <p v-if="isEditing && persistedBucketNoLongerGranted" class="text-alert-danger-dark mt-1 text-xs">
@@ -1316,94 +1390,159 @@
             </p>
           </EGFormGroup>
 
-          <EGFormGroup
-            label="Keep run records for"
-            name="RunRetentionMonths"
-            eager-validation
-            :class="useUserStore().isOrgAdmin() ? 'border-t border-gray-200 pt-4' : ''"
-          >
-            <EGInput
-              v-model.number="state.RunRetentionMonths"
-              type="number"
-              compact
-              suffix="months"
-              class="w-40"
-              min="0"
-              max="120"
-              step="1"
-              :disabled="!isEditing || isSubmittingFormData"
-              :aria-describedby="retentionHelpId"
-            />
-            <p :id="retentionHelpId" class="text-muted mt-1 text-xs">Enter 0 to keep them forever.</p>
-          </EGFormGroup>
-
-          <div class="border-t border-gray-200 pt-4">
-            <button
-              type="button"
-              class="text-primary flex items-center gap-1 text-sm font-medium"
-              :aria-expanded="statusRefreshOpen"
-              aria-controls="lab-settings-status-refresh"
-              @click="statusRefreshOpen = !statusRefreshOpen"
-            >
-              <UIcon
-                name="i-heroicons-chevron-down"
-                class="h-4 w-4 shrink-0 transition-transform"
-                :class="statusRefreshOpen ? '' : '-rotate-90'"
-                aria-hidden="true"
+          <div v-if="isCreateMode" class="grid grid-cols-1 gap-6 sm:grid-cols-3">
+            <EGFormGroup class="!mb-0" label="Keep run records for" name="RunRetentionMonths" eager-validation>
+              <EGInput
+                v-model.number="state.RunRetentionMonths"
+                type="number"
+                compact
+                suffix="months"
+                min="0"
+                max="120"
+                step="1"
+                :disabled="isSubmittingFormData"
+                :aria-describedby="retentionHelpId"
               />
-              Status refresh rates
-            </button>
-            <div v-show="statusRefreshOpen" id="lab-settings-status-refresh">
-              <p class="text-muted mt-1 text-xs">How often pages check for run updates. The defaults suit most labs.</p>
-              <div class="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-2">
-                <EGFormGroup class="!mb-0" label="Runs list" name="RunListStatusPollIntervalSeconds" eager-validation>
-                  <EGInput
-                    v-model.number="state.RunListStatusPollIntervalSeconds"
-                    type="number"
-                    compact
-                    suffix="seconds"
-                    class="w-40"
-                    min="30"
-                    max="1800"
-                    step="1"
-                    :disabled="!isEditing || isSubmittingFormData"
-                    :aria-describedby="runsListPollHelpId"
-                  />
-                  <p :id="runsListPollHelpId" class="text-muted mt-1 text-xs">30 to 1,800</p>
-                </EGFormGroup>
+              <p :id="retentionHelpId" class="text-muted mt-1 text-xs">0 keeps them forever.</p>
+            </EGFormGroup>
 
+            <EGFormGroup
+              class="!mb-0"
+              label="Runs list refresh"
+              name="RunListStatusPollIntervalSeconds"
+              eager-validation
+            >
+              <EGInput
+                v-model.number="state.RunListStatusPollIntervalSeconds"
+                type="number"
+                compact
+                suffix="seconds"
+                min="30"
+                max="1800"
+                step="1"
+                :disabled="isSubmittingFormData"
+                :aria-describedby="runsListPollHelpId"
+              />
+              <p :id="runsListPollHelpId" class="text-muted mt-1 text-xs">30 to 1,800.</p>
+            </EGFormGroup>
 
-                <EGFormGroup
-                  class="!mb-0"
-                  label="Run progress"
-                  name="RunDetailProgressPollIntervalSeconds"
-                  eager-validation
-                >
-                  <EGInput
-                    v-model.number="state.RunDetailProgressPollIntervalSeconds"
-                    type="number"
-                    compact
-                    suffix="seconds"
-                    class="w-40"
-                    min="10"
-                    max="300"
-                    step="1"
-                    :disabled="!isEditing || isSubmittingFormData"
-                    :aria-describedby="runDetailPollHelpId"
-                  />
-                  <p :id="runDetailPollHelpId" class="text-muted mt-1 text-xs">10 to 300</p>
-                </EGFormGroup>
+            <EGFormGroup
+              class="!mb-0"
+              label="Run progress refresh"
+              name="RunDetailProgressPollIntervalSeconds"
+              eager-validation
+            >
+              <EGInput
+                v-model.number="state.RunDetailProgressPollIntervalSeconds"
+                type="number"
+                compact
+                suffix="seconds"
+                min="10"
+                max="300"
+                step="1"
+                :disabled="isSubmittingFormData"
+                :aria-describedby="runDetailPollHelpId"
+              />
+              <p :id="runDetailPollHelpId" class="text-muted mt-1 text-xs">10 to 300.</p>
+            </EGFormGroup>
+          </div>
+
+          <template v-else>
+            <EGFormGroup
+              label="Keep run records for"
+              name="RunRetentionMonths"
+              eager-validation
+              :class="useUserStore().isOrgAdmin() ? 'border-t border-gray-200 pt-4' : ''"
+            >
+              <EGInput
+                v-model.number="state.RunRetentionMonths"
+                type="number"
+                compact
+                suffix="months"
+                class="w-40"
+                min="0"
+                max="120"
+                step="1"
+                :disabled="!isEditing || isSubmittingFormData"
+                :aria-describedby="retentionHelpId"
+              />
+              <p :id="retentionHelpId" class="text-muted mt-1 text-xs">Enter 0 to keep them forever.</p>
+            </EGFormGroup>
+
+            <div class="border-t border-gray-200 pt-4">
+              <button
+                type="button"
+                class="text-primary flex items-center gap-1 text-sm font-medium"
+                :aria-expanded="statusRefreshOpen"
+                aria-controls="lab-settings-status-refresh"
+                @click="statusRefreshOpen = !statusRefreshOpen"
+              >
+                <UIcon
+                  name="i-heroicons-chevron-down"
+                  class="h-4 w-4 shrink-0 transition-transform"
+                  :class="statusRefreshOpen ? '' : '-rotate-90'"
+                  aria-hidden="true"
+                />
+                Status refresh rates
+              </button>
+              <div v-show="statusRefreshOpen" id="lab-settings-status-refresh">
+                <p class="text-muted mt-1 text-xs">
+                  How often pages check for run updates. The defaults suit most labs.
+                </p>
+                <div class="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-2">
+                  <EGFormGroup class="!mb-0" label="Runs list" name="RunListStatusPollIntervalSeconds" eager-validation>
+                    <EGInput
+                      v-model.number="state.RunListStatusPollIntervalSeconds"
+                      type="number"
+                      compact
+                      suffix="seconds"
+                      class="w-40"
+                      min="30"
+                      max="1800"
+                      step="1"
+                      :disabled="!isEditing || isSubmittingFormData"
+                      :aria-describedby="runsListPollHelpId"
+                    />
+                    <p :id="runsListPollHelpId" class="text-muted mt-1 text-xs">30 to 1,800</p>
+                  </EGFormGroup>
+
+                  <EGFormGroup
+                    class="!mb-0"
+                    label="Run progress"
+                    name="RunDetailProgressPollIntervalSeconds"
+                    eager-validation
+                  >
+                    <EGInput
+                      v-model.number="state.RunDetailProgressPollIntervalSeconds"
+                      type="number"
+                      compact
+                      suffix="seconds"
+                      class="w-40"
+                      min="10"
+                      max="300"
+                      step="1"
+                      :disabled="!isEditing || isSubmittingFormData"
+                      :aria-describedby="runDetailPollHelpId"
+                    />
+                    <p :id="runDetailPollHelpId" class="text-muted mt-1 text-xs">10 to 300</p>
+                  </EGFormGroup>
+                </div>
               </div>
             </div>
-          </div>
+          </template>
         </template>
-      </EGCollapsibleSection>
+      </EGLabFormSection>
 
       <!-- Connections: HealthOmics (+ networking), GitHub, Seqera when already enabled -->
-      <EGCollapsibleSection
+      <EGLabFormSection
+        :layout="sectionLayout"
         heading-id="lab-settings-connections-heading"
         title="Connections"
-        description="Services this lab runs on or sends results to"
+        :description="
+          isCreateMode
+            ? 'Services this lab runs on or sends results to. Credentials are stored against the lab.'
+            : 'Services this lab runs on or sends results to'
+        "
         v-model:open="sectionOpen.connections"
       >
         <div v-if="isLoadingFormData" class="flex flex-col" aria-hidden="true">
@@ -1523,7 +1662,10 @@
             </div>
           </section>
 
-          <section :aria-labelledby="healthOmicsSectionId">
+          <section
+            :aria-labelledby="healthOmicsSectionId"
+            :class="isCreateMode ? 'border-stroke-light rounded-xl border px-4 pt-4' : ''"
+          >
             <h3 :id="healthOmicsSectionId" class="sr-only">HealthOmics integration</h3>
             <div class="divide-y divide-gray-200">
               <div class="flex items-center gap-3 py-4 first:pt-0">
@@ -1536,10 +1678,13 @@
                 <div class="flex min-w-0 flex-1 items-center justify-between gap-3">
                   <div class="min-w-0">
                     <p class="text-sm font-medium text-black">AWS HealthOmics</p>
-                    <p class="text-muted mt-0.5 text-xs">Run workflows on HealthOmics</p>
+                    <p class="text-muted mt-0.5 text-xs">
+                      {{ isCreateMode ? 'Run workflows on HealthOmics.' : 'Run workflows on HealthOmics' }}
+                    </p>
                   </div>
                   <div class="flex shrink-0 items-center gap-2">
                     <span
+                      v-if="!isCreateMode"
                       class="text-sm font-medium"
                       :class="state.AwsHealthOmicsEnabled ? 'text-alert-success-text' : 'text-muted'"
                     >
@@ -1715,7 +1860,12 @@
             </div>
           </section>
 
-          <div v-if="isEditing" class="mt-4 border-t border-gray-200 pt-4">
+          <div
+            v-if="isEditing"
+            :class="
+              isCreateMode ? 'border-stroke-light mt-3 rounded-xl border p-4' : 'mt-4 border-t border-gray-200 pt-4'
+            "
+          >
             <div class="flex items-start justify-between gap-3">
               <div class="flex min-w-0 items-start gap-3">
                 <div
@@ -1724,7 +1874,11 @@
                 >
                   <img src="@/assets/images/microreact-logo.svg" alt="" class="h-6 w-6" width="24" height="24" />
                 </div>
-                <div class="min-w-0">
+                <div v-if="isCreateMode" class="min-w-0">
+                  <p class="text-sm font-medium text-black">Microreact</p>
+                  <p class="text-muted mt-0.5 text-xs">Send selected results from runs to Microreact projects.</p>
+                </div>
+                <div v-else class="min-w-0">
                   <p class="text-sm font-medium text-black">Microreact (optional)</p>
                   <p class="text-muted mt-0.5 text-xs">
                     Projects sent from runs are created in this token&apos;s account. Find it in Microreact under
@@ -1732,7 +1886,14 @@
                   </p>
                 </div>
               </div>
-              <div v-if="!showMicroreactTokenInput" class="flex shrink-0 items-center gap-2">
+              <UToggle
+                v-if="isCreateMode"
+                v-model="isMicroreactEnabled"
+                class="mt-0.5 shrink-0"
+                aria-label="Send results to Microreact"
+                :disabled="isSubmittingFormData"
+              />
+              <div v-else-if="!showMicroreactTokenInput" class="flex shrink-0 items-center gap-2">
                 <UBadge
                   v-if="!shouldClearMicroreactAccessToken"
                   size="sm"
@@ -1761,18 +1922,34 @@
                 />
               </div>
             </div>
-            <EGFormGroup v-if="showMicroreactTokenInput" class="mt-3" name="MicroreactAccessToken" eager-validation>
+            <EGFormGroup
+              v-if="isCreateMode && isMicroreactEnabled"
+              class="border-stroke-light !mb-0 mt-4 border-t pt-4"
+              label="API access token"
+              name="MicroreactAccessToken"
+              eager-validation
+            >
+              <EGPasswordInput
+                v-model="state.MicroreactAccessToken"
+                :password="true"
+                placeholder="Paste token"
+                :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
+                :disabled="isSubmittingFormData"
+              />
+              <p class="text-muted mt-1 text-xs">
+                In Microreact, go to Account settings, then API access token. Projects are created in this token’s
+                account.
+              </p>
+            </EGFormGroup>
+            <EGFormGroup
+              v-else-if="!isCreateMode && showMicroreactTokenInput"
+              class="mt-3"
+              name="MicroreactAccessToken"
+              eager-validation
+            >
               <div class="flex items-end gap-2">
                 <div class="min-w-0 flex-1">
                   <EGPasswordInput
-                    v-if="formMode === LabDetailsFormModeEnum.enum.Create"
-                    v-model="state.MicroreactAccessToken"
-                    :password="true"
-                    :autocomplete="AutoCompleteOptionsEnum.enum.NewPassword"
-                    :disabled="!isEditing || isSubmittingFormData"
-                  />
-                  <EGPasswordInput
-                    v-else
                     v-model="state.MicroreactAccessToken"
                     :select-on-focus="true"
                     :password="true"
@@ -1796,13 +1973,18 @@
             </EGFormGroup>
           </div>
         </template>
-      </EGCollapsibleSection>
+      </EGLabFormSection>
 
       <!-- AI failure analysis -->
-      <EGCollapsibleSection
+      <EGLabFormSection
+        :layout="sectionLayout"
         heading-id="lab-settings-ai-failure-analysis-heading"
         title="AI failure analysis"
-        description="When a run fails, suggest whether the cause sits with the lab, the workflow or the platform"
+        :description="
+          isCreateMode
+            ? 'When a run fails, suggest whether the cause sits with the lab, the workflow or the platform.'
+            : 'When a run fails, suggest whether the cause sits with the lab, the workflow or the platform'
+        "
         :badges="isLoadingFormData ? [] : [aiFailureAnalysisBadge]"
         v-model:open="sectionOpen.ai"
       >
@@ -1814,7 +1996,13 @@
           </div>
         </div>
         <template v-else>
-          <p v-if="!state.AwsHealthOmicsEnabled && !state.NextFlowTowerEnabled" class="text-muted mb-3 text-xs">
+          <p v-if="isCreateMode && !state.AwsHealthOmicsEnabled" class="text-muted mb-3 text-xs">
+            Turn on AWS HealthOmics above to use this.
+          </p>
+          <p
+            v-else-if="!isCreateMode && !state.AwsHealthOmicsEnabled && !state.NextFlowTowerEnabled"
+            class="text-muted mb-3 text-xs"
+          >
             Enable HealthOmics{{ isSeqeraAlreadyEnabled ? ' or Seqera' : '' }} under Connections to configure AI failure
             analysis for that integration.
           </p>
@@ -1822,9 +2010,15 @@
           <EGFormGroup name="FailureAnalysisEnabled">
             <div class="flex items-start justify-between gap-4">
               <div class="min-w-0">
-                <p class="text-sm text-black">Analyse failed runs with AI</p>
+                <p class="text-sm text-black">
+                  {{ isCreateMode ? 'Analyse failed runs' : 'Analyse failed runs with AI' }}
+                </p>
                 <div class="mt-0.5 flex items-start gap-1.5">
-                  <p class="text-muted text-xs">
+                  <p v-if="isCreateMode" class="text-muted text-xs">
+                    Known HealthOmics error codes are matched with a built-in lookup. The model is only used for
+                    ambiguous or free-text errors.
+                  </p>
+                  <p v-else class="text-muted text-xs">
                     Documented HealthOmics error codes are matched with a built-in lookup. The LLM is only used for
                     ambiguous or free-text errors.
                   </p>
@@ -1867,7 +2061,7 @@
               <UToggle
                 class="mt-0.5 shrink-0"
                 v-model="state.FailureAnalysisEnabled"
-                :disabled="!isEditing || isSubmittingFormData"
+                :disabled="!isEditing || isSubmittingFormData || (isCreateMode && !state.AwsHealthOmicsEnabled)"
               />
             </div>
           </EGFormGroup>
@@ -2030,7 +2224,7 @@
             </EGFormGroup>
           </div>
         </template>
-      </EGCollapsibleSection>
+      </EGLabFormSection>
 
       <!-- Notifications: per-user prefs only -->
       <EGCollapsibleSection
@@ -2162,23 +2356,28 @@
     </div>
 
     <!-- Form Buttons: Create Mode -->
-    <div v-if="formMode === LabDetailsFormModeEnum.enum.Create" class="mt-6 flex space-x-2">
-      <EGButton
-        :disabled="!canSubmit || !isS3BucketValidForSubmit"
-        :loading="isSubmittingFormData"
-        :size="ButtonSizeEnum.enum.sm"
-        u-button-type="submit"
-        label="Create Lab"
-      />
-      <EGButton
-        :size="ButtonSizeEnum.enum.sm"
-        :variant="ButtonVariantEnum.enum.secondary"
-        u-button-type="button"
-        :disabled="useUiStore().anyRequestPending(['createLab', 'updateLab'])"
-        label="Cancel"
-        name="cancel"
-        @click="$router.push(useUiStore().previousPageRoute)"
-      />
+    <div
+      v-if="isCreateMode"
+      class="border-stroke-light sticky bottom-0 z-10 mt-6 flex items-center justify-between gap-4 rounded-2xl border bg-white px-6 py-4"
+    >
+      <p class="text-alert-danger-dark text-sm" role="status" aria-live="polite">{{ createFooterMessage }}</p>
+      <div class="flex shrink-0 gap-2">
+        <EGButton
+          :size="ButtonSizeEnum.enum.sm"
+          :variant="ButtonVariantEnum.enum.secondary"
+          u-button-type="button"
+          :disabled="useUiStore().anyRequestPending(['createLab', 'updateLab'])"
+          label="Cancel"
+          name="cancel"
+          @click="$router.push('/labs')"
+        />
+        <EGButton
+          :loading="isSubmittingFormData"
+          :size="ButtonSizeEnum.enum.sm"
+          u-button-type="submit"
+          label="Create lab"
+        />
+      </div>
     </div>
 
     <!-- Form Buttons: Edit Mode -->
