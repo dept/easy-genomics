@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import type { RunCostsQuery } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/run-costs';
+  import type { RunLimitEventsQuery } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/run-limit-events';
   import type { RunCostsLabRow } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/usage-totals';
   import { saveAs } from 'file-saver';
   import {
@@ -58,9 +59,31 @@
         detail: `Previous: ${formatUsd(PreviousTotals.EstimatedCostUsd)} (${formatChange(totalsChangePercent(report.value))})`,
       },
       { key: 'runs', label: 'Finished runs', value: Totals.FinishedRuns.toLocaleString() },
-      { key: 'warned', label: 'Warned (launched anyway)', value: Totals.WarnedRuns.toLocaleString() },
-      { key: 'blocked', label: 'Blocked', value: Totals.BlockedLaunches.toLocaleString() },
+      {
+        key: 'warned',
+        label: 'Warned (launched anyway)',
+        value: Totals.WarnedRuns.toLocaleString(),
+        opensKind: Totals.WarnedRuns > 0 ? ('warned' as const) : undefined,
+      },
+      {
+        key: 'blocked',
+        label: 'Blocked',
+        value: Totals.BlockedLaunches.toLocaleString(),
+        opensKind: Totals.BlockedLaunches > 0 ? ('blocked' as const) : undefined,
+      },
     ];
+  });
+
+  const openEventsKind = ref<'warned' | 'blocked' | null>(null);
+  const eventsQuery = computed<RunLimitEventsQuery | null>(() =>
+    runCostsStore.query && openEventsKind.value
+      ? ({ ...runCostsStore.query, kind: openEventsKind.value } as RunLimitEventsQuery)
+      : null,
+  );
+  // Kept after closing so the panel can slide out still showing its heading.
+  const lastEventsQuery = ref<RunLimitEventsQuery | null>(null);
+  watch(eventsQuery, (next) => {
+    if (next) lastEventsQuery.value = next;
   });
 
   const expandedLabIds = ref(new Set<string>());
@@ -140,13 +163,32 @@
         <div
           v-for="card in cards"
           :key="card.key"
-          class="min-w-0 rounded-2xl border border-neutral-100 bg-white p-4 sm:p-6"
+          :data-testid="`run-costs-card-${card.key}`"
+          class="relative min-w-0 rounded-2xl border border-neutral-100 bg-white p-4 sm:p-6"
+          :class="card.opensKind ? 'hover:border-neutral-300' : ''"
         >
+          <!-- dt and dd can't sit inside a button, so a card that opens its list gets a button laid over it. -->
+          <button
+            v-if="card.opensKind"
+            type="button"
+            aria-haspopup="dialog"
+            :aria-label="`${card.label}: ${card.value}. View the list`"
+            class="absolute inset-0 cursor-pointer rounded-2xl border-0 bg-transparent"
+            @click="openEventsKind = card.opensKind"
+          />
           <dt class="text-muted text-xs leading-snug sm:text-sm">{{ card.label }}</dt>
           <dd class="text-heading m-0 break-words font-serif text-2xl font-semibold sm:text-3xl">{{ card.value }}</dd>
           <dd v-if="card.detail" class="text-muted m-0 mt-1 text-xs">{{ card.detail }}</dd>
         </div>
       </dl>
+
+      <EGRunLimitEventsSlideover
+        v-if="lastEventsQuery"
+        :model-value="openEventsKind !== null"
+        :query="lastEventsQuery"
+        :report="report"
+        @update:model-value="openEventsKind = null"
+      />
 
       <section class="border-background-dark-grey rounded-xl border bg-white p-6" aria-labelledby="run-costs-by-lab">
         <div class="mb-4 flex flex-wrap items-center gap-2">

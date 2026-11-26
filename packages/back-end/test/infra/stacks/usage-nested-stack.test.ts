@@ -107,6 +107,27 @@ describe('UsageNestedStack', () => {
     ]);
   });
 
+  it('lets the events list query the event table and read the users, and nothing else', () => {
+    const stack = createStack();
+
+    const statements = stack.iam
+      .getPolicyStatements('/easy-genomics/usage/list-run-limit-events')
+      .map((statement) => statement.toStatementJson());
+
+    expect(statements).toEqual([
+      {
+        Effect: 'Allow',
+        Action: 'dynamodb:Query',
+        Resource: `arn:aws:dynamodb:${region}:${account}:table/test-run-limit-event-table`,
+      },
+      {
+        Effect: 'Allow',
+        Action: 'dynamodb:BatchGetItem',
+        Resource: `arn:aws:dynamodb:${region}:${account}:table/test-user-table`,
+      },
+    ]);
+  });
+
   it('builds only the usage controllers, with their IAM policies attached', () => {
     const stack = createStack();
 
