@@ -1,27 +1,17 @@
 import { test, expect } from 'playwright/test';
 import { envConfig } from '../../../config/env-config';
 
-test('01 - Reset Password', async ({ page, baseURL }) => {
-  const resetPassword = page.getByRole('link', { name: 'Reset password' });
-  const sendPasswordresetlink = page.getByRole('button', { name: 'Send password reset link' });
+const email = envConfig.labManagerEmail || '';
 
-  // Go to profile directly
+test('01 - Reset Password', async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/profile`);
   await page.waitForLoadState('networkidle');
 
-  // Check reset password button and redirection
-  await expect(resetPassword).toBeVisible();
-  await resetPassword.click();
-  await expect(page).toHaveURL(`${baseURL}/forgot-password`);
+  const sendResetLink = page.getByRole('button', { name: 'Send reset link' });
+  await expect(sendResetLink).toBeVisible();
+  await sendResetLink.click();
 
-  // Reset password for the test invite email
-  await page.getByRole('textbox', { name: 'Email address' }).fill(envConfig.testInviteEmail);
-  await sendPasswordresetlink.click();
-  await page.waitForTimeout(3000);
-
-  // Confirm success
-  await expect(page.getByText('Reset link has been sent to ' + envConfig.testInviteEmail).nth(0)).toBeVisible();
-
-  // Check redirection to the Labs page
-  await expect(page).toHaveURL(`${baseURL}/labs`);
+  await expect(page.getByText(`Link sent to ${email}. Check your inbox.`)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Send again' })).toBeVisible();
+  await expect(page).toHaveURL(`${baseURL}/profile`);
 });
