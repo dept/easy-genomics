@@ -1,6 +1,6 @@
 import { test, expect } from 'playwright/test';
 import { envConfig } from '../../../config/env-config';
-import { labActionButton, openLab } from '../helpers/labs';
+import { labActionButton, openLab, openOrgSettings } from '../helpers/labs';
 
 /*
  * Test preconditions:
@@ -218,8 +218,7 @@ test('04 - Update a Laboratory Successfully', async ({ page, baseURL }) => {
 test('05 - Grant access to a user to a Lab via Edit User Access Successfully', async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/labs`);
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: `Settings for ${orgName}` }).click();
-  await page.waitForLoadState('networkidle');
+  await openOrgSettings(page, orgName);
   await page.getByRole('row', { name: labManagerName }).locator('button').click();
   await page.getByRole('menuitem', { name: 'Edit User Access' }).click();
   await page.waitForTimeout(2000);
@@ -262,8 +261,7 @@ test('05 - Grant access to a user to a Lab via Edit User Access Successfully', a
 test('06 - Remove user from a Lab via Edit User Access Successfully', async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/labs`);
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: `Settings for ${orgName}` }).click();
-  await page.waitForLoadState('networkidle');
+  await openOrgSettings(page, orgName);
   await page.getByRole('row', { name: labManagerName }).locator('button').click();
   await page.getByRole('menuitem', { name: 'Edit User Access' }).click();
   await page.waitForTimeout(2000);

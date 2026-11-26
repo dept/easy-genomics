@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from 'playwright/test';
+import { openOrgSettings, orgListButton } from '../helpers/labs';
 
 /*
  * Test preconditions:
@@ -17,10 +18,13 @@ async function openUsageLimitsTab(page: Page, baseURL: string | undefined): Prom
   await page.goto(`${baseURL}/labs`);
   await page.waitForLoadState('networkidle');
 
-  const orgSettings = page.getByRole('button', { name: `Settings for ${orgName}` });
-  test.skip(!(await orgSettings.isVisible().catch(() => false)), `${orgName} not found`);
-  await orgSettings.click();
-  await page.waitForLoadState('networkidle');
+  test.skip(
+    !(await orgListButton(page, orgName)
+      .isVisible()
+      .catch(() => false)),
+    `${orgName} not found`,
+  );
+  await openOrgSettings(page, orgName);
   await selectLimitsTab(page);
 }
 
