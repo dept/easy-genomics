@@ -16,6 +16,13 @@ jest.mock('../../../../src/app/services/easy-genomics/laboratory-service', () =>
   })),
 }));
 
+const mockListAllRunsForLaboratory = jest.fn();
+jest.mock('../../../../src/app/services/easy-genomics/laboratory-run-service', () => ({
+  LaboratoryRunService: jest.fn().mockImplementation(() => ({
+    listAllRunsForLaboratory: (...args: unknown[]) => mockListAllRunsForLaboratory(...args),
+  })),
+}));
+
 import {
   buildRunCostsReport,
   resolveRunCostsPeriods,
@@ -331,9 +338,34 @@ describe('buildRunCostsReport', () => {
   });
 });
 
+describe('buildRunCostsReport fallback workflow names', () => {
+  const launchOnly = total({ LaboratoryId: LAB_A, WorkflowExternalId: '4995724', BlockedLaunches: 1 });
+  const fallbackKey = `${LAB_A}#AWS HealthOmics#4995724`;
+
+  it('names a workflow from the fallback map when no totals row has its name', () => {
+    const report = buildRunCostsReport([launchOnly], [], labNames, PERIODS, new Map([[fallbackKey, 'Workshop main']]));
+
+    expect(report.Labs[0].Workflows[0].WorkflowName).toBe('Workshop main');
+  });
+
+  it('prefers a totals row name over the fallback map', () => {
+    const named = total({ LaboratoryId: LAB_A, WorkflowExternalId: '4995724', WorkflowName: 'From totals' });
+    const report = buildRunCostsReport(
+      [launchOnly, named],
+      [],
+      labNames,
+      PERIODS,
+      new Map([[fallbackKey, 'Workshop main']]),
+    );
+
+    expect(report.Labs[0].Workflows[0].WorkflowName).toBe('From totals');
+  });
+});
+
 describe('RunCostsReportService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockListAllRunsForLaboratory.mockResolvedValue([]);
   });
 
   it("reads both periods and the organization's labs, then builds the report", async () => {
@@ -357,5 +389,120 @@ describe('RunCostsReportService', () => {
     expect(mockQueryByOrganizationId).toHaveBeenCalledTimes(1);
     expect(mockQueryByOrganizationId).toHaveBeenCalledWith(ORGANIZATION_ID);
     expect(report.Labs[0]).toMatchObject({ LaboratoryName: 'Alpha Lab', EstimatedCostUsd: 30, ChangePercent: 50 });
+  });
+
+  describe('naming workflows that only have launch counts', () => {
+    const launchOnlyTotals = (laboratoryId: string, workflowExternalId = '4995724') => [
+      total({ LaboratoryId: laboratoryId, WorkflowExternalId: workflowExternalId, BlockedLaunches: 2 }),
+    ];
+    const getReport = () =>
+      new RunCostsReportService().getReport(
+        { organizationId: ORGANIZATION_ID, period: 'month', month: '2026-03' },
+        new Date('2026-11-10T00:00:00.000Z'),
+      );
+    const givenTotals = (rows: UsageDailyTotal[]) =>
+      mockQueryRange.mockImplementation(async (_organizationId: string, start: string) =>
+        start === '2026-03-01' ? rows : [],
+      );
+    const lab = (laboratoryId: string, name: string, workflowRunLimits?: Record<string, unknown>) => ({
+      OrganizationId: ORGANIZATION_ID,
+      LaboratoryId: laboratoryId,
+      Name: name,
+      WorkflowRunLimits: workflowRunLimits,
+    });
+
+    it("names a workflow with only launch counts from the lab's latest named run", async () => {
+      givenTotals(launchOnlyTotals(LAB_A));
+      mockQueryByOrganizationId.mockResolvedValue([lab(LAB_A, 'Alpha Lab')]);
+      mockListAllRunsForLaboratory.mockResolvedValue([
+        {
+          WorkflowExternalId: '4995724',
+          Platform: 'AWS HealthOmics',
+          WorkflowName: 'Old name',
+          CreatedAt: '2026-01-01',
+        },
+        {
+          WorkflowExternalId: '4995724',
+          Platform: 'AWS HealthOmics',
+          WorkflowName: 'Latest name',
+          CreatedAt: '2026-03-01',
+        },
+        { WorkflowExternalId: '4995724', Platform: 'AWS HealthOmics', WorkflowName: '', CreatedAt: '2026-03-05' },
+        { WorkflowExternalId: 'other', Platform: 'AWS HealthOmics', WorkflowName: 'Other', CreatedAt: '2026-03-06' },
+      ]);
+
+      const report = await getReport();
+
+      expect(mockListAllRunsForLaboratory).toHaveBeenCalledWith(LAB_A, [
+        'WorkflowExternalId',
+        'Platform',
+        'WorkflowName',
+        'CreatedAt',
+      ]);
+      expect(report.Labs[0].Workflows[0].WorkflowName).toBe('Latest name');
+    });
+
+    it('falls back to the workflow limit name, then the ID', async () => {
+      givenTotals([...launchOnlyTotals(LAB_A, 'wf-limit'), ...launchOnlyTotals(LAB_A, 'wf-bare')]);
+      mockQueryByOrganizationId.mockResolvedValue([
+        lab(LAB_A, 'Alpha Lab', { 'HEALTH_OMICS#wf-limit': { WorkflowName: 'Limit name' } }),
+      ]);
+      mockListAllRunsForLaboratory.mockResolvedValue([]);
+
+      const report = await getReport();
+
+      const names = Object.fromEntries(
+        report.Labs[0].Workflows.map((row) => [row.WorkflowExternalId, row.WorkflowName]),
+      );
+      expect(names).toEqual({ 'wf-limit': 'Limit name', 'wf-bare': 'wf-bare' });
+    });
+
+    it('does not read runs for a lab whose workflows are all named', async () => {
+      givenTotals([total({ LaboratoryId: LAB_A, WorkflowExternalId: 'wf-1', WorkflowName: 'Named', FinishedRuns: 1 })]);
+      mockQueryByOrganizationId.mockResolvedValue([lab(LAB_A, 'Alpha Lab')]);
+
+      await getReport();
+
+      expect(mockListAllRunsForLaboratory).not.toHaveBeenCalled();
+    });
+
+    it('does not read runs for a deleted lab', async () => {
+      givenTotals(launchOnlyTotals(DELETED_LAB));
+      mockQueryByOrganizationId.mockResolvedValue([lab(LAB_A, 'Alpha Lab')]);
+
+      const report = await getReport();
+
+      expect(mockListAllRunsForLaboratory).not.toHaveBeenCalled();
+      expect(report.Labs[0].Workflows[0].WorkflowName).toBe('4995724');
+    });
+
+    it("keeps the ID and logs when a lab's runs cannot be read", async () => {
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      givenTotals([...launchOnlyTotals(LAB_A), ...launchOnlyTotals(LAB_B)]);
+      mockQueryByOrganizationId.mockResolvedValue([lab(LAB_A, 'Alpha Lab'), lab(LAB_B, 'Beta Lab')]);
+      mockListAllRunsForLaboratory.mockImplementation(async (laboratoryId: string) => {
+        if (laboratoryId === LAB_A) throw new Error('throttled');
+        return [
+          {
+            WorkflowExternalId: '4995724',
+            Platform: 'AWS HealthOmics',
+            WorkflowName: 'Beta name',
+            CreatedAt: '2026-03-01',
+          },
+        ];
+      });
+
+      const report = await getReport();
+
+      const nameIn = (name: string) =>
+        report.Labs.find((row) => row.LaboratoryName === name)!.Workflows[0].WorkflowName;
+      expect(nameIn('Alpha Lab')).toBe('4995724');
+      expect(nameIn('Beta Lab')).toBe('Beta name');
+      expect(consoleError).toHaveBeenCalledWith(
+        `Run costs: could not read runs for LaboratoryId=${LAB_A} to name its workflows`,
+        expect.any(Error),
+      );
+      consoleError.mockRestore();
+    });
   });
 });

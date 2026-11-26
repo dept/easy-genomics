@@ -181,6 +181,11 @@ export class UsageNestedStack extends NestedStack {
         actions: ['dynamodb:Query'],
         effect: Effect.ALLOW,
       }),
+      new PolicyStatement({
+        resources: [laboratoryRunTableArn],
+        actions: ['dynamodb:Query'],
+        effect: Effect.ALLOW,
+      }),
     ]);
 
     // /easy-genomics/usage/process-capture-run-cost

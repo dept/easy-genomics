@@ -74,6 +74,11 @@ describe('UsageNestedStack', () => {
         Resource: `arn:aws:dynamodb:${region}:${account}:table/test-usage-daily-total-table`,
       },
       { Effect: 'Allow', Action: 'dynamodb:Query', Resource: laboratoryTableArn },
+      {
+        Effect: 'Allow',
+        Action: 'dynamodb:Query',
+        Resource: `arn:aws:dynamodb:${region}:${account}:table/test-laboratory-run-table`,
+      },
     ]);
   });
 

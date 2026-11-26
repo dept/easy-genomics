@@ -1,5 +1,6 @@
 import { RunCostsQuery } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/run-costs';
 import { RunType } from '@easy-genomics/shared-lib/src/app/types/base-entity';
+import { Laboratory } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
 import {
   RunCostsFigures,
   RunCostsLabRow,
@@ -7,6 +8,8 @@ import {
   RunCostsWorkflowRow,
   UsageDailyTotal,
 } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/usage-totals';
+import { workflowRunLimitsKeyForRun } from '@easy-genomics/shared-lib/src/app/utils/workflow-run-limits';
+import { LaboratoryRunService } from '@BE/services/easy-genomics/laboratory-run-service';
 import { LaboratoryService } from '@BE/services/easy-genomics/laboratory-service';
 import { UsageTotalsService } from '@BE/services/easy-genomics/usage-totals-service';
 
@@ -86,18 +89,24 @@ function deletedLabName(laboratoryId: string): string {
   return `Deleted lab (${laboratoryId.slice(0, 8)})`;
 }
 
+export function workflowNameFallbackKey(laboratoryId: string, platform: RunType, workflowExternalId: string): string {
+  return `${laboratoryId}#${platform}#${workflowExternalId}`;
+}
+
 type LabTally = { tally: Tally; workflows: Map<string, { platform: RunType; externalId: string; tally: Tally }> };
 
 /**
  * Sums the daily totals into lab rows, then workflow rows. A lab or workflow that only appears in the previous period
  * is still listed at zero, so a drop is visible. A row written only by a blocked launch has no workflow name, so the
- * name comes from any row for the same workflow, and otherwise is the external id.
+ * name comes from any row for the same workflow, then from `fallbackWorkflowNames` (keyed by `workflowNameFallbackKey`),
+ * and otherwise is the external id.
  */
 export function buildRunCostsReport(
   current: UsageDailyTotal[],
   previous: UsageDailyTotal[],
   labNames: Map<string, string>,
   periods: RunCostsPeriods,
+  fallbackWorkflowNames: Map<string, string> = new Map(),
 ): RunCostsReport {
   const totals = emptyFigures();
   const previousTotals = emptyFigures();
@@ -153,7 +162,10 @@ export function buildRunCostsReport(
     const workflowRows: RunCostsWorkflowRow[] = [...lab.workflows].map(([key, workflow]) => ({
       Platform: workflow.platform,
       WorkflowExternalId: workflow.externalId,
-      WorkflowName: workflowNames.get(key) ?? workflow.externalId,
+      WorkflowName:
+        workflowNames.get(key) ??
+        fallbackWorkflowNames.get(workflowNameFallbackKey(laboratoryId, workflow.platform, workflow.externalId)) ??
+        workflow.externalId,
       ...figuresOf(workflow.tally),
       ...comparison(workflow.tally),
     }));
@@ -178,6 +190,7 @@ export function buildRunCostsReport(
 export class RunCostsReportService {
   private readonly usageTotalsService = new UsageTotalsService();
   private readonly laboratoryService = new LaboratoryService();
+  private readonly laboratoryRunService = new LaboratoryRunService();
 
   /** `today` is passed in so the rolling periods are deterministic in tests. */
   public getReport = async (query: RunCostsQuery, today: Date): Promise<RunCostsReport> => {
@@ -192,6 +205,66 @@ export class RunCostsReportService {
       this.laboratoryService.queryByOrganizationId(query.organizationId),
     ]);
     const labNames = new Map(laboratories.map((laboratory) => [laboratory.LaboratoryId, laboratory.Name]));
-    return buildRunCostsReport(current, previous, labNames, periods);
+    const report = buildRunCostsReport(current, previous, labNames, periods);
+    const fallbackWorkflowNames = await this.findFallbackWorkflowNames(report, laboratories);
+    return fallbackWorkflowNames.size === 0
+      ? report
+      : buildRunCostsReport(current, previous, labNames, periods, fallbackWorkflowNames);
+  };
+
+  /**
+   * Only labs that still show a workflow by its id are read, so a report whose workflows are all named costs no run
+   * reads. A lab whose runs cannot be read keeps the limit names, or the ids, rather than failing the report.
+   */
+  private findFallbackWorkflowNames = async (
+    report: RunCostsReport,
+    laboratories: Laboratory[],
+  ): Promise<Map<string, string>> => {
+    const laboratoriesById = new Map(laboratories.map((laboratory) => [laboratory.LaboratoryId, laboratory]));
+    const namesByLab = await Promise.all(
+      report.Labs.map(async (lab) => {
+        const laboratory = laboratoriesById.get(lab.LaboratoryId);
+        const unnamed = lab.Workflows.filter((workflow) => workflow.WorkflowName === workflow.WorkflowExternalId);
+        return laboratory && unnamed.length > 0 ? this.workflowNamesForLaboratory(laboratory, unnamed) : new Map();
+      }),
+    );
+    return new Map(namesByLab.flatMap((names) => [...names]));
+  };
+
+  private workflowNamesForLaboratory = async (
+    laboratory: Laboratory,
+    unnamedWorkflows: RunCostsWorkflowRow[],
+  ): Promise<Map<string, string>> => {
+    const latestRunNames = await this.latestRunNames(laboratory.LaboratoryId);
+    const names = new Map<string, string>();
+    for (const { Platform, WorkflowExternalId } of unnamedWorkflows) {
+      const key = workflowNameFallbackKey(laboratory.LaboratoryId, Platform, WorkflowExternalId);
+      const limitsName =
+        laboratory.WorkflowRunLimits?.[workflowRunLimitsKeyForRun(Platform, WorkflowExternalId)]?.WorkflowName;
+      const name = latestRunNames.get(key) ?? limitsName;
+      if (name) names.set(key, name);
+    }
+    return names;
+  };
+
+  private latestRunNames = async (laboratoryId: string): Promise<Map<string, string>> => {
+    const names = new Map<string, string>();
+    try {
+      const runs = await this.laboratoryRunService.listAllRunsForLaboratory(laboratoryId, [
+        'WorkflowExternalId',
+        'Platform',
+        'WorkflowName',
+        'CreatedAt',
+      ]);
+      const newestFirst = [...runs].sort((a, b) => (b.CreatedAt || '').localeCompare(a.CreatedAt || ''));
+      for (const run of newestFirst) {
+        if (!run.WorkflowName || !run.WorkflowExternalId) continue;
+        const key = workflowNameFallbackKey(laboratoryId, run.Platform, run.WorkflowExternalId);
+        if (!names.has(key)) names.set(key, run.WorkflowName);
+      }
+    } catch (error) {
+      console.error(`Run costs: could not read runs for LaboratoryId=${laboratoryId} to name its workflows`, error);
+    }
+    return names;
   };
 }
