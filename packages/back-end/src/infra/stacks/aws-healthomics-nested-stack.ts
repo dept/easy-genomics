@@ -875,6 +875,14 @@ export class AwsHealthOmicsNestedStack extends NestedStack {
         actions: ['dynamodb:UpdateItem'],
         effect: Effect.ALLOW,
       }),
+      // Records each warned launch and blocked attempt, in one transaction with the count above.
+      new PolicyStatement({
+        resources: [
+          `arn:aws:dynamodb:${this.props.env.region!}:${this.props.env.account!}:table/${this.props.namePrefix}-run-limit-event-table`,
+        ],
+        actions: ['dynamodb:GetItem', 'dynamodb:PutItem'],
+        effect: Effect.ALLOW,
+      }),
       workflowAccessQuery(),
       new PolicyStatement({
         resources: [

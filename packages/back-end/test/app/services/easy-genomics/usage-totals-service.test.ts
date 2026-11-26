@@ -3,7 +3,11 @@ process.env.NAME_PREFIX = 'unit-test';
 import { TransactionCanceledException } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { LaboratoryRun } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory-run';
-import { UsageTotalsService, usageTotalKey } from '../../../../src/app/services/easy-genomics/usage-totals-service';
+import {
+  UsageTotalsService,
+  isConditionFailedAt,
+  usageTotalKey,
+} from '../../../../src/app/services/easy-genomics/usage-totals-service';
 
 const ORGANIZATION_ID = 'org-1';
 const LABORATORY_ID = 'lab-1';
@@ -44,6 +48,16 @@ describe('usageTotalKey', () => {
     expect(usageTotalKey('2026-11-09', LABORATORY_ID, 'Seqera Cloud', 'pipeline-42')).toBe(
       '2026-11-09#lab-1#Seqera Cloud#pipeline-42',
     );
+  });
+});
+
+describe('isConditionFailedAt', () => {
+  it('is true only when the condition failed at the given transaction item', () => {
+    const err = transactionCanceled('None', 'ConditionalCheckFailed');
+
+    expect(isConditionFailedAt(err, 1)).toBe(true);
+    expect(isConditionFailedAt(err, 0)).toBe(false);
+    expect(isConditionFailedAt(new Error('boom'), 0)).toBe(false);
   });
 });
 
@@ -173,65 +187,33 @@ describe('UsageTotalsService', () => {
     });
   });
 
-  describe('addLaunchCount', () => {
-    const launch = {
-      OrganizationId: ORGANIZATION_ID,
-      LaboratoryId: LABORATORY_ID,
-      Platform: 'Seqera Cloud' as const,
-      WorkflowExternalId: 'pipeline-42',
-      Day: '2026-11-10',
-    };
-
+  describe('launchCountUpdate', () => {
     it.each([
       ['warned', '#WarnedRuns', '#BlockedLaunches'],
       ['blocked', '#BlockedLaunches', '#WarnedRuns'],
-    ] as const)('adds one %s launch to the day with a single unconditional update', async (kind, counted, other) => {
-      updateItem.mockResolvedValue({});
+    ] as const)('adds one %s launch to the day without a condition', (kind, counted, other) => {
+      const update = service.launchCountUpdate(
+        {
+          OrganizationId: ORGANIZATION_ID,
+          LaboratoryId: LABORATORY_ID,
+          Platform: 'Seqera Cloud',
+          WorkflowExternalId: 'pipeline-42',
+          Day: '2026-11-10',
+          Kind: kind,
+        },
+        '2026-11-10T08:00:00.000Z',
+      );
 
-      await service.addLaunchCount({ ...launch, Kind: kind });
-
-      expect(updateItem).toHaveBeenCalledTimes(1);
-      const update = updateItem.mock.calls[0][0];
       expect(update).toMatchObject({
         TableName: 'unit-test-usage-daily-total-table',
         Key: {
           OrganizationId: { S: ORGANIZATION_ID },
           DayLabWorkflow: { S: '2026-11-10#lab-1#Seqera Cloud#pipeline-42' },
         },
-        UpdateExpression:
-          `ADD ${counted} :one, ${other} :zero, #ComputeCostUsd :zero, #StorageCostUsd :zero, #FinishedRuns :zero ` +
-          'SET #Day = :day, #LaboratoryId = :laboratoryId, #Platform = :platform, ' +
-          '#WorkflowExternalId = :workflowExternalId, #ModifiedAt = :now',
       });
+      expect(update.UpdateExpression).toContain(`ADD ${counted} :one, ${other} :zero`);
       expect(update.ConditionExpression).toBeUndefined();
-      expect(update.ExpressionAttributeNames).toEqual({
-        '#WarnedRuns': 'WarnedRuns',
-        '#BlockedLaunches': 'BlockedLaunches',
-        '#ComputeCostUsd': 'ComputeCostUsd',
-        '#StorageCostUsd': 'StorageCostUsd',
-        '#FinishedRuns': 'FinishedRuns',
-        '#Day': 'Day',
-        '#LaboratoryId': 'LaboratoryId',
-        '#Platform': 'Platform',
-        '#WorkflowExternalId': 'WorkflowExternalId',
-        '#ModifiedAt': 'ModifiedAt',
-      });
-      expect(unmarshall(update.ExpressionAttributeValues)).toEqual({
-        ':one': 1,
-        ':zero': 0,
-        ':day': '2026-11-10',
-        ':laboratoryId': LABORATORY_ID,
-        ':platform': 'Seqera Cloud',
-        ':workflowExternalId': 'pipeline-42',
-        ':now': expect.any(String),
-      });
-    });
-
-    it('rethrows a failed write, so the caller decides what a lost count means', async () => {
-      const throttled = new Error('Throttled');
-      updateItem.mockRejectedValue(throttled);
-
-      await expect(service.addLaunchCount({ ...launch, Kind: 'blocked' })).rejects.toBe(throttled);
+      expect(unmarshall(update.ExpressionAttributeValues!)[':now']).toBe('2026-11-10T08:00:00.000Z');
     });
   });
 

@@ -26,6 +26,7 @@ jest.mock('../../../../../src/app/utils/auth-utils');
 const mockAssertLaunchWithinLimits = jest.fn();
 const mockLogWarnedLaunch = jest.fn();
 jest.mock('../../../../../src/app/services/easy-genomics/run-limit-check-service', () => ({
+  runLimitActorOf: () => ({ UserId: 'actor-user', UserEmail: 'actor@example.com' }),
   RunLimitCheckService: jest.fn().mockImplementation(() => ({
     assertLaunchWithinLimits: (...args: unknown[]) => mockAssertLaunchWithinLimits(...args),
     logWarnedLaunch: (...args: unknown[]) => mockLogWarnedLaunch(...args),
@@ -92,7 +93,7 @@ describe('create-workflow-execution.lambda', () => {
         sampleSheetS3Url: 's3://lab-bucket/run/samplesheet.csv',
         settings: { input: 's3://lab-bucket/run/samplesheet.csv', outdir: 's3://lab-bucket/out' },
       },
-      'user-1',
+      { UserId: 'actor-user', UserEmail: 'actor@example.com' },
     );
     expect(mockAssertLaunchWithinLimits.mock.calls[0][1]).not.toHaveProperty('workflowVersionName');
   });
@@ -101,14 +102,14 @@ describe('create-workflow-execution.lambda', () => {
     const verdict = { outcome: 'warn', hits: [], costEstimate: 'available' };
     mockAssertLaunchWithinLimits.mockResolvedValue(verdict);
 
-    await handler(createEvent({ launch: { paramsText } }), context, () => {});
+    await handler(createEvent({ launch: { paramsText, runName: 'my-seqera-run' } }), context, () => {});
 
     expect(mockLogWarnedLaunch).toHaveBeenCalledWith(
       laboratory,
       expect.objectContaining({ platform: 'Seqera Cloud', workflowExternalId: 'pipe-1' }),
-      'user-1',
+      { UserId: 'actor-user', UserEmail: 'actor@example.com' },
       verdict,
-      'seqera-run-1',
+      { ExternalRunId: 'seqera-run-1', RunName: 'my-seqera-run' },
     );
   });
 
@@ -130,7 +131,7 @@ describe('create-workflow-execution.lambda', () => {
     mockAssertLaunchWithinLimits.mockResolvedValue({ outcome: 'warn', hits: [], costEstimate: 'available' });
     (httpRequest as jest.Mock).mockRejectedValue(new Error('Seqera unavailable'));
 
-    await handler(createEvent({ launch: { paramsText } }), context, () => {});
+    await handler(createEvent({ launch: { paramsText, runName: 'my-seqera-run' } }), context, () => {});
 
     expect(mockLogWarnedLaunch).not.toHaveBeenCalled();
   });
@@ -152,7 +153,7 @@ describe('create-workflow-execution.lambda', () => {
     expect(mockAssertLaunchWithinLimits).toHaveBeenCalledWith(
       laboratory,
       { platform: 'Seqera Cloud', workflowExternalId: 'pipe-1', sampleSheetS3Url: undefined, settings: undefined },
-      'user-1',
+      { UserId: 'actor-user', UserEmail: 'actor@example.com' },
     );
     expect(result.statusCode).toBe(200);
   });

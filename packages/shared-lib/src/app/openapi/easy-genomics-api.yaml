@@ -2038,19 +2038,34 @@ components:
           type: string
         OrganizationId:
           type: string
-        UserId:
-          type: string
         Platform:
           enum:
             - AWS HealthOmics
             - Seqera Cloud
           type: string
+        UserId:
+          type: string
         Owner:
+          type: string
+        WorkflowName:
+          type: string
+        ExpiresAt:
+          description: |-
+            DynamoDB TTL epoch timestamp (in seconds).
+            When enabled, DynamoDB will remove items after this timestamp.
+          type: number
+        WorkflowExternalId:
+          description: |-
+            Platform-side workflow identifier (HealthOmics workflowId or Seqera pipelineId).
+            Persisted at run-creation time so the data tagging system can associate inputs
+            with a stable workflow identity.
+          type: string
+        WorkflowVersionName:
+          type: string
+        ExternalRunId:
           type: string
         Description:
           description: Optional user-authored note for this run; set at creation time.
-          type: string
-        WorkflowName:
           type: string
         CreatedAt:
           type: string
@@ -2062,14 +2077,6 @@ components:
           type: string
         PlatformApiBaseUrl:
           type: string
-        WorkflowVersionName:
-          type: string
-        WorkflowExternalId:
-          description: |-
-            Platform-side workflow identifier (HealthOmics workflowId or Seqera pipelineId).
-            Persisted at run-creation time so the data tagging system can associate inputs
-            with a stable workflow identity.
-          type: string
         InputFileKeys:
           description: |-
             S3 object keys (within the laboratory bucket) that were used as inputs
@@ -2080,8 +2087,6 @@ components:
           type: array
           items:
             type: string
-        ExternalRunId:
-          type: string
         InputS3Url:
           type: string
         OutputS3Url:
@@ -2097,11 +2102,6 @@ components:
             ISO timestamp indicating when the run first reached a terminal state.
             Used as the anchor for retention/TTL recomputation.
           type: string
-        ExpiresAt:
-          description: |-
-            DynamoDB TTL epoch timestamp (in seconds).
-            When enabled, DynamoDB will remove items after this timestamp.
-          type: number
         RunDurationSeconds:
           description: |-
             Actual execution duration reported by the underlying platform, in seconds.
@@ -2410,19 +2410,27 @@ components:
           type: string
         OrganizationId:
           type: string
-        UserId:
-          type: string
         Platform:
           enum:
             - AWS HealthOmics
             - Seqera Cloud
           type: string
+        UserId:
+          type: string
         Owner:
+          type: string
+        WorkflowName:
+          type: string
+        ExpiresAt:
+          type: number
+        WorkflowExternalId:
+          type: string
+        WorkflowVersionName:
+          type: string
+        ExternalRunId:
           type: string
         Description:
           description: Optional user-authored note for this run; set at creation time.
-          type: string
-        WorkflowName:
           type: string
         CreatedAt:
           type: string
@@ -2434,16 +2442,10 @@ components:
           type: string
         PlatformApiBaseUrl:
           type: string
-        WorkflowVersionName:
-          type: string
-        WorkflowExternalId:
-          type: string
         InputFileKeys:
           type: array
           items:
             type: string
-        ExternalRunId:
-          type: string
         InputS3Url:
           type: string
         OutputS3Url:
@@ -2456,8 +2458,6 @@ components:
             - type: string
         TerminalAt:
           type: string
-        ExpiresAt:
-          type: number
         RunDurationSeconds:
           type: number
         FailureReason:
@@ -3559,13 +3559,13 @@ components:
             - Inactive
             - Invited
           type: string
+        UserEmail:
+          type: string
         PreferredName:
           type: string
         FirstName:
           type: string
         LastName:
-          type: string
-        UserEmail:
           type: string
         Title:
           type: string

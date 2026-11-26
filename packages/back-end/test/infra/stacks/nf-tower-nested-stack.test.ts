@@ -34,6 +34,9 @@ describe('NFTowerNestedStack create-workflow-execution IAM access', () => {
     ['s3:GetObject', `arn:aws:s3:::${account}-test-lab-bucket/*`],
     // It also counts warned and blocked launches in the daily usage totals.
     ['dynamodb:UpdateItem', `arn:aws:dynamodb:${region}:${account}:table/test-usage-daily-total-table`],
+    // And records each one in the run limit event table, checking first whether it already is.
+    ['dynamodb:GetItem', `arn:aws:dynamodb:${region}:${account}:table/test-run-limit-event-table`],
+    ['dynamodb:PutItem', `arn:aws:dynamodb:${region}:${account}:table/test-run-limit-event-table`],
   ])('grants %s on %s for the launch limit check', (action, resource) => {
     const stack = createStack();
     const grantedResources = stack.iam

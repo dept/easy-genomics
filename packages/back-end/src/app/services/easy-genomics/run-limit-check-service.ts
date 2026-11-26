@@ -1,8 +1,13 @@
+import { randomUUID } from 'crypto';
 import {
   RunLimitHit,
   RunLimitVerdict,
 } from '@easy-genomics/shared-lib/src/app/schema/easy-genomics/laboratory-run-limits';
 import { Laboratory, LaboratoryRunLimits } from '@easy-genomics/shared-lib/src/app/types/easy-genomics/laboratory';
+import {
+  RunLimitBlockReason,
+  RunLimitEvent,
+} from '@easy-genomics/shared-lib/src/app/types/easy-genomics/run-limit-events';
 import {
   RunCostEstimateFailedError,
   RunCostLimitExceededError,
@@ -13,9 +18,14 @@ import {
   resolveCostLimits,
   workflowRunLimitsKeyForRun,
 } from '@easy-genomics/shared-lib/src/app/utils/workflow-run-limits';
+import { APIGatewayProxyWithCognitoAuthorizerEvent } from 'aws-lambda';
 import { RunCostEstimationService } from '@BE/services/easy-genomics/run-cost-estimation-service';
 import { readSampleSheet, sumObjectBytes } from '@BE/services/easy-genomics/run-input-profile-service';
-import { LaunchCount, UsageTotalsService } from '@BE/services/easy-genomics/usage-totals-service';
+import {
+  RecordRunLimitEventResult,
+  RunLimitEventService,
+  blockedAttemptId,
+} from '@BE/services/easy-genomics/run-limit-event-service';
 
 /** A server-only description of a run. Nothing the client sends about the run's size is part of it. */
 export type RunLimitInput = {
@@ -29,13 +39,21 @@ export type RunLimitInput = {
 
 type CheckedRun = { verdict: RunLimitVerdict; costEstimateUsd?: number };
 
-type BlockReason = 'limitExceeded' | 'samplesNotCounted' | 'costEstimateFailed';
+/** Who a launch or review is for, as recorded on its limit events. */
+export type RunLimitActor = { UserId: string; UserEmail?: string };
+
+type RunLimitRecordSource = RunLimitEvent['Source'];
 
 const SAMPLES_NOT_COUNTED_FOR_COST_LIMIT =
   "The samples in this run could not be counted, so its cost could not be checked against this laboratory's cost limit. Check the sample sheet and try again.";
 
 const runCostEstimationService = new RunCostEstimationService();
-const usageTotalsService = new UsageTotalsService();
+const runLimitEventService = new RunLimitEventService();
+
+export function runLimitActorOf(event: APIGatewayProxyWithCognitoAuthorizerEvent): RunLimitActor {
+  const claims = event.requestContext.authorizer?.claims;
+  return { UserId: claims?.UserId ?? claims?.['cognito:username'] ?? 'unknown', UserEmail: claims?.email };
+}
 
 function isAmountSet(amount?: number): boolean {
   return amount !== undefined;
@@ -120,7 +138,7 @@ export function evaluateRunLimits(
   return { outcome, hits, costEstimate, ...(sampleCount !== undefined ? { sampleCount } : {}) };
 }
 
-function blockReasonOf(err: unknown): BlockReason | undefined {
+function blockReasonOf(err: unknown): RunLimitBlockReason | undefined {
   if (err instanceof RunSamplesNotCountedError) return 'samplesNotCounted';
   if (err instanceof RunCostEstimateFailedError) return 'costEstimateFailed';
   return undefined;
@@ -128,42 +146,29 @@ function blockReasonOf(err: unknown): BlockReason | undefined {
 
 export class RunLimitCheckService {
   /**
-   * Returns undefined, with no reads, when the lab has no amounts set.
-   * Throws RunSamplesNotCountedError or RunCostEstimateFailedError when a set limit can't be checked.
+   * The review step's check. Returns undefined, with no reads, when the lab has no amounts set.
+   * A block, or a limit that can't be checked (RunSamplesNotCountedError, RunCostEstimateFailedError, thrown), is
+   * recorded before it reaches the client.
    */
-  public async checkRunLimits(laboratory: Laboratory, input: RunLimitInput): Promise<RunLimitVerdict | undefined> {
-    const checked = await this.checkRun(laboratory, input);
+  public async checkReviewRunLimits(
+    laboratory: Laboratory,
+    input: RunLimitInput,
+    actor: RunLimitActor,
+  ): Promise<RunLimitVerdict | undefined> {
+    const checked = await this.checkAndRecordBlock(laboratory, input, actor, 'review');
     return checked?.verdict;
   }
 
-  /** Throws the typed error on a block, after logging it. Returns the verdict, or undefined, otherwise. */
+  /** Throws the typed error on a block, after recording it. Returns the verdict, or undefined, otherwise. */
   public async assertLaunchWithinLimits(
     laboratory: Laboratory,
     input: RunLimitInput,
-    userId: string | undefined,
+    actor: RunLimitActor,
   ): Promise<RunLimitVerdict | undefined> {
-    let checked: CheckedRun | undefined;
-    try {
-      checked = await this.checkRun(laboratory, input);
-    } catch (err) {
-      const reason = blockReasonOf(err);
-      if (reason) await this.logBlockedLaunch(laboratory, input, userId, reason, []);
-      throw err;
-    }
+    const checked = await this.checkAndRecordBlock(laboratory, input, actor, 'launch');
     if (checked?.verdict.outcome !== 'block') return checked?.verdict;
 
-    const { verdict, costEstimateUsd } = checked;
-    await this.logBlockedLaunch(
-      laboratory,
-      input,
-      userId,
-      'limitExceeded',
-      verdict.hits,
-      verdict.sampleCount,
-      costEstimateUsd,
-    );
-
-    const blockHits = verdict.hits.filter((hit) => hit.level === 'block');
+    const blockHits = checked.verdict.hits.filter((hit) => hit.level === 'block');
     const sampleBlock = blockHits.find((hit) => hit.limit === 'samples');
     if (sampleBlock) throw new RunSampleLimitExceededError(sampleBlock.runValue, sampleBlock.amount);
     const costBlock = blockHits.find((hit) => hit.limit === 'cost')!;
@@ -171,33 +176,58 @@ export class RunLimitCheckService {
   }
 
   /**
-   * Logs and counts a launch that went ahead over a warn amount, once the platform has started the run. It is recorded
-   * here, from the verdict the launch was checked with, because a later request about the run can't be trusted to
-   * describe it. Never throws: the run has already started.
+   * Logs and records a launch that went ahead over a warn amount, once the platform has started the run. It is
+   * recorded here, from the verdict the launch was checked with, because a later request about the run can't be
+   * trusted to describe it. Never throws: the run has already started.
    */
   public async logWarnedLaunch(
     laboratory: Laboratory,
     input: RunLimitInput,
-    userId: string | undefined,
+    actor: RunLimitActor,
     verdict: RunLimitVerdict | undefined,
-    externalRunId: string | undefined,
+    run: { ExternalRunId?: string; RunName?: string },
   ): Promise<void> {
     if (verdict?.outcome !== 'warn') return;
-    console.warn(
-      JSON.stringify({
-        event: 'RUN_LIMIT_WARNED',
-        organizationId: laboratory.OrganizationId,
-        laboratoryId: laboratory.LaboratoryId,
-        platform: input.platform,
-        workflowExternalId: input.workflowExternalId,
-        workflowVersionName: input.workflowVersionName,
-        externalRunId,
-        userId,
-        hits: verdict.hits,
-        sampleCount: verdict.sampleCount,
-      }),
-    );
-    await this.countLaunch(laboratory, input, 'warned', 'RUN_LIMIT_WARNED');
+    await this.recordEvent('RUN_LIMIT_WARNED', laboratory, input, actor, {
+      EventId: run.ExternalRunId ?? randomUUID(),
+      Kind: 'warned',
+      Source: 'launch',
+      Hits: verdict.hits,
+      SampleCount: verdict.sampleCount,
+      ExternalRunId: run.ExternalRunId,
+      RunName: run.RunName,
+    });
+  }
+
+  /** Records a block, whether it comes back as a verdict or is thrown because a limit couldn't be checked. */
+  private async checkAndRecordBlock(
+    laboratory: Laboratory,
+    input: RunLimitInput,
+    actor: RunLimitActor,
+    source: RunLimitRecordSource,
+  ): Promise<CheckedRun | undefined> {
+    let checked: CheckedRun | undefined;
+    try {
+      checked = await this.checkRun(laboratory, input);
+    } catch (err) {
+      const reason = blockReasonOf(err);
+      if (reason) await this.recordBlock(laboratory, input, actor, source, reason, []);
+      throw err;
+    }
+    if (checked?.verdict.outcome === 'block') {
+      const { verdict, costEstimateUsd } = checked;
+      await this.recordBlock(
+        laboratory,
+        input,
+        actor,
+        source,
+        'limitExceeded',
+        verdict.hits,
+        verdict.sampleCount,
+        costEstimateUsd,
+      );
+    }
+    return checked;
   }
 
   private async checkRun(laboratory: Laboratory, input: RunLimitInput): Promise<CheckedRun | undefined> {
@@ -263,55 +293,89 @@ export class RunLimitCheckService {
     }
   }
 
-  /** Never throws: a lost count must not turn a block into a pass, or fail a launch that already started. */
-  private async countLaunch(
+  private async recordBlock(
     laboratory: Laboratory,
     input: RunLimitInput,
-    kind: LaunchCount['Kind'],
-    event: 'RUN_LIMIT_WARNED' | 'RUN_LIMIT_BLOCKED',
-  ): Promise<void> {
-    try {
-      await usageTotalsService.addLaunchCount({
-        OrganizationId: laboratory.OrganizationId,
-        LaboratoryId: laboratory.LaboratoryId,
-        Platform: input.platform,
-        WorkflowExternalId: input.workflowExternalId,
-        Day: new Date().toISOString().slice(0, 10),
-        Kind: kind,
-      });
-    } catch (err) {
-      console.error(
-        `Failed to add the ${event} launch to the usage totals for OrganizationId=${laboratory.OrganizationId} ` +
-          `LaboratoryId=${laboratory.LaboratoryId} WorkflowExternalId=${input.workflowExternalId}:`,
-        err,
-      );
-    }
-  }
-
-  private async logBlockedLaunch(
-    laboratory: Laboratory,
-    input: RunLimitInput,
-    userId: string | undefined,
-    reason: BlockReason,
+    actor: RunLimitActor,
+    source: RunLimitRecordSource,
+    reason: RunLimitBlockReason,
     hits: RunLimitHit[],
     sampleCount?: number,
     costEstimateUsd?: number,
   ): Promise<void> {
+    await this.recordEvent('RUN_LIMIT_BLOCKED', laboratory, input, actor, {
+      EventId: blockedAttemptId({
+        laboratoryId: laboratory.LaboratoryId,
+        platform: input.platform,
+        workflowExternalId: input.workflowExternalId,
+        userId: actor.UserId,
+        sampleSheetS3Url: input.sampleSheetS3Url,
+        source,
+      }),
+      Kind: 'blocked',
+      Source: source,
+      Reason: reason,
+      Hits: hits,
+      SampleCount: sampleCount,
+      CostEstimateUsd: costEstimateUsd,
+    });
+  }
+
+  /**
+   * Logs the event's CloudWatch line unless it was already recorded, so a review step refreshed over the same
+   * block logs it once. Never throws: a lost record must not turn a block into a pass, or fail a launch that
+   * already started.
+   */
+  private async recordEvent(
+    logEvent: 'RUN_LIMIT_WARNED' | 'RUN_LIMIT_BLOCKED',
+    laboratory: Laboratory,
+    input: RunLimitInput,
+    actor: RunLimitActor,
+    details: Pick<RunLimitEvent, 'Kind' | 'Source' | 'Hits'> &
+      Partial<Pick<RunLimitEvent, 'Reason' | 'SampleCount' | 'CostEstimateUsd' | 'ExternalRunId' | 'RunName'>> & {
+        EventId: string;
+      },
+  ): Promise<void> {
+    let result: RecordRunLimitEventResult | 'failed';
+    try {
+      result = await runLimitEventService.record({
+        OrganizationId: laboratory.OrganizationId,
+        LaboratoryId: laboratory.LaboratoryId,
+        Platform: input.platform,
+        WorkflowExternalId: input.workflowExternalId,
+        WorkflowVersionName: input.workflowVersionName,
+        UserId: actor.UserId,
+        UserEmail: actor.UserEmail,
+        OccurredAt: new Date().toISOString(),
+        ...details,
+      });
+    } catch (err) {
+      console.error(
+        `Failed to record the ${logEvent} event for OrganizationId=${laboratory.OrganizationId} ` +
+          `LaboratoryId=${laboratory.LaboratoryId} WorkflowExternalId=${input.workflowExternalId} ` +
+          `UserId=${actor.UserId}:`,
+        err,
+      );
+      result = 'failed';
+    }
+    if (result === 'already-recorded') return;
+
     console.warn(
       JSON.stringify({
-        event: 'RUN_LIMIT_BLOCKED',
+        event: logEvent,
         organizationId: laboratory.OrganizationId,
         laboratoryId: laboratory.LaboratoryId,
         platform: input.platform,
         workflowExternalId: input.workflowExternalId,
         workflowVersionName: input.workflowVersionName,
-        userId,
-        reason,
-        hits,
-        sampleCount,
-        costEstimateUsd,
+        source: details.Source,
+        externalRunId: details.ExternalRunId,
+        userId: actor.UserId,
+        reason: details.Reason,
+        hits: details.Hits,
+        sampleCount: details.SampleCount,
+        costEstimateUsd: details.CostEstimateUsd,
       }),
     );
-    await this.countLaunch(laboratory, input, 'blocked', 'RUN_LIMIT_BLOCKED');
   }
 }
