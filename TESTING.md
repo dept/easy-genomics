@@ -583,7 +583,24 @@ Organization. The `run-limit-event` table is not deployed on `dev-demo` yet, so 
       auto-imports stores from. It is now registered there and cleared on sign-out.
 - [x] **Lab manager** — `GET /easy-genomics/usage/list-run-limit-events?organizationId=…&period=30d&kind=blocked` with
       the lab-manager test user's token returns 403 EG-103.
-- [ ] **Events listed** — after the first EGV-391 PR is deployed: launch over a warn amount and get blocked once, then
-      check both lists show the launch with its user, lab, workflow, limit and (for the block) reason.
-- [ ] **Counts recorded before the table existed** — in the period around the deploy, a card can count launches that
-      have no event, so its list is shorter than the number. Confirm the wording is acceptable or follow up.
+
+Then on 26 Nov 2026, after both EGV-391 branches were deployed to `dev-demo`, with the branch's front-end against the
+deployed API, Test Laboratory, workflow `k-florek/workshop-main`, collection `egv-372-sequence` (2 samples):
+
+- [x] **Review block counted once** — limit Samples block above 1. The lab manager reached the review step three times
+      (Previous step / Save & Continue). Each estimate returned `block`, and the table holds one `blocked` event (source
+      `review`, reason `limitExceeded`, 2 samples). The day's `BlockedLaunches` is 1, and the estimate Lambda logged one
+      `RUN_LIMIT_BLOCKED` line and no DynamoDB error.
+- [x] **Warned launch recorded** — limits Samples warn above 1, block above 3. **Launch anyway** started HealthOmics run
+      1485396 (cancelled straight after). The table holds one `warned` event with the run ID and run name, and the day's
+      `WarnedRuns` is 1.
+- [x] **Events listed** — org admin, Usage › Run costs › 30 days: the cards read Warned 1 and Blocked 1. Warned launches
+      lists Lab Manager, Test Laboratory, "Samples 2 (limit 1)", "Run: egv-372-sequence" and the time; Blocked launches
+      lists the same with "Over the limit".
+- [x] **Counts recorded before the table existed** — not reproduced: the `dev-demo` totals table was recreated empty
+      with this deploy, so every count has its event. Left as is: the window only exists during the first deploy.
+- **Follow-up** — the lists show the workflow ID (`4995724`) instead of its name when the period has no finished run for
+  that workflow. The name only reaches the daily totals row when a run's cost is added, and the Run costs table falls
+  back the same way. Storing it with the warned and blocked counts would fix both.
+
+Test Laboratory's limits were cleared afterwards, as they were before the run.
